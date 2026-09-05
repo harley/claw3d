@@ -1,5 +1,6 @@
 import { pinchRatio, joystickAxis, matchHand, clamp } from './mechanics.js';
 import { ClaspGesture } from './clasp.js';
+import {FistDrop,fistEvidence} from './fist.js';
 
 const LINKS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 
@@ -17,7 +18,7 @@ export class HandController {
     document.addEventListener('visibilitychange', () => {
       this.lastResult = performance.now();
       this.neutral = null; this.openSince = 0;
-      this.clasp.reset();
+      this.clasp.reset(); this.fist.reset();
       this.onInput({ x: 0, z: 0 });
     });
     navigator.mediaDevices?.addEventListener('devicechange', this.deviceChange);
@@ -25,7 +26,7 @@ export class HandController {
   }
 
   resetOwner() {
-    this.clasp = new ClaspGesture();
+    this.clasp = new ClaspGesture(); this.fist = new FistDrop();
     this.owner = null; this.neutral = null; this.candidate = null;
     this.pinchSince = 0; this.openSince = 0; this.lostSince = 0;
     this.input = { x: 0, z: 0 }; this.gripping = false; this.dropArmed = false;
@@ -135,9 +136,10 @@ export class HandController {
 
   handle(result, now) {
     const profile=this.getProfile?.();
-    const easy = profile === 'palm' || profile === 'clasp';
+    const easy = profile === 'palm' || profile === 'clasp' || profile === 'fist';
     const aspect = this.video?.videoWidth && this.video?.videoHeight ? this.video.videoWidth / this.video.videoHeight : 1;
     const hands = result.landmarks.map((landmarks, i) => ({ landmarks,
+      fist: fistEvidence(landmarks,result.gestures[i]?.[0]?.categoryName,result.gestures[i]?.[0]?.score,aspect),
       center: { x: 1 - (landmarks[0].x + landmarks[9].x) / 2, y: (landmarks[0].y + landmarks[9].y) / 2 },
       handedness: result.handedness[i]?.[0]?.categoryName,
       ratio: pinchRatio(landmarks, aspect),
@@ -155,7 +157,7 @@ export class HandController {
       if (!hand || hand.center.x < .12 || hand.center.x > .88 || hand.center.y < .12 || hand.center.y > .86) {
         this.pinchSince = 0; this.candidate = null;
         this.onState({ kind: 'ready', message: hands.length > 1 ? 'Two hands detected. Lower one hand to begin.' : easy ? 'Show one hand inside the camera view.' : 'Show one hand. Pinch to grab the joystick.' });
-      } else if (hand.pinch || easy) {
+      } else if (profile==='fist' ? !hand.fist.closed : hand.pinch || easy) {
         if (this.candidate && (this.candidate.handedness !== hand.handedness || Math.hypot(this.candidate.center.x-hand.center.x,this.candidate.center.y-hand.center.y) > .1)) this.pinchSince = 0;
         this.candidate = hand; this.pinchSince ||= now;
         const progress = clamp((now - this.pinchSince) / 500, 0, 1);
@@ -166,13 +168,14 @@ export class HandController {
           if (phase !== 'aim') this.onStart('camera');
           this.onState({ kind: 'tracking', message: 'You have it. Move your hand to steer.', progress: 0 });
         }
-      } else { this.pinchSince = 0; this.candidate = null; this.onState({ kind: 'ready', message: 'Pinch thumb and finger to grab the joystick.' }); }
+      } else { this.pinchSince = 0; this.candidate = null; this.onState({ kind: 'ready', message: profile==='fist'?'Open your hand to begin.':'Pinch thumb and finger to grab the joystick.' }); }
       this.draw(hands, hand); return;
     }
-    if(profile==='clasp' && phase==='aim'){
+    if(['clasp','fist'].includes(profile) && phase==='aim'){
       const wasActive=this.clasp.active;
       const clasp=this.clasp.update(hands,this.owner,now,aspect);
       if(clasp.active){
+        this.fist.reset();
         this.input={x:0,z:0};this.onInput(this.input);this.neutral=null;
         // Follow the existing primary spatial track while the pair converges.
         const primary=hands.map(h=>({h,d:Math.hypot(h.center.x-this.owner.x,h.center.y-this.owner.y)})).sort((a,b)=>a.d-b.d);
@@ -189,7 +192,7 @@ export class HandController {
     // continuation is still the same spatial track; an extra hand never is.
     if (!hand && hands.length === 1 && Math.hypot(hands[0].center.x-this.owner.x,hands[0].center.y-this.owner.y) < .08) hand = hands[0];
     if (!hand) {
-      this.lostSince ||= now; this.openSince = 0; this.neutral = null;
+      this.lostSince ||= now; this.openSince = 0; this.neutral = null;this.fist.reset();
       this.onInput({ x: 0, z: 0 });
       this.gripping = false;
       this.onState({ kind: 'lost', message: easy ? 'Paused. Bring your hand back to the same area.' : 'Hand lost — paused. Bring your hand back and pinch.' });
@@ -198,6 +201,16 @@ export class HandController {
     if (this.lostSince) this.neutral = null;
     this.lostSince = 0;
     this.owner.x = hand.center.x; this.owner.y = hand.center.y;
+    if(profile==='fist'&&phase==='aim'){
+      const fist=this.fist.update({...hand.fist,visible:hands.length===1},now);
+      if(fist.active){
+        this.input={x:0,z:0};this.onInput(this.input);this.neutral=null;
+        this.onState({kind:'clenching',message:'Hold your fist to DROP. Open your hand to cancel.',progress:fist.progress});
+        this.draw(hands,hand);if(fist.fired)this.onDrop();return;
+      }
+      // A fist shown before arming never steers or drops the claw.
+      if(hand.fist.closed){this.input={x:0,z:0};this.onInput(this.input);this.neutral=null;this.onState({kind:'tracking',message:'Open your hand first, then clench and hold to DROP.',progress:0});this.draw(hands,hand);return;}
+    }
     if ((hand.pinch && !hand.open) || easy) {
       this.gripping = true;
       this.neutral ||= { ...hand.center };
@@ -205,7 +218,7 @@ export class HandController {
       this.input.x += (target.x - this.input.x) * .5;
       this.input.z += (target.z - this.input.z) * .5;
       this.onInput(this.input); this.openSince = 0; this.dropArmed = true;
-      this.onState({ kind: 'tracking', message: profile==='clasp' ? 'Steer with one hand. Bring both hands together to DROP.' : easy ? 'Move gently to steer. Press Space or your DROP button.' : 'Steer gently. Open your palm when you are ready.', progress: 0 });
+      this.onState({ kind: 'tracking', message: profile==='fist' ? 'Steer with a relaxed hand. Clench and hold to DROP.' : profile==='clasp' ? 'Steer with one hand. Bring both hands together to DROP.' : easy ? 'Move gently to steer. Press Space or your DROP button.' : 'Steer gently. Open your palm when you are ready.', progress: 0 });
     } else {
       this.gripping = false;
       this.input = { x: 0, z: 0 }; this.onInput(this.input); this.neutral = null;

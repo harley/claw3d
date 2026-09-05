@@ -4,7 +4,8 @@ import math
 import os
 import random
 import sys
-from mathutils import Vector
+import json
+from mathutils import Vector, Quaternion
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, 'public', 'models')
@@ -32,22 +33,24 @@ def material(name, hex_value, metallic=0, roughness=.4, emission=0):
         p.inputs['Emission Strength'].default_value = emission
     return m
 
-cream = material('Gloss white enamel', '#eef2f4', .12, .22)
-coral = material('Racing red enamel', '#bc0925', .30, .23)
-dark = material('Black powder coated steel', '#101720', .45, .32)
-chrome = material('Polished stainless steel', '#d7e0eb', .95, .17)
+cream = material('Satin warm white enamel', '#e7e5da', .0, .60)
+coral = material('Racing red enamel', '#a92f37', .0, .58)
+dark = material('Black powder coated steel', '#303833', .08, .76)
+chrome = material('Brushed stainless steel', '#bfc6c2', .65, .48)
 for enamel in [cream, coral]:
-    enamel.node_tree.nodes.get('Principled BSDF').inputs['Coat Weight'].default_value = .55
+    enamel.node_tree.nodes.get('Principled BSDF').inputs['Coat Weight'].default_value = .08
 black = material('Licorice eyes and stitching', '#263332', .0, .5)
 mint = material('Pistachio rubber', '#cfe396', .08, .52)
 pink = material('Rose embroidered nose', '#d17884', 0, .85)
 red = material('CoderPush red bandana', '#d63836', 0, .9)
 white = material('Cotton embroidery', '#fff8e8', 0, .82)
-light = material('White LED diffuser', '#ecf7ff', 0, .26, 3)
-red_light = material('Red perimeter neon', '#ff2544', 0, .24, 3.5)
-gold_light = material('Amber marquee lamps', '#ffd267', 0, .24, 3)
-sign_ink = material('Marquee warm white lettering', '#fff7d6', .08, .24, .8)
-bed = material('Blue felt prize platform', '#29516c', 0, .92)
+light = material('White LED diffuser', '#f7edd7', 0, .65, 1.1)
+red_light = material('Red perimeter neon', '#db5e4e', 0, .65, .85)
+gold_light = material('Amber marquee lamps', '#f5d9a2', 0, .55, 1.3)
+sign_ink = material('Marquee warm white lettering', '#f5ecd6', 0, .75, .25)
+bed = material('Woven sage prize bed', '#6d8176', 0, .98)
+backdrop = material('Matte pale sage interior', '#bcc7bd', 0, .94)
+claw_steel = material('Satin charcoal claw steel', '#6f7c78', .38, .42)
 blue = material('Periwinkle capsule', '#9fbecb', .1, .38)
 violet = material('Lilac capsule', '#b8a6ca', .1, .38)
 
@@ -197,14 +200,11 @@ for x in [-1.57,-.39]:
     box('Hopper lip side',(x,-.535,1.19),(.025,1.31,.025),chrome,.006)
 box('Hopper lip rear',(-.98,.12,1.19),(1.18,.025,.025),chrome,.006)
 box('Back steel wall', (0,1.19,2.49), (3.42,.10,2.72), dark, .025)
-box('Back graphic panel', (0,1.124,2.52), (3.12,.022,2.43), coral, .02)
-# Printed diagonal stripes and star graphics, like laminated cabinet artwork.
-for x in [-1.24,-.65,-.06,.53,1.12]:
-    stripe=box('Printed diagonal stripe',(x,1.10,2.57),(.18,.012,2.25),cream,.0)
-    stripe.rotation_euler[1]=-.23
-box('Back logo field',(0,1.069,2.95),(2.60,.024,.61),dark,.025)
-label('Back brand title', 'coderpush.', (0,1.046,2.80), .36, cream)
-label('Back subtitle', 'GRAB A LITTLE HAPPINESS', (0,1.045,2.56), .125, cream)
+box('Back graphic panel', (0,1.124,2.52), (3.12,.022,2.43), backdrop, .02)
+# Keep the claw silhouette against a quiet, light interior. Branding sits high
+# on the back panel, out of the prize and finger contact area.
+label('Back brand title', 'coderpush.', (0,1.092,3.48), .24, dark)
+label('Back subtitle', 'PICK A LITTLE HAPPINESS', (0,1.091,3.33), .075, dark)
 for x in [-1.65,1.65]:
     for y in [-1.18,1.18]:
         box('Extruded aluminium upright',(x,y,2.5),(.145,.145,2.89),chrome,.022)
@@ -362,43 +362,50 @@ pillow_objects=export('pillow',before)
 # CLAW. Hub and three jointed steel fingers with curved rubber tips.
 before=set(bpy.context.scene.objects)
 claw=group('Claw')
-cylinder('Claw shoulder',(0,0,0),.18,.20,chrome)
+cylinder('Claw shoulder',(0,0,0),.18,.20,claw_steel)
 cylinder('Claw coral ring',(0,0,-.09),.194,.06,coral)
-ellipsoid('Claw dome',(0,0,.095),(.178,.178,.11),chrome)
+ellipsoid('Claw dome',(0,0,.095),(.178,.178,.11),claw_steel)
 cylinder('Cable socket',(0,0,.22),.051,.14,dark)
 for i in range(3):
     angle=i*math.tau/3
     pivot=group('Finger_'+str(i))
     pivot.location=(0,0,-.08)
     pivot.rotation_euler[2]=angle
-    arm=tube('Finger steel_'+str(i),[(.13,0,0),(.29,0,-.22),(.40,0,-.48),(.30,0,-.66),(.15,0,-.72)],.031,chrome)
+    arm=tube('Finger steel_'+str(i),[(.13,0,0),(.29,0,-.22),(.40,0,-.48),(.30,0,-.66),(.15,0,-.72)],.031,claw_steel)
     arm.parent=pivot
     pad=tube('Rubber grip_'+str(i),[(.32,-.002,-.637),(.25,-.002,-.694),(.15,-.002,-.72)],.039,dark)
     pad.parent=pivot
-    knuckle=ellipsoid('Finger joint_'+str(i),(.155,0,-.02),(.055,.065,.055),chrome,24,12);knuckle.parent=pivot
+    knuckle=ellipsoid('Finger joint_'+str(i),(.155,0,-.02),(.055,.065,.055),claw_steel,24,12);knuckle.parent=pivot
 for o in list(bpy.context.scene.objects):
     if o not in before and o!=claw and not o.parent:o.parent=claw
 claw_objects=export('claw',before)
 
-# Arrange all exported assets into an editable art direction scene.
-bunny.location=(-.88,.48,1.19);bunny.scale=(.76,.76,.76);bunny.rotation_euler.z=.09
-pillow.location=(.93,-.48,1.67);pillow.scale=(1.0,1.0,1.0)
-pillow.rotation_euler=(math.pi/2,0,-.15)
-claw.location=(-.4,.15,3.78)
+# Match the browser's shared assortment and floor-aligned poses.
+with open(os.path.join(ROOT,'src','prize-layout.json')) as layout_file:
+    layout=json.load(layout_file)
+used=set()
+for data in layout:
+    original,objects=(bunny,bunny_objects) if data['kind']=='bunny' else (pillow,pillow_objects)
+    if data['kind'] not in used:
+        root=original;items=objects;used.add(data['kind'])
+    else:
+        lookup={}
+        for source in objects:
+            duplicate=source.copy()
+            if source.data:duplicate.data=source.data
+            bpy.context.collection.objects.link(duplicate);lookup[source]=duplicate
+        for source,duplicate in lookup.items():duplicate.parent=lookup.get(source.parent)
+        root=lookup[original];items=list(lookup.values())
+    rx=(math.pi/2 if data.get('upright') else 0)+data.get('lean',0)
+    qg=Quaternion((1,0,0),rx) @ Quaternion((0,1,0),data.get('angle',0)) @ Quaternion((0,0,1),data.get('roll',0))
+    basis=Quaternion((1,0,0),math.pi/2)
+    root.rotation_mode='QUATERNION';root.rotation_quaternion=basis @ qg @ basis.inverted()
+    root.scale=(data['scale'],)*3;root.location=(data['x'],-data['z'],0)
+    bpy.context.view_layer.update()
+    bottom=min((o.matrix_world @ v.co).z for o in items if o.type=='MESH' for v in o.data.vertices)
+    root.location.z=1.196-bottom
+claw.location=(-.4,.15,3.78);claw.scale=(.65,)*3
 for i in range(3):bpy.data.objects['Finger_'+str(i)].rotation_euler.y=-.45
-# Match the prize arrangement in the playable scene.
-for offset,scale,angle in [((0,-.45,1.19),.72,-.13),((.87,.48,1.19),.74,-.18),((0,.48,1.19),.71,.20)]:
-    lookup={}
-    for source in bunny_objects:
-        duplicate=source.copy()
-        if source.data:duplicate.data=source.data
-        bpy.context.collection.objects.link(duplicate)
-        lookup[source]=duplicate
-    for source,duplicate in lookup.items():
-        duplicate.parent=lookup.get(source.parent)
-    lookup[bunny].location=offset
-    lookup[bunny].scale=(scale,scale,scale)
-    lookup[bunny].rotation_euler.z=angle
 
 # Presentation elements are saved in Blender but do not enter the asset exports.
 glass=material('Presentation glass','#daeaff',0,.055)
@@ -407,7 +414,7 @@ glass.node_tree.nodes.get('Principled BSDF').inputs['IOR'].default_value=1.45
 for x in [-1.66,1.66]:
     box('Glass side display',(x,0,2.74),(.008,2.25,3.06),glass,.001)
 box('Glass front display',(0,-1.186,2.79),(3.15,.008,3.00),glass,.001)
-floor_mat=material('Dark arcade floor','#171c27',.40,.34)
+floor_mat=material('Dark arcade floor','#222c28',0,.95)
 box('Presentation floor',(0,0,-.026),(200,200,.05),floor_mat,0)
 for x in [-1.37,1.37]:
     box('Crane running rail',(x,0,4.19),(.06,2.1,.06),chrome,.006)
@@ -419,11 +426,11 @@ camera=bpy.context.object;camera.name='Art direction camera'
 camera.rotation_euler=(Vector((0,0,2.30))-camera.location).to_track_quat('-Z','Y').to_euler()
 camera.data.type='PERSP';camera.data.lens=43
 bpy.context.scene.camera=camera
-for loc,energy,size in [((1,-4,7),1050,4),((-5,-1,5),650,3),((2,4,6),1400,3)]:
+for loc,energy,size in [((1,-4,7),900,5),((-5,-1,5),500,4),((2,4,6),650,4)]:
     bpy.ops.object.light_add(type='AREA',location=loc)
     l=bpy.context.object;l.data.energy=energy;l.data.shape='DISK';l.data.size=size
     l.rotation_euler=(Vector((0,0,2))-l.location).to_track_quat('-Z','Y').to_euler()
-for loc,power,rgb in [((-2,-2,1.5),95,(1,.04,.09)),((3,0,2.8),120,(.16,.48,1))]:
+for loc,power,rgb in [((-2,-2,1.5),15,(1,.22,.10)),((3,0,2.8),20,(.45,.65,1))]:
     bpy.ops.object.light_add(type='POINT',location=loc)
     bpy.context.object.data.energy=power;bpy.context.object.data.color=rgb
 bpy.context.scene.world.use_nodes=True

@@ -2,19 +2,15 @@ import * as THREE from 'three';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {MeshBVH} from 'three-mesh-bvh';
 import {clamp,ease} from './mechanics.js';
+import layout from './prize-layout.json' with {type:'json'};
 
 export const FLOOR=1.19;
 export const HIGH=3.78;
 export const OPEN=.45;
 export const INTERIOR={minX:-1.565,maxX:1.565,minZ:-1.025,maxZ:1.165,minY:FLOOR,maxY:4.32};
 export const CHUTE={x:-.98,z:.39};
-export const PRIZE_LAYOUT=[
-  {id:'bunny-1',kind:'bunny',x:-.88,z:-.48,angle:.09,scale:.76},
-  {id:'bunny-2',kind:'bunny',x:0,z:.45,angle:-.13,scale:.72},
-  {id:'bunny-3',kind:'bunny',x:.87,z:-.48,angle:-.18,scale:.74},
-  {id:'bunny-4',kind:'bunny',x:0,z:-.48,angle:.20,scale:.71},
-  {id:'pillow-1',kind:'pillow',x:.93,z:.48,angle:-.15,scale:1},
-];
+export const PRIZE_LAYOUT=layout;
+export const CLAW_SCALE=.65;
 const axis=new THREE.Vector3(0,0,1);
 const q=new THREE.Quaternion();
 
@@ -37,21 +33,30 @@ export function colliderBox(collider){
   collider.root.updateWorldMatrix(true,false);
   return collider.worldBox.copy(collider.box).applyMatrix4(collider.root.matrixWorld);
 }
+export function preciseColliderBox(collider){
+  collider.root.updateWorldMatrix(true,false);
+  const box=new THREE.Box3(),point=new THREE.Vector3(),positions=collider.geometry.attributes.position;
+  for(let i=0;i<positions.count;i++)box.expandByPoint(point.fromBufferAttribute(positions,i).applyMatrix4(collider.root.matrixWorld));
+  return box;
+}
 export function overlap(a,b){
   if(!colliderBox(a).intersectsBox(colliderBox(b)))return false;
   return b.geometry.boundsTree.intersectsGeometry(a.geometry,b.root.matrixWorld.clone().invert().multiply(a.root.matrixWorld));
 }
 const inWalls=box=>box.min.x>=INTERIOR.minX && box.max.x<=INTERIOR.maxX && box.min.z>=INTERIOR.minZ && box.max.z<=INTERIOR.maxZ && box.min.y>=INTERIOR.minY && box.max.y<=INTERIOR.maxY;
 
+const inside=collider=>inWalls(colliderBox(collider))||inWalls(preciseColliderBox(collider));
+
 export class ContactClaw {
   constructor(claw,prizes){
-    this.root=claw.clone(true);this.root.position.set(0,HIGH,0);this.root.rotation.set(0,0,0);
+    this.root=claw.clone(true);this.root.scale.setScalar(CLAW_SCALE);this.root.position.set(0,HIGH,0);this.root.rotation.set(0,0,0);
     this.fingers=[0,1,2].map(i=>{const root=this.root.getObjectByName(`Finger_${i}`);return{root,rest:root.quaternion.clone(),collider:geometryCollider(root)};});
     const belongsToFinger=mesh=>{for(let p=mesh;p;p=p.parent)if(this.fingers.some(f=>f.root===p))return true;return false;};
     this.hub=geometryCollider(this.root,mesh=>!belongsToFinger(mesh));
     this.prizes=prizes.map(prize=>{const root=prize.object.clone(true);root.updateWorldMatrix(true,true);const box=new THREE.Box3().setFromObject(root,true);return{prize,root,rest:root.position.clone(),rotation:root.quaternion.clone(),collider:geometryCollider(root),center:box.getCenter(new THREE.Vector3()).sub(root.position),landingY:.365+box.getSize(new THREE.Vector3()).z/2};});
     this.pose({x:0,y:HIGH,z:0,angles:[OPEN,OPEN,OPEN]});
     const box=new THREE.Box3().makeEmpty();for(const part of this.parts())box.union(colliderBox(part));
+    this.floorHeight=FLOOR+HIGH-Math.min(...this.parts().map(p=>preciseColliderBox(p).min.y))+.006;
     this.field={minX:INTERIOR.minX-box.min.x+.012,maxX:INTERIOR.maxX-box.max.x-.012,minZ:INTERIOR.minZ-box.min.z+.012,maxZ:INTERIOR.maxZ-box.max.z-.012};
   }
   parts(){return[this.hub,...this.fingers.map(f=>f.collider)];}
@@ -61,7 +66,7 @@ export class ContactClaw {
     this.root.updateWorldMatrix(true,true);
   }
   hit(part,ignore=null){
-    if(!inWalls(colliderBox(part)))return{kind:'wall'};
+    if(!inside(part))return{kind:'wall'};
     for(const target of this.prizes)if(target!==ignore&&!target.prize.claimed&&overlap(part,target.collider))return{kind:'prize',target};
     return null;
   }
@@ -71,14 +76,14 @@ export class ContactClaw {
 
   plan(position,candidate){
     this.reset();
-    const start=this.clamp(position),target=this.clamp(candidate||position);
-    let pose={...target,y:HIGH,angles:[OPEN,OPEN,OPEN]},reason='No secure grip.';
+    const start=this.clamp(position),target=this.clamp(candidate?{x:candidate.x+(candidate.gripOffset?.x||0),z:candidate.z+(candidate.gripOffset?.z||0)}:position);
+    let pose={...target,y:HIGH,angles:[OPEN,OPEN,OPEN]},reason='No secure grip.',stop='bed';
     this.pose(pose);
     // At travel height every open finger is above the prize pile. Descent uses
-    // <=8 mm steps, smaller than the thinnest claw tube, and leaves the last clear pose.
-    for(let y=HIGH-.008;y>=FLOOR+.80;y-=.008){
+    // small steps below the tube thickness, stopping only at real contact or bed height.
+    for(let y=HIGH-.006;y>=this.floorHeight;y-=.006){
       const next={...pose,y};this.pose(next);
-      if(this.anyHit())break;
+      const hit=this.anyHit();if(hit){stop=hit.kind;break;}
       pose=next;
     }
     this.pose(pose);
@@ -105,15 +110,14 @@ export class ContactClaw {
         const x=t<.5?target.x:THREE.MathUtils.lerp(target.x,destination.x,(t-.5)*2);
         const z=t<.5?target.z:THREE.MathUtils.lerp(target.z,destination.z,(t-.5)*2);
         caught.root.position.set(x+offsetX,y-offset,z+offsetZ);this.pose({x,y,z,angles});
-        const box=colliderBox(caught.collider);
-        if(!inWalls(box)||this.prizes.some(p=>p!==caught&&!p.prize.claimed&&overlap(caught.collider,p.collider))||this.anyHit(caught)){
+        if(!inside(caught.collider)||this.prizes.some(p=>p!==caught&&!p.prize.claimed&&overlap(caught.collider,p.collider))||this.anyHit(caught)){
           reason='The prize cannot clear its neighbours.';caught=null;break;
         }
       }
     }
     this.reset();
     // A failed grip reverses its contact-limited closing path before rising.
-    const plan={start,target,low,angles,destination,prize:caught?.prize??null,offset: caught?offset:0,offsetX,offsetZ,center:caught?.center.clone(),landingY:caught?.landingY,reason:caught?'Secure grip.':reason,contacts:contacts.map(c=>c?.target?.prize.id||c?.kind||null)};
+    const plan={start,target,low,stop,angles,destination,prize:caught?.prize??null,offset: caught?offset:0,offsetX,offsetZ,center:caught?.center.clone(),landingY:caught?.landingY,reason:caught?'Secure grip.':reason,contacts:contacts.map(c=>c?.target?.prize.id||c?.kind||null)};
     this.pose({x:start.x,y:HIGH,z:start.z,angles:[OPEN,OPEN,OPEN]});
     return plan;
   }

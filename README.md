@@ -15,7 +15,8 @@ Open **http://localhost:4184** in Chrome or Edge. All game assets and hand-track
 
 This stable playtest does not reload during code edits. After an update, run `npm run build` and refresh the browser. For development with automatic reloading, use `npm run dev` at **http://localhost:4183**.
 
-- **Camera (default):** click Start camera and allow access. Show one relaxed hand and hold still for half a second. Move relative to that neutral position to steer. To DROP, show both hands apart, then bring your palms close together and hold for the meter (about 0.65 seconds). Keep a small gap so the camera sees both palms. Aiming freezes while two hands are visible. Separate to cancel the hold; lower one hand to resume steering with a new neutral position. After the result, hold one hand up to play again.
+- **Camera (default):** click Start camera and allow access. Show one open hand and hold still for half a second. Move relative to that neutral position to steer. To DROP, clench your hand and hold until the meter fills (about 0.55 seconds). Steering freezes during confirmation. Open your hand to cancel; the joystick recentres so it does not jump. A fist shown before an open hand cannot trigger a drop. After the result, hold one open hand up to play again.
+- **Two-hand DROP also works in the default profile:** show both hands apart, then bring your palms close together and hold for the meter (about 0.65 seconds). Keep a small gap so the camera sees both palms. Aiming freezes while two hands are visible. Separate to cancel the hold; lower one hand to resume steering with a new neutral position. A clasp-only profile remains selectable.
 - **Hand steering + physical DROP:** choose this camera profile for relaxed-hand steering with Space, Enter, or the programmable button. The camera panel includes a re-centre button.
 - **Air joystick (optional):** choose this profile in the camera panel. Hold a thumb/index pinch or a loose fist to grab the virtual joystick. Keep holding and move relative to the neutral position. Release to stop moving; pinch again to re-centre. Hold an open palm for 0.8 seconds to DROP. Pinch recognition has separate entry/release thresholds so a small change in finger spacing does not repeatedly lose control.
 - **Keyboard:** click Try with keyboard, then use arrows or WASD. Hold Shift for fine movement. Space or Enter drops. A round has 30 seconds of aiming, followed by the grab and return sequence.
@@ -28,7 +29,7 @@ Camera frames stay in the local browser. They are neither uploaded nor recorded.
 
 ## Art
 
-The current design is a red-and-white arcade cabinet in a dark game room. Blender models include a deep illuminated marquee, chrome and enamel frame, door hardware, control shelf, joystick, DROP button, service hatch, and prize chute. The browser adds glass, room lighting, restrained LED bloom, and a metal control deck. The 3D joystick and button respond to game input. The bunny and pillow remain original stylized interpretations of the supplied prizes.
+The current design is a red-and-white arcade cabinet in a dark game room. Blender models include a deep illuminated marquee, brushed steel and matte enamel frame, door hardware, control shelf, joystick, DROP button, service hatch, and prize chute. A pale sage rear panel keeps the dark claw visible. The browser adds subtle glass, warm room lighting, and neighbouring teal and mustard cabinets built from the same detailed models with real plush prizes. Background geometry is batched by material. The 3D joystick and button respond to game input. The bunny and pillow remain original stylized interpretations of the supplied prizes.
 
 Open `art/cloud-claw.blend` in Blender to inspect the editable scene. Regenerate it and the browser models with:
 
@@ -44,10 +45,9 @@ Cabinet reference: the large glass enclosure and manufactured construction of [S
 
 ## Current game rules and boundaries
 
-- A drop must align with one of five hero prizes. The target ring turns green when a prize is within the capture area.
-- **Contact-limited arcade grasping:** the claw first aligns at safe travel height, then descends vertically in small collision-checked steps. Each finger stops independently at contact with the exported toy geometry. A prize needs two supporting fingers and a clear lift/transfer path. The full claw extent determines the wall limits; the centre alone does not.
+- A drop must align with one of ten prizes: seven bunnies and three pillows, at varied angles and sizes. The target ring turns green when a prize is within the capture area.
+- **Contact-limited arcade grasping:** the claw first aligns at safe travel height, then descends vertically in small collision-checked steps. Each finger stops independently at contact with the exported toy geometry. A prize needs two supporting fingers and a clear lift/transfer path. The full claw extent determines the wall limits; the centre alone does not. Empty drops reach the bed using the actual finger-tip height. Rotated mesh bounds are checked precisely before reporting a wall contact. All visible central prizes are catchable; there are no decorative blockers.
 - Triangle-mesh collision checks use the actual GLB assets. Motion is deterministic and guided; this is not a general rigid-body or soft-cloth physics simulation. There is no random success roll, hidden release, or shrinking prize. The collection shaft and outlet are sized for the full-size toys.
-- Small capsules obstruct the claw but are not catchable in this build.
 - A new round restocks the virtual machine. There is no real inventory tracking or prize reservation yet. Result screens identify this as a local playtest.
 - Badge scanning, contact capture, and physical prize handover remain staff operations. They are not implemented in this game.
 - The booth policy is real prizes while stock lasts, with staff substitution. A later event configuration must keep displayed prizes and substitutions aligned with actual stock.
@@ -59,11 +59,11 @@ npm test
 npm run build
 ```
 
-Tests cover capture boundaries, hand ownership, steering, calibration, the two-hand apart/together/hold sequence, cancellation and tracking loss. Mesh tests load the exported Blender assets and sample the complete successful and empty-drop animation paths, including the back wall, neighbouring toys, and collection opening. Browser and build checks cannot prove physical hand feel, TV performance, or BRIO performance. Rehearse those on the actual devices.
+Tests cover capture boundaries, hand ownership, steering, calibration, open-to-fist confirmation, one-shot triggering, the two-hand apart/together/hold sequence, cancellation and tracking loss. Mesh tests load the exported Blender assets and sample the complete successful and empty-drop animation paths, including the back wall, neighbouring toys, and collection opening. For development-only frozen pose inspection, use `http://localhost:4183/?inspect=bunny-1&phase=grip` (any layout ID or `empty`; optional `time` in seconds). This inspection mode is removed from the production build. Browser and build checks cannot prove physical hand feel, TV performance, or BRIO performance. Rehearse those on the actual devices.
 
 ### Physical playtest — 5 September 2026
 
-The first laptop-camera gesture test was unreliable. After fixing handedness-flip interruptions and pinch-release jitter, we made relaxed-hand steering with a physical DROP button the default. The user retested that mode and confirmed: “Yes, this is more reliable.” The user subsequently confirmed that the new two-hand clasp can trigger DROP. It is now the camera-only default; hand steering with a physical button remains selectable. After the contact and cabinet-clearance fixes, the user retested and confirmed: “Contact looks better now.” The optional pinch/open-palm profile still needs separate physical validation. The BRIO, programmable keypad, booth monitor, and crowded booth conditions remain untested.
+The first laptop-camera gesture test was unreliable. After fixing handedness-flip interruptions and pinch-release jitter, we made relaxed-hand steering with a physical DROP button the default. The user retested that mode and confirmed: “Yes, this is more reliable.” The user subsequently confirmed that the new two-hand clasp can trigger DROP. The default now additionally accepts a held fist; hand steering with a physical button remains selectable. After the earlier contact and cabinet-clearance fixes, the user retested and confirmed: “Contact looks better now.” The new fist profile and optional pinch/open-palm profile still need separate physical validation. The BRIO, programmable keypad, booth monitor, and crowded booth conditions remain untested.
 
 ## Agreed direction
 

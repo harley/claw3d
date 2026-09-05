@@ -10,6 +10,7 @@ const keyboard=new Set();let cameraInput={x:0,z:0},pointerInput={x:0,z:0};
 let lastTime=performance.now(),lastStateKind='off',lastVisionAt=0;
 let mappedKey=readSetting('dropKey')||'Space';let mapping=false;let sound=false;let audioContext;let highQuality=true;
 let lastHint='';let resultPrize=null;
+let inspection=false;
 
 function readSetting(key){try{return localStorage.getItem('cloudclaw:'+key);}catch{return null;}}
 function saveSetting(key,value){try{localStorage.setItem('cloudclaw:'+key,value);}catch{/* Settings are optional when local storage is unavailable. */}}
@@ -91,7 +92,7 @@ const vision=new HandController({video:$('video'),overlay:$('hand-overlay'),sele
     if(!['idle','aim'].includes(game.phase))return;
     $('gesture-progress').style.width=(state.progress||0)*100+'%';
     if(state.kind==='lost'){status('HAND OUT OF VIEW',state.message,'MOVEMENT PAUSED');game.paused=true;}
-    else if(state.kind==='clasping'){status(state.progress?'HOLD TO DROP':'TWO-HAND DROP',state.message,'AIM LOCKED');game.paused=true;}
+    else if(['clasping','clenching'].includes(state.kind)){status(state.progress?'HOLD TO DROP':state.kind==='clenching'?'FIST TO DROP':'TWO-HAND DROP',state.message,'AIM LOCKED');game.paused=true;}
     else if(state.kind==='error'){game.paused=game.phase==='aim';status('KEYBOARD READY',state.message,'CAMERA NEEDS ATTENTION');}
     else if(state.kind==='tracking'||state.kind==='dropping'){
       game.paused=false;status(state.kind==='dropping'?'HOLD TO DROP':'YOU’RE IN CONTROL',state.message,'HAND TRACKING ACTIVE');
@@ -109,13 +110,18 @@ $('gesture-profile').addEventListener('change',()=>{vision.resetOwner();game.pau
 $('recenter').addEventListener('click',()=>{vision.resetOwner();cameraInput={x:0,z:0};game.paused=game.phase==='aim'&&vision.running;$('recenter').blur();});
 function updateProfile(){
   const clasp=$('gesture-profile').value==='clasp';
+  const fist=$('gesture-profile').value==='fist';
   const easy=$('gesture-profile').value!=='pinch';
   const steps=[...document.querySelectorAll('.instruction')];
   steps[0].querySelector('strong').textContent=easy?'HAND UP':'PINCH TO GRAB';
   steps[0].querySelector('p').textContent=easy?'Hold still to start':'Pinch and hold';
-  steps[2].querySelector('p').textContent=clasp?'Clasp both hands and hold':easy?'Press your DROP button':'Open your palm and hold';
+  steps[2].querySelector('p').textContent=fist?'Clench your fist and hold':clasp?'Clasp both hands and hold':easy?'Press your DROP button':'Open your palm and hold';
   $('gesture-help').textContent=easy?'Show one relaxed hand. Hold still to begin, then move gently to steer. Return your hand to the centre to stop moving. Press Space, Enter, or your programmable button to drop.':'Pinch or use a loose fist to take the joystick. Keep holding and move gently. Release to stop. Hold an open palm for 0.8 seconds to drop.';
   document.querySelector('.footer-tip').textContent=easy?'SHOW YOUR HAND TO STEER  ·  PRESS YOUR BUTTON TO DROP':'PINCH TO STEER  ·  OPEN PALM TO DROP  ·  SPACE WORKS TOO';
+  if(fist){
+    $('gesture-help').textContent='Start with one open, relaxed hand and steer. Clench your hand and hold for the meter to DROP. Aiming locks while you hold. Open your hand to cancel. Two-hand clasp and Space also work.';
+    document.querySelector('.footer-tip').textContent='OPEN HAND TO STEER · CLENCH & HOLD TO DROP';
+  }
   if(clasp){
     $('gesture-help').textContent='Steer with one relaxed hand. To DROP, show both hands apart, then bring your palms together and hold for the meter. Keep a small gap so both hands stay visible. Separating cancels; lowering one hand returns to steering. After a round, hold one hand up to play again. Space still works.';
     document.querySelector('.footer-tip').textContent='ONE HAND TO STEER · TWO HANDS TOGETHER TO DROP';
@@ -166,6 +172,7 @@ const phases={descend:[1.6,'grip'],grip:[.75,'lift'],lift:[1.8,'travel'],travel:
 function frame(time){
   const dt=Math.min((time-lastTime)/1000,.06);lastTime=time;
   if(document.hidden){requestAnimationFrame(frame);return;}
+  if(inspection){scene.update(time/1000,dt,game);requestAnimationFrame(frame);return;}
   if(game.phase==='aim'){
     const keys=keyInput();const stale=vision.running && time-lastVisionAt>700;
     const manual=keys.x||keys.z||pointerInput.x||pointerInput.z;
@@ -189,7 +196,7 @@ function frame(time){
       const [duration,next]=phases[game.phase];
       if(game.elapsed>=duration){
         game.phase=next;game.elapsed=0;
-        if(next==='grip')soundNote(294,.18);
+        if(next==='grip'){soundNote(294,.18);status(scene.plan.stop==='bed'?'AT THE PRIZE BED':'TOY CONTACT','Closing the fingers…','CLAW CLOSING');}
         if(next==='lift')status(resultPrize?'GOT A GRIP':'CLAW RISING',resultPrize?'Lifting your prize.':'Keep an eye on the claw.','ON THE WAY UP');
         if(next==='travel')status(resultPrize?'PRIZE INCOMING':'RETURNING',resultPrize?'Delivering to the prize chute.':'Line up the ring for the next round.','HEADING TO THE CHUTE');
         if(next==='result')showResult();
@@ -203,6 +210,16 @@ try{
   scene=new ClawScene($('scene'));await scene.load();$('loading').hidden=true;game.phase='idle';
   requestAnimationFrame(frame);
   if(import.meta.env.DEV)window.__cloudClaw={snapshot:()=>({phase:game.phase,position:{...game.position},remaining:game.remaining,paused:game.paused,aligned:game.aligned,caught:resultPrize?.id??null,cameraRunning:vision.running,cameraState:lastStateKind,drawCalls:scene.renderer.info.render.calls,triangles:scene.renderer.info.render.triangles,prizes:scene.prizes.map(p=>({id:p.id,x:p.x,z:p.z,claimed:p.claimed,visible:p.object.visible}))})};
+  // Freeze an exact animation pose for visual QA; removed from production builds.
+  if(import.meta.env.DEV){
+    const params=new URLSearchParams(location.search),id=params.get('inspect'),phase=params.get('phase')||'grip';
+    const prize=scene.prizes.find(p=>p.id===id);
+    if((prize||id==='empty')&&phases[phase]){
+      startRound();game.position=prize?{x:prize.x,z:prize.z}:{x:-1,z:.4};drop();
+      game.phase=phase;game.elapsed=clamp(Number(params.get('time')??phases[phase][0]),0,phases[phase][0]);inspection=true;
+      status('POSE INSPECTION',`${id} · ${phase} · ${game.elapsed}s`,'DEVELOPMENT ONLY');
+    }
+  }
 }catch(error){
   console.error('Could not load Cloud Claw',error);$('loading').querySelector('p').textContent='The 3D scene could not load. Refresh to try again.';$('loading').querySelector('.loader-ring').hidden=true;
 }

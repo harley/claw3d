@@ -2,7 +2,7 @@ import test from 'node:test';
 import {Box3} from 'three';
 import assert from 'node:assert/strict';
 import {collisionFixture} from './collision-fixture.mjs';
-import {geometryCollider,colliderBox,overlap,sampleClawPose,samplePrizePose,HIGH,OPEN,INTERIOR} from '../src/collision.js';
+import {geometryCollider,colliderBox,preciseColliderBox,overlap,sampleClawPose,samplePrizePose,HIGH,OPEN,INTERIOR,FLOOR} from '../src/collision.js';
 
 const {contact,cabinet,prizes}=await collisionFixture();
 const cabinetCollider=geometryCollider(cabinet);
@@ -64,5 +64,27 @@ test('unawarded drops stop against toys and reverse without penetrating them',()
         }
       }
     }
+  }
+});
+
+test('an empty drop reaches the bed with the actual finger tips, including at the back row',()=>{
+  prizes.forEach(p=>p.claimed=true);
+  try{
+    for(const z of [contact.field.minZ,0,contact.field.maxZ]){
+      const plan=contact.plan({x:0,z},null);assert.equal(plan.stop,'bed');
+      contact.pose(sampleClawPose(plan,'descend',1.6));
+      const gap=Math.min(...contact.parts().map(p=>preciseColliderBox(p).min.y))-FLOOR;
+      assert.ok(gap>=.005&&gap<.013,`tips should reach the bed, gap=${gap}`);
+      for(const part of contact.parts())assert.equal(overlap(part,cabinetCollider),false);
+    }
+  }finally{prizes.forEach(p=>p.claimed=false);contact.reset();}
+});
+
+test('every posed prize rests on the bed and stays separate from the other prizes',()=>{
+  contact.reset();
+  for(const item of contact.prizes){
+    const gap=preciseColliderBox(item.collider).min.y-FLOOR;
+    assert.ok(gap>.004&&gap<.008,`${item.prize.id} rests on the bed`);
+    for(const other of contact.prizes)if(item!==other)assert.equal(overlap(item.collider,other.collider),false,`${item.prize.id}/${other.prize.id}`);
   }
 });

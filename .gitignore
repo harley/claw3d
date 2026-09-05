@@ -4,3 +4,4 @@ dist/
 *.blend1
 .DS_Store
 .context/
+__pycache__/

@@ -5,8 +5,9 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { ease, clamp } from './mechanics.js';
-import {ContactClaw,FLOOR,HIGH,OPEN,PRIZE_LAYOUT,sampleClawPose,samplePrizePose} from './collision.js';
+import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
+import {placePrize} from './prizes.js';
+import {ContactClaw,FLOOR,HIGH,OPEN,CLAW_SCALE,PRIZE_LAYOUT,sampleClawPose,samplePrizePose} from './collision.js';
 
 export class ClawScene {
   constructor(canvas) {
@@ -26,7 +27,7 @@ export class ClawScene {
     const room = new RoomEnvironment();
     this.environment = pmrem.fromScene(room, .04);
     this.scene.environment = this.environment.texture;
-    this.scene.environmentIntensity = .6;
+    this.scene.environmentIntensity = .27;
     room.dispose(); pmrem.dispose();
     this.camera = new THREE.PerspectiveCamera(35, 1, .1, 70);
     this.cameraHome = new THREE.Vector3(4.6, 4.2, 9.4);
@@ -34,21 +35,21 @@ export class ClawScene {
     this.camera.position.copy(this.cameraHome);
     this.camera.lookAt(this.lookHome);
     this.currentLook = this.lookHome.clone();
-    this.scene.add(new THREE.HemisphereLight(0xcde4ff, 0x171522, .85));
-    const key = new THREE.DirectionalLight(0xfff7ed, 2.0);
+    this.scene.add(new THREE.HemisphereLight(0xe7e4dc, 0x32352f, 1.15));
+    const key = new THREE.DirectionalLight(0xfff5e6, 1.65);
     key.position.set(-3, 8, 5); key.castShadow = true;
     Object.assign(key.shadow.camera, { left: -5, right: 5, top: 6, bottom: -4, near: .5, far: 20 });
     key.shadow.mapSize.set(2048, 2048); key.shadow.normalBias = .025; key.shadow.bias = -.0001;
     key.shadow.radius = 4; this.scene.add(key); this.key = key;
-    const rim = new THREE.DirectionalLight(0x83c6ff, 1.8); rim.position.set(4,5,-3);this.scene.add(rim);
-    const bounce = new THREE.PointLight(0xe4f2ff, 6, 5);bounce.position.set(0,3.4,.5);this.scene.add(bounce);
-    const redBounce=new THREE.PointLight(0xff183c, 8, 6);redBounce.position.set(-2,1.5,1.7);this.scene.add(redBounce);
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(100,100),new THREE.MeshStandardMaterial({ color: 0x181b23, roughness:.3,metalness:.5 }));
+    const rim = new THREE.DirectionalLight(0xc3d5e0, .65); rim.position.set(4,5,-3);this.scene.add(rim);
+    const bounce = new THREE.PointLight(0xfff1d7, 1.4, 5);bounce.position.set(0,3.4,.5);this.scene.add(bounce);
+    const redBounce=new THREE.PointLight(0xff7247, .8, 6);redBounce.position.set(-2,1.5,1.7);this.scene.add(redBounce);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(100,100),new THREE.MeshStandardMaterial({ color: 0x181b23, roughness:.94,metalness:0 }));
     ground.rotation.x=-Math.PI/2;ground.position.y=.003;ground.receiveShadow=true;this.scene.add(ground);
     this.buildArcadeRoom();
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene,this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(1,1),.12,.22,2.5);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(1,1),.045,.2,2.8);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
     this.prizes = []; this.position = { x:-.85,z:.12 }; this.phase = 'idle'; this.phaseTime = 0;
@@ -58,25 +59,48 @@ export class ClawScene {
 
   buildArcadeRoom() {
     const steel=new THREE.MeshStandardMaterial({color:0x141923,roughness:.36,metalness:.55});
-    const black=new THREE.MeshStandardMaterial({color:0x04070c,roughness:.22,metalness:.25});
     const wall=new THREE.Mesh(new THREE.BoxGeometry(40,10,.1),steel);wall.position.set(0,4,-5);this.scene.add(wall);
     // Real floor joints give scale without a decorative web-page background.
     const floorGrid=new THREE.GridHelper(40,32,0x30323b,0x292c35);floorGrid.position.y=.006;
     floorGrid.material.transparent=true;floorGrid.material.opacity=.55;this.scene.add(floorGrid);
-    for(const [x,color] of [[-5,0xff2446],[5,0x32c0ed]]) {
-      const bank=new THREE.Group();bank.position.set(x,0,-1.65);bank.rotation.y=x>0?-.16:.16;
-      this.scene.add(bank);
-      const glow=new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:3,roughness:.25});
-      const part=(w,h,d,px,py,pz,mat)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(px,py,pz);bank.add(m);return m;};
-      part(2.8,1.1,2.4,0,.55,0,steel);part(2.8,2.7,.1,0,2.45,-1.15,black);
-      for(const xx of [-1.32,1.32]) {part(.12,2.9,.15,xx,2.50,1.10,steel);part(.025,2.67,.02,xx,2.50,1.19,glow);}
-      part(2.9,.55,2.5,0,4.02,0,steel);part(2.7,.20,.025,0,4.03,1.265,glow);
-      part(2.9,.035,.03,0,1.15,1.24,glow);part(.85,.40,.03,-.7,.6,1.22,black);
-      for(let i=0;i<8;i++) {
-        const ball=new THREE.Mesh(new THREE.SphereGeometry(.26,16,12),new THREE.MeshStandardMaterial({color:i%2?0x648cba:0xba6479,roughness:.9}));
-        ball.position.set((i%4-.5)*.50-.5,1.3+Math.floor(i/4)*.25,(i%3)*.38-.6);bank.add(ball);
+  }
+
+  buildNeighbours(cabinet,claw,bunny,pillow){
+    for(const [x,z,yaw,tint] of [[-4.5,-1.9,.10,0x4f7773],[4.9,-2.4,-.13,0xa48550]]){
+      const bank=new THREE.Group(),shell=cabinet.clone(true);bank.add(shell);
+      const head=claw.clone(true);head.scale.setScalar(CLAW_SCALE);head.position.set(.2,HIGH,-.25);bank.add(head);
+      const cable=new THREE.Mesh(new THREE.CylinderGeometry(.014,.014,.22,8),new THREE.MeshStandardMaterial({color:0x656863,roughness:.7}));cable.position.set(.2,4.1,-.25);bank.add(cable);
+      for(const x of [-1.37,1.37]){const rail=new THREE.Mesh(new THREE.BoxGeometry(.06,.06,2.10),cable.material);rail.position.set(x,4.19,0);bank.add(rail);}
+      const crossbar=new THREE.Mesh(new THREE.BoxGeometry(2.92,.09,.12),cable.material);crossbar.position.set(0,4.14,-.25);bank.add(crossbar);
+      const carriage=new THREE.Mesh(new THREE.BoxGeometry(.4,.13,.35),cable.material);carriage.position.set(.2,4.08,-.25);bank.add(carriage);
+      for(const data of PRIZE_LAYOUT){const item=placePrize((data.kind==='bunny'?bunny:pillow).clone(true),data,FLOOR);bank.add(item.object);}
+      // Batch the real manufactured cabinet and plush geometry into static
+      // material groups. Background machines have the same construction.
+      bank.updateWorldMatrix(true,true);
+      const batches=new Map();
+      bank.traverse(mesh=>{
+        if(!mesh.isMesh)return;
+        const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+        // The imported GLB primitives each have one material.
+        if(materials.length!==1)return;
+        const material=materials[0];let batch=batches.get(material);
+        if(!batch){
+          const muted=material.clone();muted.envMapIntensity=.2;muted.emissiveIntensity*=.32;
+          if(muted.name.includes('Racing red'))muted.color.setHex(tint);
+          batch={material:muted,geometries:[]};batches.set(material,batch);
+        }
+        const source=mesh.geometry,g=new THREE.BufferGeometry();
+        for(const attr of ['position','normal','uv'])if(source.attributes[attr])g.setAttribute(attr,source.attributes[attr].clone());
+        if(!g.attributes.uv)g.setAttribute('uv',new THREE.BufferAttribute(new Float32Array(source.attributes.position.count*2),2));
+        if(source.index)g.setIndex(source.index.clone());g.applyMatrix4(mesh.matrixWorld);
+        if(g.index){batch.geometries.push(g.toNonIndexed());g.dispose();}else batch.geometries.push(g);
+      });
+      const display=new THREE.Group();
+      for(const {material,geometries} of batches.values()){
+        const mesh=new THREE.Mesh(mergeGeometries(geometries,false),material);mesh.receiveShadow=true;mesh.userData.background=true;display.add(mesh);geometries.forEach(g=>g.dispose());
       }
-      const pool=new THREE.PointLight(color,18,9);pool.position.set(x,2,0);this.scene.add(pool);
+      const glass=new THREE.Mesh(new THREE.BoxGeometry(3.18,3.06,2.27),new THREE.MeshStandardMaterial({color:0xc4d2cf,transparent:true,opacity:.025,roughness:.8,depthWrite:false}));glass.position.y=2.74;glass.userData.background=true;display.add(glass);
+      display.position.set(x,0,z);display.rotation.y=yaw;this.scene.add(display);
     }
   }
 
@@ -89,29 +113,15 @@ export class ClawScene {
     this.cabinetDropY=this.cabinetDrop.position.y;
     this.claw = claw.scene;this.scene.add(this.claw);
     this.fingers = [0,1,2].map(i=> { const object = this.claw.getObjectByName(`Finger_${i}`);return {object,rest:object.quaternion.clone()}; });
-    this.bunnyTemplate=bunny.scene;
-    const layout = PRIZE_LAYOUT;
-    for(const data of layout) {
-      const object=(data.kind==='bunny'?bunny.scene:pillow.scene).clone(true);
-      const baseY=FLOOR+(data.kind==='pillow'?.48:0);
-      object.position.set(data.x,baseY,data.z);object.scale.setScalar(data.scale);
-      object.rotation.y=data.angle;
-      if(data.kind==='pillow')object.rotation.x=Math.PI/2;
-      this.scene.add(object);
-      this.prizes.push({...data,object,baseY,rest:object.quaternion.clone(),catchRadius:data.kind==='bunny'?.245:.29,claimed:false});
+    this.claw.scale.setScalar(CLAW_SCALE);
+    for(const data of PRIZE_LAYOUT){
+      const prize=placePrize((data.kind==='bunny'?bunny.scene:pillow.scene).clone(true),data,FLOOR);
+      this.scene.add(prize.object);this.prizes.push(prize);
     }
-    this.obstacles=[];
-    // Small capsules make the bed feel plentiful without obscuring the five catchable hero prizes.
-    const capsuleMaterial=new THREE.MeshStandardMaterial({color:0xd0dfa8,roughness:.42,metalness:.13});
-    for(const [x,z,c] of [[-1.30,-.62,0xacbaca],[1.32,-.04,0xd5c29d],[.44,.02,0xb8cad1]]) {
-      const material=capsuleMaterial.clone();material.color.setHex(c);
-      const capsule=new THREE.Mesh(new THREE.SphereGeometry(.15,24,16),material);capsule.scale.y=.83;capsule.position.set(x,FLOOR+.12,z);capsule.castShadow=true;this.scene.add(capsule);
-      this.obstacles.push({id:`capsule-${this.obstacles.length}`,object:capsule,claimed:false});
-      const seam=new THREE.Mesh(new THREE.TorusGeometry(.15,.007,8,40),new THREE.MeshStandardMaterial({color:0xf5ebd2,roughness:.65}));seam.rotation.x=Math.PI/2;seam.position.copy(capsule.position);this.scene.add(seam);
-    }
-    this.contact=new ContactClaw(this.claw,[...this.prizes,...this.obstacles]);this.field=this.contact.field;
-    const steel=new THREE.MeshStandardMaterial({color:0xdce6ef,metalness:.95,roughness:.2});
-    const teal=new THREE.MeshStandardMaterial({color:0x18202b,metalness:.6,roughness:.26});
+    this.buildNeighbours(cabinet.scene,claw.scene,bunny.scene,pillow.scene);
+    this.contact=new ContactClaw(this.claw,this.prizes);this.field=this.contact.field;
+    const steel=new THREE.MeshStandardMaterial({color:0xdce6ef,metalness:.55,roughness:.48});
+    const teal=new THREE.MeshStandardMaterial({color:0x18202b,metalness:.15,roughness:.65});
     for(const x of [-1.37,1.37]) {
       const rail=new THREE.Mesh(new THREE.BoxGeometry(.06,.06,2.10),steel);rail.position.set(x,4.19,0);this.scene.add(rail);
     }
@@ -125,16 +135,16 @@ export class ClawScene {
       const bar=new THREE.Mesh(new THREE.BoxGeometry(.13,.003,.007),ringMaterial);bar.rotation.y=rotation;this.target.add(bar);
     }
     // Thin reflective door glass keeps the prizes visible while showing the enclosure.
-    const glass=new THREE.MeshPhysicalMaterial({color:0xbce3ff,metalness:.15,roughness:.05,transparent:true,opacity:.055,side:THREE.DoubleSide,depthWrite:false,envMapIntensity:1.5});
+    const glass=new THREE.MeshPhysicalMaterial({color:0xbce3ff,metalness:0,roughness:.3,transparent:true,opacity:.018,side:THREE.DoubleSide,depthWrite:false,envMapIntensity:.2});
     for(const x of [-1.66,1.66]) {
       const pane=new THREE.Mesh(new THREE.PlaneGeometry(2.27,3.06),glass);pane.rotation.y=Math.PI/2;pane.position.set(x,2.74,0);this.scene.add(pane);
     }
     const frontGlass=new THREE.Mesh(new THREE.PlaneGeometry(3.15,3.00),glass);frontGlass.position.set(0,2.79,1.185);this.scene.add(frontGlass);
-    const reflection=new THREE.MeshBasicMaterial({color:0xd0e8ff,transparent:true,opacity:.055,depthWrite:false,side:THREE.DoubleSide});
+    const reflection=new THREE.MeshBasicMaterial({color:0xd0e8ff,transparent:true,opacity:.016,depthWrite:false,side:THREE.DoubleSide});
     for(const [x,width] of [[-1.31,.025],[1.16,.065]]) {
       const shine=new THREE.Mesh(new THREE.PlaneGeometry(width,2.92),reflection);shine.position.set(x,2.79,1.192);shine.rotation.z=-.10;this.scene.add(shine);
     }
-    this.scene.traverse(object=>{if(object.isMesh && object!==this.target && object.material!==glass){object.castShadow=true;object.receiveShadow=true;}});
+    this.scene.traverse(object=>{if(object.isMesh && object!==this.target && object.material!==glass){object.castShadow=!object.userData.background;object.receiveShadow=true;}});
     // Target indicators and shadow receiver must not themselves cast shadows.
     this.target.traverse(o=>{o.castShadow=false;o.receiveShadow=false;});
     this.ready=true;this.resize();this.update(0,.016,{phase:'idle',position:this.position});
@@ -180,7 +190,7 @@ export class ClawScene {
     this.claw.rotation.z=0;
     this.fingers.forEach((finger,i)=>finger.object.quaternion.copy(finger.rest).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),angles[i])));
     this.crossbar.position.z=z;this.carriage.position.x=x;this.carriage.position.z=z;
-    const cableTop=4.13,cableBottom=y+.28;
+    const cableTop=4.13,cableBottom=y+.28*CLAW_SCALE;
     this.cable.position.set(x,(cableTop+cableBottom)/2,z);this.cable.scale.y=Math.max(.005,cableTop-cableBottom);
     this.target.position.set(x,FLOOR+.016,z);this.target.visible=['aim','idle'].includes(phase);
     this.ringMaterial.color.setHex(game.aligned?0x72ffad:0xffcf53);
