@@ -2,10 +2,10 @@ export const FIELD = { minX: -1.27, maxX: 1.27, minZ: -.86, maxZ: .84 };
 export const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 export const ease = t => { const v = clamp(t, 0, 1); return v * v * (3 - 2 * v); };
 
-export function moveClaw(position, input, seconds, speed = 1.1) {
+export function moveClaw(position, input, seconds, speed = 1.1, bounds = FIELD) {
   return {
-    x: clamp(position.x + clamp(input.x, -1, 1) * speed * seconds, FIELD.minX, FIELD.maxX),
-    z: clamp(position.z + clamp(input.z, -1, 1) * speed * seconds, FIELD.minZ, FIELD.maxZ),
+    x: clamp(position.x + clamp(input.x, -1, 1) * speed * seconds, bounds.minX, bounds.maxX),
+    z: clamp(position.z + clamp(input.z, -1, 1) * speed * seconds, bounds.minZ, bounds.maxZ),
   };
 }
 

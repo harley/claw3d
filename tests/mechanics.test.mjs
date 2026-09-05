@@ -104,3 +104,20 @@ test('easy mode claims and steers with a relaxed hand without auto-dropping',()=
   c.handle(result({pinch:false,open:true,dx:-.06}),1700);assert.ok(events.inputs.at(-1).x>0);
   c.handle(result({pinch:false,open:true,dx:-.06}),2700);assert.equal(events.drops,0);
 });
+
+test('two-hand clasp freezes steering, drops once, and resumes safely after cancellation',()=>{
+  const{c,events}=controller();c.getProfile=()=>'clasp';
+  c.handle(result({pinch:false}),1000);c.handle(result({pinch:false}),1501);
+  const pair=(a,b)=>{
+    const frame=result({pinch:false,dx:a}),second=result({pinch:false,dx:b});
+    frame.landmarks.push(second.landmarks[0]);frame.handedness.push([{categoryName:'Left'}]);frame.gestures.push(second.gestures[0]);return frame;
+  };
+  for(let t=1600;t<=1990;t+=65)c.handle(pair(0,-.30),t);
+  assert.deepEqual(events.inputs.at(-1),{x:0,z:0});assert.equal(events.states.at(-1).kind,'clasping');
+  for(let t=2055;t<=2705;t+=65)c.handle(pair(-.08,-.19),t);
+  assert.equal(events.drops,1);c.handle(pair(-.08,-.19),2800);assert.equal(events.drops,1);
+  c.resetOwner();c.handle(result({pinch:false}),3000);c.handle(result({pinch:false}),3501);
+  c.handle(pair(0,-.30),3600);c.handle(result({pinch:false}),4000);
+  assert.deepEqual(events.inputs.at(-1),{x:0,z:0});assert.equal(events.states.at(-1).kind,'tracking');
+  c.handle(result({pinch:false,dx:-.06}),4100);assert.ok(events.inputs.at(-1).x>0);
+});

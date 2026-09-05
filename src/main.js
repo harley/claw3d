@@ -36,8 +36,8 @@ function startRound(source='keyboard') {
 
 function drop() {
   if(game.phase!=='aim')return;
-  resultPrize=findCatch(game.position,scene.prizes);
-  scene.beginDrop(resultPrize);game.phase='descend';game.elapsed=0;game.paused=false;
+  const candidate=findCatch(game.position,scene.prizes);
+  resultPrize=scene.beginDrop(candidate,game.position);game.phase='descend';game.elapsed=0;game.paused=false;
   cameraInput={x:0,z:0};pointerInput={x:0,z:0};keyboard.clear();
   $('drop').disabled=true;$('round-clock').hidden=true;$('gesture-progress').style.width='0%';
   $('stage-label').textContent='CLAW IN ACTION';
@@ -91,10 +91,11 @@ const vision=new HandController({video:$('video'),overlay:$('hand-overlay'),sele
     if(!['idle','aim'].includes(game.phase))return;
     $('gesture-progress').style.width=(state.progress||0)*100+'%';
     if(state.kind==='lost'){status('HAND OUT OF VIEW',state.message,'MOVEMENT PAUSED');game.paused=true;}
+    else if(state.kind==='clasping'){status(state.progress?'HOLD TO DROP':'TWO-HAND DROP',state.message,'AIM LOCKED');game.paused=true;}
     else if(state.kind==='error'){game.paused=game.phase==='aim';status('KEYBOARD READY',state.message,'CAMERA NEEDS ATTENTION');}
     else if(state.kind==='tracking'||state.kind==='dropping'){
       game.paused=false;status(state.kind==='dropping'?'HOLD TO DROP':'YOU’RE IN CONTROL',state.message,'HAND TRACKING ACTIVE');
-    }else if(state.kind==='calibrating'){status($('gesture-profile').value==='palm'?'HOLD STEADY':'PINCH TO GRAB',state.message,'FINDING YOUR HAND');}
+    }else if(state.kind==='calibrating'){status($('gesture-profile').value!=='pinch'?'HOLD STEADY':'PINCH TO GRAB',state.message,'FINDING YOUR HAND');}
     else if(state.kind==='ready' && game.phase==='idle')status('READY TO PLAY',state.message,'CAMERA READY');
     else if(state.kind==='loading'){game.paused=game.phase==='aim';status('CAMERA STARTING',state.message,'CAMERA STARTING');}
     else if(state.kind==='off'){game.paused=false;status(game.phase==='aim'?'LINE IT UP':'READY TO PLAY',state.message,'KEYBOARD READY');}
@@ -107,13 +108,18 @@ $('control-mode').addEventListener('change',()=>{if($('control-mode').value==='k
 $('gesture-profile').addEventListener('change',()=>{vision.resetOwner();game.paused=game.phase==='aim'&&vision.running;updateProfile();$('gesture-profile').blur();});
 $('recenter').addEventListener('click',()=>{vision.resetOwner();cameraInput={x:0,z:0};game.paused=game.phase==='aim'&&vision.running;$('recenter').blur();});
 function updateProfile(){
-  const easy=$('gesture-profile').value==='palm';
+  const clasp=$('gesture-profile').value==='clasp';
+  const easy=$('gesture-profile').value!=='pinch';
   const steps=[...document.querySelectorAll('.instruction')];
   steps[0].querySelector('strong').textContent=easy?'HAND UP':'PINCH TO GRAB';
   steps[0].querySelector('p').textContent=easy?'Hold still to start':'Pinch and hold';
-  steps[2].querySelector('p').textContent=easy?'Press your DROP button':'Open your palm and hold';
+  steps[2].querySelector('p').textContent=clasp?'Clasp both hands and hold':easy?'Press your DROP button':'Open your palm and hold';
   $('gesture-help').textContent=easy?'Show one relaxed hand. Hold still to begin, then move gently to steer. Return your hand to the centre to stop moving. Press Space, Enter, or your programmable button to drop.':'Pinch or use a loose fist to take the joystick. Keep holding and move gently. Release to stop. Hold an open palm for 0.8 seconds to drop.';
   document.querySelector('.footer-tip').textContent=easy?'SHOW YOUR HAND TO STEER  ·  PRESS YOUR BUTTON TO DROP':'PINCH TO STEER  ·  OPEN PALM TO DROP  ·  SPACE WORKS TOO';
+  if(clasp){
+    $('gesture-help').textContent='Steer with one relaxed hand. To DROP, show both hands apart, then bring your palms together and hold for the meter. Keep a small gap so both hands stay visible. Separating cancels; lowering one hand returns to steering. After a round, hold one hand up to play again. Space still works.';
+    document.querySelector('.footer-tip').textContent='ONE HAND TO STEER · TWO HANDS TOGETHER TO DROP';
+  }
 }
 updateProfile();
 $('keyboard-play').addEventListener('click',()=>startRound());$('drop').addEventListener('click',drop);
@@ -137,7 +143,7 @@ window.addEventListener('keydown',event=>{
   if(movementCodes.includes(event.code)||event.code==='ShiftLeft'||event.code==='ShiftRight'){
     event.preventDefault();if(game.phase==='idle')startRound();keyboard.add(event.code);game.paused=false;
     // A discrete step also supports knobs that send rapid key-down/key-up pulses.
-    if(!event.repeat && game.phase==='aim' && movementCodes.includes(event.code))game.position=moveClaw(game.position,keyInput(),.035);
+    if(!event.repeat && game.phase==='aim' && movementCodes.includes(event.code))game.position=moveClaw(game.position,keyInput(),.035,1.1,scene.field);
   }
   if([mappedKey,'Space','Enter'].includes(event.code)){
     event.preventDefault();if(event.repeat)return;
@@ -156,7 +162,7 @@ joystick.addEventListener('pointerdown',event=>{if(game.phase==='idle')startRoun
 joystick.addEventListener('pointermove',event=>{if(dragging)drag(event);});
 for(const name of ['pointerup','pointercancel','lostpointercapture'])joystick.addEventListener(name,()=>{dragging=false;pointerInput={x:0,z:0};});
 
-const phases={descend:[1.6,'grip'],grip:[.75,'lift'],lift:[1.8,'travel'],travel:[1.7,'release'],release:[.55,'settle'],settle:[1.1,'result']};
+const phases={descend:[1.6,'grip'],grip:[.75,'lift'],lift:[1.8,'travel'],travel:[1.7,'release'],release:[.55,'settle'],settle:[2.0,'result']};
 function frame(time){
   const dt=Math.min((time-lastTime)/1000,.06);lastTime=time;
   if(document.hidden){requestAnimationFrame(frame);return;}
@@ -168,7 +174,7 @@ function frame(time){
     const input=manual?{x:keys.x||pointerInput.x,z:keys.z||pointerInput.z}:cameraInput;
     game.controlInput=game.paused?{x:0,z:0}:input;
     if(!game.paused){
-      game.position=moveClaw(game.position,input,dt,keyboard.has('ShiftLeft')||keyboard.has('ShiftRight')?.4:1.1);
+      game.position=moveClaw(game.position,input,dt,keyboard.has('ShiftLeft')||keyboard.has('ShiftRight')?.4:1.1,scene.field);
       game.remaining=Math.max(0,game.remaining-dt);if(game.remaining===0)drop();
     }
     game.aligned=Boolean(findCatch(game.position,scene.prizes));

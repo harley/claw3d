@@ -1,4 +1,5 @@
 import { pinchRatio, joystickAxis, matchHand, clamp } from './mechanics.js';
+import { ClaspGesture } from './clasp.js';
 
 const LINKS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 
@@ -16,6 +17,7 @@ export class HandController {
     document.addEventListener('visibilitychange', () => {
       this.lastResult = performance.now();
       this.neutral = null; this.openSince = 0;
+      this.clasp.reset();
       this.onInput({ x: 0, z: 0 });
     });
     navigator.mediaDevices?.addEventListener('devicechange', this.deviceChange);
@@ -23,6 +25,7 @@ export class HandController {
   }
 
   resetOwner() {
+    this.clasp = new ClaspGesture();
     this.owner = null; this.neutral = null; this.candidate = null;
     this.pinchSince = 0; this.openSince = 0; this.lostSince = 0;
     this.input = { x: 0, z: 0 }; this.gripping = false; this.dropArmed = false;
@@ -131,7 +134,8 @@ export class HandController {
   }
 
   handle(result, now) {
-    const easy = this.getProfile?.() === 'palm';
+    const profile=this.getProfile?.();
+    const easy = profile === 'palm' || profile === 'clasp';
     const aspect = this.video?.videoWidth && this.video?.videoHeight ? this.video.videoWidth / this.video.videoHeight : 1;
     const hands = result.landmarks.map((landmarks, i) => ({ landmarks,
       center: { x: 1 - (landmarks[0].x + landmarks[9].x) / 2, y: (landmarks[0].y + landmarks[9].y) / 2 },
@@ -143,7 +147,7 @@ export class HandController {
     }));
     this.onDiagnostic?.({ count: hands.length, gesture: result.gestures[0]?.[0]?.categoryName || 'No hand', pinch: hands[0]?.ratio ?? null, milliseconds: performance.now() - now });
     const phase = this.getPhase();
-    if (!['idle', 'aim'].includes(phase)) { this.onInput({ x: 0, z: 0 }); this.draw(hands, null); return; }
+    if (!['idle', 'aim', 'result'].includes(phase)) { this.onInput({ x: 0, z: 0 }); this.draw(hands, null); return; }
     let hand;
     if (!this.owner) {
       // Only a single hand in the central play zone can claim the machine.
@@ -159,11 +163,26 @@ export class HandController {
         if (progress === 1) {
           this.owner = { ...hand.center, handedness: hand.handedness };
           this.neutral = { ...hand.center }; this.dropArmed = true; this.gripping = true;
-          if (phase === 'idle') this.onStart('camera');
+          if (phase !== 'aim') this.onStart('camera');
           this.onState({ kind: 'tracking', message: 'You have it. Move your hand to steer.', progress: 0 });
         }
       } else { this.pinchSince = 0; this.candidate = null; this.onState({ kind: 'ready', message: 'Pinch thumb and finger to grab the joystick.' }); }
       this.draw(hands, hand); return;
+    }
+    if(profile==='clasp' && phase==='aim'){
+      const wasActive=this.clasp.active;
+      const clasp=this.clasp.update(hands,this.owner,now,aspect);
+      if(clasp.active){
+        this.input={x:0,z:0};this.onInput(this.input);this.neutral=null;
+        // Follow the existing primary spatial track while the pair converges.
+        const primary=hands.map(h=>({h,d:Math.hypot(h.center.x-this.owner.x,h.center.y-this.owner.y)})).sort((a,b)=>a.d-b.d);
+        if(primary[0]?.d<.16){this.owner.x=primary[0].h.center.x;this.owner.y=primary[0].h.center.y;}
+        this.onState({kind:'clasping',message:clasp.message,progress:clasp.progress});
+        this.draw(hands,hands[0]);
+        if(clasp.fired)this.onDrop();
+        return;
+      }
+      if(wasActive){this.neutral=null;this.input={x:0,z:0};}
     }
     hand = matchHand(hands, this.owner, this.owner.handedness);
     // Handedness can flip when the wrist turns. An unambiguous, very close
@@ -186,7 +205,7 @@ export class HandController {
       this.input.x += (target.x - this.input.x) * .5;
       this.input.z += (target.z - this.input.z) * .5;
       this.onInput(this.input); this.openSince = 0; this.dropArmed = true;
-      this.onState({ kind: 'tracking', message: easy ? 'Move gently to steer. Press Space or your DROP button.' : 'Steer gently. Open your palm when you are ready.', progress: 0 });
+      this.onState({ kind: 'tracking', message: profile==='clasp' ? 'Steer with one hand. Bring both hands together to DROP.' : easy ? 'Move gently to steer. Press Space or your DROP button.' : 'Steer gently. Open your palm when you are ready.', progress: 0 });
     } else {
       this.gripping = false;
       this.input = { x: 0, z: 0 }; this.onInput(this.input); this.neutral = null;

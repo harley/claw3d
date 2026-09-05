@@ -180,20 +180,22 @@ box('Plinth chrome edge', (0,0,.283), (3.6,2.68,.035), chrome, .012)
 body = box('Red lower cabinet', (0,0,.66), (3.48,2.53,.76), coral, .065)
 # A real opening connects the upper hopper to the prize outlet.
 for name, loc, dimensions in [
-    ('Hopper shaft', (-1.02,-.9,1.02),(.76,.56,1.20)),
-    ('Prize outlet opening', (-.96,-1.2,.625),(1.14,.66,.43)),
+    ('Hopper shaft', (-.98,-.535,.97),(1.18,1.31,1.32)),
+    ('Prize outlet opening', (-.98,-1.2,.65),(1.14,.66,.64)),
 ]:
     cutter=box(name,loc,dimensions,dark,0)
     modifier=body.modifiers.new(name,'BOOLEAN');modifier.operation='DIFFERENCE';modifier.object=cutter
     bpy.context.view_layer.objects.active=body
     bpy.ops.object.modifier_apply(modifier=modifier.name)
     bpy.data.objects.remove(cutter,do_unlink=True)
-box('Prize bed rear', (0,.28,1.105), (3.3,1.80,.14), bed,.03)
-box('Prize bed front right', (.505,-.9,1.105), (2.29,.56,.14), bed,.03)
-box('Prize bed front left', (-1.525,-.9,1.105), (.25,.56,.14), bed,.03)
-for x in [-1.42,-.62]:
-    box('Hopper lip side',(x,-.9,1.19),(.035,.57,.025),chrome,.01)
-box('Hopper lip rear',(-1.02,-.60,1.19),(.80,.035,.025),chrome,.01)
+platform=box('Prize bed',(0,0,1.105),(3.3,2.36,.14),bed,.025)
+cutter=box('Hopper platform cut',(-.98,-.535,1.11),(1.18,1.31,.4),dark,0)
+modifier=platform.modifiers.new('Open collection hopper','BOOLEAN');modifier.operation='DIFFERENCE';modifier.object=cutter
+bpy.context.view_layer.objects.active=platform;bpy.ops.object.modifier_apply(modifier=modifier.name)
+bpy.data.objects.remove(cutter,do_unlink=True)
+for x in [-1.57,-.39]:
+    box('Hopper lip side',(x,-.535,1.19),(.025,1.31,.025),chrome,.006)
+box('Hopper lip rear',(-.98,.12,1.19),(1.18,.025,.025),chrome,.006)
 box('Back steel wall', (0,1.19,2.49), (3.42,.10,2.72), dark, .025)
 box('Back graphic panel', (0,1.124,2.52), (3.12,.022,2.43), coral, .02)
 # Printed diagonal stripes and star graphics, like laminated cabinet artwork.
@@ -250,12 +252,12 @@ ellipsoid('Joystick red ball',(0,0,.26),(.109,.109,.109),coral).parent=stick
 cylinder('Drop button bezel',(1.08,-1.48,1.195),.148,.072,chrome)
 cylinder('Cabinet_drop_button',(1.08,-1.48,1.246),.121,.055,coral)
 # Chute, lockable service panel, speaker grille and coin mechanism.
-box('Prize chute dark interior', (-.96,-.871,.60), (1.1,.015,.37), dark, .04)
-box('Prize chute inner tray', (-.96,-1.32,.42), (1.12,.32,.045), chrome, .022)
+# The outlet is open into the shaft; no decorative plane blocks the prize path.
+box('Prize chute inner tray', (-.98,-1.775,.33), (1.14,1.31,.045), chrome, .022)
 for x in [-1.54,-.38]:
-    box('Outlet stainless frame',(x,-1.288,.625),(.045,.039,.47),chrome,.012)
-box('Outlet stainless header',(-.96,-1.288,.856),(1.19,.039,.045),chrome,.012)
-label('Chute label', 'PRIZE OUT', (-.96,-1.303,.32), .098, cream)
+    box('Outlet stainless frame',(x,-1.288,.65),(.045,.039,.68),chrome,.012)
+box('Outlet stainless header',(-.98,-1.288,.99),(1.19,.039,.045),chrome,.012)
+label('Chute label', 'PRIZE OUT', (-.98,-1.303,.282), .068, cream)
 box('Service hatch',(.74,-1.281,.64),(1.50,.028,.62),dark,.025)
 box('Service hatch face',(.74,-1.301,.64),(1.42,.018,.54),coral,.017)
 box('Coin acceptor chrome',(.37,-1.322,.69),(.26,.026,.35),chrome,.012)
@@ -277,6 +279,15 @@ for x in [-1.49,1.49]:
 for x in [-1.747,1.747]:
     box('Side graphic white band',(x,.08,.64),(.008,2.1,.18),cream,.0)
     box('Side graphic black accent',(x,-.1,.45),(.009,1.68,.052),dark,.0)
+# More vertical clearance lets the complete toy rise above the pile before
+# horizontal travel. Do not fake this by shrinking the prize in flight.
+for o in [o for o in bpy.context.scene.objects if o not in before]:
+    if o.location.z>=3.75:
+        o.location.z+=.5
+    elif o.name.startswith(('Extruded aluminium upright','White upright cover','Vertical LED lens','Back steel wall')):
+        o.location.z+=.25;o.dimensions.z+=.5
+    elif o.name.startswith('Door hinge') and o.location.z>3:
+        o.location.z+=.5
 cabinet_objects = export('cabinet',before)
 
 # BUNNY. All limbs remain individually addressable for gentle secondary animation.
@@ -370,12 +381,13 @@ for o in list(bpy.context.scene.objects):
 claw_objects=export('claw',before)
 
 # Arrange all exported assets into an editable art direction scene.
-bunny.location=(-.85,-.12,1.19);bunny.scale=(.76,.76,.76)
-pillow.location=(.95,-.50,1.67);pillow.scale=(1.0,1.0,1.0)
+bunny.location=(-.88,.48,1.19);bunny.scale=(.76,.76,.76);bunny.rotation_euler.z=.09
+pillow.location=(.93,-.48,1.67);pillow.scale=(1.0,1.0,1.0)
 pillow.rotation_euler=(math.pi/2,0,-.15)
-claw.location=(-.4,-.15,3.32)
+claw.location=(-.4,.15,3.78)
+for i in range(3):bpy.data.objects['Finger_'+str(i)].rotation_euler.y=-.45
 # Match the prize arrangement in the playable scene.
-for offset,scale in [((0,-.52,1.19),.72),((.72,.50,1.19),.74),((-.83,.52,1.19),.71)]:
+for offset,scale,angle in [((0,-.45,1.19),.72,-.13),((.87,.48,1.19),.74,-.18),((0,.48,1.19),.71,.20)]:
     lookup={}
     for source in bunny_objects:
         duplicate=source.copy()
@@ -386,25 +398,26 @@ for offset,scale in [((0,-.52,1.19),.72),((.72,.50,1.19),.74),((-.83,.52,1.19),.
         duplicate.parent=lookup.get(source.parent)
     lookup[bunny].location=offset
     lookup[bunny].scale=(scale,scale,scale)
+    lookup[bunny].rotation_euler.z=angle
 
 # Presentation elements are saved in Blender but do not enter the asset exports.
 glass=material('Presentation glass','#daeaff',0,.055)
 glass.node_tree.nodes.get('Principled BSDF').inputs['Transmission Weight'].default_value=1
 glass.node_tree.nodes.get('Principled BSDF').inputs['IOR'].default_value=1.45
 for x in [-1.66,1.66]:
-    box('Glass side display',(x,0,2.5),(.008,2.25,2.54),glass,.001)
-box('Glass front display',(0,-1.186,2.54),(3.15,.008,2.50),glass,.001)
+    box('Glass side display',(x,0,2.74),(.008,2.25,3.06),glass,.001)
+box('Glass front display',(0,-1.186,2.79),(3.15,.008,3.00),glass,.001)
 floor_mat=material('Dark arcade floor','#171c27',.40,.34)
 box('Presentation floor',(0,0,-.026),(200,200,.05),floor_mat,0)
 for x in [-1.37,1.37]:
-    box('Crane running rail',(x,0,3.69),(.06,2.1,.06),chrome,.006)
-box('Crane crossbar',(0,.15,3.64),(2.92,.12,.09),chrome,.008)
-box('Crane carriage',(-.4,.15,3.58),(.40,.35,.13),dark,.025)
-cylinder('Crane cable',(-.4,-.15,3.53),.016,.40,dark,12)
+    box('Crane running rail',(x,0,4.19),(.06,2.1,.06),chrome,.006)
+box('Crane crossbar',(0,.15,4.14),(2.92,.12,.09),chrome,.008)
+box('Crane carriage',(-.4,.15,4.08),(.40,.35,.13),dark,.025)
+cylinder('Crane cable',(-.4,.15,4.095),.016,.07,dark,12)
 bpy.ops.object.camera_add(location=(4.6,-9.4,4.2))
 camera=bpy.context.object;camera.name='Art direction camera'
-camera.rotation_euler=(Vector((0,0,2.05))-camera.location).to_track_quat('-Z','Y').to_euler()
-camera.data.type='PERSP';camera.data.lens=47
+camera.rotation_euler=(Vector((0,0,2.30))-camera.location).to_track_quat('-Z','Y').to_euler()
+camera.data.type='PERSP';camera.data.lens=43
 bpy.context.scene.camera=camera
 for loc,energy,size in [((1,-4,7),1050,4),((-5,-1,5),650,3),((2,4,6),1400,3)]:
     bpy.ops.object.light_add(type='AREA',location=loc)
