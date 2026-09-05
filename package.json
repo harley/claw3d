@@ -1,0 +1,20 @@
+{
+  "name": "coderpush-cloud-claw",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 4183 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4183 --strictPort",
+    "play": "vite preview --host 127.0.0.1 --port 4184 --strictPort",
+    "assets": "node scripts/prepare-vision.mjs",
+    "models": "/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build-assets.py",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "1.0.1",
+    "three": "0.185.1"
+  },
+  "devDependencies": { "vite": "^7.3.1" }
+}
