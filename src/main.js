@@ -28,8 +28,8 @@ function startRound(source='keyboard') {
   game.position={x:-.85,z:.12};$('result').hidden=true;$('confetti').replaceChildren();
   if(source!=='camera')vision.resetOwner();
   $('round-clock').hidden=false;$('drop').disabled=false;$('keyboard-play').textContent='Arrow keys / WASD to steer · Space to drop';
-  $('stage-label').textContent='TAKE YOUR TIME. PICK YOUR FAVOURITE.';
-  status('Find your favourite.','Arrow keys / WASD steer. Space or Enter drops.','THE MACHINE IS YOURS');
+  $('stage-label').textContent='LINE UP THE CLAW';
+  status('LINE IT UP','Arrow keys / WASD steer. Space or Enter drops.','PLAYER 1');
   document.querySelectorAll('.instruction').forEach(e=>e.classList.toggle('active',e.dataset.step==='2'));
   soundNote(392);soundNote(523,.12,.10);
 }
@@ -40,8 +40,8 @@ function drop() {
   scene.beginDrop(resultPrize);game.phase='descend';game.elapsed=0;game.paused=false;
   cameraInput={x:0,z:0};pointerInput={x:0,z:0};keyboard.clear();
   $('drop').disabled=true;$('round-clock').hidden=true;$('gesture-progress').style.width='0%';
-  $('stage-label').textContent='HERE GOES A LITTLE HUMAN MAGIC.';
-  status('A little suspense…','Watch those little paws.','DROP COMMITTED');
+  $('stage-label').textContent='CLAW IN ACTION';
+  status('GOING DOWN','The claw is moving into position.','DROP COMMITTED');
   document.querySelectorAll('.instruction').forEach(e=>e.classList.toggle('active',e.dataset.step==='3'));
   soundNote(196,.25);
 }
@@ -51,19 +51,20 @@ function resetRound() {
   scene.reset();game.phase='idle';game.elapsed=0;game.paused=false;game.remaining=30;game.position={x:-.85,z:.12};resultPrize=null;
   keyboard.clear();cameraInput={x:0,z:0};pointerInput={x:0,z:0};vision.resetOwner();
   $('result').hidden=true;$('confetti').replaceChildren();$('drop').disabled=true;$('round-clock').hidden=true;
-  $('keyboard-play').textContent='Try with keyboard ↗';$('stage-label').textContent='YOUR NEXT LITTLE OBSESSION';
-  status('Your hands are the controller.',vision.running?'Show one hand. Hold it still to take control.':'Start the camera, or try a round with your keyboard.','STEP INTO THE PLAY ZONE');
+  $('keyboard-play').textContent='PLAY WITH KEYBOARD';$('stage-label').textContent='READY TO PLAY';
+  status('READY TO PLAY',vision.running?'Show one hand. Hold it still to take control.':'Start the camera. Raise one hand to take control.','PLAYER 1');
   document.querySelectorAll('.instruction').forEach(e=>e.classList.toggle('active',e.dataset.step==='1'));
 }
 
 function showResult() {
   game.phase='result';game.elapsed=0;vision.resetOwner();
   const win=Boolean(resultPrize);$('result').classList.toggle('miss',!win);$('result').hidden=false;
-  $('result-kicker').textContent=win?'GOOD THINGS COME TO THE CURIOUS':'SO CLOSE. STILL A GOOD STORY.';
-  $('result-title').textContent=win?"That one's yours.":'A little to the left?';
+  $('stage-label').textContent=win?'PRIZE WON':'ROUND COMPLETE';
+  $('result-kicker').textContent=win?'WINNER!':'TRY AGAIN';
+  $('result-title').textContent=win?"YOU GOT IT!":'JUST MISSED!';
   $('result-message').textContent=win?`You caught the ${resultPrize.kind==='bunny'?'CoderPush bunny':'travel pillow'}. At the event, your host will handle the real prize.`:'The claw missed this time. Line up the ring beneath a prize and give it another go.';
-  $('play-again').firstChild.textContent=win?'One more little adventure ':'Let’s try that again ';
-  status(win?'A very good catch.':'Almost had it.','Play again whenever you are ready.','THANKS FOR PLAYING');
+  $('play-again').firstChild.textContent=win?'PLAY AGAIN ':'PLAY AGAIN ';
+  status(win?'GREAT CATCH':'JUST MISSED','Play again whenever you are ready.','ROUND COMPLETE');
   if(win){
     resultPrize.claimed=true;
     [523,659,784,1047].forEach((f,i)=>soundNote(f,.25,i*.13));
@@ -89,14 +90,14 @@ const vision=new HandController({video:$('video'),overlay:$('hand-overlay'),sele
     if(state.kind==='error')$('settings').hidden=false;
     if(!['idle','aim'].includes(game.phase))return;
     $('gesture-progress').style.width=(state.progress||0)*100+'%';
-    if(state.kind==='lost'){status('Hand lost. Take your time.',state.message,'MOVEMENT PAUSED');game.paused=true;}
-    else if(state.kind==='error'){game.paused=game.phase==='aim';status('Keyboard controls are ready.',state.message,'CAMERA NEEDS ATTENTION');}
+    if(state.kind==='lost'){status('HAND OUT OF VIEW',state.message,'MOVEMENT PAUSED');game.paused=true;}
+    else if(state.kind==='error'){game.paused=game.phase==='aim';status('KEYBOARD READY',state.message,'CAMERA NEEDS ATTENTION');}
     else if(state.kind==='tracking'||state.kind==='dropping'){
-      game.paused=false;status(state.kind==='dropping'?'Ready for the drop?':'You have the joystick.',state.message,'HAND TRACKING ACTIVE');
-    }else if(state.kind==='calibrating'){status($('gesture-profile').value==='palm'?'Hold your hand still.':'Grab the air.',state.message,'FINDING YOUR HAND');}
-    else if(state.kind==='ready' && game.phase==='idle')status('Your hands are the controller.',state.message,'CAMERA READY');
-    else if(state.kind==='loading'){game.paused=game.phase==='aim';status('A moment of preparation.',state.message,'CAMERA STARTING');}
-    else if(state.kind==='off'){game.paused=false;status(game.phase==='aim'?'Find your favourite.':'Your hands are the controller.',state.message,'KEYBOARD READY');}
+      game.paused=false;status(state.kind==='dropping'?'HOLD TO DROP':'YOU’RE IN CONTROL',state.message,'HAND TRACKING ACTIVE');
+    }else if(state.kind==='calibrating'){status($('gesture-profile').value==='palm'?'HOLD STEADY':'PINCH TO GRAB',state.message,'FINDING YOUR HAND');}
+    else if(state.kind==='ready' && game.phase==='idle')status('READY TO PLAY',state.message,'CAMERA READY');
+    else if(state.kind==='loading'){game.paused=game.phase==='aim';status('CAMERA STARTING',state.message,'CAMERA STARTING');}
+    else if(state.kind==='off'){game.paused=false;status(game.phase==='aim'?'LINE IT UP':'READY TO PLAY',state.message,'KEYBOARD READY');}
   }
 });
 
@@ -108,9 +109,9 @@ $('recenter').addEventListener('click',()=>{vision.resetOwner();cameraInput={x:0
 function updateProfile(){
   const easy=$('gesture-profile').value==='palm';
   const steps=[...document.querySelectorAll('.instruction')];
-  steps[0].querySelector('strong').textContent=easy?'Show your hand.':'Grab the air.';
-  steps[0].querySelector('p').textContent=easy?'Hold still to take the joystick.':'Pinch to hold the joystick.';
-  steps[2].querySelector('p').textContent=easy?'Press Space or your DROP button.':'Open your palm and hold.';
+  steps[0].querySelector('strong').textContent=easy?'HAND UP':'PINCH TO GRAB';
+  steps[0].querySelector('p').textContent=easy?'Hold still to start':'Pinch and hold';
+  steps[2].querySelector('p').textContent=easy?'Press your DROP button':'Open your palm and hold';
   $('gesture-help').textContent=easy?'Show one relaxed hand. Hold still to begin, then move gently to steer. Return your hand to the centre to stop moving. Press Space, Enter, or your programmable button to drop.':'Pinch or use a loose fist to take the joystick. Keep holding and move gently. Release to stop. Hold an open palm for 0.8 seconds to drop.';
   document.querySelector('.footer-tip').textContent=easy?'SHOW YOUR HAND TO STEER  ·  PRESS YOUR BUTTON TO DROP':'PINCH TO STEER  ·  OPEN PALM TO DROP  ·  SPACE WORKS TOO';
 }
@@ -162,9 +163,10 @@ function frame(time){
   if(game.phase==='aim'){
     const keys=keyInput();const stale=vision.running && time-lastVisionAt>700;
     const manual=keys.x||keys.z||pointerInput.x||pointerInput.z;
-    if(stale&&!manual){game.paused=true;cameraInput={x:0,z:0};status('Hand tracking paused.','Bring your hand back, or use the keyboard.','MOVEMENT PAUSED');}
+    if(stale&&!manual){game.paused=true;cameraInput={x:0,z:0};status('TRACKING PAUSED','Bring your hand back, or use the keyboard.','MOVEMENT PAUSED');}
     if(manual)game.paused=false;
     const input=manual?{x:keys.x||pointerInput.x,z:keys.z||pointerInput.z}:cameraInput;
+    game.controlInput=game.paused?{x:0,z:0}:input;
     if(!game.paused){
       game.position=moveClaw(game.position,input,dt,keyboard.has('ShiftLeft')||keyboard.has('ShiftRight')?.4:1.1);
       game.remaining=Math.max(0,game.remaining-dt);if(game.remaining===0)drop();
@@ -174,6 +176,7 @@ function frame(time){
     const cap=joystick.querySelector('.joystick-cap');cap.style.transform=`translate(${input.x*11}px,${input.z*11}px)`;
     if(!vision.running){const hint=game.aligned?'Looking good. Press Space or DROP.':'Arrows / WASD steer. Hold Shift for a finer move.';if(hint!==lastHint){lastHint=hint;$('hint').textContent=hint;}}
   }else{
+    game.controlInput={x:0,z:0};
     joystick.querySelector('.joystick-cap').style.transform='translate(0,0)';
     if(phases[game.phase]){
       game.elapsed+=dt;
@@ -181,8 +184,8 @@ function frame(time){
       if(game.elapsed>=duration){
         game.phase=next;game.elapsed=0;
         if(next==='grip')soundNote(294,.18);
-        if(next==='lift')status(resultPrize?'Easy does it…':'Let’s see what we caught.',resultPrize?'A little lift. A little hope.':'Keep an eye on the claw.','ON THE WAY UP');
-        if(next==='travel')status(resultPrize?'Coming home.':'Another chance is waiting.',resultPrize?'Your little friend is on the way.':'Line up the ring for the next round.','HEADING TO THE CHUTE');
+        if(next==='lift')status(resultPrize?'GOT A GRIP':'CLAW RISING',resultPrize?'Lifting your prize.':'Keep an eye on the claw.','ON THE WAY UP');
+        if(next==='travel')status(resultPrize?'PRIZE INCOMING':'RETURNING',resultPrize?'Delivering to the prize chute.':'Line up the ring for the next round.','HEADING TO THE CHUTE');
         if(next==='result')showResult();
       }
     }

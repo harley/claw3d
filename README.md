@@ -27,13 +27,19 @@ Camera frames stay in the local browser. They are neither uploaded nor recorded.
 
 ## Art
 
+The current design is a red-and-white arcade cabinet in a dark game room. Blender models include a deep illuminated marquee, chrome and enamel frame, door hardware, control shelf, joystick, DROP button, service hatch, and prize chute. The browser adds glass, room lighting, restrained LED bloom, and a metal control deck. The 3D joystick and button respond to game input. The bunny and pillow remain original stylized interpretations of the supplied prizes.
+
 Open `art/cloud-claw.blend` in Blender to inspect the editable scene. Regenerate it and the browser models with:
 
 ```sh
 npm run models
 ```
 
-The command uses `/Applications/Blender.app/Contents/MacOS/Blender`. Geometry and fabric textures are authored in `scripts/build-assets.py`; no Blender add-ons are needed. The artwork is a stylized interpretation of the user-supplied bunny, pillow, and booth references, not a dimensional scan or approved sponsor booth drawing.
+`art/arcade-preview.png` is a Cycles render from the Blender scene. To regenerate it, run `/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build-assets.py -- --render-preview`.
+
+The command runs the installed macOS application at `/Applications/Blender.app/Contents/MacOS/Blender` in background mode. Geometry and fabric textures are authored in `scripts/build-assets.py`; no Blender add-ons are needed. It uses the Mac's Arial Black and DIN Condensed fonts and converts lettering to meshes for export. This is the actual Blender engine; the game itself renders its exported GLB models with Three.js. The artwork is not a dimensional scan or approved sponsor booth drawing.
+
+Cabinet reference: the large glass enclosure and manufactured construction of [SEGA's Pinnacle Crane](https://segaarcade.com/games/pinnacle-crane), and the illuminated, prize-focused presentation of [UFO Catcher 10](https://www.sega.jp/arcade/detail/ufo-catcher-10/). These are visual references, not assets incorporated into this game.
 
 ## Current game rules and boundaries
 

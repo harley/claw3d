@@ -3,6 +3,7 @@ import bpy
 import math
 import os
 import random
+import sys
 from mathutils import Vector
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -31,17 +32,22 @@ def material(name, hex_value, metallic=0, roughness=.4, emission=0):
         p.inputs['Emission Strength'].default_value = emission
     return m
 
-cream = material('Warm porcelain enamel', '#f2e8ce', .18, .27)
-coral = material('Papaya enamel', '#ef805d', .22, .3)
-dark = material('Midnight teal powder coat', '#254747', .2, .36)
-chrome = material('Brushed champagne metal', '#c9c5ae', .88, .23)
+cream = material('Gloss white enamel', '#eef2f4', .12, .22)
+coral = material('Racing red enamel', '#bc0925', .30, .23)
+dark = material('Black powder coated steel', '#101720', .45, .32)
+chrome = material('Polished stainless steel', '#d7e0eb', .95, .17)
+for enamel in [cream, coral]:
+    enamel.node_tree.nodes.get('Principled BSDF').inputs['Coat Weight'].default_value = .55
 black = material('Licorice eyes and stitching', '#263332', .0, .5)
 mint = material('Pistachio rubber', '#cfe396', .08, .52)
 pink = material('Rose embroidered nose', '#d17884', 0, .85)
 red = material('CoderPush red bandana', '#d63836', 0, .9)
 white = material('Cotton embroidery', '#fff8e8', 0, .82)
-light = material('Warm inset lighting', '#fff3d3', 0, .35, 2.3)
-bed = material('Peach cushion bed', '#e6b099', 0, .9)
+light = material('White LED diffuser', '#ecf7ff', 0, .26, 3)
+red_light = material('Red perimeter neon', '#ff2544', 0, .24, 3.5)
+gold_light = material('Amber marquee lamps', '#ffd267', 0, .24, 3)
+sign_ink = material('Marquee warm white lettering', '#fff7d6', .08, .24, .8)
+bed = material('Blue felt prize platform', '#29516c', 0, .92)
 blue = material('Periwinkle capsule', '#9fbecb', .1, .38)
 violet = material('Lilac capsule', '#b8a6ca', .1, .38)
 
@@ -52,7 +58,7 @@ def fabric(name, base, multicolor=False):
     p.inputs['Sheen Roughness'].default_value = .8
     n = 256
     image = bpy.data.images.new(name + ' woven colour', n, n)
-    palette = [color(base), color('#ecc4d9'), color('#c4d9da'), color('#eee9ce')]
+    palette = [color(base), color('#e9b0d1'), color('#a9d6e6'), color('#ede8d4')]
     pixels = []
     for y in range(n):
         for x in range(n):
@@ -126,11 +132,15 @@ def tube(name, points, radius, mat):
     o.data.materials.append(mat)
     return o
 
+display_font = bpy.data.fonts.load('/System/Library/Fonts/Supplemental/Arial Black.ttf')
+label_font = bpy.data.fonts.load('/System/Library/Fonts/Supplemental/DIN Condensed Bold.ttf')
+
 def label(name, text, loc, size, mat, align='CENTER'):
     c = bpy.data.curves.new(name, 'FONT')
     c.body = text
     c.align_x = align
     c.size = size
+    c.font = display_font if 'title' in name.lower() else label_font
     c.extrude = .0015
     c.bevel_depth = .0006
     o = bpy.data.objects.new(name, c)
@@ -160,10 +170,14 @@ def export(name, start_objects):
     bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, name+'.glb'), export_format='GLB', use_selection=True, export_animations=False, export_extras=True)
     return objects
 
-# CABINET. Blender -Y is the front; glTF exports it as +Z.
+# CABINET. Manufactured arcade cabinet. Blender -Y is front / glTF +Z.
 before = set(bpy.context.scene.objects)
-box('Cabinet plinth', (0, 0, .16), (3.62, 2.7, .28), dark, .13)
-body = box('Cabinet body', (0, 0, .63), (3.42, 2.5, .85), coral, .13)
+for x in [-1.46, 1.46]:
+    for y in [-.94, .94]:
+        cylinder('Levelling foot', (x,y,.065), .105, .10, dark)
+box('Steel plinth', (0,0,.17), (3.65,2.73,.20), dark, .035)
+box('Plinth chrome edge', (0,0,.283), (3.6,2.68,.035), chrome, .012)
+body = box('Red lower cabinet', (0,0,.66), (3.48,2.53,.76), coral, .065)
 # A real opening connects the upper hopper to the prize outlet.
 for name, loc, dimensions in [
     ('Hopper shaft', (-1.02,-.9,1.02),(.76,.56,1.20)),
@@ -180,40 +194,89 @@ box('Prize bed front left', (-1.525,-.9,1.105), (.25,.56,.14), bed,.03)
 for x in [-1.42,-.62]:
     box('Hopper lip side',(x,-.9,1.19),(.035,.57,.025),chrome,.01)
 box('Hopper lip rear',(-1.02,-.60,1.19),(.80,.035,.025),chrome,.01)
-box('Back wall', (0, 1.19, 2.44), (3.38, .10, 2.67), dark, .045)
-# Art deco inset on the back wall.
-for x in [-1.25, -.85, -.45, -.05, .35, .75, 1.15]:
-    tube('Back wall fluting', [(x, 1.125, 1.28),(x,1.125,3.61)], .009, chrome)
-box('Back arch inset', (0, 1.108, 2.66), (1.98, .024, 1.45), dark, .28)
-label('Back wall title', 'GOOD THINGS', (0,1.081,2.83), .225, cream)
-label('Back wall subtitle', 'ARE WITHIN REACH.', (0,1.080,2.52), .154, mint)
+box('Back steel wall', (0,1.19,2.49), (3.42,.10,2.72), dark, .025)
+box('Back graphic panel', (0,1.124,2.52), (3.12,.022,2.43), coral, .02)
+# Printed diagonal stripes and star graphics, like laminated cabinet artwork.
+for x in [-1.24,-.65,-.06,.53,1.12]:
+    stripe=box('Printed diagonal stripe',(x,1.10,2.57),(.18,.012,2.25),cream,.0)
+    stripe.rotation_euler[1]=-.23
+box('Back logo field',(0,1.069,2.95),(2.60,.024,.61),dark,.025)
+label('Back brand title', 'coderpush.', (0,1.046,2.80), .36, cream)
+label('Back subtitle', 'GRAB A LITTLE HAPPINESS', (0,1.045,2.56), .125, cream)
 for x in [-1.65,1.65]:
     for y in [-1.18,1.18]:
-        box('Upright', (x,y,2.5), (.105,.105,2.87), cream, .04)
-        if y > 0:
-            box('Inset LED', (x*.963,y-.065,2.47), (.027,.028,2.43), light, .01)
-box('Front sill', (0,-1.21,1.21), (3.4,.12,.14), cream, .04)
-box('Rear sill', (0,1.21,1.21), (3.4,.12,.14), cream, .04)
-box('Top cornice', (0,0,3.97), (3.64,2.68,.3), cream, .11)
-box('Marquee coral face', (0,-1.33,3.98), (3.15,.04,.23), coral, .03)
-label('Machine title', 'C L O U D   C L A W', (0,-1.363,3.91), .18, dark)
-box('Crown', (0,0,4.18), (2.5,1.56,.12), cream, .055)
+        box('Extruded aluminium upright',(x,y,2.5),(.145,.145,2.89),chrome,.022)
+        box('White upright cover',(x,y-.078,2.5),(.114,.018,2.87),cream,.014)
+        box('Vertical LED lens',(x,y-.094,2.5),(.035,.022,2.65),red_light if y<0 else light,.009)
+box('Front white sill',(0,-1.22,1.19),(3.48,.18,.18),cream,.04)
+box('Front red pinstripe',(0,-1.321,1.19),(3.31,.015,.039),coral,.006)
+box('Rear sill',(0,1.21,1.21),(3.4,.12,.14),cream,.025)
+box('Roof steel rim',(0,0,3.94),(3.64,2.7,.16),chrome,.035)
+box('White roof',(0,0,4.09),(3.7,2.76,.25),cream,.065)
+box('Red roof insert',(0,.03,4.225),(3.27,2.25,.036),coral,.02)
+# Marquee is a deep lightbox, not a thin printed nameplate.
+box('Marquee chrome surround',(0,-1.37,4.12),(3.71,.22,.68),chrome,.065)
+box('Marquee black gasket',(0,-1.498,4.12),(3.59,.055,.58),dark,.047)
+box('Marquee red lightbox',(0,-1.535,4.12),(3.47,.045,.50),coral,.036)
+label('Marquee title shadow','CLOUD CLAW',(0.015,-1.566,3.955),.39,dark)
+label('Marquee title','CLOUD CLAW',(0,-1.581,3.976),.39,sign_ink)
+for x in [-1.59,1.59]:
+    vertices=[(x,-1.584,4.12)]
+    for i in range(10):
+        angle=math.pi/2+i*math.pi/5
+        radius=.087 if i%2==0 else .040
+        vertices.append((x+math.cos(angle)*radius,-1.584,4.12+math.sin(angle)*radius))
+    mesh=bpy.data.meshes.new('Marquee star mesh')
+    mesh.from_pydata(vertices,[],[(0,i+1,(i+1)%10+1) for i in range(10)])
+    star=bpy.data.objects.new('Marquee enamel star',mesh)
+    bpy.context.collection.objects.link(star);assign(star,gold_light)
+for x in [i*.20 for i in range(-8,9)]:
+    for z in [3.872,4.368]:
+        ellipsoid('Marquee incandescent lens',(x,-1.577,z),(.024,.018,.024),gold_light,12,8)
 for x in [-1.4,1.4]:
     for y in [-.94,.94]:
         ellipsoid('Recessed warm light', (x,y,3.797), (.07,.07,.015), light,24,12)
-# Chute is visibly distinct from the field.
+# Glass door hardware and a real control shelf on the machine.
+for z in [1.46,3.46]:
+    box('Door hinge',(1.56,-1.285,z),(.065,.050,.18),chrome,.015)
+box('Door latch',(-1.48,-1.282,2.26),(.06,.045,.22),chrome,.014)
+box('Control shelf black edge',(.61,-1.45,1.065),(1.77,.61,.14),dark,.055)
+box('Control shelf enamel',(.61,-1.46,1.144),(1.70,.56,.036),cream,.025)
+cylinder('Joystick chrome washer',(.20,-1.48,1.18),.135,.026,chrome)
+cylinder('Joystick rubber boot',(.20,-1.48,1.205),.080,.058,dark)
+stick=group('Cabinet_joystick');stick.location=(.20,-1.48,1.21)
+cylinder('Joystick steel shaft',(0,0,.11),.023,.22,chrome).parent=stick
+ellipsoid('Joystick red ball',(0,0,.26),(.109,.109,.109),coral).parent=stick
+cylinder('Drop button bezel',(1.08,-1.48,1.195),.148,.072,chrome)
+cylinder('Cabinet_drop_button',(1.08,-1.48,1.246),.121,.055,coral)
+# Chute, lockable service panel, speaker grille and coin mechanism.
 box('Prize chute dark interior', (-.96,-.871,.60), (1.1,.015,.37), dark, .04)
 box('Prize chute inner tray', (-.96,-1.32,.42), (1.12,.32,.045), chrome, .022)
-label('Chute label', 'YOURS TO KEEP', (-.96,-1.309,.31), .085, dark)
-label('Front brand', 'coderpush.', (.68,-1.282,.65), .24, dark)
-label('Front microtype', 'A LITTLE HUMAN MAGIC', (.69,-1.285,.46), .066, dark)
+for x in [-1.54,-.38]:
+    box('Outlet stainless frame',(x,-1.288,.625),(.045,.039,.47),chrome,.012)
+box('Outlet stainless header',(-.96,-1.288,.856),(1.19,.039,.045),chrome,.012)
+label('Chute label', 'PRIZE OUT', (-.96,-1.303,.32), .098, cream)
+box('Service hatch',(.74,-1.281,.64),(1.50,.028,.62),dark,.025)
+box('Service hatch face',(.74,-1.301,.64),(1.42,.018,.54),coral,.017)
+box('Coin acceptor chrome',(.37,-1.322,.69),(.26,.026,.35),chrome,.012)
+box('Coin acceptor black inset',(.37,-1.338,.73),(.13,.018,.19),dark,.004)
+box('Coin slot',(.37,-1.352,.75),(.016,.015,.11),chrome,.001)
+box('Credit display black',(.96,-1.326,.76),(.64,.02,.19),dark,.014)
+label('Credit display','FREE PLAY',(.96,-1.344,.704),.099,gold_light)
+for x in range(7):
+    for z in range(3):
+        hole=cylinder('Speaker grille perforation',(.79+x*.048,-1.328,.50+z*.041),.012,.013,dark,8)
+        hole.rotation_euler[0]=math.pi/2
+lock=cylinder('Service lock',(1.35,-1.33,.56),.025,.014,chrome,16)
+lock.rotation_euler[0]=math.pi/2
 for x in [-1.49,1.49]:
     for z in [.32,.99]:
         screw = cylinder('Cabinet screw', (x,-1.27,z), .023,.012,chrome,16)
         screw.rotation_euler[0]=math.pi/2
-# Side porthole badge / moulded horizontal decoration.
-for z in [.42,.54,.66,.78]:
-    box('Side enamel rib', (1.719,.08,z), (.016,1.48,.027), cream,.013)
+# White side graphics are inset beneath the red enamel body edges.
+for x in [-1.747,1.747]:
+    box('Side graphic white band',(x,.08,.64),(.008,2.1,.18),cream,.0)
+    box('Side graphic black accent',(x,-.1,.45),(.009,1.68,.052),dark,.0)
 cabinet_objects = export('cabinet',before)
 
 # BUNNY. All limbs remain individually addressable for gentle secondary animation.
@@ -279,8 +342,8 @@ faces.append(tuple(segments*cross+j for j in range(cross)))
 mesh=bpy.data.meshes.new('Pillow padded mesh');mesh.from_pydata(verts,[],faces);mesh.update()
 o=bpy.data.objects.new('Pillow velour',mesh);bpy.context.collection.objects.link(o);assign(o,grey)
 o.parent=pillow
-# Rotate opening toward the front and embroider the upper arc.
-o.rotation_euler[2]=math.pi/2
+# The missing arc already faces -Y. Keep it there so the upright browser
+# display has a downward opening, matching the real travel pillow.
 emb=label('Pillow embroidery','coderpush.',(0,.21,.327),.10,black)
 emb.rotation_euler=(0,0,0);emb.parent=pillow
 pillow_objects=export('pillow',before)
@@ -308,10 +371,11 @@ claw_objects=export('claw',before)
 
 # Arrange all exported assets into an editable art direction scene.
 bunny.location=(-.85,-.12,1.19);bunny.scale=(.76,.76,.76)
-pillow.location=(.64,.12,1.2);pillow.scale=(1.0,1.0,1.0)
+pillow.location=(.95,-.50,1.67);pillow.scale=(1.0,1.0,1.0)
+pillow.rotation_euler=(math.pi/2,0,-.15)
 claw.location=(-.4,-.15,3.32)
-# Add two linked bunny variations for the .blend presentation.
-for offset in [( .64,.56,1.19),(-.85,.55,1.19)]:
+# Match the prize arrangement in the playable scene.
+for offset,scale in [((0,-.52,1.19),.72),((.72,.50,1.19),.74),((-.83,.52,1.19),.71)]:
     lookup={}
     for source in bunny_objects:
         duplicate=source.copy()
@@ -321,23 +385,54 @@ for offset in [( .64,.56,1.19),(-.85,.55,1.19)]:
     for source,duplicate in lookup.items():
         duplicate.parent=lookup.get(source.parent)
     lookup[bunny].location=offset
-    lookup[bunny].scale=(.65,.65,.65)
+    lookup[bunny].scale=(scale,scale,scale)
 
-bpy.ops.object.camera_add(location=(6,-10,6.1))
+# Presentation elements are saved in Blender but do not enter the asset exports.
+glass=material('Presentation glass','#daeaff',0,.055)
+glass.node_tree.nodes.get('Principled BSDF').inputs['Transmission Weight'].default_value=1
+glass.node_tree.nodes.get('Principled BSDF').inputs['IOR'].default_value=1.45
+for x in [-1.66,1.66]:
+    box('Glass side display',(x,0,2.5),(.008,2.25,2.54),glass,.001)
+box('Glass front display',(0,-1.186,2.54),(3.15,.008,2.50),glass,.001)
+floor_mat=material('Dark arcade floor','#171c27',.40,.34)
+box('Presentation floor',(0,0,-.026),(200,200,.05),floor_mat,0)
+for x in [-1.37,1.37]:
+    box('Crane running rail',(x,0,3.69),(.06,2.1,.06),chrome,.006)
+box('Crane crossbar',(0,.15,3.64),(2.92,.12,.09),chrome,.008)
+box('Crane carriage',(-.4,.15,3.58),(.40,.35,.13),dark,.025)
+cylinder('Crane cable',(-.4,-.15,3.53),.016,.40,dark,12)
+bpy.ops.object.camera_add(location=(4.6,-9.4,4.2))
 camera=bpy.context.object;camera.name='Art direction camera'
-camera.rotation_euler=(Vector((0,0,2.1))-camera.location).to_track_quat('-Z','Y').to_euler()
-camera.data.type='ORTHO';camera.data.ortho_scale=6.4
+camera.rotation_euler=(Vector((0,0,2.05))-camera.location).to_track_quat('-Z','Y').to_euler()
+camera.data.type='PERSP';camera.data.lens=47
 bpy.context.scene.camera=camera
-for loc,energy,size in [((1,-4,7),1500,5),((-5,-1,5),1000,5),((2,4,6),1700,4)]:
+for loc,energy,size in [((1,-4,7),1050,4),((-5,-1,5),650,3),((2,4,6),1400,3)]:
     bpy.ops.object.light_add(type='AREA',location=loc)
     l=bpy.context.object;l.data.energy=energy;l.data.shape='DISK';l.data.size=size
     l.rotation_euler=(Vector((0,0,2))-l.location).to_track_quat('-Z','Y').to_euler()
-bpy.context.scene.world.color=(.4,.4,.4)
+for loc,power,rgb in [((-2,-2,1.5),95,(1,.04,.09)),((3,0,2.8),120,(.16,.48,1))]:
+    bpy.ops.object.light_add(type='POINT',location=loc)
+    bpy.context.object.data.energy=power;bpy.context.object.data.color=rgb
+bpy.context.scene.world.use_nodes=True
+background=bpy.context.scene.world.node_tree.nodes.get('Background')
+background.inputs['Color'].default_value=color('#131a28')
+background.inputs['Strength'].default_value=.35
 bpy.context.scene.render.engine='CYCLES'
 bpy.context.scene.cycles.samples=32
-bpy.context.scene.render.resolution_x=1400
-bpy.context.scene.render.resolution_y=1400
+bpy.context.scene.cycles.use_denoising=True
+bpy.context.scene.render.resolution_x=1440
+bpy.context.scene.render.resolution_y=1100
 bpy.context.scene.render.resolution_percentage=100
-bpy.context.scene.render.film_transparent=True
+bpy.context.scene.render.film_transparent=False
+bpy.context.scene.render.filepath=os.path.join(ROOT,'art','arcade-preview.png')
+for screen in bpy.data.screens:
+    for area in screen.areas:
+        if area.type=='VIEW_3D':
+            area.spaces.active.region_3d.view_perspective='CAMERA'
+            area.spaces.active.overlay.show_overlays=False
+            area.spaces.active.shading.type='MATERIAL'
+bpy.ops.object.select_all(action='DESELECT')
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(ROOT,'art','cloud-claw.blend'))
+if '--render-preview' in sys.argv:
+    bpy.ops.render.render(write_still=True)
 print('Cloud Claw assets created: cabinet, bunny, pillow, claw and editable Blender scene.')
