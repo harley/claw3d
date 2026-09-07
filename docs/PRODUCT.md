@@ -13,7 +13,7 @@ The wow moment is direct control followed by a believable grab, a tense lift and
 - Five stationary toys worth 100 points; moving star worth 200. Higher reward requires visibly harder timing. Keep results skill-based and avoid hidden random losses.
 - Dark arcade presentation, clear CoderPush/AWS branding, spacious zoomed-out play area, brief state-dependent instructions.
 - A missed grab should make physical sense. Current contact stops and grounded rocking are constrained approximations, not full rigid-body toppling.
-- Scores and sessions currently stay in the browser. They are not a verified competition backend.
+- Standalone preview scores stay in the browser. The protected shared staff pilot stores names and results centrally; client-reported catches remain trusted, so it is not a verified competition backend.
 - The leaderboard is for fun and comparison only; rank earns no additional prize. Physical giveaway rules are separate. Min's ball artwork and 20/30/50-point proposal still need alignment with the game before adoption or printing.
 
 ## Current milestone: finish a run without coaching
@@ -38,9 +38,11 @@ Test five first-time players on the intended booth camera/display, without coach
 
 After each session, select the single biggest obstacle, change it, commit it and replay the same scenario. Adjust scores/difficulty only after control reliability is established; competitive rule changes need a new leaderboard session.
 
-## Next: shared staff playtest
+## Shared staff playtest
 
-After camera usability meets the current milestone, add a protected HTTPS staff link with name entry and one persistent shared leaderboard. Staff may replay during this pilot; names are display labels, not verified badge identities. Camera frames stay in each browser. See `docs/plans/2026-09-07-1445-feat-camera-staff-playtest-plan.md` for the staged coding plan. Shared scores are a planned change, not available in the current browser-local build.
+The September 8 shipping request authorizes the protected pilot implementation while physical acceptance remains unverified. Staff may replay; names are display labels, not verified badge identities. A server-acknowledged run follows rehearsal, and exactly three completed turns determine the total. Each run retains its original board and rules through host rotation. Pending scores retry from the same browser and never show a saved rank before acknowledgement. Reload abandons an unfinished physical scene after draining completed results. Camera frames stay in each browser; existing local boards are never imported.
+
+The staff code grants game/leaderboard access. A separate host code protects rotation and export. Persistent SQLite storage requires one service and one mounted volume. See README for backup, restoration and deletion. See `docs/plans/2026-09-07-1445-feat-camera-staff-playtest-plan.md` for the staged plan. Two real laptops and five first-time players remain acceptance gates; automated browser sessions do not replace them.
 
 ## Later
 

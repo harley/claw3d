@@ -1,6 +1,6 @@
 # Cloud Claw
 
-A camera-controlled miniature arcade with an original enamel cabinet and eleven collectible toys: three bunnies, two capybaras, two cloud cushions, two jelly stars and two vinyl robots. A small courier lift carries each catch to its own place on the wooden gallery.
+A camera-controlled CoderPush × AWS arcade. Players rehearse steering and dropping, then get three scored turns with five 100-point toys and a moving 200-point star. The staff pilot adds a protected shared leaderboard; standalone local play keeps browser-local scores.
 
 ## Working agreement
 
@@ -19,9 +19,53 @@ Open the operator gear to see the build commit, branch and whether it contains u
 
 For development, run `npm run dev` and open **http://127.0.0.1:4196**.
 
-## Event play
+## Shared staff pilot
 
-Enter a leaderboard name, play three turns, then see the total and rank. Each turn has 15 seconds of aiming and the original catch/delivery animation. All turns restock the same six-toy layout and restart the same carousel phase and start over an empty patch. Expiry drops the claw once; there is no random win roll or forced catch. Five stationary toys earn 100 points each. The moving star earns 200 points. Its carousel uses a fixed 5.6-second cycle; aim at the gold pickup ring and time the clasp confirmation for green. The cue leads contact by the fixed 1.05-second descent delay. The star continues moving during descent, then the mechanism brakes for grasping and delivery. Catch resolution uses the actual contact position, with no random success or target snapping. Timing and game feel still need human playtesting.
+The Node service serves the built game, camera models and API from one protected origin. All data routes and assets require a staff session. A separate host code unlocks board rotation and export. Codes live only in server environment variables, never in the bundle or repository. Camera frames and landmarks stay in the browser. Names are display labels. Client-reported catches are trusted for this small pilot; server-calculated totals are not anti-cheat.
+
+The server issues a run only after rehearsal. A ranked run waits for that acknowledgement. Each run keeps its board and rule snapshot; host rotation affects new runs, and old in-flight runs finish on the original board. Every completed run is ranked, including repeat names, with tied totals sharing rank. Practice stays unranked and local.
+
+Completed turns enter a browser outbox before being submitted in order. “Score waiting to sync” means no saved rank has been confirmed. The service accepts duplicate identical submissions once and rejects conflicting results. Keep the browser open until saving finishes. Reload replays completed turns, then abandons an unfinished run rather than recreating its physics. Sign in again in the same browser to recover pending scores after session expiry. A private HTTP-only owner cookie persists for 90 days; clearing browser data removes ownership and pending results. Existing standalone scores are never imported.
+
+Run the shared service locally with Node 22.13+ (deployment uses Node 24):
+
+```sh
+npm ci
+npm run build
+# Set STAFF_CODE and HOST_CODE to distinct random secrets of at least 16 characters.
+# Keep them in a private shell/environment file outside this repository.
+PUBLIC_ORIGIN=http://127.0.0.1:4200 DATA_DIR=.local-data npm start
+```
+
+Open `http://127.0.0.1:4200` and enter the staff code. Ordinary `npm run play` remains explicitly browser-local; network failures in the shared service never switch to that board.
+
+### Hosting and build identity
+
+Railway project `claw3d`, service `staff-pilot`, one instance with `/data` on a persistent volume. The Docker build needs `BUILD_COMMIT`, `BUILD_BRANCH`, and `BUILD_DIRTY=false` from the exact clean commit being deployed. Runtime needs `NODE_ENV=production`, `PORT=4200`, `DATA_DIR=/data`, `PUBLIC_ORIGIN` equal to the exact HTTPS origin, and the two secrets. The service refuses production startup without the actual Railway volume mount. SQLite uses WAL and transactional writes. Do not scale this pilot to multiple instances.
+
+Before release, run `npm run check`, `npm run check:booth`, and `npm run test:shared` sequentially. Compare the protected `/build-info.json` and operator BUILD with the release commit. Deployment uses `railway up` against the explicit project/service/environment; the local preview remains available independently. A `/healthz` response only proves that the process is available, not that the camera or game is accepted.
+
+### Export, backup, restore and removal
+
+Host controls export all boards and interrupted runs as JSON. This export omits authentication material. Treat exports as staff data and store them privately. There is no browser import of local scores.
+
+Before a release, create a consistent SQLite snapshot in the mounted volume using a new filename:
+
+```sh
+node server/backup.js /data/pilot.sqlite /data/pilot-backup-YYYYMMDD-HHMM.sqlite
+```
+
+Download that snapshot through Railway volume files or a protected operator channel. It includes private authentication records as well as scores: restrict access and never commit it. The backup helper uses `VACUUM INTO` and verifies integrity. Enable Railway volume backups in the project dashboard if longer retention is needed.
+
+To restore: stop the service, keep a backup of the current database, copy the verified snapshot to `/data/pilot.sqlite`, remove only the stopped database's `pilot.sqlite-wal` and `pilot.sqlite-shm` sidecars, then restart. Verify the old board and totals through authenticated requests. Never replace a live database. The automated shared test opens a disposable restored copy and verifies both clients’ completed runs.
+
+Rollback uses the prior compatible application deployment with the same mounted volume; do not reset the database. The first shared release has no earlier shared build, so take it offline if rollback is needed before a compatible successor exists. Browser-local preview cannot read shared scores.
+
+Keep pilot names/results only until the host ends the pilot. Removal requires stopping the service, deleting the pilot database/volume and any Railway snapshots, and deleting private downloaded exports/backups. Host board rotation preserves history and is not deletion. Rotate both secrets if access should be revoked; existing sessions last up to 12 hours unless their session rows are cleared by the operator while preserving scores.
+
+## Event play (standalone local mode)
+
+Enter a leaderboard name, play three turns, then see the total and rank. Each turn has 15 seconds of aiming and the original catch/delivery animation. All turns restock the same six-toy layout and restart the same carousel phase and start over an empty patch. Expiry drops the claw once; there is no random win roll or forced catch. Five stationary toys earn 100 points each. The moving star earns 200 points. Its carousel uses a fixed 5.6-second cycle; aim at the gold pickup ring and time the clasp confirmation for green. The camera cue includes the 650 ms clasp hold plus the 1.05-second contact delay. The star continues moving during descent, then the mechanism brakes for grasping and delivery. Catch resolution uses the actual contact position, with no random success or target snapping. Timing and game feel still need human playtesting.
 
 Start the camera, enter a name, steer with one hand, then clasp both hands and hold to drop. Turns advance automatically after two seconds. The gear button opens the operator panel. There are no keyboard movement or drop controls. Sound starts off and can be enabled explicitly. Reduced motion preserves a stable viewpoint and suppresses decorative celebration.
 
@@ -36,16 +80,20 @@ Camera controls are required for play. START CAMERA requests access and shows th
 - `src/arcade-mechanics.js`: deterministic state machine, aiming limits, independent finger support and curated assortment.
 - `src/arcade-art.js`: original procedural toys, fabric grain, wood grain, smooth jelly geometry and face details.
 - `src/arcade-scene.js`: cabinet, articulated claw, carriage, prize hatch, courier, gallery and material-specific performances.
-- `src/event-session.js`: versioned rules, player runs, scoring, persistence validation and leaderboard sessions.
+- `src/event-session.js`: versioned rules and local scoring/presentation.
+- `src/session-api.js`: shared run requests, persistent turn outbox and acknowledgement state.
+- `server/database.js`: transactional SQLite runs, turns, board snapshots and ranking.
+- `server/index.js`: same-origin access protection, ownership, host authorization and static serving.
 - `src/arcade.js` and `src/arcade.css`: camera-driven event flow, compact presentation, bounded loading/error states and reduced motion.
 
-Grasping uses authored ellipsoid support envelopes and a guided animation. The jelly wave, cushion compression and trailing ears are expressive approximations, not a general soft-body or rigid-body solver. The couriers and glass are simplified miniature mechanisms. Booth hardware validation and deployment remain outside this iteration.
+Grasping uses authored ellipsoid support envelopes and a guided animation. The jelly wave, cushion compression and trailing ears are expressive approximations, not a general soft-body or rigid-body solver. The couriers and glass are simplified miniature mechanisms. Human booth-camera acceptance remains outstanding. The shared pilot is a testing environment, not event-readiness evidence.
 
 ## Verify
 
 ```sh
 npm run check          # unit tests + production build
-npm run check:booth    # also starts/stops a dev server and runs all browser suites
+npm run check:booth    # also starts/stops a dev server and runs all local browser suites
+npm run test:shared    # built frontend + temporary shared server and isolated browsers
 # Or run one targeted browser suite with npm run dev already running:
 npm run test:browser
 npm run test:clearance

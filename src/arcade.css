@@ -29,3 +29,6 @@
 #rehearsal-exit{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:8;color:#abd3ff}
 #camera-pose{margin:0;padding:8px;text-align:center;border-top:1px dashed #45648b;background:#14233a;font-size:22px}
 #camera-pose small{display:block;font-size:9px;letter-spacing:1px;color:#abd3ff}
+
+#shared-access { position: absolute; bottom: 42px; left: 24px; max-width: 460px; z-index: 8; font-size: 12px; color: #ffba60; }
+#shared-access button { margin-left: 12px; }

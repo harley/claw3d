@@ -5,3 +5,8 @@ dist/
 .DS_Store
 .context/
 __pycache__/
+
+.local-data/
+.env
+.env.*
+*.sqlite*

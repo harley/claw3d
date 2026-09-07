@@ -1,4 +1,6 @@
 import './arcade.css';
+import { createSessionApi } from './session-api.js';
+const shared = globalThis.__SHARED_PILOT__ === true;
 import { ArcadeScene } from './arcade-scene.js';
 import { createGame, begin, drop, advance, move, planGrab, clawPose, PHASES, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
 import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard } from './event-session.js';
@@ -7,13 +9,15 @@ const $ = id => document.getElementById(id);
 $('build-info').textContent = `BUILD ${__BUILD_INFO__.commit}${__BUILD_INFO__.dirty ? ' · uncommitted changes' : ''} · ${__BUILD_INFO__.branch}`;
 let game = createGame({ carousel: true }), scene, previous = 0, stopped = false, frozen = false;
 let cameraControls, cameraLoading = false;
-let rehearsal = null, pendingPlayer = null;
+let rehearsal = null, pendingPlayer = null, startingRun = false;
+let sharedBoard = null, sharedRole = 'staff', sharedStatus = 'Connecting to shared leaderboard…';
+let sharedApi, boardRefresh = null, boardVersion = 0, rotatingBoard = false;
 const practiceMarker = { x: -.65, z: .50 };
 let celebrationTimer;
 let lastCue = '';
 let lastStatus = '', aligned = null, paused = false;
 let store, storageError = '', storageBlocked = false;
-try { store = loadStore(localStorage); } catch (error) { store = newStore(); storageError = error.message; storageBlocked = true; }
+try { store = shared ? newStore() : loadStore(localStorage); } catch (error) { store = newStore(); storageError = error.message; storageBlocked = true; }
 game.position = { x: -1.12, z: .66 };
 let run = store.active, completedRun = null, turnNumber = run ? run.turns.length + 1 : 0, remaining = RULES.seconds;
 let recovering = Boolean(run), sound = false, audioContext;
@@ -23,22 +27,23 @@ const tags = game.toys.map(toy => {
   const element = document.createElement('span'); element.className = 'prize-tag'; element.dataset.points = RULES.points[toy.id]; element.textContent = RULES.points[toy.id]; $('prize-tags').append(element); return { toy, element };
 });
 function persist() {
+  if (shared) return;
   if (storageBlocked) return;
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(store)); storageError = ''; }
   catch { storageError = 'Storage unavailable. Results are in memory only. Export before closing.'; }
-  $('storage-status').textContent = storageError || store.notice || 'Scores saved on this browser.';
+  $('storage-status').textContent = shared ? sharedStatus : storageError || store.notice || 'Scores saved on this browser.';
 }
 function renderBoard() {
-  const board = currentBoard(store); $('board-name').textContent = board.name; $('leaders').replaceChildren();
-  const leaders = leaderboard(board); $('board-empty').hidden = leaders.length > 0;
+  const board = shared ? sharedBoard || { name: 'Shared staff leaderboard', runs: [] } : currentBoard(store); $('board-name').textContent = board.name; $('leaders').replaceChildren();
+  const leaders = shared ? board.runs : leaderboard(board); $('board-empty').hidden = leaders.length > 0;
   for (const row of leaders.slice(0, 5)) {
     const li = document.createElement('li'); li.classList.toggle('current', row.id === completedRun?.id);
     for (const [tag, value] of [['span', String(row.rank).padStart(2, '0')], ['strong', row.name], ['b', row.total]]) { const el = document.createElement(tag); el.textContent = value; li.append(el); }
     $('leaders').append(li);
   }
   const official = board.runs.filter(r => !r.practice), turns = official.flatMap(r => r.turns);
-  $('operator-stats').textContent = `${official.length} completed · ${turns.length ? Math.round(turns.filter(t => t.score).length / turns.length * 100) : 0}% catch rate · ${store.boards.length} sessions stored`;
-  $('storage-status').textContent = storageError || store.notice || 'Scores saved on this browser.';
+  $('operator-stats').textContent = `${official.length} completed · ${turns.length ? Math.round(turns.filter(t => t.score).length / turns.length * 100) : 0}% catch rate${shared ? '' : ` · ${store.boards.length} sessions stored`}`;
+  $('storage-status').textContent = shared ? sharedStatus : storageError || store.notice || 'Scores saved on this browser.';
 }
 function note(frequency, duration = .12, delay = 0, type = 'square') {
   if (!sound) return;
@@ -69,10 +74,12 @@ function updateUI() {
     hint = rehearsal === 'steer' ? 'Move one hand gently to steer the claw' : 'Show hands apart, then together · keep a small gap';
     button = '';
   }
+  if (startingRun) { title = 'STARTING YOUR RUN'; hint = 'Connecting to the shared leaderboard…'; }
   $('rehearsal-exit').hidden = !rehearsal;
+  $('rehearsal-exit').disabled = startingRun;
   $('timer').textContent = String(Math.ceil(remaining)).padStart(2, '0');
   $('arcade').classList.toggle('last-claw', Boolean(run && turnNumber === 3)); $('arcade').classList.toggle('urgent', phase === 'aim' && remaining <= 5);
-  $('mode-label').textContent = storageError ? 'UNSAVED · OPEN OPERATOR' : run?.practice ? 'PRACTICE · NOT RANKED' : '3 CLAWS. MAKE THEM COUNT.';
+  $('mode-label').textContent = shared ? (run?.practice ? 'PRACTICE · NOT RANKED' : sharedStatus) : storageError ? 'UNSAVED · OPEN OPERATOR' : run?.practice ? 'PRACTICE · NOT RANKED' : '3 CLAWS. MAKE THEM COUNT.';
   if (!run && !recovering && !rehearsal) button = cameraLoading ? 'STARTING…' : cameraControls?.running ? 'PLAY' : 'START CAMERA';
   const signature = JSON.stringify([title, hint, button, kicker, total, run?.name, completedRun?.id, paused]);
   if (signature === lastStatus) return; lastStatus = signature;
@@ -95,14 +102,16 @@ function openRegistration() { if (stopped || !scene) return; $('name').value = '
 function finishTurn() {
   if (!run) return;
   const outcome = recordTurn(store, turnNumber, game.plan?.prize?.id || null); if (!outcome) return;
-  persist(); const points = outcome.run.turns.at(-1).score;
+  persist();
+  if (shared && !outcome.run.practice) sharedApi.queue(outcome.run);
+  const points = outcome.run.turns.at(-1).score;
   if (points) { burst(outcome.run.turns.at(-1).prizeId === CAROUSEL.id ? `JACKPOT +${points}` : `+${points}`); [523, 659, 784, 1047].forEach((f, i) => note(f, .18, i * .11)); } else note(165, .25, 0, 'triangle');
   if (outcome.completed) {
     completedRun = outcome.run; run = null; renderBoard();
     $('final-name').textContent = completedRun.name.toUpperCase(); $('final-score').textContent = String(completedRun.total).padStart(3, '0');
-    const rank = leaderboard(currentBoard(store)).find(r => r.id === completedRun.id)?.rank;
+    const rank = shared ? undefined : leaderboard(currentBoard(store)).find(r => r.id === completedRun.id)?.rank;
     $('final-kicker').textContent = completedRun.practice ? 'PRACTICE COMPLETE' : rank === 1 ? 'TOP OF THE BOARD!' : 'RUN COMPLETE';
-    $('final-rank').textContent = completedRun.practice ? 'Practice · unranked' : `RANK #${rank}`;
+    $('final-rank').textContent = completedRun.practice ? 'Practice · unranked' : shared ? 'Score waiting to sync' : `RANK #${rank}`;
     $('final-turns').replaceChildren();
     for (const turn of completedRun.turns) { const chip = document.createElement('span'); chip.className = 'turn-chip scored'; chip.textContent = `+${turn.score}`; const name = document.createElement('small'); name.textContent = game.toys.find(t => t.id === turn.prizeId)?.name || 'Miss'; chip.append(name); $('final-turns').append(chip); }
     $('final').showModal(); $('next-player').focus();
@@ -115,13 +124,28 @@ function play() {
   if (!run) { if (!cameraControls?.running) return startCamera(); return openRegistration(); }
   updateUI();
 }
-function startScoredRun() {
-  try { run = startRun(store, pendingPlayer.name, pendingPlayer.practice); }
-  catch (error) {
-    rehearsal = null; freshGame(); $('registration').showModal();
-    $('name').setCustomValidity(error.message); $('name').reportValidity(); return;
-  }
-  pendingPlayer = null; rehearsal = null; completedRun = null; persist(); beginTurn();
+async function startScoredRun() {
+  if (startingRun || !pendingPlayer) return;
+  startingRun = true;
+  try {
+    if (shared && !pendingPlayer.practice) {
+      pendingPlayer.requestKey ??= crypto.randomUUID();
+      const issued = await sharedApi.start(pendingPlayer.name, pendingPlayer.requestKey);
+      // Presentation accumulates turns under the acknowledged immutable rule snapshot.
+      store = { version: 1, current: issued.boardId, boards: [{ id: issued.boardId, name: '', rules: issued.rules, runs: [] }], active: issued };
+      run = issued;
+    } else run = startRun(store, pendingPlayer.name, pendingPlayer.practice);
+    pendingPlayer = null; rehearsal = null; completedRun = null; persist(); beginTurn();
+    $('shared-start').close();
+  } catch (error) {
+    if (shared) {
+      $('shared-start-message').textContent = `Ranked start unavailable. ${error.message}`;
+      $('shared-start').showModal();
+    } else {
+      rehearsal = null; freshGame(); $('registration').showModal();
+      $('name').setCustomValidity(error.message); $('name').reportValidity();
+    }
+  } finally { startingRun = false; updateUI(); }
 }
 function gestureDrop() {
   if (rehearsal) {
@@ -133,7 +157,7 @@ function gestureDrop() {
   updateUI();
 }
 function fail(message, error) { stopped = true; cameraControls?.stop(); clearTimeout(window.__arcadeBootTimer); errors.push(String(error || message)); $('loading').hidden = true; $('error').hidden = false; $('error-message').textContent = message; console.error('Cloud Claw:', error || message); }
-function openOperator() { renderBoard(); $('operator').showModal(); $('pause').textContent = recovering ? 'RESUME INTERRUPTED TURN' : paused ? 'RESUME GAME' : 'PAUSE GAME'; }
+function openOperator() { if (shared && sharedRole !== 'host') { $('host-access').showModal(); return; } renderBoard(); $('operator').showModal(); $('pause').textContent = recovering ? 'RESUME INTERRUPTED TURN' : paused ? 'RESUME GAME' : 'PAUSE GAME'; }
 document.addEventListener('visibilitychange', () => { previous = 0; });
 $('player-form').addEventListener('submit', event => { event.preventDefault(); if (!scene || stopped || !cameraControls?.running) return;
   const name = $('name').value.trim();
@@ -150,9 +174,22 @@ $('final').addEventListener('cancel', event => event.preventDefault());
 $('play').addEventListener('click', () => { $('scene').focus(); play(); });
 $('operator-open').addEventListener('click', openOperator);
 $('pause').addEventListener('click', () => { if (recovering) { beginTurn(); paused = false; } else paused = !paused; $('operator').close(); $('scene').focus(); });
-$('reset').addEventListener('click', () => { if (store.active) { store.active.abortedAt = new Date().toISOString(); store.active = null; } run = null; rehearsal = null; pendingPlayer = null; completedRun = null; recovering = paused = frozen = false; persist(); freshGame(); $('operator').close(); updateUI(); });
-$('new-board').addEventListener('click', () => { try { rotateBoard(store, $('session-name').value); persist(); completedRun = null; renderBoard(); $('operator-message').textContent = 'New leaderboard started. Previous results are preserved.'; } catch (error) { $('operator-message').textContent = error.message; } });
-$('export').addEventListener('click', () => { let data = JSON.stringify(store, null, 2); if (storageBlocked) { try { data = localStorage.getItem(STORAGE_KEY) || data; } catch { /* In-memory export remains available. */ } } const url = URL.createObjectURL(new Blob([data], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = `cloud-claw-sessions-${new Date().toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
+$('reset').addEventListener('click', () => { if (shared && run && !run.practice) sharedApi.abandon(run); if (store.active) { store.active.abortedAt = new Date().toISOString(); store.active = null; } run = null; rehearsal = null; pendingPlayer = null; completedRun = null; recovering = paused = frozen = false; persist(); freshGame(); $('operator').close(); updateUI(); });
+$('new-board').addEventListener('click', async () => {
+  if (shared) {
+    if (rotatingBoard) return;
+    rotatingBoard = true; boardVersion++; $('new-board').disabled = true;
+    try {
+      sharedBoard = await sharedApi.request('/host/boards', { name: $('session-name').value.trim() || 'Cloud Claw · Staff pilot' });
+      renderBoard(); $('operator-message').textContent = 'New shared board started. Existing runs finish on their original board.';
+    } catch (error) { $('operator-message').textContent = error.message; }
+    finally { boardVersion++; rotatingBoard = false; $('new-board').disabled = false; }
+    return;
+  }
+  try { rotateBoard(store, $('session-name').value); persist(); completedRun = null; renderBoard(); $('operator-message').textContent = 'New leaderboard started. Previous results are preserved.'; }
+  catch (error) { $('operator-message').textContent = error.message; }
+});
+$('export').addEventListener('click', () => { if (shared) { window.location.assign('/api/host/export'); return; } let data = JSON.stringify(store, null, 2); if (storageBlocked) { try { data = localStorage.getItem(STORAGE_KEY) || data; } catch { /* In-memory export remains available. */ } } const url = URL.createObjectURL(new Blob([data], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = `cloud-claw-sessions-${new Date().toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
 $('quality').addEventListener('click', () => { if (!scene) return; scene.setQuality(!scene.lowQuality); $('quality').textContent = `QUALITY: ${scene.lowQuality ? 'SIMPLE' : 'FULL'}`; });
 $('sound').addEventListener('click', () => { sound = !sound; $('sound').textContent = sound ? 'SOUND ON' : 'SOUND OFF'; $('sound').setAttribute('aria-pressed', String(sound)); note(523); });
 $('fullscreen').addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { $('hint').textContent = 'Use your browser’s fullscreen command.'; } });
@@ -165,7 +202,7 @@ async function startCamera() {
     if (!cameraControls) {
       const { createCameraControls } = await import('./camera-controls.js');
       cameraControls = await createCameraControls({ video: $('camera-video'), overlay: $('camera-overlay'), select: $('camera-select'),
-        canControl: () => Boolean((run || rehearsal) && game.phase === 'aim' && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]')),
+        canControl: () => Boolean(!startingRun && (run || rehearsal) && game.phase === 'aim' && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]')),
         onDrop: gestureDrop,
         onChange: state => {
           $('camera-status').textContent = state.message;
@@ -207,7 +244,7 @@ function frame(time) {
   const aiming = game.phase === 'aim', modal = Boolean(document.querySelector('dialog[open]'));
   const cameraWaiting = aiming && (!cameraControls?.running || cameraControls.waiting);
   // Only explicit operator pause stops a drop already in flight.
-  const blocked = paused || (aiming && (cameraWaiting || modal || document.hidden));
+  const blocked = paused || startingRun || (aiming && (cameraWaiting || modal || document.hidden));
   $('pause-banner').hidden = !paused;
   $('pause-banner').textContent = 'PAUSED BY HOST';
   $('hand-status').hidden = !aiming;
@@ -240,8 +277,65 @@ function frame(time) {
 // Read-only development diagnostics.
 function snapshot(includeBounds = false) {
   const sorted = [...frames].sort((a, b) => a - b), average = frames.reduce((a, b) => a + b, 0) / (frames.length || 1);
-  return { phase: game.phase, elapsed: game.elapsed, position: { ...game.position }, rounds: game.rounds, event: { rehearsal, run, remaining, turn: turnNumber, paused, board: currentBoard(store), complete: completedRun, storageError, handCamera: { running: cameraControls?.running || false, waiting: cameraControls?.waiting || false, diagnostic: cameraControls?.diagnostic }, carouselTime: game.carouselTime, cue: carouselCue(game.carouselTime) }, aligned: aligned?.id || null, caught: game.plan?.prize?.id || null, contacts: game.plan?.contacts || null, claw: clawPose(game), stop: game.plan?.stop || null, collection: [...game.collection], reducedMotion: scene?.reducedMotion, camera: scene?.camera.position.toArray(), lowQuality: scene?.lowQuality, errors: [...errors], render: { calls: scene?.renderer.info.render.calls, triangles: scene?.renderer.info.render.triangles }, performance: { frames: frames.length, averageFps: +(1000 / average).toFixed(1), p95FrameMs: sorted[Math.floor(sorted.length * .95)], framesOver33ms: frames.filter(t => t > 33.4).length }, toys: game.toys.map(toy => ({ id: toy.id, family: toy.family, claimed: toy.claimed, position: scene?.toys.get(toy.id).position.toArray(), scale: scene?.toys.get(toy.id).scale.toArray(), bounds: includeBounds ? scene?.toyBounds(toy.id) : undefined })) };
+  return { phase: game.phase, elapsed: game.elapsed, position: { ...game.position }, rounds: game.rounds, event: { rehearsal, run, remaining, turn: turnNumber, paused, board: shared ? sharedBoard : currentBoard(store), complete: completedRun, storageError, handCamera: { running: cameraControls?.running || false, waiting: cameraControls?.waiting || false, diagnostic: cameraControls?.diagnostic }, carouselTime: game.carouselTime, cue: carouselCue(game.carouselTime) }, aligned: aligned?.id || null, caught: game.plan?.prize?.id || null, contacts: game.plan?.contacts || null, claw: clawPose(game), stop: game.plan?.stop || null, collection: [...game.collection], reducedMotion: scene?.reducedMotion, camera: scene?.camera.position.toArray(), lowQuality: scene?.lowQuality, errors: [...errors], render: { calls: scene?.renderer.info.render.calls, triangles: scene?.renderer.info.render.triangles }, performance: { frames: frames.length, averageFps: +(1000 / average).toFixed(1), p95FrameMs: sorted[Math.floor(sorted.length * .95)], framesOver33ms: frames.filter(t => t > 33.4).length }, toys: game.toys.map(toy => ({ id: toy.id, family: toy.family, claimed: toy.claimed, position: scene?.toys.get(toy.id).position.toArray(), scale: scene?.toys.get(toy.id).scale.toArray(), bounds: includeBounds ? scene?.toyBounds(toy.id) : undefined })) };
 }
+
+function updateSavedRank(saved) {
+  if (completedRun?.id !== saved.id || saved.status !== 'complete' || !Number.isInteger(saved.rank)) return;
+  completedRun.rank = saved.rank;
+  $('final-kicker').textContent = saved.rank === 1 ? 'TOP OF THE BOARD!' : 'RUN COMPLETE';
+  $('final-rank').textContent = `SAVED · RANK #${saved.rank}`;
+}
+async function refreshSharedBoard() {
+  if (!sharedApi || rotatingBoard) return;
+  if (boardRefresh) return boardRefresh;
+  const version = boardVersion;
+  boardRefresh = Promise.resolve().then(async () => {
+    try {
+      const board = await sharedApi.request('/board');
+      if (version !== boardVersion) return;
+      sharedBoard = board;
+      if (completedRun && !completedRun.practice) updateSavedRank(await sharedApi.request(`/runs/${completedRun.id}`));
+      if (!sharedApi.state().pending && !sharedApi.state().error) sharedStatus = 'SHARED STAFF LEADERBOARD';
+      renderBoard();
+    } catch (error) { if (version === boardVersion) { sharedStatus = error.status === 401 ? 'SIGN IN TO SYNC' : 'LEADERBOARD OFFLINE · RETRYING'; renderBoard(); } }
+  }).finally(() => { boardRefresh = null; });
+  return boardRefresh;
+}
+if (shared) {
+  $('shared-access').hidden = false;
+  $('operator-help').textContent = 'Shared scores persist on the pilot server. Existing runs keep their original board when you rotate. Names are display labels; scores are for fun.';
+  sharedApi = createSessionApi({ onChange: state => {
+    if (state.saved) { updateSavedRank(state.saved); void refreshSharedBoard(); return; }
+    sharedStatus = state.error || (state.pending ? 'Score waiting to sync' : 'SHARED STAFF LEADERBOARD');
+    $('sync-message').textContent = state.error || (state.pending ? 'Score waiting to sync' : '');
+    $('shared-reauth').hidden = !state.needsLogin;
+    $('final-reauth').hidden = !state.needsLogin;
+    $('start-reauth').hidden = !state.needsLogin;
+    $('host-reauth').hidden = !state.needsLogin;
+    if (state.needsLogin) sharedRole = 'staff';
+    renderBoard();
+  } });
+  sharedApi.initialize().then(session => { sharedRole = session.role; if (!boardVersion) sharedBoard = session.board; renderBoard(); })
+    .catch(error => { sharedStatus = 'SHARED SERVICE UNAVAILABLE'; $('sync-message').textContent = error.message; $('shared-reauth').hidden = error.status !== 401; renderBoard(); });
+  setInterval(() => { void sharedApi.flush(); void refreshSharedBoard(); }, 2000);
+  window.addEventListener('online', () => { void sharedApi.flush(); void refreshSharedBoard(); });
+}
+for (const id of ['shared-reauth', 'final-reauth', 'start-reauth', 'host-reauth']) $(id).addEventListener('click', () => { $('staff-access').showModal(); });
+$('staff-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  try { await sharedApi.request('/login', { code: $('staff-code').value }); $('staff-code').value = ''; $('staff-access').close(); await sharedApi.flush(); await refreshSharedBoard(); }
+  catch (error) { $('staff-message').textContent = error.message; }
+});
+$('host-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  try { await sharedApi.request('/host/login', { code: $('host-code').value }); $('host-code').value = ''; sharedRole = 'host'; $('host-access').close(); openOperator(); }
+  catch (error) { $('host-message').textContent = error.message; }
+});
+$('shared-retry').addEventListener('click', () => { $('shared-start').close(); void startScoredRun(); });
+$('shared-practice').addEventListener('click', () => { pendingPlayer.practice = true; $('shared-start').close(); void startScoredRun(); });
+$('shared-back').addEventListener('click', () => { pendingPlayer = rehearsal = null; $('shared-start').close(); freshGame(); updateUI(); });
+$('shared-start').addEventListener('cancel', event => event.preventDefault());
 
 const loadingTimeout = setTimeout(() => fail('The arcade took too long to open. Reload the page to try again.'), 15000);
 try {
