@@ -37,9 +37,13 @@ Test five first-time players on the intended booth camera/display, without coach
 
 After each session, select the single biggest obstacle, change it, commit it and replay the same scenario. Adjust scores/difficulty only after control reliability is established; competitive rule changes need a new leaderboard session.
 
+## Next: shared staff playtest
+
+After camera usability meets the current milestone, add a protected HTTPS staff link with name entry and one persistent shared leaderboard. Staff may replay during this pilot; names are display labels, not verified badge identities. Camera frames stay in each browser. See `docs/plans/2026-09-07-1445-feat-camera-staff-playtest-plan.md` for the staged coding plan. Shared scores are a planned change, not available in the current browser-local build.
+
 ## Later
 
-Badge scanning, shared/server-verified leaderboard, replay enforcement, queue/admin analytics, free toppling physics and new environments. Keep these outside the current milestone unless the booth's operating requirements make one essential.
+Badge scanning, verified competition results, replay enforcement, queue/admin analytics, free toppling physics and new environments. Keep these outside the current milestone unless the booth's operating requirements make one essential.
 
 ## Evidence
 
