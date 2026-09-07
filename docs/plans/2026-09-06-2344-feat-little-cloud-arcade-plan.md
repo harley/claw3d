@@ -9,6 +9,9 @@ implementation_status: locally-verified
 product_contract_source: ce-brainstorm
 execution: code
 ---
+
+> Historical design and verification record. Current scope and controls are defined in [PRODUCT.md](../PRODUCT.md); earlier keyboard and performance claims below describe their original builds.
+
 # Little Cloud Arcade - Plan
 
 ## Goal Capsule

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 4196 --strictPort",
     "build": "vite build",
-    "preview": "vite preview --host 127.0.0.1 --port 4183 --strictPort",
+    "preview": "npm run play",
     "play": "vite preview --host 127.0.0.1 --port 4197 --strictPort",
     "assets": "node scripts/prepare-vision.mjs",
     "models": "/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build-assets.py",
@@ -15,7 +15,10 @@
     "test:clearance": "node tests/delivery-clearance.browser.mjs",
     "test:carousel": "node tests/carousel.browser.mjs",
     "test:contact": "node tests/contact.browser.mjs",
-    "test:camera": "node tests/camera.browser.mjs"
+    "test:camera": "node tests/camera.browser.mjs",
+    "check": "npm test && npm run build",
+    "check:booth": "npm run check && node scripts/check-browser.mjs",
+    "preplay": "npm run build"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "1.0.1",

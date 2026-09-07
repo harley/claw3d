@@ -1,16 +1,21 @@
-# Little Cloud Arcade
+# Cloud Claw
 
 A camera-controlled miniature arcade with an original enamel cabinet and eleven collectible toys: three bunnies, two capybaras, two cloud cushions, two jelly stars and two vinyl robots. A small courier lift carries each catch to its own place on the wooden gallery.
+
+## Working agreement
+
+Develop in `/Users/qron/code/claw3d` on a named feature branch. The active player experience is camera-only. Read [the product focus](docs/PRODUCT.md) and [agent working rules](AGENTS.md) before changing behavior. The earlier prototype is preserved on `checkpoint/camera-only-prototype`.
 
 ## Play locally
 
 ```sh
 npm ci
-npm run build
 npm run play
 ```
 
-Open **http://127.0.0.1:4197**. The production preview stays stable while source files are edited. Rebuild and refresh to see a change.
+Open **http://127.0.0.1:4197**. `npm run play` rebuilds before starting, so a restart cannot silently serve an older build. Keep that terminal running. The preview stays stable during source edits; restart and refresh to update it. `npm run preview` uses the same command and port.
+
+Open the operator gear to see the build commit, branch and whether it contains uncommitted changes. `/build-info.json` contains the same identity and build time. Rebuild after committing so the preview identifies the tested commit.
 
 For development, run `npm run dev` and open **http://127.0.0.1:4196**.
 
@@ -39,9 +44,9 @@ Grasping uses authored ellipsoid support envelopes and a guided animation. The j
 ## Verify
 
 ```sh
-npm test
-npm run build
-# With npm run dev running in another terminal, and Google Chrome installed:
+npm run check          # unit tests + production build
+npm run check:booth    # also starts/stops a dev server and runs all browser suites
+# Or run one targeted browser suite with npm run dev already running:
 npm run test:browser
 npm run test:clearance
 npm run test:carousel
@@ -53,7 +58,7 @@ The event browser suite uses deterministic camera input events through the real 
 
 Development-only inspection is available at `/?inspect=butter&phase=grip` (any toy ID; any animation phase). `window.__littleCloud.snapshot()` exposes read-only diagnostics in development. Production removes both inspection and diagnostics.
 
-See [the creative brief and verification record](docs/plans/2026-09-06-2344-feat-little-cloud-arcade-plan.md) for the visual requirements and evidence. No code or assets were copied from the unlicensed Jelly-Baby reference.
+For historical context, see [the creative brief and verification record](docs/plans/2026-09-06-2344-feat-little-cloud-arcade-plan.md) for the visual requirements and evidence. No code or assets were copied from the unlicensed Jelly-Baby reference.
 
 The delivery-clearance check samples all eleven transported toys, the tray and courier through outbound and return motion against nearby decorative mesh bounds, with a clearance margin. It also reproduces the former plant obstruction. Delivery remains a guided animation, not a general collision solver.
 
