@@ -10,7 +10,7 @@ function shot(time, dt = 1 / 60, position = pickup) {
 test('green cue predicts contact; the star moves during descent and catch resolves at contact', () => {
   const game = createGame({ carousel: true }); begin(game); moveCarousel(game, CAROUSEL.period - CONTACT_DELAY); game.position = { ...pickup };
   const star = game.toys.find(t => t.id === CAROUSEL.id), start = { x: star.x, z: star.z };
-  assert.equal(carouselCue(game.carouselTime).now, true); assert.equal(aimTarget(game).id, CAROUSEL.id);
+  assert.equal(carouselCue(game.carouselTime, 0).now, true); assert.equal(aimTarget(game).id, CAROUSEL.id);
   drop(game); assert.equal(game.plan.prize, null); advance(game, CONTACT_DELAY / 2);
   assert.ok(Math.hypot(star.x - start.x, star.z - start.z) > .10); assert.equal(game.plan.prize, null);
   advance(game, CONTACT_DELAY / 2); assert.equal(game.phase, 'grip'); assert.equal(game.plan.prize.id, CAROUSEL.id);
@@ -39,7 +39,16 @@ test('carousel motion has a repeatable orbit clear of the stationary support env
   }
   const first = carouselPose(0), last = carouselPose(CAROUSEL.period);
   assert.ok(Math.hypot(first.x - last.x, first.z - last.z) < 1e-8);
-  assert.equal(carouselCue(CAROUSEL.period - CONTACT_DELAY - 1).lights, 1);
-  assert.equal(carouselCue(CAROUSEL.period - CONTACT_DELAY - .6).lights, 2);
-  assert.equal(carouselCue(CAROUSEL.period - CONTACT_DELAY - .3).lights, 3);
+  assert.equal(carouselCue(CAROUSEL.period - CONTACT_DELAY - .65 - 1).lights, 1);
+  assert.equal(carouselCue(CAROUSEL.period - CONTACT_DELAY - .65 - .6).lights, 2);
+  assert.equal(carouselCue(CAROUSEL.period - CONTACT_DELAY - .65 - .3).lights, 3);
+});
+
+test('camera cue includes the hold delay across repeated orbits', () => {
+  for (let cycle = 1; cycle <= 5; cycle++) {
+    const time = cycle * CAROUSEL.period - CONTACT_DELAY - .65;
+    assert.equal(carouselCue(time).now, true);
+    assert.equal(carouselCue(time).text, 'BRING HANDS TOGETHER');
+    assert.equal(shot(time + .65).plan.prize?.id, CAROUSEL.id);
+  }
 });

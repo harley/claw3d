@@ -29,13 +29,22 @@ try {
   });
   assert.ok(Math.abs(geometry.ratio - geometry.cameraRatio) < .01);
   assert.equal(geometry.aligned, true);
+  for (const height of [480, 360]) {
+    await page.evaluate(height => document.getElementById('camera-video').srcObject.getVideoTracks()[0].applyConstraints({ width: 640, height }), height);
+    await page.waitForFunction(height => { const video = document.getElementById('camera-video'); return video.videoWidth === 640 && video.videoHeight === height; }, height);
+    await page.waitForFunction(() => { const video = document.getElementById('camera-video'), rect = video.getBoundingClientRect(); return Math.abs(rect.width / rect.height - video.videoWidth / video.videoHeight) < .01; });
+    assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('camera-video')).transform.startsWith('matrix(-1')), true);
+  }
   await page.screenshot({ path: '.screenshots/camera-ready-wide.png' });
   await page.setViewportSize({ width: 820, height: 900 });
   assert.equal(await page.locator('#camera-guidance').isVisible(), true);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.screenshot({ path: '.screenshots/camera-ready-narrow.png' });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.locator('#play').click(); await page.locator('#name').fill('Camera test'); await page.locator('#name').press('Enter');
+  await page.locator('#play').click(); await page.locator('#name').fill('   '); await page.locator('#name').press('Enter');
+  assert.equal(await page.locator('#registration').isVisible(), true); assert.equal((await snap()).event.rehearsal, null);
+  await page.locator('#name').fill('Camera test'); await page.locator('#name').press('Enter');
+  assert.equal((await snap()).event.run, null); assert.equal((await snap()).event.rehearsal, 'steer');
   await page.waitForTimeout(300); const before = (await snap()).event.remaining;
   await page.waitForTimeout(700); assert.equal((await snap()).event.remaining, before); assert.equal((await snap()).event.handCamera.waiting, true);
   const position = (await snap()).position;
@@ -51,11 +60,13 @@ try {
   console.log('PASS opt-in real worker/model with synthetic camera; camera-only input; hand-loss timer hold; blur does not latch pause; separate camera setup; shutdown');
   await context.close();
   const denied = await browser.newContext(); const dp = await denied.newPage();
-  await dp.addInitScript(() => { navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('Denied', 'NotAllowedError'); }; });
+  await dp.addInitScript(() => { const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); let first = true; navigator.mediaDevices.getUserMedia = async options => { if (first) { first = false; throw new DOMException('Denied', 'NotAllowedError'); } return original(options); }; });
   await dp.goto('http://127.0.0.1:4196'); await dp.waitForFunction(() => window.__littleCloud); await dp.locator('#camera-open').click(); await dp.locator('#camera-toggle').click();
   await dp.waitForFunction(() => document.getElementById('camera-status').textContent.includes('permission'));
   assert.equal(await dp.evaluate(() => window.__littleCloud.snapshot().event.handCamera.running), false);
   assert.equal(await dp.locator('#camera-setup').isVisible(), true);
   assert.equal(await dp.locator('#operator').isVisible(), false);
-  console.log('PASS denied camera permission shows retry in camera setup'); await denied.close();
+  await dp.locator('#camera-toggle').click(); await dp.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running);
+  assert.equal(await dp.locator('#camera-setup').isVisible(), false); assert.equal(await dp.evaluate(() => window.__littleCloud.snapshot().event.run), null);
+  console.log('PASS denied camera permission retries successfully without spending a turn'); await denied.close();
 } finally { await browser.close(); }

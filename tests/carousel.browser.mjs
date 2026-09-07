@@ -1,4 +1,4 @@
-import { installCameraFixture, cameraInput, cameraDrop } from './camera-fixture.mjs';
+import { installCameraFixture, cameraInput, cameraDrop, completeRehearsal } from './camera-fixture.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { writeFile } from 'node:fs/promises';
@@ -20,11 +20,16 @@ try {
     }
   }
   await page.locator('#play').click(); await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running);
-  await page.locator('#play').click(); await page.locator('#name').fill('Star Pilot'); await page.locator('#name').press('Enter'); await aim();
+  await page.locator('#play').click(); await page.locator('#name').fill('Star Pilot'); await page.locator('#name').press('Enter'); await completeRehearsal(page); await aim();
   // Dispatch in the observed timing window; screenshots/IPC must not delay DROP.
   await page.waitForFunction(() => {
-    const state = window.__littleCloud.snapshot(), t = state.event.carouselTime % 5.6;
-    if (t < 4.5 || t > 4.6) return false;
+    const state = window.__littleCloud.snapshot();
+    if (!window.starHoldStarted) {
+      if (!state.event.cue.now) return false;
+      window.starHoldStarted = state.event.carouselTime;
+      return false;
+    }
+    if (state.event.carouselTime - window.starHoldStarted < .65) return false;
     window.starBeforeDrop = state.toys.find(toy => toy.id === 'sprout').position;
     window.testCamera.clasp(); return true;
   });
@@ -34,7 +39,7 @@ try {
   assert.ok(Math.hypot(before[0] - during[0], before[2] - during[2]) > .03);
   await phase('grip'); assert.equal((await snap()).caught, 'sprout'); await page.screenshot({ path: '.screenshots/carousel-grip.png' });
   await phase('result'); assert.equal((await snap()).event.run.turns[0].score, 200);
-  console.log('PASS green cue + moving descent + actual star catch: 200');
+  console.log('PASS camera cue + simulated 650ms hold + moving descent + actual star catch: 200');
   await phase('aim'); await aim();
   await page.waitForFunction(() => { const t = window.__littleCloud.snapshot().event.carouselTime % 5.6; return t >= 3.5 && t < 3.7; });
   await cameraDrop(page); await phase('result'); assert.equal((await snap()).event.run.turns[1].score, 0);

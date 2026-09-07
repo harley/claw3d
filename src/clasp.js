@@ -1,5 +1,7 @@
 import { clamp } from './mechanics.js';
 
+export const CLASP_HOLD_MS = 650;
+
 // A deliberate apart -> together -> hold sequence. Time only advances while
 // both hands are visible; a merged/occluded hand can never finish the DROP.
 export class ClaspGesture {
@@ -11,7 +13,7 @@ export class ClaspGesture {
     const distance=(a,b)=>Math.hypot((a.x-b.x)*aspect,a.y-b.y);
     const valid=hands.length===2 && owner && hands.some(h=>distance(h.center,owner)<.28*aspect);
     if(!valid){
-      if(this.active && now-this.seen<300)return{active:true,progress:this.held/650,message:'Keep both hands visible. Leave a small gap between your palms.'};
+      if(this.active && now-this.seen<300)return{active:true,progress:this.held/CLASP_HOLD_MS,message:'Keep both hands visible, with a small gap.'};
       this.reset();this.last=now;return{active:false,progress:0};
     }
     this.active=true;this.seen=now;
@@ -27,8 +29,8 @@ export class ClaspGesture {
     if(!this.armed)return{active:true,progress:0,message:'Show both hands apart first, then bring them together.'};
     if(ratio>1.4){this.held=0;return{active:true,progress:0,message:'Bring your palms together to DROP. Keep both visible.'};}
     this.held+=dt;
-    const progress=clamp(this.held/650,0,1);
+    const progress=clamp(this.held/CLASP_HOLD_MS,0,1);
     if(progress===1)this.fired=true;
-    return{active:true,progress,fired:this.fired,message:progress===1?'DROP confirmed.':'Hold your hands together…'};
+    return{active:true,progress,fired:this.fired,message:progress===1?'DROP confirmed.':'Keep a small gap · hold…'};
   }
 }

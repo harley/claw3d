@@ -24,3 +24,8 @@
 #camera-preview:not([hidden]) + #hand-status{display:none}
 @media(max-width:900px){#camera-preview{width:210px}}
 @media(max-width:650px){#camera-preview{width:160px}.camera-feedback{padding:7px 8px 10px}#camera-guidance{font-size:11px}}
+
+#practice-marker{position:absolute;transform:translate(-50%,-50%);font-size:70px;line-height:1;color:#66ffb3;pointer-events:none;text-shadow:0 0 12px #07121f;z-index:4}
+#rehearsal-exit{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);z-index:8;color:#abd3ff}
+#camera-pose{margin:0;padding:8px;text-align:center;border-top:1px dashed #45648b;background:#14233a;font-size:22px}
+#camera-pose small{display:block;font-size:9px;letter-spacing:1px;color:#abd3ff}

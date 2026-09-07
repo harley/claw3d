@@ -1,5 +1,5 @@
 // Camera-event acceptance. Synthetic input, real game and scoring; no injected catches.
-import { installCameraFixture, cameraInput, cameraDrop } from './camera-fixture.mjs';
+import { installCameraFixture, cameraInput, cameraDrop, completeRehearsal } from './camera-fixture.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { writeFile } from 'node:fs/promises';
@@ -11,7 +11,7 @@ await installCameraFixture(page);
 const snap=()=>page.evaluate(()=>window.__littleCloud.snapshot());
 const phase=state=>page.waitForFunction(state=>window.__littleCloud.snapshot().phase===state,state,{timeout:30000});
 const open=async()=>{await page.goto('http://127.0.0.1:4196');await page.waitForFunction(()=>window.__littleCloud);};
-const register=async name=>{if(!(await snap()).event.handCamera.running){await page.locator('#play').click();await page.waitForFunction(()=>window.__littleCloud.snapshot().event.handCamera.running);}await page.locator('#play').click();await page.locator('#name').fill(name);await page.locator('#name').press('Enter');await phase('aim');};
+const register=async name=>{if(!(await snap()).event.handCamera.running){await page.locator('#play').click();await page.waitForFunction(()=>window.__littleCloud.snapshot().event.handCamera.running);}await page.locator('#play').click();await page.locator('#name').fill(name);await page.locator('#name').press('Enter');await completeRehearsal(page);await phase('aim');};
 async function aimButter(){ for(const axis of ['x','z']) for(let i=0;i<6;i++){const delta=({x:-.38,z:.72})[axis]-(await snap()).position[axis];if(Math.abs(delta)<.025)break;const speed=Math.abs(delta)<.14?.25:1;await cameraInput(page,{x:0,z:0,[axis]:Math.sign(delta)*speed});await page.waitForTimeout(Math.abs(delta)/(.85*speed)*1000);await cameraInput(page,{x:0,z:0});} assert.equal((await snap()).aligned,'butter');}
 let checkedDelivery = false;
 async function catchTurn(){
@@ -50,7 +50,7 @@ try {
  // Final turn runs out naturally and commits one drop.
  await phase('result');await page.locator('#final').waitFor();assert.equal((await snap()).event.complete.practice,true);assert.equal((await snap()).event.board.runs.length,2);assert.equal(await page.locator('#leaders li').count(),1);
  console.log('PASS practice unranked, modal pause, timeout commits once');
- await page.locator('#next-player').click();await page.locator('#name').fill('Recover');await page.locator('#name').press('Enter');await page.reload();await page.waitForFunction(()=>window.__littleCloud);
+ await page.locator('#next-player').click();await page.locator('#name').fill('Recover');await page.locator('#name').press('Enter');assert.equal((await snap()).event.run,null);await completeRehearsal(page);await page.reload();await page.waitForFunction(()=>window.__littleCloud);
  assert.equal((await snap()).event.run.name,'Recover');assert.equal((await snap()).phase,'idle');await page.locator('#operator-open').click();await page.locator('#pause').click();await phase('aim');
  await page.locator('#operator-open').click();await page.locator('#new-board').click();assert.match(await page.locator('#operator-message').textContent(),/Finish or reset/);await page.locator('#reset').click();
  await page.locator('#operator-open').click();await page.locator('#session-name').fill('Afternoon');await page.locator('#new-board').click();assert.equal((await snap()).event.board.name,'Afternoon');assert.equal(await page.locator('#leaders li').count(),0);

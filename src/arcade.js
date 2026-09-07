@@ -7,6 +7,8 @@ const $ = id => document.getElementById(id);
 $('build-info').textContent = `BUILD ${__BUILD_INFO__.commit}${__BUILD_INFO__.dirty ? ' · uncommitted changes' : ''} · ${__BUILD_INFO__.branch}`;
 let game = createGame({ carousel: true }), scene, previous = 0, stopped = false, frozen = false;
 let cameraControls, cameraLoading = false;
+let rehearsal = null, pendingPlayer = null;
+const practiceMarker = { x: -.65, z: .50 };
 let celebrationTimer;
 let lastCue = '';
 let lastStatus = '', aligned = null, paused = false;
@@ -60,16 +62,23 @@ function updateUI() {
   $('jackpot-signal').classList.toggle('go', cue.now && phase === 'aim');
   $('jackpot-cue').textContent = ['idle', 'aim'].includes(phase) ? cue.text : 'CLAW IN ACTION';
   [...$('jackpot-lights').children].forEach((light, i) => light.classList.toggle('on', ['idle', 'aim'].includes(phase) && i < cue.lights));
-  if (phase === 'aim' && nearPickup) { title = 'JACKPOT · 200 PTS'; hint = aligned?.id === CAROUSEL.id ? 'CLASP & HOLD' : 'Gold ring · wait for green'; }
+  if (phase === 'aim' && !rehearsal && nearPickup) { title = 'JACKPOT · 200 PTS'; hint = aligned?.id === CAROUSEL.id ? 'CLASP & HOLD' : 'Gold ring · wait for green'; }
+  if (rehearsal) {
+    kicker = 'QUICK PRACTICE · NO SCORE';
+    title = rehearsal === 'steer' ? 'MOVE TO THE RING' : 'TRY A DROP';
+    hint = rehearsal === 'steer' ? 'Move one hand gently to steer the claw' : 'Show hands apart, then together · keep a small gap';
+    button = '';
+  }
+  $('rehearsal-exit').hidden = !rehearsal;
   $('timer').textContent = String(Math.ceil(remaining)).padStart(2, '0');
   $('arcade').classList.toggle('last-claw', Boolean(run && turnNumber === 3)); $('arcade').classList.toggle('urgent', phase === 'aim' && remaining <= 5);
   $('mode-label').textContent = storageError ? 'UNSAVED · OPEN OPERATOR' : run?.practice ? 'PRACTICE · NOT RANKED' : '3 CLAWS. MAKE THEM COUNT.';
-  if (!run && !recovering) button = cameraLoading ? 'STARTING…' : cameraControls?.running ? 'PLAY' : 'START CAMERA';
+  if (!run && !recovering && !rehearsal) button = cameraLoading ? 'STARTING…' : cameraControls?.running ? 'PLAY' : 'START CAMERA';
   const signature = JSON.stringify([title, hint, button, kicker, total, run?.name, completedRun?.id, paused]);
   if (signature === lastStatus) return; lastStatus = signature;
   $('player-name').textContent = run?.name || completedRun?.name || 'PLAYER ONE?'; $('score').textContent = String(total).padStart(3, '0'); $('turn').textContent = run ? `${turnNumber} / 3` : '— / 3';
   $('phase-label').textContent = kicker; $('status').textContent = title; $('hint').textContent = hint; $('button-text').textContent = button;
-  $('play').hidden = Boolean(run && !recovering);
+  $('play').hidden = Boolean(rehearsal || (run && !recovering));
   $('play').disabled = paused || cameraLoading;
   $('turn-chips').replaceChildren();
   for (let i = 0; i < 3; i++) { const turn = run?.turns[i] || completedRun?.turns[i]; const chip = document.createElement('span'); chip.className = `turn-chip ${turn?.score ? 'scored' : ''}`; chip.textContent = turn ? turn.score ? `+${turn.score}` : 'MISS' : '—'; $('turn-chips').append(chip); }
@@ -106,7 +115,19 @@ function play() {
   if (!run) { if (!cameraControls?.running) return startCamera(); return openRegistration(); }
   updateUI();
 }
+function startScoredRun() {
+  try { run = startRun(store, pendingPlayer.name, pendingPlayer.practice); }
+  catch (error) {
+    rehearsal = null; freshGame(); $('registration').showModal();
+    $('name').setCustomValidity(error.message); $('name').reportValidity(); return;
+  }
+  pendingPlayer = null; rehearsal = null; completedRun = null; persist(); beginTurn();
+}
 function gestureDrop() {
+  if (rehearsal) {
+    if (rehearsal !== 'drop' || paused || stopped || document.hidden || document.querySelector('dialog[open]')) return;
+    startScoredRun(); return;
+  }
   if (!run || game.phase !== 'aim' || paused || frozen || stopped || document.hidden || document.querySelector('dialog[open]')) return;
   if (drop(game)) note(220, .2);
   updateUI();
@@ -115,14 +136,21 @@ function fail(message, error) { stopped = true; cameraControls?.stop(); clearTim
 function openOperator() { renderBoard(); $('operator').showModal(); $('pause').textContent = recovering ? 'RESUME INTERRUPTED TURN' : paused ? 'RESUME GAME' : 'PAUSE GAME'; }
 document.addEventListener('visibilitychange', () => { previous = 0; });
 $('player-form').addEventListener('submit', event => { event.preventDefault(); if (!scene || stopped || !cameraControls?.running) return;
-  run = startRun(store, $('name').value, $('practice').checked || storageBlocked); completedRun = null; persist(); $('registration').close(); $('scene').focus(); beginTurn(); });
+  const name = $('name').value.trim();
+  if (!name) { $('name').setCustomValidity('Enter a name for the leaderboard.'); $('name').reportValidity(); return; }
+  pendingPlayer = { name, practice: $('practice').checked || storageBlocked };
+  $('registration').close(); $('scene').focus();
+  freshGame(); remaining = RULES.seconds; rehearsal = 'steer'; begin(game); updateUI();
+});
+$('name').addEventListener('input', () => $('name').setCustomValidity(''));
+$('rehearsal-exit').addEventListener('click', () => { rehearsal = null; pendingPlayer = null; freshGame(); updateUI(); });
 $('register-cancel').addEventListener('click', () => $('registration').close());
 $('next-player').addEventListener('click', () => { $('final').close(); completedRun = null; freshGame(); updateUI(); play(); });
 $('final').addEventListener('cancel', event => event.preventDefault());
 $('play').addEventListener('click', () => { $('scene').focus(); play(); });
 $('operator-open').addEventListener('click', openOperator);
 $('pause').addEventListener('click', () => { if (recovering) { beginTurn(); paused = false; } else paused = !paused; $('operator').close(); $('scene').focus(); });
-$('reset').addEventListener('click', () => { if (store.active) { store.active.abortedAt = new Date().toISOString(); store.active = null; } run = null; completedRun = null; recovering = paused = frozen = false; persist(); freshGame(); $('operator').close(); updateUI(); });
+$('reset').addEventListener('click', () => { if (store.active) { store.active.abortedAt = new Date().toISOString(); store.active = null; } run = null; rehearsal = null; pendingPlayer = null; completedRun = null; recovering = paused = frozen = false; persist(); freshGame(); $('operator').close(); updateUI(); });
 $('new-board').addEventListener('click', () => { try { rotateBoard(store, $('session-name').value); persist(); completedRun = null; renderBoard(); $('operator-message').textContent = 'New leaderboard started. Previous results are preserved.'; } catch (error) { $('operator-message').textContent = error.message; } });
 $('export').addEventListener('click', () => { let data = JSON.stringify(store, null, 2); if (storageBlocked) { try { data = localStorage.getItem(STORAGE_KEY) || data; } catch { /* In-memory export remains available. */ } } const url = URL.createObjectURL(new Blob([data], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = `cloud-claw-sessions-${new Date().toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
 $('quality').addEventListener('click', () => { if (!scene) return; scene.setQuality(!scene.lowQuality); $('quality').textContent = `QUALITY: ${scene.lowQuality ? 'SIMPLE' : 'FULL'}`; });
@@ -137,7 +165,7 @@ async function startCamera() {
     if (!cameraControls) {
       const { createCameraControls } = await import('./camera-controls.js');
       cameraControls = await createCameraControls({ video: $('camera-video'), overlay: $('camera-overlay'), select: $('camera-select'),
-        canControl: () => Boolean(run && game.phase === 'aim' && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]')),
+        canControl: () => Boolean((run || rehearsal) && game.phase === 'aim' && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]')),
         onDrop: gestureDrop,
         onChange: state => {
           $('camera-status').textContent = state.message;
@@ -146,7 +174,9 @@ async function startCamera() {
           $('camera-recognition').textContent = labels[state.kind] || 'CAMERA';
           $('camera-preview').dataset.state = state.kind;
           const delivering = !['idle', 'aim', 'result'].includes(game.phase);
-          $('camera-guidance').textContent = delivering ? 'Hands down · watch the claw.' : !run && state.kind === 'tracking' ? 'Press Play when you’re ready.' : state.message;
+          $('camera-guidance').textContent = delivering ? 'Hands down · watch the claw.' : rehearsal && state.kind === 'tracking' ? rehearsal === 'steer' ? 'Move your hand toward the practice ring.' : 'Hands apart, then together · keep a small gap.' : !run && state.kind === 'tracking' ? 'Press Play when you’re ready.' : state.message;
+          $('camera-pose').hidden = state.kind !== 'clasping' && rehearsal !== 'drop';
+          $('camera-progress').parentElement.setAttribute('aria-valuenow', String(Math.round((state.progress || 0) * 100)));
           $('camera-progress').style.width = `${Math.round((state.progress || 0) * 100)}%`;
           const video = $('camera-video');
           if (video.videoWidth && video.videoHeight) $('camera-preview').style.setProperty('--camera-aspect', `${video.videoWidth} / ${video.videoHeight}`);
@@ -185,7 +215,11 @@ function frame(time) {
   const input = { ...cameraControls?.input || { x: 0, z: 0 } };
   if (!frozen && !blocked && !document.hidden) {
     if (aiming) { game.position = move(game.position, input, dt); moveCarousel(game, dt); aligned = aimTarget(game);
+      if (rehearsal) {
+        if (rehearsal === 'steer' && Math.hypot(game.position.x - practiceMarker.x, game.position.z - practiceMarker.z) < .13) { rehearsal = 'drop'; cameraControls.reset(); }
+      } else {
       const before = Math.ceil(remaining); remaining = Math.max(0, remaining - dt); if (Math.ceil(remaining) < before && remaining <= 5) note(remaining < 1 ? 220 : 440, .08); if (!remaining) drop(game);
+      }
     } else {
       input.x = input.z = 0;
       if (game.phase === 'idle') moveCarousel(game, dt);
@@ -195,6 +229,8 @@ function frame(time) {
   } else input.x = input.z = 0;
   try {
     updateUI(); scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
+    $('practice-marker').hidden = rehearsal !== 'steer';
+    if (rehearsal === 'steer') { const point = scene.screenPoint(practiceMarker.x, BED + .10, practiceMarker.z); $('practice-marker').style.left = `${point.x}px`; $('practice-marker').style.top = `${point.y}px`; }
     const showTags = ['idle', 'aim'].includes(game.phase);
     for (const { toy, element } of tags) { element.hidden = !showTags; if (!showTags) continue; const current = game.toys.find(t => t.id === toy.id); if (!current) { element.hidden = true; continue; } const point = scene.screenPoint(current.x, BED + (current.elevation || 0) + .08, current.z); element.style.left = `${point.x}px`; element.style.top = `${point.y}px`; element.classList.toggle('targeted', aligned?.id === toy.id); }
   } catch (error) { fail('The game stopped unexpectedly. Reload to recover this player.', error); return; }
@@ -204,7 +240,7 @@ function frame(time) {
 // Read-only development diagnostics.
 function snapshot(includeBounds = false) {
   const sorted = [...frames].sort((a, b) => a - b), average = frames.reduce((a, b) => a + b, 0) / (frames.length || 1);
-  return { phase: game.phase, elapsed: game.elapsed, position: { ...game.position }, rounds: game.rounds, event: { run, remaining, turn: turnNumber, paused, board: currentBoard(store), complete: completedRun, storageError, handCamera: { running: cameraControls?.running || false, waiting: cameraControls?.waiting || false }, carouselTime: game.carouselTime, cue: carouselCue(game.carouselTime) }, aligned: aligned?.id || null, caught: game.plan?.prize?.id || null, contacts: game.plan?.contacts || null, claw: clawPose(game), stop: game.plan?.stop || null, collection: [...game.collection], reducedMotion: scene?.reducedMotion, camera: scene?.camera.position.toArray(), lowQuality: scene?.lowQuality, errors: [...errors], render: { calls: scene?.renderer.info.render.calls, triangles: scene?.renderer.info.render.triangles }, performance: { frames: frames.length, averageFps: +(1000 / average).toFixed(1), p95FrameMs: sorted[Math.floor(sorted.length * .95)], framesOver33ms: frames.filter(t => t > 33.4).length }, toys: game.toys.map(toy => ({ id: toy.id, family: toy.family, claimed: toy.claimed, position: scene?.toys.get(toy.id).position.toArray(), scale: scene?.toys.get(toy.id).scale.toArray(), bounds: includeBounds ? scene?.toyBounds(toy.id) : undefined })) };
+  return { phase: game.phase, elapsed: game.elapsed, position: { ...game.position }, rounds: game.rounds, event: { rehearsal, run, remaining, turn: turnNumber, paused, board: currentBoard(store), complete: completedRun, storageError, handCamera: { running: cameraControls?.running || false, waiting: cameraControls?.waiting || false, diagnostic: cameraControls?.diagnostic }, carouselTime: game.carouselTime, cue: carouselCue(game.carouselTime) }, aligned: aligned?.id || null, caught: game.plan?.prize?.id || null, contacts: game.plan?.contacts || null, claw: clawPose(game), stop: game.plan?.stop || null, collection: [...game.collection], reducedMotion: scene?.reducedMotion, camera: scene?.camera.position.toArray(), lowQuality: scene?.lowQuality, errors: [...errors], render: { calls: scene?.renderer.info.render.calls, triangles: scene?.renderer.info.render.triangles }, performance: { frames: frames.length, averageFps: +(1000 / average).toFixed(1), p95FrameMs: sorted[Math.floor(sorted.length * .95)], framesOver33ms: frames.filter(t => t > 33.4).length }, toys: game.toys.map(toy => ({ id: toy.id, family: toy.family, claimed: toy.claimed, position: scene?.toys.get(toy.id).position.toArray(), scale: scene?.toys.get(toy.id).scale.toArray(), bounds: includeBounds ? scene?.toyBounds(toy.id) : undefined })) };
 }
 
 const loadingTimeout = setTimeout(() => fail('The arcade took too long to open. Reload the page to try again.'), 15000);

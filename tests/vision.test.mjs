@@ -31,7 +31,7 @@ function fixture() {
       time += 65;
     }
   };
-  return { frame, setPhase: value => { phase = value; },
+  return { frame, controller, setPhase: value => { phase = value; },
     read: () => ({ starts, drops, state, input, active }) };
 }
 
@@ -76,4 +76,64 @@ test('blocking input cancels a partly held drop while keeping recognition visibl
   assert.equal(f.read().drops, 0);
   f.frame([hand(.46)], 7); f.frame([hand(.52)], 3);
   assert.ok(f.read().input.x > 0);
+});
+
+test('prolonged owner loss requires stable single-hand acquisition', () => {
+  const f = fixture(); f.setPhase('aim'); f.frame([hand(.4)], 10);
+  f.frame([hand(.85, 'Right')], 15);
+  assert.equal(f.controller.owner, null);
+  f.frame([hand(.7, 'Right')], 2);
+  assert.equal(f.read().state.kind, 'calibrating');
+  assert.deepEqual(f.read().input, { x: 0, z: 0 });
+  f.frame([hand(.7, 'Right')], 10);
+  assert.equal(f.read().state.kind, 'tracking');
+});
+
+test('capture gate rejects delayed, reordered and previous-camera results without refreshing input', () => {
+  const f = fixture(), c = f.controller;
+  Object.assign(c, { running: true, generation: 3, lastCapture: 1000, lastResult: 1000 });
+  let handled = 0; c.handle = () => handled++;
+  assert.equal(c.acceptResult({}, 1100, 3, 1500), false);
+  assert.equal(c.lastResult, 1000);
+  assert.equal(c.acceptResult({}, 900, 3, 1100), false);
+  assert.equal(c.acceptResult({}, 1100, 2, 1200), false);
+  c.visibilityCutoff = 1150;
+  assert.equal(c.acceptResult({}, 1100, 3, 1200), false);
+  assert.equal(handled, 0);
+  assert.equal(c.acceptResult({}, 1200, 3, 1400), true);
+  assert.equal(c.lastResult, 1200);
+  assert.equal(handled, 1);
+});
+
+test('a moving acquisition candidate cannot claim control until held still', () => {
+  const f = fixture();
+  for (let i = 0; i < 5; i++) for (const x of [.3, .38, .46, .54, .62, .54, .46, .38]) f.frame([hand(x)]);
+  assert.equal(f.controller.owner, null);
+  f.frame([hand(.4)], 12);
+  assert.ok(f.controller.owner);
+});
+
+test('returning after a long hidden interval allows fresh frames without trusting old input', async () => {
+  const f = fixture(), c = f.controller, originalDocument = globalThis.document;
+  globalThis.document = { hidden: false };
+  try {
+    Object.assign(c, { running: true, busy: true, lastResult: performance.now() - 8000, lastActivity: performance.now() });
+    let failed = false; c.fail = () => { failed = true; };
+    await c.frame();
+    assert.equal(failed, false); assert.equal(c.running, true);
+    assert.deepEqual(f.read().input, { x: 0, z: 0 });
+  } finally { globalThis.document = originalDocument; }
+});
+
+test('obsolete camera enumeration cannot update camera choices', async () => {
+  const f = fixture(), c = f.controller;
+  const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  let resolve, updates = 0;
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { mediaDevices: { enumerateDevices: () => new Promise(r => { resolve = r; }) } } });
+  c.generation = 1; c.select = { replaceChildren: () => updates++ };
+  try {
+    const pending = c.listCameras(); c.generation++;
+    resolve([{ kind: 'videoinput', deviceId: 'old' }]); await pending;
+    assert.equal(updates, 0);
+  } finally { if (originalNavigator) Object.defineProperty(globalThis, 'navigator', originalNavigator); else delete globalThis.navigator; }
 });

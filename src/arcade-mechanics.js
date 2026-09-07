@@ -1,3 +1,4 @@
+import { CLASP_HOLD_MS } from './clasp.js';
 // Original, deterministic arcade grasping. No win rolls or target snapping.
 export const BED = 1.66;
 export const HIGH = 4.04;
@@ -21,12 +22,12 @@ export function carouselPose(time) {
   const angle = Math.PI / 2 + time / CAROUSEL.period * Math.PI * 2;
   return { x: CAROUSEL.x + Math.cos(angle) * CAROUSEL.radius, z: CAROUSEL.z + Math.sin(angle) * CAROUSEL.radius, angle };
 }
-export function carouselCue(time) {
-  const cue = CAROUSEL.period - CONTACT_DELAY;
+export function carouselCue(time, holdRemaining = CLASP_HOLD_MS / 1000) {
+  const cue = CAROUSEL.period - CONTACT_DELAY - holdRemaining;
   const delta = ((time - cue + CAROUSEL.period / 2) % CAROUSEL.period + CAROUSEL.period) % CAROUSEL.period - CAROUSEL.period / 2;
   const now = Math.abs(delta) <= .20;
   const lights = now ? 3 : delta < -.20 && delta >= -1.4 ? Math.min(3, Math.floor((delta + 1.4) / .4) + 1) : 0;
-  return { now, lights, text: now ? 'DROP NOW' : lights ? String(4 - lights) : 'WAIT FOR THE LIGHTS' };
+  return { now, lights, text: now ? 'BRING HANDS TOGETHER' : lights ? String(4 - lights) : 'WAIT FOR THE LIGHTS' };
 }
 export function moveCarousel(game, dt) {
   if (!game.carousel || !['idle', 'aim', 'anticipate', 'descend'].includes(game.phase)) return;

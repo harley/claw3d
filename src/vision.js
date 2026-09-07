@@ -2,6 +2,9 @@ import { pinchRatio, joystickAxis, matchHand, clamp } from './mechanics.js';
 import { ClaspGesture } from './clasp.js';
 import {FistDrop,fistEvidence} from './fist.js';
 
+export const CAPTURE_MAX_AGE = 300;
+export const OWNER_LOSS_GRACE = 650;
+
 const LINKS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 
 export class HandController {
@@ -16,7 +19,8 @@ export class HandController {
     this.resetOwner();
     this.deviceChange = () => this.listCameras().catch(() => {});
     document.addEventListener('visibilitychange', () => {
-      this.lastResult = performance.now();
+      this.visibilityCutoff = performance.now(); this.lastActivity = this.visibilityCutoff;
+      this.resetOwner();
       this.neutral = null; this.openSince = 0;
       this.clasp.reset(); this.fist.reset();
       this.onInput({ x: 0, z: 0 });
@@ -34,8 +38,10 @@ export class HandController {
   }
 
   async listCameras(selected) {
+    const generation = this.generation;
     if (!navigator.mediaDevices?.enumerateDevices) return;
     const devices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+    if (generation !== this.generation) return;
     const value = selected || this.select.value;
     this.select.replaceChildren(...devices.map((device, index) => {
       const option = document.createElement('option'); option.value = device.deviceId;
@@ -52,7 +58,7 @@ export class HandController {
     this.onState({ kind: 'loading', message: 'Starting your camera…' });
     let stream;
     try {
-      if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera access needs localhost in Chrome or Edge.');
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera access needs HTTPS or localhost in Chrome or Edge.');
       const deviceId = this.select.value;
       stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: {
         width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 30, max: 30 },
@@ -79,16 +85,17 @@ export class HandController {
       this.worker.onmessage = ({ data }) => {
         if (generation !== this.generation) return;
         this.busy = false;
-        if (data.type === 'result') { this.lastResult = performance.now(); this.handle(data.result, data.now); }
+        if (data.type === 'result') this.acceptResult(data.result, data.now, generation);
         if (data.type === 'error') this.fail(new Error(data.message));
       };
-      this.worker.onerror = () => this.fail(new Error('Hand tracking stopped. Start the camera again.'));
+      this.worker.onerror = () => { if (generation === this.generation) this.fail(new Error('Hand tracking stopped. Start the camera again.')); };
       stream.getVideoTracks()[0]?.addEventListener('ended', () => {
         if (generation === this.generation) this.fail(new Error('Camera disconnected. Reconnect it, then start again.'));
       }, { once: true });
       this.running = true; this.starting = false; this.lastFrame = -1; this.busy = false;
-      this.lastResult = performance.now();
+      this.lastResult = performance.now(); this.lastActivity = this.lastResult; this.lastCapture = -Infinity;
       await this.listCameras(stream.getVideoTracks()[0]?.getSettings().deviceId);
+      if (generation !== this.generation || !this.running) return;
       this.onState({ kind: 'ready', message: 'Show one hand in the camera. Hold it still to begin.' });
       this.timer = setInterval(() => this.frame(), 65);
     } catch (error) {
@@ -122,8 +129,13 @@ export class HandController {
     if (!this.running) return;
     const now = performance.now();
     if (document.hidden) return;
-    if (now - this.lastResult > 650) this.onInput({ x: 0, z: 0 });
-    if (now - this.lastResult > 7000) { this.fail(new Error('Camera frames stopped. Start the camera again.')); return; }
+    if (now - this.lastResult > CAPTURE_MAX_AGE) {
+      this.onInput({ x: 0, z: 0 });
+      this.clasp.reset();
+      this.onState({ kind: 'lost', message: 'Bring one hand back into view.' });
+      if (now - this.lastResult > OWNER_LOSS_GRACE) this.resetOwner();
+    }
+    if (now - (this.lastActivity ?? this.lastResult) > 7000) { this.fail(new Error('Camera frames stopped. Start the camera again.')); return; }
     if (this.busy || this.video.readyState < 2 || this.video.currentTime === this.lastFrame) return;
     this.busy = true; this.lastFrame = this.video.currentTime;
     const generation = this.generation;
@@ -132,6 +144,24 @@ export class HandController {
       if (!this.running || generation !== this.generation) { bitmap.close(); return; }
       this.worker.postMessage({ type: 'frame', bitmap, now }, [bitmap]);
     } catch (error) { if (generation === this.generation) this.fail(error); }
+  }
+
+  acceptResult(result, capturedAt, generation, receivedAt = performance.now()) {
+    if (!this.running || generation !== this.generation) return false;
+    const age = receivedAt - capturedAt;
+    const reason = !Number.isFinite(capturedAt) || age < 0 ? 'invalid capture'
+      : capturedAt <= (this.visibilityCutoff ?? -Infinity) ? 'hidden capture'
+      : capturedAt <= (this.lastCapture ?? -Infinity) ? 'out of order'
+      : age > CAPTURE_MAX_AGE ? 'over age' : null;
+    this.onDiagnostic?.({ captureAge: age, rejected: reason });
+    if (reason) {
+      this.clasp.reset(); this.onInput({ x: 0, z: 0 });
+      return false;
+    }
+    if (capturedAt - (this.lastCapture ?? capturedAt) > OWNER_LOSS_GRACE) this.resetOwner();
+    this.lastCapture = capturedAt; this.lastResult = capturedAt; this.lastActivity = receivedAt;
+    this.handle(result, capturedAt);
+    return true;
   }
 
   handle(result, now) {
@@ -167,8 +197,8 @@ export class HandController {
         this.pinchSince = 0; this.candidate = null;
         report({ kind: 'ready', message: hands.length > 1 ? 'Lower one hand to begin.' : easy ? 'Show one hand inside the camera view.' : 'Show one hand. Pinch to grab the joystick.' });
       } else if (profile==='fist' ? !hand.fist.closed : hand.pinch || easy) {
-        if (this.candidate && (this.candidate.handedness !== hand.handedness || Math.hypot(this.candidate.center.x-hand.center.x,this.candidate.center.y-hand.center.y) > .1)) this.pinchSince = 0;
-        this.candidate = hand; this.pinchSince ||= now;
+        if (this.candidate && (this.candidate.handedness !== hand.handedness || Math.hypot(this.candidate.center.x-hand.center.x,this.candidate.center.y-hand.center.y) > .1)) { this.pinchSince = 0; this.candidate = null; }
+        this.candidate ||= hand; this.pinchSince ||= now;
         const progress = clamp((now - this.pinchSince) / 500, 0, 1);
         report({ kind: 'calibrating', message: easy ? 'Hold your hand still for a moment…' : 'Hold that pinch…', progress });
         if (progress === 1) {
@@ -181,17 +211,23 @@ export class HandController {
       sendInput({ x: 0, z: 0 });
       this.draw(hands, this.owner ? hand : null); return;
     }
-    if(['clasp','fist'].includes(profile) && phase==='aim'){
+    if (this.lostSince && now - this.lostSince >= OWNER_LOSS_GRACE) {
+      this.resetOwner();
+      report({ kind: 'ready', message: 'Show one hand and hold still to regain control.' });
+      this.draw(hands, null); return;
+    }
+    hand = matchHand(hands, this.owner, this.owner.handedness);
+    if (!hand && hands.length === 1 && Math.hypot(hands[0].center.x-this.owner.x,hands[0].center.y-this.owner.y) < .08) hand = hands[0];
+    if(['clasp','fist'].includes(profile) && phase==='aim' && hand){
       const wasActive=this.clasp.active;
       const clasp=this.clasp.update(hands,this.owner,now,aspect);
       if(clasp.active){
         this.fist.reset();
         this.input={x:0,z:0};sendInput(this.input);this.neutral=null;
         // Follow the existing primary spatial track while the pair converges.
-        const primary=hands.map(h=>({h,d:Math.hypot(h.center.x-this.owner.x,h.center.y-this.owner.y)})).sort((a,b)=>a.d-b.d);
-        if(primary[0]?.d<.16){this.owner.x=primary[0].h.center.x;this.owner.y=primary[0].h.center.y;}
+        this.owner.x=hand.center.x; this.owner.y=hand.center.y; this.lostSince=0;
         report({kind:'clasping',message:clasp.message,progress:clasp.progress});
-        this.draw(hands,primary[0]?.d<.16 ? primary[0].h : null);
+        this.draw(hands,hand);
         if(clasp.fired)this.onDrop();
         return;
       }
@@ -202,7 +238,7 @@ export class HandController {
     // continuation is still the same spatial track; an extra hand never is.
     if (!hand && hands.length === 1 && Math.hypot(hands[0].center.x-this.owner.x,hands[0].center.y-this.owner.y) < .08) hand = hands[0];
     if (!hand) {
-      this.lostSince ||= now; this.openSince = 0; this.neutral = null;this.fist.reset();
+      this.clasp.reset(); this.lostSince ||= now; this.openSince = 0; this.neutral = null;this.fist.reset();
       sendInput({ x: 0, z: 0 });
       this.gripping = false;
       report({ kind: 'lost', message: easy ? 'Bring one hand back to the same area.' : 'Hand lost — paused. Bring your hand back and pinch.' });
@@ -249,7 +285,14 @@ export class HandController {
     this.overlay.width = 640; this.overlay.height = Math.round(640 * (this.video.videoHeight || 360) / (this.video.videoWidth || 640));
     const height = this.overlay.height;
     const ctx = this.overlay.getContext('2d');
+    if (this.neutral && active) {
+      ctx.strokeStyle = '#abd3ff'; ctx.lineWidth = 2;
+      const x = this.neutral.x * 640, y = this.neutral.y * height;
+      ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(active.center.x * 640, active.center.y * height); ctx.stroke();
+    }
     for (const hand of hands) {
+      if (hand === active) { ctx.fillStyle = '#66ffb3'; ctx.font = 'bold 18px sans-serif'; ctx.fillText('YOU', hand.center.x * 640 + 14, hand.center.y * height); }
       ctx.strokeStyle = hand === active ? '#d0ed92' : '#faf4dc'; ctx.fillStyle = '#ec805c'; ctx.lineWidth = 2;
       for (const [a,b] of LINKS) {
         ctx.beginPath(); ctx.moveTo((1-hand.landmarks[a].x)*640,hand.landmarks[a].y*height);
