@@ -1,72 +1,60 @@
-# CoderPush Cloud Claw
+# Little Cloud Arcade
 
-A local 3D arcade game for the CoderPush silver booth at AWS Cloud & AI Day Hanoi, 29 September 2026. Original cabinet, bunny, travel pillow, and jointed claw assets are made in Blender. The laptop runs the game and camera; the booth monitor connects over HDMI.
+A camera-controlled miniature arcade with an original enamel cabinet and eleven collectible toys: three bunnies, two capybaras, two cloud cushions, two jelly stars and two vinyl robots. A small courier lift carries each catch to its own place on the wooden gallery.
 
-## Play
+## Play locally
 
 ```sh
-npm install
-npm run assets
+npm ci
 npm run build
 npm run play
 ```
 
-Open **http://localhost:4184** in Chrome or Edge. All game assets and hand-tracking models are served from this laptop. After installation and asset preparation, playing does not need internet access.
+Open **http://127.0.0.1:4197**. The production preview stays stable while source files are edited. Rebuild and refresh to see a change.
 
-This stable playtest does not reload during code edits. After an update, run `npm run build` and refresh the browser. For development with automatic reloading, use `npm run dev` at **http://localhost:4183**.
+For development, run `npm run dev` and open **http://127.0.0.1:4196**.
 
-- **Camera (default):** click Start camera and allow access. Show one open hand and hold still for half a second. Move relative to that neutral position to steer. To DROP, clench your hand and hold until the meter fills (about 0.55 seconds). Steering freezes during confirmation. Open your hand to cancel; the joystick recentres so it does not jump. A fist shown before an open hand cannot trigger a drop. After the result, hold one open hand up to play again.
-- **Two-hand DROP also works in the default profile:** show both hands apart, then bring your palms close together and hold for the meter (about 0.65 seconds). Keep a small gap so the camera sees both palms. Aiming freezes while two hands are visible. Separate to cancel the hold; lower one hand to resume steering with a new neutral position. A clasp-only profile remains selectable.
-- **Hand steering + physical DROP:** choose this camera profile for relaxed-hand steering with Space, Enter, or the programmable button. The camera panel includes a re-centre button.
-- **Air joystick (optional):** choose this profile in the camera panel. Hold a thumb/index pinch or a loose fist to grab the virtual joystick. Keep holding and move relative to the neutral position. Release to stop moving; pinch again to re-centre. Hold an open palm for 0.8 seconds to DROP. Pinch recognition has separate entry/release thresholds so a small change in finger spacing does not repeatedly lose control.
-- **Keyboard:** click Try with keyboard, then use arrows or WASD. Hold Shift for fine movement. Space or Enter drops. A round has 30 seconds of aiming, followed by the grab and return sequence.
-- **Mouse/touch:** drag the circular joystick and click DROP.
-- **Programmable keypad:** open the gear panel and choose Map a DROP key, then press the desired button. This mapping is saved locally. A knob configured to emit left/right arrow key pulses moves the claw horizontally. USB knob protocols and vendor-specific configuration are not implemented.
-- **Camera choice:** the gear panel lists available cameras after permission. Start with the laptop camera; select the BRIO when connected. The app does not silently switch to a different camera during a round.
-- **Operator controls:** gear panel provides camera stop/start, camera selection, keyboard-only mode, key mapping, round reset, and lower rendering quality. Sound starts muted. The top-right button requests fullscreen.
+## Event play
 
-Camera frames stay in the local browser. They are neither uploaded nor recorded. Hand inference runs in a Web Worker, separate from rendering. A missing or stale hand stops movement; tracking loss pauses the aiming timer until control returns or the operator uses manual controls. Similar nearby hands are treated as ambiguous. This is spatial hand tracking, not identity recognition, so a busy booth needs a marked one-player area and physical rehearsal.
+Enter a leaderboard name, play three turns, then see the total and rank. Each turn has 15 seconds of aiming and the original catch/delivery animation. All turns restock the same six-toy layout and restart the same carousel phase and start over an empty patch. Expiry drops the claw once; there is no random win roll or forced catch. Five stationary toys earn 100 points each. The moving star earns 200 points. Its carousel uses a fixed 5.6-second cycle; aim at the gold pickup ring and time the clasp confirmation for green. The cue leads contact by the fixed 1.05-second descent delay. The star continues moving during descent, then the mechanism brakes for grasping and delivery. Catch resolution uses the actual contact position, with no random success or target snapping. Timing and game feel still need human playtesting.
 
-## Art
+Start the camera, enter a name, steer with one hand, then clasp both hands and hold to drop. Turns advance automatically after two seconds. The gear button opens the operator panel. There are no keyboard movement or drop controls. Sound starts off and can be enabled explicitly. Reduced motion preserves a stable viewpoint and suppresses decorative celebration.
 
-The current design is a red-and-white arcade cabinet in a dark game room. Blender models include a deep illuminated marquee, brushed steel and matte enamel frame, door hardware, control shelf, joystick, DROP button, service hatch, and prize chute. A pale sage rear panel keeps the dark claw visible. The browser adds subtle glass, warm room lighting, and neighbouring teal and mustard cabinets built from the same detailed models with real plush prizes. Background geometry is batched by material. The 3D joystick and button respond to game input. The bunny and pillow remain original stylized interpretations of the supplied prizes.
+The operator can pause, reset the current player, select practice for the next player, change rendering quality, start a fresh leaderboard session, and export all sessions as JSON. Practice results are stored but excluded from rankings. Ties share rank. Session rollover preserves old results and is blocked during an active run. Rules are saved with each run. Upgrading from the first static-prize prototype starts a separate carousel leaderboard; old results and any interrupted run remain available in the export.
 
-Open `art/cloud-claw.blend` in Blender to inspect the editable scene. Regenerate it and the browser models with:
+Scores and player progress persist in this browser's local storage. Reloading an unfinished run requires the host to resume its uncompleted turn. Completed turns remain scored. Focus loss does not latch an operator pause. Hidden pages suspend gameplay until visible again; missing hands hold only the aiming timer, never an in-flight drop. Storage failures are displayed; export before closing if results are only in memory. Clearing browser data removes local history, so export regularly. This single-browser prototype has no server verification, badge enforcement, queue tracking or physical prize inventory. Staff supervise name entry; player IDs and a nullable badge ID leave room for later scanning. Do not use this local leaderboard as a tamper-resistant competition backend.
 
-```sh
-npm run models
-```
+Camera controls are required for play. START CAMERA requests access and then opens name entry; CAMERA opens a separate setup dialog with device selection and re-centring. The only active gesture profile is one-hand steering with a two-hand clasp to drop. A missing or stale hand holds aiming and carousel motion. Once a drop starts, hand loss and settings dialogs do not stop delivery. Only the host's explicit PAUSE GAME stops the animation. Camera code and tracking models load only after explicit activation. Frames remain local and are not recorded. Face identification is not implemented. Camera integration is tested with a synthetic video device and the actual inference model; physical gesture feel still needs a booth rehearsal. Geometry and textures are generated locally.
 
-`art/arcade-preview.png` is a Cycles render from the Blender scene. To regenerate it, run `/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build-assets.py -- --render-preview`.
+## Implementation
 
-The command runs the installed macOS application at `/Applications/Blender.app/Contents/MacOS/Blender` in background mode. Geometry and fabric textures are authored in `scripts/build-assets.py`; no Blender add-ons are needed. It uses the Mac's Arial Black and DIN Condensed fonts and converts lettering to meshes for export. This is the actual Blender engine; the game itself renders its exported GLB models with Three.js. The artwork is not a dimensional scan or approved sponsor booth drawing.
+- `src/arcade-mechanics.js`: deterministic state machine, aiming limits, independent finger support and curated assortment.
+- `src/arcade-art.js`: original procedural toys, fabric grain, wood grain, smooth jelly geometry and face details.
+- `src/arcade-scene.js`: cabinet, articulated claw, carriage, prize hatch, courier, gallery and material-specific performances.
+- `src/event-session.js`: versioned rules, player runs, scoring, persistence validation and leaderboard sessions.
+- `src/arcade.js` and `src/arcade.css`: camera-driven event flow, compact presentation, bounded loading/error states and reduced motion.
 
-Cabinet reference: the large glass enclosure and manufactured construction of [SEGA's Pinnacle Crane](https://segaarcade.com/games/pinnacle-crane), and the illuminated, prize-focused presentation of [UFO Catcher 10](https://www.sega.jp/arcade/detail/ufo-catcher-10/). These are visual references, not assets incorporated into this game.
-
-## Current game rules and boundaries
-
-- A drop must align with one of ten prizes: seven bunnies and three pillows, at varied angles and sizes. The target ring turns green when a prize is within the capture area.
-- **Contact-limited arcade grasping:** the claw first aligns at safe travel height, then descends vertically in small collision-checked steps. Each finger stops independently at contact with the exported toy geometry. A prize needs two supporting fingers and a clear lift/transfer path. The full claw extent determines the wall limits; the centre alone does not. Empty drops reach the bed using the actual finger-tip height. Rotated mesh bounds are checked precisely before reporting a wall contact. All visible central prizes are catchable; there are no decorative blockers.
-- Triangle-mesh collision checks use the actual GLB assets. Motion is deterministic and guided; this is not a general rigid-body or soft-cloth physics simulation. There is no random success roll, hidden release, or shrinking prize. The collection shaft and outlet are sized for the full-size toys.
-- A new round restocks the virtual machine. There is no real inventory tracking or prize reservation yet. Result screens identify this as a local playtest.
-- Badge scanning, contact capture, and physical prize handover remain staff operations. They are not implemented in this game.
-- The booth policy is real prizes while stock lasts, with staff substitution. A later event configuration must keep displayed prizes and substitutions aligned with actual stock.
+Grasping uses authored ellipsoid support envelopes and a guided animation. The jelly wave, cushion compression and trailing ears are expressive approximations, not a general soft-body or rigid-body solver. The couriers and glass are simplified miniature mechanisms. Booth hardware validation and deployment remain outside this iteration.
 
 ## Verify
 
 ```sh
 npm test
 npm run build
+# With npm run dev running in another terminal, and Google Chrome installed:
+npm run test:browser
+npm run test:clearance
+npm run test:carousel
+npm run test:camera
+npm run test:contact
 ```
 
-Tests cover capture boundaries, hand ownership, steering, calibration, open-to-fist confirmation, one-shot triggering, the two-hand apart/together/hold sequence, cancellation and tracking loss. Mesh tests load the exported Blender assets and sample the complete successful and empty-drop animation paths, including the back wall, neighbouring toys, and collection opening. For development-only frozen pose inspection, use `http://localhost:4183/?inspect=bunny-1&phase=grip` (any layout ID or `empty`; optional `time` in seconds). This inspection mode is removed from the production build. Browser and build checks cannot prove physical hand feel, TV performance, or BRIO performance. Rehearse those on the actual devices.
+The event browser suite uses deterministic camera input events through the real camera adapter to exercise a three-turn run with catches and a miss, repeated drop suppression, restocking, practice exclusion, automatic expiry, pause, reload recovery, session rollover, export, and a narrow viewport. A delivery regression removes hands, dispatches blur and opens camera settings mid-animation. The synthetic camera fixture does not measure recognition accuracy. It saves screenshots to locally ignored `.screenshots/`. Chrome runs headlessly for repeatability; verify game feel and performance on the booth hardware separately. Unit tests also cover all original grasp mechanics, carousel interception timing and stored session rules. The carousel browser test records a camera-event-driven successful interception, early and late misses, and checks the star’s full orbit against stationary toy mesh bounds.
 
-### Physical playtest — 5 September 2026
+Development-only inspection is available at `/?inspect=butter&phase=grip` (any toy ID; any animation phase). `window.__littleCloud.snapshot()` exposes read-only diagnostics in development. Production removes both inspection and diagnostics.
 
-The first laptop-camera gesture test was unreliable. After fixing handedness-flip interruptions and pinch-release jitter, we made relaxed-hand steering with a physical DROP button the default. The user retested that mode and confirmed: “Yes, this is more reliable.” The user subsequently confirmed that the new two-hand clasp can trigger DROP. The default now additionally accepts a held fist; hand steering with a physical button remains selectable. After the earlier contact and cabinet-clearance fixes, the user retested and confirmed: “Contact looks better now.” The new fist profile and optional pinch/open-palm profile still need separate physical validation. The BRIO, programmable keypad, booth monitor, and crowded booth conditions remain untested.
+See [the creative brief and verification record](docs/plans/2026-09-06-2344-feat-little-cloud-arcade-plan.md) for the visual requirements and evidence. No code or assets were copied from the unlicensed Jelly-Baby reference.
 
-## Agreed direction
+The delivery-clearance check samples all eleven transported toys, the tray and courier through outbound and return motion against nearby decorative mesh bounds, with a clearance margin. It also reproduces the former plant obstruction. Delivery remains a guided animation, not a general collision solver.
 
-The experience should help staff start relevant business conversations. Several people will staff the booth, so game development prioritizes visual quality and approachable camera interaction. The reference booth is 2 × 2 m with a 43-inch HDMI TV; the exact organizer build may differ. First-person play remains one player at a time, with small gestures inside that footprint.
-
-Primary technical references: [Blender glTF export](https://docs.blender.org/manual/en/dev/addons/scene_gltf2.html), [MediaPipe web hand tracking](https://developers.google.com/edge/mediapipe/solutions/vision/hand_landmarker/web_js), and [Three.js renderer](https://threejs.org/docs/pages/WebGLRenderer.html).
+Finger samples sweep against toy meshes during descent and closing. A blocked descent cannot become a catch. Off-centre contact produces a grounded, damped tilt, constrained by adjacent toy bounds and cabinet walls. This is constrained rocking, not free rigid-body toppling. The contact browser check covers normal and jackpot catches, blocked misses, visible tilt, floor clearance and empty drops.

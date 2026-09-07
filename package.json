@@ -1,16 +1,21 @@
 {
-  "name": "coderpush-cloud-claw",
+  "name": "little-cloud-arcade",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1 --port 4183 --strictPort",
+    "dev": "vite --host 127.0.0.1 --port 4196 --strictPort",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4183 --strictPort",
-    "play": "vite preview --host 127.0.0.1 --port 4184 --strictPort",
+    "play": "vite preview --host 127.0.0.1 --port 4197 --strictPort",
     "assets": "node scripts/prepare-vision.mjs",
     "models": "/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build-assets.py",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "test:browser": "node tests/arcade.browser.mjs",
+    "test:clearance": "node tests/delivery-clearance.browser.mjs",
+    "test:carousel": "node tests/carousel.browser.mjs",
+    "test:contact": "node tests/contact.browser.mjs",
+    "test:camera": "node tests/camera.browser.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "1.0.1",
@@ -18,6 +23,7 @@
     "three-mesh-bvh": "0.9.14"
   },
   "devDependencies": {
+    "playwright": "^1.63.0",
     "vite": "^7.3.1"
   }
 }

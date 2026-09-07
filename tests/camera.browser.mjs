@@ -1,0 +1,42 @@
+// Uses Chromium's synthetic video device, never a physical webcam.
+import assert from 'node:assert/strict';
+import { chromium } from 'playwright';
+const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
+try {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, permissions: ['camera'] });
+  const page = await context.newPage(), errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => { window.mediaCalls = 0; const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); navigator.mediaDevices.getUserMedia = options => { window.mediaCalls++; return original(options); }; });
+  await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud);
+  const snap = () => page.evaluate(() => window.__littleCloud.snapshot());
+  assert.equal(await page.evaluate(() => window.mediaCalls), 0);
+  await page.locator('#camera-open').click(); assert.equal(await page.evaluate(() => window.mediaCalls), 0);
+  await page.locator('#camera-toggle').click();
+  await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running, { }, { timeout: 35000 });
+  assert.equal((await snap()).event.run, null); assert.equal((await snap()).phase, 'idle');
+  assert.equal(await page.locator('#camera-preview').isVisible(), true);
+  assert.equal(await page.evaluate(() => document.getElementById('camera-video').videoWidth > 0), true);
+  await page.locator('#play').click(); await page.locator('#name').fill('Camera test'); await page.locator('#name').press('Enter');
+  await page.waitForTimeout(300); const before = (await snap()).event.remaining;
+  await page.waitForTimeout(700); assert.equal((await snap()).event.remaining, before); assert.equal((await snap()).event.handCamera.waiting, true);
+  const position = (await snap()).position;
+  await page.keyboard.down('ArrowRight'); await page.waitForTimeout(350); await page.keyboard.up('ArrowRight');
+  await page.keyboard.press('Space'); assert.deepEqual((await snap()).position, position); assert.equal((await snap()).phase, 'aim');
+  await page.evaluate(() => window.dispatchEvent(new Event('blur'))); assert.equal((await snap()).event.paused, false);
+  await page.locator('#camera-open').click(); assert.equal(await page.locator('#operator').isVisible(), false);
+  await page.locator('#camera-toggle').click(); assert.equal((await snap()).event.handCamera.running, false);
+  assert.equal(await page.evaluate(() => document.getElementById('camera-video').srcObject), null);
+  await page.locator('#camera-setup .panel-head button').click();
+  await page.screenshot({ path: '.screenshots/camera-only.png' });
+  assert.deepEqual(errors, []);
+  console.log('PASS opt-in real worker/model with synthetic camera; camera-only input; hand-loss timer hold; blur does not latch pause; separate camera setup; shutdown');
+  await context.close();
+  const denied = await browser.newContext(); const dp = await denied.newPage();
+  await dp.addInitScript(() => { navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('Denied', 'NotAllowedError'); }; });
+  await dp.goto('http://127.0.0.1:4196'); await dp.waitForFunction(() => window.__littleCloud); await dp.locator('#camera-open').click(); await dp.locator('#camera-toggle').click();
+  await dp.waitForFunction(() => document.getElementById('camera-status').textContent.includes('permission'));
+  assert.equal(await dp.evaluate(() => window.__littleCloud.snapshot().event.handCamera.running), false);
+  assert.equal(await dp.locator('#camera-setup').isVisible(), true);
+  assert.equal(await dp.locator('#operator').isVisible(), false);
+  console.log('PASS denied camera permission shows retry in camera setup'); await denied.close();
+} finally { await browser.close(); }
