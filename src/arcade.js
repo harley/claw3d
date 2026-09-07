@@ -103,7 +103,7 @@ function finishTurn() {
 function play() {
   if (!scene || stopped || frozen || paused || document.querySelector('dialog[open]')) return;
   if (recovering) return openOperator();
-  if (!run) { if (!cameraControls?.running) return startCamera(true); return openRegistration(); }
+  if (!run) { if (!cameraControls?.running) return startCamera(); return openRegistration(); }
   updateUI();
 }
 function gestureDrop() {
@@ -129,7 +129,7 @@ $('quality').addEventListener('click', () => { if (!scene) return; scene.setQual
 $('sound').addEventListener('click', () => { sound = !sound; $('sound').textContent = sound ? 'SOUND ON' : 'SOUND OFF'; $('sound').setAttribute('aria-pressed', String(sound)); note(523); });
 $('fullscreen').addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { $('hint').textContent = 'Use your browser’s fullscreen command.'; } });
 $('camera-open').addEventListener('click', () => $('camera-setup').showModal());
-async function startCamera(registerAfter = false) {
+async function startCamera() {
   if (cameraLoading) return;
   cameraLoading = true; $('camera-toggle').disabled = true; $('camera-status').textContent = 'Starting camera…';
   updateUI();
@@ -142,7 +142,14 @@ async function startCamera(registerAfter = false) {
         onChange: state => {
           $('camera-status').textContent = state.message;
           $('hand-status').textContent = state.message;
+          const labels = { ready: 'SHOW ONE HAND', calibrating: 'HAND FOUND', tracking: 'HAND READY', lost: 'HAND OUT OF VIEW', clasping: 'HOLD TO DROP', dropping: 'HOLD TO DROP', loading: 'STARTING CAMERA', off: 'CAMERA OFF', error: 'CHECK CAMERA' };
+          $('camera-recognition').textContent = labels[state.kind] || 'CAMERA';
+          $('camera-preview').dataset.state = state.kind;
+          const delivering = !['idle', 'aim', 'result'].includes(game.phase);
+          $('camera-guidance').textContent = delivering ? 'Hands down · watch the claw.' : !run && state.kind === 'tracking' ? 'Press Play when you’re ready.' : state.message;
           $('camera-progress').style.width = `${Math.round((state.progress || 0) * 100)}%`;
+          const video = $('camera-video');
+          if (video.videoWidth && video.videoHeight) $('camera-preview').style.setProperty('--camera-aspect', `${video.videoWidth} / ${video.videoHeight}`);
           const active = cameraControls?.running || state.kind === 'tracking';
           $('camera-preview').hidden = !active;
           $('camera-open').textContent = active ? 'CAMERA ✓' : 'CAMERA';
@@ -151,7 +158,7 @@ async function startCamera(registerAfter = false) {
       });
     }
     await cameraControls.start();
-    if (cameraControls.running) { $('camera-setup').close(); if (registerAfter) openRegistration(); }
+    if (cameraControls.running) $('camera-setup').close();
     else $('camera-setup').showModal();
   } catch (error) { $('camera-status').textContent = `Camera unavailable: ${error.message}`; $('camera-setup').showModal(); }
   finally { cameraLoading = false; $('camera-toggle').disabled = false; updateUI(); }

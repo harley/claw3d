@@ -19,6 +19,7 @@ try {
       await cameraInput(page, {x:0,z:0,[axis]:Math.sign(delta)*speed}); await page.waitForTimeout(Math.abs(delta) / (.85*speed) * 1000); await cameraInput(page,{x:0,z:0});
     }
   }
+  await page.locator('#play').click(); await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running);
   await page.locator('#play').click(); await page.locator('#name').fill('Star Pilot'); await page.locator('#name').press('Enter'); await aim();
   // Dispatch in the observed timing window; screenshots/IPC must not delay DROP.
   await page.waitForFunction(() => {

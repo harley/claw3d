@@ -11,11 +11,30 @@ try {
   const snap = () => page.evaluate(() => window.__littleCloud.snapshot());
   assert.equal(await page.evaluate(() => window.mediaCalls), 0);
   await page.locator('#camera-open').click(); assert.equal(await page.evaluate(() => window.mediaCalls), 0);
-  await page.locator('#camera-toggle').click();
+  await page.locator('#camera-setup .panel-head button').click();
+  await page.locator('#play').click();
   await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running, { }, { timeout: 35000 });
   assert.equal((await snap()).event.run, null); assert.equal((await snap()).phase, 'idle');
+  assert.equal(await page.locator('#registration').isVisible(), false);
   assert.equal(await page.locator('#camera-preview').isVisible(), true);
   assert.equal(await page.evaluate(() => document.getElementById('camera-video').videoWidth > 0), true);
+  await page.waitForFunction(() => document.getElementById('camera-guidance').textContent.includes('Show one hand'));
+  assert.equal(await page.locator('#camera-guidance').isVisible(), true);
+  assert.equal(await page.locator('#camera-recognition').textContent(), 'SHOW ONE HAND');
+  const geometry = await page.evaluate(() => {
+    const video = document.getElementById('camera-video'), overlay = document.getElementById('camera-overlay');
+    const v = video.getBoundingClientRect(), o = overlay.getBoundingClientRect();
+    return { ratio: v.width / v.height, cameraRatio: video.videoWidth / video.videoHeight,
+      aligned: v.x === o.x && v.y === o.y && v.width === o.width && v.height === o.height };
+  });
+  assert.ok(Math.abs(geometry.ratio - geometry.cameraRatio) < .01);
+  assert.equal(geometry.aligned, true);
+  await page.screenshot({ path: '.screenshots/camera-ready-wide.png' });
+  await page.setViewportSize({ width: 820, height: 900 });
+  assert.equal(await page.locator('#camera-guidance').isVisible(), true);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.screenshot({ path: '.screenshots/camera-ready-narrow.png' });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.locator('#play').click(); await page.locator('#name').fill('Camera test'); await page.locator('#name').press('Enter');
   await page.waitForTimeout(300); const before = (await snap()).event.remaining;
   await page.waitForTimeout(700); assert.equal((await snap()).event.remaining, before); assert.equal((await snap()).event.handCamera.waiting, true);

@@ -10,3 +10,17 @@
 @media(prefers-reduced-motion:reduce){#celebration.pop{display:block;opacity:1;transform:translate(-50%,-50%)}}
 
 #hand-status{font-size:12px;line-height:1.4;color:#66ffb3;max-width:200px;margin:8px 0}#camera-setup{width:min(420px,calc(100vw - 32px))}.controls:has(#play[hidden]){justify-content:center;text-align:center}
+/* Keep the camera image and landmarks on the same uncropped aspect ratio. */
+#camera-preview{width:250px;height:auto;overflow:hidden}
+.camera-image{position:relative;aspect-ratio:var(--camera-aspect,16 / 9)}
+#camera-video,#camera-overlay{object-fit:contain}
+.camera-feedback{padding:9px 11px 12px;background:#091322}
+#camera-recognition{font-size:10px;letter-spacing:1.2px;color:#abd3ff}
+#camera-guidance{font-size:12px;line-height:1.4;color:#e4efff;margin:5px 0 0;max-width:228px}
+#camera-preview[data-state="tracking"]{border-color:#66ffb3}
+#camera-preview[data-state="tracking"] #camera-recognition{color:#66ffb3}
+#camera-preview[data-state="lost"] #camera-recognition{color:#ffc14d}
+#camera-preview[data-state="clasping"] #camera-recognition{color:#ffc14d}
+#camera-preview:not([hidden]) + #hand-status{display:none}
+@media(max-width:900px){#camera-preview{width:210px}}
+@media(max-width:650px){#camera-preview{width:160px}.camera-feedback{padding:7px 8px 10px}#camera-guidance{font-size:11px}}

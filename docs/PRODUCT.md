@@ -14,6 +14,7 @@ The wow moment is direct control followed by a believable grab, a tense lift and
 - Dark arcade presentation, clear CoderPush/AWS branding, spacious zoomed-out play area, brief state-dependent instructions.
 - A missed grab should make physical sense. Current contact stops and grounded rocking are constrained approximations, not full rigid-body toppling.
 - Scores and sessions currently stay in the browser. They are not a verified competition backend.
+- The leaderboard is for fun and comparison only; rank earns no additional prize. Physical giveaway rules are separate. Min's ball artwork and 20/30/50-point proposal still need alignment with the game before adoption or printing.
 
 ## Current milestone: finish a run without coaching
 
@@ -46,5 +47,7 @@ After camera usability meets the current milestone, add a protected HTTPS staff 
 Badge scanning, verified competition results, replay enforcement, queue/admin analytics, free toppling physics and new environments. Keep these outside the current milestone unless the booth's operating requirements make one essential.
 
 ## Evidence
+
+The first camera-feedback iteration keeps recognition and the controlling-hand highlight visible before play and during delivery, while blocking game actions outside aiming. The preview follows the camera aspect ratio and gives a readable next instruction. Automated regressions cover setup without actions, a fresh clasp after blocked input, and preview alignment. Physical first-time-player validation, the guided rehearsal, stale-frame rejection and moving-star cue timing remain outstanding; this is not completion of U1–U3.
 
 `npm run check` checks unit behavior and the build. `npm run check:booth` also runs camera integration, event flow, carousel, contact and delivery checks. Automated checks do not establish gesture feel or spectator impact. Save local screenshots under `.screenshots/` and summarize physical observations here with the tested commit.

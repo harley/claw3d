@@ -11,7 +11,7 @@ await installCameraFixture(page);
 const snap=()=>page.evaluate(()=>window.__littleCloud.snapshot());
 const phase=state=>page.waitForFunction(state=>window.__littleCloud.snapshot().phase===state,state,{timeout:30000});
 const open=async()=>{await page.goto('http://127.0.0.1:4196');await page.waitForFunction(()=>window.__littleCloud);};
-const register=async name=>{await page.locator('#play').click();await page.locator('#name').fill(name);await page.locator('#name').press('Enter');await phase('aim');};
+const register=async name=>{if(!(await snap()).event.handCamera.running){await page.locator('#play').click();await page.waitForFunction(()=>window.__littleCloud.snapshot().event.handCamera.running);}await page.locator('#play').click();await page.locator('#name').fill(name);await page.locator('#name').press('Enter');await phase('aim');};
 async function aimButter(){ for(const axis of ['x','z']) for(let i=0;i<6;i++){const delta=({x:-.38,z:.72})[axis]-(await snap()).position[axis];if(Math.abs(delta)<.025)break;const speed=Math.abs(delta)<.14?.25:1;await cameraInput(page,{x:0,z:0,[axis]:Math.sign(delta)*speed});await page.waitForTimeout(Math.abs(delta)/(.85*speed)*1000);await cameraInput(page,{x:0,z:0});} assert.equal((await snap()).aligned,'butter');}
 let checkedDelivery = false;
 async function catchTurn(){
