@@ -56,6 +56,8 @@ The green moving-star cue means bring already-armed hands together, then hold fo
 
 Physical first-time-player acceptance remains outstanding. Automated fixtures are integration evidence only: five first-time visitors must still test acquisition within 10 seconds, rehearsal drop within 15 seconds of acquisition, and three turns without coaching, unintended drops or host recovery. Record hesitation, capture-age behavior, lighting/occlusion and strategy for a second attempt against the final BUILD. No physical gesture result is claimed by this implementation.
 
+Local device smoke test on 2026-09-08 (Vietnam time), code commit `69a7b33`: the actual preview operator panel showed BUILD `69a7b33`; MacBook Pro Camera opened at 960×540 and reached SHOW ONE HAND. The camera was stopped after checking startup. No camera frames were saved, no physical gesture was performed, and the existing interrupted local run was left unchanged. This proves device startup only.
+
 U1–U3 automated verification: 72 unit tests and all five sequential booth browser suites pass. Additional browser checks exercise both 4:3 and 16:9 camera aspect ratios, a successful retry after denied permission, and the displayed star cue followed by a simulated 650 ms hold. The latter is timing integration evidence, not measured human convergence or recognition delay.
 
 `npm run check` checks unit behavior and the build. `npm run check:booth` also runs camera integration, event flow, carousel, contact and delivery checks. Automated checks do not establish gesture feel or spectator impact. Save local screenshots under `.screenshots/` and summarize physical observations here with the tested commit.
