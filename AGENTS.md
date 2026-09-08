@@ -8,11 +8,11 @@ Read `docs/PRODUCT.md` before changing player behavior. The immediate milestone 
 
 - Default development folder: `/Users/qron/code/claw3d`. Run the editor, terminal, tests and preview from the same checkout.
 - Before editing, inspect `pwd`, `git status --short --branch` and `git worktree list`. Report a mismatch before continuing in another checkout.
-- Use one named feature branch per focused deliverable. Keep `main` as the reviewed baseline. Create extra worktrees only for an explicitly separate experiment; identify its owner, branch and port.
+- Use trunk-based development: deliver small, verified changes directly to `main`. Use short-lived branches only when isolation helps, and integrate them promptly after checks and agent review. Do not wait for human PR review or optional review bots. Create extra worktrees only for an explicitly separate experiment; identify its owner, branch and port.
 - Preserve unrelated changes. Never discard a worktree until unique source, plans and useful evidence are preserved and verified.
 - Make a conventional local commit after each verified, coherent change. A checkpoint preserves unfinished work but must say so. Do not claim a checkpoint is production-ready.
 - Review the staged diff, including untracked files, before committing. Never commit secrets, camera frames, local scores, dependencies, builds or screenshots.
-- Push only to the agreed remote. No force pushes, merges or deployment without authorization. Finish with branch, commit, checks and any outstanding work.
+- Push verified changes to the agreed `origin`; routine integration into `main` is authorized. The agent owns review and integration quality. Use focused review for consequential changes, resolve material findings, and run the applicable checks before integration. PRs are optional records, not a waiting stage. No force pushes; deployment remains within the user's authorized scope. Finish with branch, commit, checks and any outstanding work.
 
 ## Small engineering loops
 
