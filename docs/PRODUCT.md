@@ -63,3 +63,15 @@ Local device smoke test on 2026-09-08 (Vietnam time), code commit `69a7b33`: the
 U1–U3 automated verification: 72 unit tests and all five sequential booth browser suites pass. Additional browser checks exercise both 4:3 and 16:9 camera aspect ratios, a successful retry after denied permission, and the displayed star cue followed by a simulated 650 ms hold. The latter is timing integration evidence, not measured human convergence or recognition delay.
 
 `npm run check` checks unit behavior and the build. `npm run check:booth` also runs camera integration, event flow, carousel, contact and delivery checks. Automated checks do not establish gesture feel or spectator impact. Save local screenshots under `.screenshots/` and summarize physical observations here with the tested commit.
+
+## Clearer camera play — September 8
+
+The machine now shows an ivory arcade glove holding the joystick when steering is acquired. This is visual feedback for relaxed-hand control; making a fist is not a new input. The glove follows the stick, shows an amber ring during a clasp hold, and disappears on lost/stale input or blocked control. An accepted drop remains a game-phase decision and finishes after hands leave view. Reduced motion preserves the same ownership states without glove travel.
+
+The main action panel owns setup, recovery, steering and hold instructions in one polite live region. The webcam keeps its uncropped image and a short recognition label. Only the current target receives a score tag; moving-star tags follow the visible star, while jackpot timing still predicts contact. The detailed jackpot cue appears when aiming near its pickup ring. Shared saving/retry messages remain visible.
+
+The retired Blender runtime and its models/tests were removed; the checkpoint branch preserves that prototype. The active procedural scene remains the only player implementation. Rigid carousel trim and target geometry are batched, projection uses the resize dimensions, and unchanged timer/cue text is not rewritten each frame. Frame-history diagnostics run only in development.
+
+Automated feedback checks cover acquired control, apart-before-hold guidance, partial hold/cancellation, stale worker output, modal suppression, reduced-motion calibration, and complete unscored delivery after hand loss. These are synthetic integration checks; five first-time physical-camera runs remain outstanding.
+
+Verification for this pass: 68 unit tests and the build passed; all six sequential booth suites and the built shared-session suite passed. At 1440×900 in headless Chrome, full-quality idle rendering fell from 437 to 400 draw calls with the same 579,490 triangles. Both six-second samples averaged 60 fps (p95 16.7/16.8 ms); this is reduced rendering work, not a measured FPS gain. With the glove and hold feedback visible, the final sample used 408 draw calls. Local screenshots are synthetic and remain ignored.

@@ -47,11 +47,11 @@ async function register(page, name) {
   assert.equal(count(), 0);
   assert.equal(await page.evaluate(() => window.testCamera.clasp()), true);
   assert.equal(await page.evaluate(() => window.testCamera.clasp()), false);
-  await page.waitForFunction(() => document.getElementById('status').textContent === 'GOING DOWN');
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'Here we go…');
   assert.equal(count(), 0, 'practice must not create a server run');
   assert.equal(await page.locator('#rehearsal-exit').isEnabled(), false);
   await page.evaluate(() => { window.testCamera.visible=false; window.testCamera.tick(); document.getElementById('rehearsal-exit').click(); });
-  await page.waitForFunction(() => document.getElementById('status').textContent === 'PRACTICE COMPLETE', {}, { timeout: 30000 });
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'You’ve got it', {}, { timeout: 30000 });
   assert.equal(count(), 0, 'full unscored animation finishes before server start');
   assert.equal(await page.locator('#turn').textContent(), '— / 3');
   if (name === 'Browser A') {
@@ -108,7 +108,7 @@ try {
   assert.ok(cookies.find(cookie => cookie.name === 'cc_owner').httpOnly);
   await page.screenshot({ path: '.screenshots/shared-pending.png' });
   await page.reload(); await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
-  assert.equal(await page.locator('#player-name').textContent(), 'PLAYER ONE?');
+  assert.equal(await page.locator('#player-name').textContent(), 'Your turn?');
   hold = false;
   await page.waitForFunction(() => document.querySelector('#leaders')?.textContent.includes('Browser A'), {}, { timeout: 15000 });
   assert.equal(app.database.board().runs.length, 1); assert.equal(app.database.board().runs[0].turns.length, 3);

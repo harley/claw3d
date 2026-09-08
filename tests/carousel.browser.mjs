@@ -10,6 +10,17 @@ try {
   await installCameraFixture(page);
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud);
+  await page.evaluate(async () => {
+    const T = await import('/node_modules/three/build/three.module.js');
+    window.checkStarTag = state => {
+      const position = state.toys.find(toy => toy.id === 'sprout').position;
+      const camera = new T.PerspectiveCamera(35, innerWidth / innerHeight, .1, 70);
+      camera.position.fromArray(state.camera); camera.lookAt(-.4, 2.25, 0); camera.updateMatrixWorld();
+      const point = new T.Vector3(position[0], position[1] + .08, position[2]).project(camera);
+      const tag = document.querySelector('.prize-tag[data-points="200"]'), rect = tag.getBoundingClientRect();
+      return { visible: !tag.hidden, distance: Math.hypot(rect.x + rect.width / 2 - (point.x + 1) / 2 * innerWidth, rect.y + rect.height / 2 - (1 - point.y) / 2 * innerHeight) };
+    };
+  });
   const snap = () => page.evaluate(() => window.__littleCloud.snapshot());
   const phase = state => page.waitForFunction(state => window.__littleCloud.snapshot().phase === state, state, { timeout: 30000 });
   async function aim() {
@@ -30,10 +41,13 @@ try {
       return false;
     }
     if (state.event.carouselTime - window.starHoldStarted < .65) return false;
+    window.starTagCheck = window.checkStarTag(state);
     window.starBeforeDrop = state.toys.find(toy => toy.id === 'sprout').position;
     window.testCamera.clasp(); return true;
   });
   const before = await page.evaluate(() => window.starBeforeDrop);
+  const tag = await page.evaluate(() => window.starTagCheck);
+  assert.equal(tag.visible, true); assert.ok(tag.distance < 2, `Star label must follow visible toy, offset ${tag.distance}px`);
   await phase('descend'); assert.equal((await snap()).caught, null);
   await page.waitForTimeout(250); const during = (await snap()).toys.find(t => t.id === 'sprout').position;
   assert.ok(Math.hypot(before[0] - during[0], before[2] - during[2]) > .03);

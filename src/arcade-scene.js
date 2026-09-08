@@ -1,5 +1,6 @@
 import * as T from 'three';
 import { ToyContacts } from './arcade-contact.js';
+import { JoystickHand } from './joystick-hand.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ASSORTMENT, CAROUSEL, carouselCue, BED, HIGH, FINGER_ANGLES, PHASES, SHELF_LEVELS, collectionSlot, clawPose, mix, ease, clamp } from './arcade-mechanics.js';
 import { palette, material, group, mesh, ball, box, cylinder, line, rod, batch, label, createArtMaterials, createToy } from './arcade-art.js';
@@ -129,6 +130,8 @@ export class ArcadeScene {
     box(cab, m.ivory, [.55, 1.633, 1.44], [2.01, .045, .49], .045);
     cylinder(cab, m.brass, [-.28, 1.68, 1.44], .155, .023); cylinder(cab, m.rubber, [-.28, 1.70, 1.44], .09, .018);
     this.stick = group(this.scene, -.28, 1.70, 1.44); cylinder(this.stick, m.chrome, [0, .092, 0], .023, .18); ball(this.stick, m.red, [0, .205, 0], [.10, .10, .10]);
+    this.stick.scale.setScalar(1.4);
+    this.joystickHand = new JoystickHand(this.stick);
     cylinder(cab, m.brass, [.87, 1.675, 1.44], .19, .036); this.button = cylinder(this.scene, m.red, [.87, 1.72, 1.44], .147, .076, 48);
     const aimLabel = label(cab, 'MOVE', .28, .075, [.05, 1.66, 1.47], { color: '#716b57', font: 'Arial', size: 30 }); aimLabel.rotation.x = -Math.PI / 2;
     const dropLabel = label(cab, 'DROP', .28, .075, [1.20, 1.66, 1.47], { color: '#a04540', font: 'Arial', size: 30 }); dropLabel.rotation.x = -Math.PI / 2;
@@ -206,6 +209,7 @@ export class ArcadeScene {
       const stripe = box(this.carouselDeck, m.ivory, [Math.cos(angle) * .46, .163, Math.sin(angle) * .46], [.075, .008, .025], .004); stripe.rotation.y = -angle;
     }
     cylinder(this.carouselDeck, m.brass, [0, .17, 0], .09, .025, 24);
+    batch(this.carouselDeck); // The deck rotates as one rigid object.
     const ring = mesh(this.carousel, new T.RingGeometry(.19, .21, 48), new T.MeshBasicMaterial({ color: '#ffc14d', side: T.DoubleSide }), 0, .168, CAROUSEL.radius); ring.rotation.x = -Math.PI / 2;
     // Signals sit in the front fascia, below the toy and claw travel envelope.
     // A fixed traffic-light signal beside the track, independent of deck rotation.
@@ -223,6 +227,7 @@ export class ArcadeScene {
     this.targetMat = new T.MeshBasicMaterial({ color: '#be5a4e', transparent: true, opacity: .80, depthWrite: false });
     const ring = mesh(this.target, new T.RingGeometry(.16, .172, 64), this.targetMat); ring.rotation.x = -Math.PI / 2;
     for (let i = 0; i < 4; i++) { const tick = box(this.target, this.targetMat, [Math.cos(i * Math.PI / 2) * .227, 0, Math.sin(i * Math.PI / 2) * .227], [.09, .008, .016], .005); tick.rotation.y = -i * Math.PI / 2; }
+    batch(this.target);
     this.target.traverse(m => { if (m.isMesh) m.castShadow = m.receiveShadow = false; });
     this.beamMat = new T.LineBasicMaterial({ color: '#698d79', transparent: true, opacity: .34, depthWrite: false });
     this.beam = new T.Line(new T.BufferGeometry().setFromPoints([v(0, 0, 0), v(0, 1, 0)]), this.beamMat); this.scene.add(this.beam);
@@ -231,13 +236,14 @@ export class ArcadeScene {
   resize() {
     const width = this.canvas.clientWidth, height = this.canvas.clientHeight;
     if (!width || !height) return;
+    this.viewport = { width, height };
     this.renderer.setSize(width, height, false); this.camera.aspect = width / height; this.camera.updateProjectionMatrix();
     const extra = Math.max(1, 1.45 / this.camera.aspect); this.home.set(7.25 * extra, 2.25 + 3.90 * extra, 11.6 * extra);
   }
 
   setQuality(low) { this.lowQuality = low; this.renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, 1.5)); this.renderer.shadowMap.enabled = !low; this.resize(); }
 
-  screenPoint(x, y, z) { const p = v(x, y, z).project(this.camera); return { x: (p.x + 1) / 2 * this.canvas.clientWidth, y: (1 - p.y) / 2 * this.canvas.clientHeight }; }
+  screenPoint(x, y, z) { const p = v(x, y, z).project(this.camera); return { x: (p.x + 1) / 2 * this.viewport.width, y: (1 - p.y) / 2 * this.viewport.height }; }
 
   groundToys(game) { for (const toy of game.toys) toy.groundOffset = this.toys.get(toy.id).userData.groundOffset; }
   toyBounds(id) { const bounds = new T.Box3().setFromObject(this.toys.get(id), true); return { min: bounds.min.toArray(), max: bounds.max.toArray() }; }
@@ -255,7 +261,7 @@ export class ArcadeScene {
     });
   }
 
-  update(game, dt, time, input, aligned) {
+  update(game, dt, time, input, aligned, feedback) {
     const phase = game.phase, elapsed = game.elapsed, plan = game.plan, motion = this.reducedMotion ? 0 : 1;
     this.carousel.visible = Boolean(game.carousel);
     if (game.carousel) {
@@ -266,6 +272,7 @@ export class ArcadeScene {
     for (const [id, object] of this.toys) object.visible = game.toys.some(toy => toy.id === id);
     const pose = clawPose(game);
     this.stick.rotation.set(input.z * .24, 0, -input.x * .24); this.button.position.y = phase === 'anticipate' ? 1.688 : 1.72;
+    this.joystickHand.update(phase, elapsed, dt, feedback, this.reducedMotion);
     this.target.visible = ['idle', 'aim'].includes(phase); this.target.position.set(game.position.x, BED + (game.carousel && Math.hypot(game.position.x - CAROUSEL.x, game.position.z - CAROUSEL.z) < .55 ? CAROUSEL.height : 0) + .014, game.position.z); this.targetMat.color.set(aligned ? '#547e69' : '#bb5b49');
     this.beam.visible = this.target.visible; this.beam.position.set(game.position.x, BED + .02, game.position.z); this.beam.scale.y = HIGH - BED - 1.01; this.beamMat.color.copy(this.targetMat.color);
     this.deliveryTray.visible = false;

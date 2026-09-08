@@ -18,9 +18,9 @@ try {
   assert.equal(await page.locator('#registration').isVisible(), false);
   assert.equal(await page.locator('#camera-preview').isVisible(), true);
   assert.equal(await page.evaluate(() => document.getElementById('camera-video').videoWidth > 0), true);
-  await page.waitForFunction(() => document.getElementById('camera-guidance').textContent.includes('Show one hand'));
-  assert.equal(await page.locator('#camera-guidance').isVisible(), true);
-  assert.equal(await page.locator('#camera-recognition').textContent(), 'SHOW ONE HAND');
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'Show one open hand');
+  assert.equal(await page.locator('#hint').isVisible(), true);
+  assert.equal(await page.locator('#camera-recognition').textContent(), 'Camera view');
   const geometry = await page.evaluate(() => {
     const video = document.getElementById('camera-video'), overlay = document.getElementById('camera-overlay');
     const v = video.getBoundingClientRect(), o = overlay.getBoundingClientRect();
@@ -37,7 +37,7 @@ try {
   }
   await page.screenshot({ path: '.screenshots/camera-ready-wide.png' });
   await page.setViewportSize({ width: 820, height: 900 });
-  assert.equal(await page.locator('#camera-guidance').isVisible(), true);
+  assert.equal(await page.locator('#hint').isVisible(), true);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.screenshot({ path: '.screenshots/camera-ready-narrow.png' });
   await page.setViewportSize({ width: 1440, height: 900 });

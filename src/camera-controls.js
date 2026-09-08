@@ -14,6 +14,12 @@ export async function createCameraControls({ video, overlay, select, onChange, c
   const reset = () => { controller.resetOwner(); if (controller.running) notify({ kind: 'ready', message: 'Hold one open hand still to steer.' }); };
   return {
     get diagnostic() { return diagnostic; },
+    // Presentation expires with input, including when the worker stops reporting.
+    get feedback() {
+      const fresh = performance.now() - at < 700;
+      return { ...state, kind: !controller.running ? controller.starting ? 'loading' : state.kind === 'error' ? 'error' : 'off' : fresh ? state.kind : 'lost',
+        progress: fresh ? state.progress || 0 : 0, controlEnabled: controller.running && fresh && canControl() };
+    },
     get running() { return controller.running; }, get starting() { return controller.starting; },
     get input() { return canControl() && controller.running && performance.now() - at < 700 ? input : { x: 0, z: 0 }; },
     get waiting() { return controller.running && (!['tracking', 'clenching', 'clasping', 'dropping'].includes(state.kind) || performance.now() - at >= 700); },
