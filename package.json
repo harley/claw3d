@@ -9,7 +9,6 @@
     "preview": "npm run play",
     "play": "npm run build && vite preview --host 127.0.0.1 --port 4197 --strictPort",
     "assets": "node scripts/prepare-vision.mjs",
-    "models": "/Applications/Blender.app/Contents/MacOS/Blender --background --python scripts/build-assets.py",
     "test": "node --test tests/*.test.mjs",
     "test:browser": "node tests/arcade.browser.mjs",
     "test:clearance": "node tests/delivery-clearance.browser.mjs",

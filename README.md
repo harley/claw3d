@@ -4,7 +4,7 @@ A camera-controlled CoderPush × AWS arcade. Players rehearse steering and dropp
 
 ## Working agreement
 
-Develop in `/Users/qron/code/claw3d` on a named feature branch. The active player experience is camera-only. Read [the product focus](docs/PRODUCT.md) and [agent working rules](AGENTS.md) before changing behavior. The earlier prototype is preserved on `checkpoint/camera-only-prototype`.
+Develop in `/Users/qron/code/claw3d` on `main`, with small verified commits. The active player experience is camera-only. Read [the product focus](docs/PRODUCT.md) and [agent working rules](AGENTS.md) before changing behavior. The earlier prototype is preserved on `checkpoint/camera-only-prototype`; its inactive runtime, Blender model exports and legacy collision checks have been removed from the active checkout.
 
 ## Play locally
 
@@ -102,7 +102,7 @@ npm run test:camera
 npm run test:contact
 ```
 
-The event browser suite uses deterministic camera input events through the real camera adapter to exercise a three-turn run with catches and a miss, repeated drop suppression, restocking, practice exclusion, automatic expiry, pause, reload recovery, session rollover, export, and a narrow viewport. A delivery regression removes hands, dispatches blur and opens camera settings mid-animation. The synthetic camera fixture does not measure recognition accuracy. It saves screenshots to locally ignored `.screenshots/`. Chrome runs headlessly for repeatability; verify game feel and performance on the booth hardware separately. Unit tests also cover all original grasp mechanics, carousel interception timing and stored session rules. The carousel browser test records a camera-event-driven successful interception, early and late misses, and checks the star’s full orbit against stationary toy mesh bounds.
+The event browser suite uses deterministic camera input events through the real camera adapter to exercise a three-turn run with catches and a miss, repeated drop suppression, restocking, practice exclusion, automatic expiry, pause, reload recovery, session rollover, export, and a narrow viewport. A delivery regression removes hands, dispatches blur and opens camera settings mid-animation. The synthetic camera fixture does not measure recognition accuracy. It saves screenshots to locally ignored `.screenshots/`. Chrome runs headlessly for repeatability; verify game feel and performance on the booth hardware separately. Unit tests cover the active grasp mechanics, carousel interception timing, camera controls and stored session rules. The carousel browser test records a camera-event-driven successful interception, early and late misses, and checks the star’s full orbit against stationary toy mesh bounds.
 
 Development-only inspection is available at `/?inspect=butter&phase=grip` (any toy ID; any animation phase). `window.__littleCloud.snapshot()` exposes read-only diagnostics in development. Production removes both inspection and diagnostics.
 
