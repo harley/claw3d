@@ -24,12 +24,12 @@ async function open(context) {
     assert.ok(alias, 'production vision export found');
     await route.fulfill({ contentType: 'text/javascript', body: `
       class HandController {
-        constructor(options) { Object.assign(this, options); this.running=false; this.input={x:0,z:0}; window.testCamera=this; }
+        constructor(options) { Object.assign(this, options); this.running=false; this.visible=true; this.input={x:0,z:0}; window.testCamera=this; }
         resetOwner() { this.input={x:0,z:0}; this.onInput(this.input); }
         async start() { this.running=true; this.tick(); this.timer=setInterval(()=>this.tick(),30); }
-        tick() { this.onInput(this.input); this.onState({kind:'tracking',message:'One hand ready'}); }
+        tick() { this.onInput(this.visible ? this.input : {x:0,z:0}); this.onState({kind:this.visible ? 'tracking' : 'lost',message:'Camera fixture'}); }
         stop() { clearInterval(this.timer); this.running=false; }
-        clasp() { this.onDrop(); }
+        clasp() { return this.onDrop(); }
       } export { HandController as ${alias} };` });
   });
   await page.goto(origin);
@@ -40,15 +40,32 @@ async function open(context) {
   assert.equal(await page.evaluate(() => window.__littleCloud), undefined, 'production omits diagnostics');
   return page;
 }
-const input = (page, value) => page.evaluate(value => { window.testCamera.input=value; window.testCamera.tick(); }, value);
 async function register(page, name) {
   await page.locator('#play').click(); await page.waitForFunction(() => window.testCamera?.running);
   await page.locator('#play').click(); await page.locator('#name').fill(name); await page.locator('#name').press('Enter');
-  await input(page, { x: .5, z: 0 }); await page.waitForTimeout(1050); await input(page, { x: 0, z: -.5 });
-  await page.waitForFunction(() => document.getElementById('status').textContent === 'TRY A DROP');
-  await input(page, { x: 0, z: 0 });
-  await page.evaluate(() => window.testCamera.clasp());
+  const count = () => app.database.db.prepare('SELECT COUNT(*) AS n FROM runs WHERE name=?').get(name).n;
+  assert.equal(count(), 0);
+  assert.equal(await page.evaluate(() => window.testCamera.clasp()), true);
+  assert.equal(await page.evaluate(() => window.testCamera.clasp()), false);
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'GOING DOWN');
+  assert.equal(count(), 0, 'practice must not create a server run');
+  assert.equal(await page.locator('#rehearsal-exit').isEnabled(), false);
+  await page.evaluate(() => { window.testCamera.visible=false; window.testCamera.tick(); document.getElementById('rehearsal-exit').click(); });
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'PRACTICE COMPLETE', {}, { timeout: 30000 });
+  assert.equal(count(), 0, 'full unscored animation finishes before server start');
+  assert.equal(await page.locator('#turn').textContent(), '— / 3');
+  if (name === 'Browser A') {
+    await page.locator('#shared-start').waitFor({ timeout: 15000 });
+    assert.equal(await page.locator('#turn').textContent(), '— / 3');
+    const issued = app.database.db.prepare('SELECT id FROM runs WHERE name=?').get(name);
+    assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM turns WHERE run_id=?').get(issued.id).n, 0);
+    await page.locator('#shared-retry').click();
+  }
   await page.waitForFunction(() => document.getElementById('turn').textContent === '1 / 3');
+  assert.equal(count(), 1);
+  const issued = app.database.db.prepare('SELECT id FROM runs WHERE name=?').get(name);
+  assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM turns WHERE run_id=?').get(issued.id).n, 0);
+  await page.evaluate(() => { window.testCamera.visible=true; window.testCamera.tick(); });
 }
 async function finish(page) {
   for (const turn of [1, 2, 3]) {
@@ -69,7 +86,15 @@ try {
   await page.waitForTimeout(2200); assert.equal(await page.locator('#shared-reauth').isVisible(), true);
   await page.locator('#shared-reauth').click(); await page.locator('#staff-code').fill(staffCode); await page.locator('#staff-form button').click();
   await page.locator('#staff-access').waitFor({ state: 'hidden' });
+  const startKeys = [];
+  await page.route('**/api/runs', async route => {
+    startKeys.push(route.request().postDataJSON().requestKey);
+    const response = await route.fetch();
+    if (startKeys.length === 1) await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Simulated lost start acknowledgement' }) });
+    else await route.fulfill({ response });
+  });
   await register(page, 'Browser A');
+  assert.equal(startKeys.length, 2); assert.equal(startKeys[0], startKeys[1]);
   let hold = true, lost = false;
   await page.route('**/api/runs/*/turns', async route => {
     if (hold) {

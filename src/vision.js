@@ -226,9 +226,12 @@ export class HandController {
         this.input={x:0,z:0};sendInput(this.input);this.neutral=null;
         // Follow the existing primary spatial track while the pair converges.
         this.owner.x=hand.center.x; this.owner.y=hand.center.y; this.lostSince=0;
-        report({kind:'clasping',message:clasp.message,progress:clasp.progress});
         this.draw(hands,hand);
-        if(clasp.fired)this.onDrop();
+        if (clasp.fired) {
+          const accepted = this.onDrop() !== false;
+          if (!accepted) this.clasp.reset();
+          report({ kind: accepted ? 'accepted' : 'tracking', message: accepted ? 'Drop accepted · watch the claw.' : 'Drop unavailable. Show hands apart to try again.', progress: accepted ? 1 : 0 });
+        } else report({kind:'clasping',message:clasp.message,progress:clasp.progress});
         return;
       }
       if(wasActive){this.neutral=null;this.input={x:0,z:0};}

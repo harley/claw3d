@@ -70,13 +70,14 @@ function updateUI() {
   if (phase === 'aim' && !rehearsal && nearPickup) { title = 'JACKPOT · 200 PTS'; hint = aligned?.id === CAROUSEL.id ? 'CLASP & HOLD' : 'Gold ring · wait for green'; }
   if (rehearsal) {
     kicker = 'QUICK PRACTICE · NO SCORE';
-    title = rehearsal === 'steer' ? 'MOVE TO THE RING' : 'TRY A DROP';
-    hint = rehearsal === 'steer' ? 'Move one hand gently to steer the claw' : 'Show hands apart, then together · keep a small gap';
+    title = rehearsal === 'delivery' ? phaseCopy[phase] || 'WATCH THE CLAW' : rehearsal === 'complete' ? 'PRACTICE COMPLETE' : 'TRY A DROP';
+    hint = rehearsal === 'delivery' ? 'Hands down · this drop is unscored' : rehearsal === 'complete' ? 'Your three scored turns start next' : 'Move toward the ring, or clasp and hold to drop here';
     button = '';
   }
   if (startingRun) { title = 'STARTING YOUR RUN'; hint = 'Connecting to the shared leaderboard…'; }
   $('rehearsal-exit').hidden = !rehearsal;
-  $('rehearsal-exit').disabled = startingRun;
+  $('rehearsal-exit').disabled = startingRun || rehearsal === 'delivery';
+  $('reset').disabled = startingRun;
   $('timer').textContent = String(Math.ceil(remaining)).padStart(2, '0');
   $('arcade').classList.toggle('last-claw', Boolean(run && turnNumber === 3)); $('arcade').classList.toggle('urgent', phase === 'aim' && remaining <= 5);
   $('mode-label').textContent = shared ? (run?.practice ? 'PRACTICE · NOT RANKED' : sharedStatus) : storageError ? 'UNSAVED · OPEN OPERATOR' : run?.practice ? 'PRACTICE · NOT RANKED' : '3 CLAWS. MAKE THEM COUNT.';
@@ -100,6 +101,10 @@ function beginTurn() {
 }
 function openRegistration() { if (stopped || !scene) return; $('name').value = ''; $('registration').showModal(); $('name').focus(); }
 function finishTurn() {
+  if (rehearsal) {
+    if (rehearsal === 'delivery') { rehearsal = 'complete'; nextTurnElapsed = 0; }
+    return;
+  }
   if (!run) return;
   const outcome = recordTurn(store, turnNumber, game.plan?.prize?.id || null); if (!outcome) return;
   persist();
@@ -125,7 +130,7 @@ function play() {
   updateUI();
 }
 async function startScoredRun() {
-  if (startingRun || !pendingPlayer) return;
+  if (startingRun || !pendingPlayer || rehearsal !== 'complete') return;
   startingRun = true;
   try {
     if (shared && !pendingPlayer.practice) {
@@ -148,13 +153,11 @@ async function startScoredRun() {
   } finally { startingRun = false; updateUI(); }
 }
 function gestureDrop() {
-  if (rehearsal) {
-    if (rehearsal !== 'drop' || paused || stopped || document.hidden || document.querySelector('dialog[open]')) return;
-    startScoredRun(); return;
-  }
-  if (!run || game.phase !== 'aim' || paused || frozen || stopped || document.hidden || document.querySelector('dialog[open]')) return;
-  if (drop(game)) note(220, .2);
-  updateUI();
+  if ((!run && !rehearsal) || game.phase !== 'aim' || startingRun || paused || frozen || stopped || document.hidden || document.querySelector('dialog[open]')) return false;
+  if (!drop(game)) return false;
+  if (rehearsal) rehearsal = 'delivery';
+  note(220, .2); updateUI();
+  return true;
 }
 function fail(message, error) { stopped = true; cameraControls?.stop(); clearTimeout(window.__arcadeBootTimer); errors.push(String(error || message)); $('loading').hidden = true; $('error').hidden = false; $('error-message').textContent = message; console.error('Cloud Claw:', error || message); }
 function openOperator() { if (shared && sharedRole !== 'host') { $('host-access').showModal(); return; } renderBoard(); $('operator').showModal(); $('pause').textContent = recovering ? 'RESUME INTERRUPTED TURN' : paused ? 'RESUME GAME' : 'PAUSE GAME'; }
@@ -167,14 +170,14 @@ $('player-form').addEventListener('submit', event => { event.preventDefault(); i
   freshGame(); remaining = RULES.seconds; rehearsal = 'steer'; begin(game); updateUI();
 });
 $('name').addEventListener('input', () => $('name').setCustomValidity(''));
-$('rehearsal-exit').addEventListener('click', () => { rehearsal = null; pendingPlayer = null; freshGame(); updateUI(); });
+$('rehearsal-exit').addEventListener('click', () => { if (startingRun || rehearsal === 'delivery') return; rehearsal = null; pendingPlayer = null; freshGame(); updateUI(); });
 $('register-cancel').addEventListener('click', () => $('registration').close());
 $('next-player').addEventListener('click', () => { $('final').close(); completedRun = null; freshGame(); updateUI(); play(); });
 $('final').addEventListener('cancel', event => event.preventDefault());
 $('play').addEventListener('click', () => { $('scene').focus(); play(); });
 $('operator-open').addEventListener('click', openOperator);
 $('pause').addEventListener('click', () => { if (recovering) { beginTurn(); paused = false; } else paused = !paused; $('operator').close(); $('scene').focus(); });
-$('reset').addEventListener('click', () => { if (shared && run && !run.practice) sharedApi.abandon(run); if (store.active) { store.active.abortedAt = new Date().toISOString(); store.active = null; } run = null; rehearsal = null; pendingPlayer = null; completedRun = null; recovering = paused = frozen = false; persist(); freshGame(); $('operator').close(); updateUI(); });
+$('reset').addEventListener('click', () => { if (startingRun) return; if (shared && run && !run.practice) sharedApi.abandon(run); if (store.active) { store.active.abortedAt = new Date().toISOString(); store.active = null; } run = null; rehearsal = null; pendingPlayer = null; completedRun = null; recovering = paused = frozen = false; persist(); freshGame(); $('operator').close(); updateUI(); });
 $('new-board').addEventListener('click', async () => {
   if (shared) {
     if (rotatingBoard) return;
@@ -207,11 +210,11 @@ async function startCamera() {
         onChange: state => {
           $('camera-status').textContent = state.message;
           $('hand-status').textContent = state.message;
-          const labels = { ready: 'SHOW ONE HAND', calibrating: 'HAND FOUND', tracking: 'HAND READY', lost: 'HAND OUT OF VIEW', clasping: 'HOLD TO DROP', dropping: 'HOLD TO DROP', loading: 'STARTING CAMERA', off: 'CAMERA OFF', error: 'CHECK CAMERA' };
+          const labels = { ready: 'SHOW ONE HAND', calibrating: 'HAND FOUND', tracking: 'HAND READY', accepted: 'DROP ACCEPTED', lost: 'HAND OUT OF VIEW', clasping: 'HOLD TO DROP', dropping: 'HOLD TO DROP', loading: 'STARTING CAMERA', off: 'CAMERA OFF', error: 'CHECK CAMERA' };
           $('camera-recognition').textContent = labels[state.kind] || 'CAMERA';
           $('camera-preview').dataset.state = state.kind;
           const delivering = !['idle', 'aim', 'result'].includes(game.phase);
-          $('camera-guidance').textContent = delivering ? 'Hands down · watch the claw.' : rehearsal && state.kind === 'tracking' ? rehearsal === 'steer' ? 'Move your hand toward the practice ring.' : 'Hands apart, then together · keep a small gap.' : !run && state.kind === 'tracking' ? 'Press Play when you’re ready.' : state.message;
+          $('camera-guidance').textContent = delivering ? 'Hands down · watch the claw.' : rehearsal && state.kind === 'tracking' ? rehearsal === 'steer' ? 'Move toward the ring, or clasp and hold to drop here.' : 'Hands apart, then together · keep a small gap.' : !run && state.kind === 'tracking' ? 'Press Play when you’re ready.' : state.message;
           $('camera-pose').hidden = state.kind !== 'clasping' && rehearsal !== 'drop';
           $('camera-progress').parentElement.setAttribute('aria-valuenow', String(Math.round((state.progress || 0) * 100)));
           $('camera-progress').style.width = `${Math.round((state.progress || 0) * 100)}%`;
@@ -244,7 +247,7 @@ function frame(time) {
   const aiming = game.phase === 'aim', modal = Boolean(document.querySelector('dialog[open]'));
   const cameraWaiting = aiming && (!cameraControls?.running || cameraControls.waiting);
   // Only explicit operator pause stops a drop already in flight.
-  const blocked = paused || startingRun || (aiming && (cameraWaiting || modal || document.hidden));
+  const blocked = paused || (aiming && (cameraWaiting || modal || document.hidden));
   $('pause-banner').hidden = !paused;
   $('pause-banner').textContent = 'PAUSED BY HOST';
   $('hand-status').hidden = !aiming;
@@ -253,7 +256,7 @@ function frame(time) {
   if (!frozen && !blocked && !document.hidden) {
     if (aiming) { game.position = move(game.position, input, dt); moveCarousel(game, dt); aligned = aimTarget(game);
       if (rehearsal) {
-        if (rehearsal === 'steer' && Math.hypot(game.position.x - practiceMarker.x, game.position.z - practiceMarker.z) < .13) { rehearsal = 'drop'; cameraControls.reset(); }
+        if (rehearsal === 'steer' && Math.hypot(game.position.x - practiceMarker.x, game.position.z - practiceMarker.z) < .13) { rehearsal = 'drop'; }
       } else {
       const before = Math.ceil(remaining); remaining = Math.max(0, remaining - dt); if (Math.ceil(remaining) < before && remaining <= 5) note(remaining < 1 ? 220 : 440, .08); if (!remaining) drop(game);
       }
@@ -261,6 +264,9 @@ function frame(time) {
       input.x = input.z = 0;
       if (game.phase === 'idle') moveCarousel(game, dt);
       if (game.phase === 'result' && run && !recovering && !modal) { nextTurnElapsed += dt; if (nextTurnElapsed >= 2) beginTurn(); }
+      if (game.phase === 'result' && rehearsal === 'complete' && !modal && !startingRun) {
+        nextTurnElapsed += dt; if (nextTurnElapsed >= 1.5) void startScoredRun();
+      }
       const before = game.phase; advance(game, dt); if (game.phase === 'result' && before !== 'result') finishTurn();
     }
   } else input.x = input.z = 0;

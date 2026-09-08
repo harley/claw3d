@@ -8,7 +8,7 @@ export async function createCameraControls({ video, overlay, select, onChange, c
     getPhase: () => canControl() ? 'aim' : 'blocked',
     onDiagnostic: next => { if (import.meta.env?.DEV) diagnostic = { ...diagnostic, ...next }; },
     onStart: () => {}, // A gesture must never register a player or advance a turn.
-    onDrop: () => { if (canControl()) onDrop(); },
+    onDrop: () => canControl() && onDrop() === true,
     onInput: next => { input = next; }, onState: notify,
   });
   const reset = () => { controller.resetOwner(); if (controller.running) notify({ kind: 'ready', message: 'Hold one open hand still to steer.' }); };
