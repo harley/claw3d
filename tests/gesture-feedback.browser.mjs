@@ -15,6 +15,7 @@ try {
   const feedback = state => page.evaluate(state => { window.testCamera.feedback = state; window.testCamera.tick(); }, state);
   await page.locator('#play').click();
   await page.waitForFunction(() => document.getElementById('status').textContent === 'You’re ready');
+  assert.equal(await page.evaluate(() => window.testCamera.getProfile()), 'fist');
   assert.equal((await snap()).joystick.visible, false, 'setup is not acquired gameplay control');
   await page.locator('#play').click();
   await page.locator('#name').fill('Gesture check');
@@ -23,11 +24,11 @@ try {
   assert.equal(await page.locator('#status').textContent(), 'Move your hand');
   await page.screenshot({ path: '.screenshots/gesture-tracking.png' });
 
-  // Both hands appearing does not necessarily mean the hold has started.
-  await feedback({ kind: 'clasping', progress: 0, message: 'Show both hands apart first, then bring them together.' });
-  await page.waitForFunction(() => document.getElementById('hint').textContent.includes('apart first'));
+  // A closed hand must first open to arm a new drop.
+  await feedback({ kind: 'clenching', progress: 0, message: 'Open your hand first, then clench to drop.' });
+  await page.waitForFunction(() => document.getElementById('hint').textContent.includes('Open your hand first'));
   assert.equal((await snap()).phase, 'aim');
-  await feedback({ kind: 'clasping', progress: .5, message: 'Keep a small gap · hold…' });
+  await feedback({ kind: 'clenching', progress: .5, message: 'Hold your fist to drop. Open to cancel.' });
   await page.waitForFunction(() => document.getElementById('gesture-meter').getAttribute('aria-valuenow') === '50');
   assert.equal((await snap()).joystick.progress, .5);
   assert.equal(await page.locator('#status').textContent(), 'Hold to drop');

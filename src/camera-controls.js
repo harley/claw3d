@@ -4,7 +4,7 @@ export async function createCameraControls({ video, overlay, select, onChange, c
   let input = { x: 0, z: 0 }, state = { kind: 'off', message: 'Start the camera to play' }, at = 0;
   let diagnostic = {};
   const notify = next => { state = next; at = performance.now(); onChange(next); };
-  const controller = new HandController({ video, overlay, select, getProfile: () => 'clasp',
+  const controller = new HandController({ video, overlay, select, getProfile: () => 'fist',
     getPhase: () => canControl() ? 'aim' : 'blocked',
     onDiagnostic: next => { if (import.meta.env?.DEV) diagnostic = { ...diagnostic, ...next }; },
     onStart: () => {}, // A gesture must never register a player or advance a turn.

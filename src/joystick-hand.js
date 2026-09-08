@@ -53,17 +53,17 @@ export class JoystickHand {
   update(phase, elapsed, dt, feedback = {}, reducedMotion = false) {
     const accepted = phase === 'anticipate' && !['off', 'blocked', 'paused'].includes(feedback.kind);
     const enabled = phase === 'aim' && feedback.controlEnabled === true;
-    const active = enabled && ['tracking', 'clasping'].includes(feedback.kind);
+    const active = enabled && ['tracking', 'clenching'].includes(feedback.kind);
     this.mode = accepted ? 'accepted' : active ? feedback.kind : 'off';
-    this.progress = this.mode === 'clasping' ? clamp(feedback.progress) : 0;
+    this.progress = this.mode === 'clenching' ? clamp(feedback.progress) : 0;
     this.root.visible = active || accepted;
     if (!this.root.visible) { this.grip = 0; return; }
 
     const target = accepted ? 1 - clamp(elapsed / .2) : 1;
     this.grip = reducedMotion ? 1 : T.MathUtils.damp(this.grip, target, 18, Math.max(0, dt));
     this.glove.position.set(.025 * (1 - this.grip), .14 * (1 - this.grip), .16 * (1 - this.grip));
-    this.haloMaterial.color.set(this.mode === 'clasping' ? '#ffc14d' : '#48e5da');
-    const fraction = this.mode === 'clasping' ? this.progress : 1;
+    this.haloMaterial.color.set(this.mode === 'clenching' ? '#ffc14d' : '#48e5da');
+    const fraction = this.mode === 'clenching' ? this.progress : 1;
     // Reveal existing triangles rather than allocate geometry during a hold.
     this.halo.geometry.setDrawRange(0, Math.floor(this.haloCount * fraction / 6) * 6);
   }

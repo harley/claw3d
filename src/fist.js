@@ -1,5 +1,7 @@
 import {clamp} from './mechanics.js';
 
+export const FIST_HOLD_MS = 550;
+
 export function fistEvidence(landmarks,gesture,score=0,aspect=1){
   const d=(a,b)=>Math.hypot((a.x-b.x)*aspect,a.y-b.y);
   const wrist=landmarks[0],palm=Math.max(d(wrist,landmarks[9]),d(landmarks[5],landmarks[17]));
@@ -26,12 +28,13 @@ export class FistDrop {
     if(!closed){
       this.uncertainSince||=now;
       if(now-this.uncertainSince>130)this.held=0;
-      return{active:this.held>0,progress:this.held/550,fired:false};
+      return{active:this.held>0,progress:this.held/FIST_HOLD_MS,fired:false};
     }
+    if(this.uncertainSince && now-this.uncertainSince>130)this.held=0;
     // The returning detection does not get credit for time spent uncertain.
     if(!this.uncertainSince)this.held+=dt;
     this.uncertainSince=0;
-    const progress=clamp(this.held/550,0,1);this.fired=progress===1;
+    const progress=clamp(this.held/FIST_HOLD_MS,0,1);this.fired=progress===1;
     return{active:true,progress,fired:this.fired};
   }
 }

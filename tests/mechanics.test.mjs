@@ -105,7 +105,7 @@ test('easy mode claims and steers with a relaxed hand without auto-dropping',()=
   c.handle(result({pinch:false,open:true,dx:-.06}),2700);assert.equal(events.drops,0);
 });
 
-for(const profile of ['clasp','fist'])test(`${profile} profile: two-hand clasp freezes steering, drops once, and resumes safely after cancellation`,()=>{
+for(const profile of ['clasp'])test(`${profile} profile: two-hand clasp freezes steering, drops once, and resumes safely after cancellation`,()=>{
   const{c,events}=controller();c.getProfile=()=>profile;
   c.handle(result({pinch:false}),1000);c.handle(result({pinch:false}),1501);
   const pair=(a,b)=>{

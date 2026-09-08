@@ -1,4 +1,4 @@
-import { CLASP_HOLD_MS } from './clasp.js';
+import { FIST_HOLD_MS } from './fist.js';
 // Original, deterministic arcade grasping. No win rolls or target snapping.
 export const BED = 1.66;
 export const HIGH = 4.04;
@@ -22,7 +22,7 @@ export function carouselPose(time) {
   const angle = Math.PI / 2 + time / CAROUSEL.period * Math.PI * 2;
   return { x: CAROUSEL.x + Math.cos(angle) * CAROUSEL.radius, z: CAROUSEL.z + Math.sin(angle) * CAROUSEL.radius, angle };
 }
-export function carouselCue(time, holdRemaining = CLASP_HOLD_MS / 1000) {
+export function carouselCue(time, holdRemaining = FIST_HOLD_MS / 1000) {
   const cue = CAROUSEL.period - CONTACT_DELAY - holdRemaining;
   const delta = ((time - cue + CAROUSEL.period / 2) % CAROUSEL.period + CAROUSEL.period) % CAROUSEL.period - CAROUSEL.period / 2;
   const now = Math.abs(delta) <= .20;

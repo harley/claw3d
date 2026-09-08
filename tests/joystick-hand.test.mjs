@@ -22,7 +22,7 @@ test('glove only claims steering while aiming with current control permission', 
 
 test('hold progress cancels on renewed steering and accepted feedback survives camera loss', () => {
   const hand = new JoystickHand(new T.Group());
-  hand.update('aim', 0, 1 / 60, { kind: 'clasping', controlEnabled: true, progress: .5 }, true);
+  hand.update('aim', 0, 1 / 60, { kind: 'clenching', controlEnabled: true, progress: .5 }, true);
   assert.equal(hand.progress, .5);
   assert.ok(hand.halo.geometry.drawRange.count < hand.haloCount);
   hand.update('aim', 0, 1 / 60, { kind: 'tracking', controlEnabled: true }, true);

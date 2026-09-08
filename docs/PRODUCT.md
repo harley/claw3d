@@ -8,7 +8,7 @@ The wow moment is direct control followed by a believable grab, a tense lift and
 
 ## Accepted constraints
 
-- Camera-only gameplay: one hand steers; a deliberate two-hand clasp drops. Name entry and host controls may use ordinary form input.
+- Camera-only gameplay: one hand steers; a deliberate fist clench drops. Name entry and host controls may use ordinary form input.
 - Three turns, up to 15 seconds of active aiming each, automatic next turns and one final score/rank.
 - Five stationary toys worth 100 points; moving star worth 200. Higher reward requires visibly harder timing. Keep results skill-based and avoid hidden random losses.
 - Dark arcade presentation, clear CoderPush/AWS branding, spacious zoomed-out play area, brief state-dependent instructions.
@@ -21,7 +21,7 @@ The wow moment is direct control followed by a believable grab, a tense lift and
 Use the existing prototype. Do not start another rewrite.
 
 1. Make camera setup and hand acquisition obvious. Show one useful instruction at a time; give visible confirmation when steering is ready.
-2. Make the clasp predictable. Verify steering freezes intentionally during confirmation and delivery always finishes after hands leave view. Check jackpot cue timing against the actual clasp hold delay before tuning difficulty.
+2. Make the fist clench predictable. Verify steering freezes intentionally during confirmation and delivery always finishes after hands leave view. Check jackpot cue timing against the actual fist hold delay before tuning difficulty.
 3. Make success and failure readable. Check finger contact, toy reaction, lift tension and final score from the visitor's viewing position.
 
 Work on one item at a time. The next engineering change should come from the first failing step in a physical-camera playtest.
@@ -75,3 +75,9 @@ The retired Blender runtime and its models/tests were removed; the checkpoint br
 Automated feedback checks cover acquired control, apart-before-hold guidance, partial hold/cancellation, stale worker output, modal suppression, reduced-motion calibration, and complete unscored delivery after hand loss. These are synthetic integration checks; five first-time physical-camera runs remain outstanding.
 
 Verification for this pass: 68 unit tests and the build passed; all six sequential booth suites and the built shared-session suite passed. At 1440×900 in headless Chrome, full-quality idle rendering fell from 437 to 400 draw calls with the same 579,490 triangles. Both six-second samples averaged 60 fps (p95 16.7/16.8 ms); this is reduced rendering work, not a measured FPS gain. With the glove and hold feedback visible, the final sample used 408 draw calls. Local screenshots are synthetic and remain ignored.
+
+## Fist drop — September 8
+
+Player feedback found the two-hand clasp unreliable. The active camera adapter now uses only the steering hand: show an open hand, steer, then clench for 550 ms to drop. Opening before confirmation cancels and recentres steering. A second hand, missing/stale capture or blocked input cancels confirmation; reopen before retrying. An accepted drop still finishes without hands and scores only once. The instructions, progress bar and glove ring show fist confirmation, and the moving-star cue uses the same 550 ms hold constant. This supersedes the clasp controls and timing described in earlier evidence above. Physical recognition and first-time-player acceptance remain unverified.
+
+Verification for fist drop: 72 unit tests, the production build and all six sequential booth browser suites passed. Regressions cover clasp rejection in fist mode, blocked/stale input, reopen-before-retry, one drop per hold, cancellation and uncertainty. Browser checks cover the active fist profile, visible hold feedback, unscored rehearsal, three scored turns, star timing and delivery clearance. These are automated results, not a physical-camera playtest.

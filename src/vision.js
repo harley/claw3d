@@ -131,7 +131,7 @@ export class HandController {
     if (document.hidden) return;
     if (now - this.lastResult > CAPTURE_MAX_AGE) {
       this.onInput({ x: 0, z: 0 });
-      this.clasp.reset();
+      this.clasp.reset(); this.fist.reset();
       this.onState({ kind: 'lost', message: 'Bring one hand back into view.' });
       if (now - this.lastResult > OWNER_LOSS_GRACE) this.resetOwner();
     }
@@ -155,7 +155,7 @@ export class HandController {
       : age > CAPTURE_MAX_AGE ? 'over age' : null;
     this.onDiagnostic?.({ captureAge: age, rejected: reason });
     if (reason) {
-      this.clasp.reset(); this.onInput({ x: 0, z: 0 });
+      this.clasp.reset(); this.fist.reset(); this.onInput({ x: 0, z: 0 });
       return false;
     }
     if (capturedAt - (this.lastCapture ?? capturedAt) > OWNER_LOSS_GRACE) this.resetOwner();
@@ -218,7 +218,7 @@ export class HandController {
     }
     hand = matchHand(hands, this.owner, this.owner.handedness);
     if (!hand && hands.length === 1 && Math.hypot(hands[0].center.x-this.owner.x,hands[0].center.y-this.owner.y) < .08) hand = hands[0];
-    if(['clasp','fist'].includes(profile) && phase==='aim' && hand){
+    if(profile==='clasp' && phase==='aim' && hand){
       const wasActive=this.clasp.active;
       const clasp=this.clasp.update(hands,this.owner,now,aspect);
       if(clasp.active){
@@ -254,11 +254,15 @@ export class HandController {
       const fist=this.fist.update({...hand.fist,visible:hands.length===1},now);
       if(fist.active){
         this.input={x:0,z:0};sendInput(this.input);this.neutral=null;
-        report({kind:'clenching',message:'Hold your fist to DROP. Open your hand to cancel.',progress:fist.progress});
-        this.draw(hands,hand);if(fist.fired)this.onDrop();return;
+        if (fist.fired) {
+          const accepted = this.onDrop() !== false;
+          if (!accepted) this.fist.reset();
+          report({kind: accepted ? 'accepted' : 'tracking', message: accepted ? 'Drop accepted · watch the claw.' : 'Open your hand to try again.', progress: accepted ? 1 : 0});
+        } else report({kind:'clenching',message:'Hold your fist to drop. Open to cancel.',progress:fist.progress});
+        this.draw(hands,hand);return;
       }
       // A fist shown before arming never steers or drops the claw.
-      if(hand.fist.closed){this.input={x:0,z:0};sendInput(this.input);this.neutral=null;report({kind:'tracking',message:'Open your hand first, then clench and hold to DROP.',progress:0});this.draw(hands,hand);return;}
+      if(hand.fist.closed){this.input={x:0,z:0};sendInput(this.input);this.neutral=null;report({kind:'clenching',message:hands.length>1?'Lower your other hand. Open, then clench to drop.':'Open your hand first, then clench to drop.',progress:0});this.draw(hands,hand);return;}
     }
     if ((hand.pinch && !hand.open) || easy) {
       this.gripping = true;

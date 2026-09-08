@@ -62,7 +62,7 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
   const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
   let title = 'Your hands. Your high score.', hint = 'Three turns. Make them count.', button = 'Play', kicker = 'CLOUD CLAW';
   if (recovering) { title = 'Let’s get you back in'; hint = 'Ask your host to resume.'; button = 'OPERATOR'; }
-  else if (phase === 'aim') { kicker = turnNumber === 3 ? 'LAST CLAW!' : `TURN ${turnNumber} OF 3`; title = 'Move your hand'; hint = 'Hands apart, then together to drop.'; button = '';  }
+  else if (phase === 'aim') { kicker = turnNumber === 3 ? 'LAST CLAW!' : `TURN ${turnNumber} OF 3`; title = 'Move your hand'; hint = 'Clench your fist and hold to drop.'; button = '';  }
   else if (phase === 'result') { const points = run?.turns.at(-1)?.score || 0; kicker = `TURN ${turnNumber} COMPLETE`; title = points ? `+${points} · Nice catch!` : 'So close!'; hint = 'Next turn starting…'; button = '';  }
   else if (phaseCopy[phase]) { title = phaseCopy[phase]; kicker = `TURN ${turnNumber} OF 3`; hint = 'Hands down. Watch the claw.'; button = '';  }
   const cue = carouselCue(game.carouselTime), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
@@ -74,7 +74,7 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
     [...$('jackpot-lights').children].forEach((light, i) => light.classList.toggle('on', ['idle', 'aim'].includes(phase) && i < cue.lights));
   }
   $('jackpot-signal').hidden = phase !== 'aim' || Boolean(rehearsal) || !nearPickup;
-  if (phase === 'aim' && !rehearsal && nearPickup) { title = 'Go for the star'; hint = aligned?.id === CAROUSEL.id ? 'Bring hands together and hold.' : 'Gold ring. Wait for green.'; }
+  if (phase === 'aim' && !rehearsal && nearPickup) { title = 'Go for the star'; hint = aligned?.id === CAROUSEL.id ? 'Clench your fist and hold.' : 'Gold ring. Wait for green.'; }
   if (rehearsal) {
     kicker = 'PRACTICE · NO SCORE';
     title = rehearsal === 'delivery' ? phaseCopy[phase] || 'Watch the claw' : rehearsal === 'complete' ? 'You’ve got it' : 'Move your hand';
@@ -86,15 +86,15 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
     if (feedback.kind === 'off') { title = 'Let’s see your hand'; hint = 'Open Camera to continue.'; }
     else if (['ready', 'lost'].includes(feedback.kind)) { title = feedback.kind === 'lost' ? 'Bring your hand back' : 'Show one open hand'; hint = feedback.handCount > 1 ? 'Lower one hand to begin.' : 'Hold it still in the camera.'; }
     else if (feedback.kind === 'calibrating') { title = 'Hand found'; hint = 'Hold still for a moment.'; }
-    else if (['clasping', 'dropping'].includes(feedback.kind) && feedback.controlEnabled) { title = feedback.progress > 0 ? 'Hold to drop' : 'Ready for a drop?'; hint = feedback.message || 'Hands apart, then together. Keep a small gap.'; }
+    else if (['clenching', 'dropping'].includes(feedback.kind) && feedback.controlEnabled) { title = feedback.progress > 0 ? 'Hold to drop' : 'Ready for a drop?'; hint = feedback.message || 'Clench your fist. Open to cancel.'; }
     else if (feedback.kind === 'tracking') {
       if (phase === 'idle') { title = 'You’re ready'; hint = 'Press Play for a quick practice.'; }
-      else if (!nearPickup || rehearsal) { title = 'Move your hand'; hint = rehearsal === 'steer' ? 'Try the ring, or bring hands together to drop.' : 'Hands apart, then together to drop.'; }
+      else if (!nearPickup || rehearsal) { title = 'Move your hand'; hint = rehearsal === 'steer' ? 'Try the ring, or clench your fist to drop.' : 'Clench your fist and hold to drop.'; }
     } else if (feedback.kind === 'error') { title = 'Let’s check the camera'; hint = 'Open Camera to try again.'; }
     else if (feedback.kind === 'loading') { title = 'Waking up the camera…'; hint = 'Allow camera access to play.'; }
   }
   if (startingRun) { title = 'Getting your run ready'; hint = 'Connecting to the leaderboard…'; }
-  const holding = phase === 'aim' && feedback.controlEnabled && ['clasping', 'dropping'].includes(feedback.kind);
+  const holding = phase === 'aim' && feedback.controlEnabled && ['clenching', 'dropping'].includes(feedback.kind);
   const progress = holding ? Math.round(Math.max(0, Math.min(1, feedback.progress || 0)) * 100) : 0;
   $('gesture-meter').hidden = !holding;
   if ($('gesture-meter').getAttribute('aria-valuenow') !== String(progress)) {
@@ -103,7 +103,7 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
   }
   const control = deliveryPhases.has(phase) ? 'delivery' : holding ? 'holding' : feedback.controlEnabled && feedback.kind === 'tracking' ? 'tracking' : feedback.kind;
   if ($('arcade').dataset.control !== control) $('arcade').dataset.control = control;
-  const cameraLabels = { ready: 'Camera view', calibrating: 'Hand found', tracking: 'Hand found', accepted: 'Drop confirmed', lost: 'Hand out of view', clasping: 'Hands found', dropping: 'Hands found', loading: 'Starting camera', off: 'Camera off', error: 'Check camera' };
+  const cameraLabels = { ready: 'Camera view', calibrating: 'Hand found', tracking: 'Hand found', accepted: 'Drop confirmed', lost: 'Hand out of view', clenching: 'Fist found', dropping: 'Hands found', loading: 'Starting camera', off: 'Camera off', error: 'Check camera' };
   setText('camera-recognition', cameraLabels[feedback.kind] || 'Camera view');
   if ($('camera-preview').dataset.state !== feedback.kind) $('camera-preview').dataset.state = feedback.kind;
   $('rehearsal-exit').hidden = !rehearsal;

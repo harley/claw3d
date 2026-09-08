@@ -29,7 +29,7 @@ async function open(context) {
         async start() { this.running=true; this.tick(); this.timer=setInterval(()=>this.tick(),30); }
         tick() { this.onInput(this.visible ? this.input : {x:0,z:0}); this.onState({kind:this.visible ? 'tracking' : 'lost',message:'Camera fixture'}); }
         stop() { clearInterval(this.timer); this.running=false; }
-        clasp() { return this.onDrop(); }
+        clench() { return this.onDrop(); }
       } export { HandController as ${alias} };` });
   });
   await page.goto(origin);
@@ -45,8 +45,8 @@ async function register(page, name) {
   await page.locator('#play').click(); await page.locator('#name').fill(name); await page.locator('#name').press('Enter');
   const count = () => app.database.db.prepare('SELECT COUNT(*) AS n FROM runs WHERE name=?').get(name).n;
   assert.equal(count(), 0);
-  assert.equal(await page.evaluate(() => window.testCamera.clasp()), true);
-  assert.equal(await page.evaluate(() => window.testCamera.clasp()), false);
+  assert.equal(await page.evaluate(() => window.testCamera.clench()), true);
+  assert.equal(await page.evaluate(() => window.testCamera.clench()), false);
   await page.waitForFunction(() => document.getElementById('status').textContent === 'Here we go…');
   assert.equal(count(), 0, 'practice must not create a server run');
   assert.equal(await page.locator('#rehearsal-exit').isEnabled(), false);
@@ -70,7 +70,7 @@ async function register(page, name) {
 async function finish(page) {
   for (const turn of [1, 2, 3]) {
     await page.waitForFunction(turn => document.getElementById('turn').textContent === `${turn} / 3` && !document.getElementById('phase-label').textContent.includes('COMPLETE'), turn);
-    await page.evaluate(() => window.testCamera.clasp());
+    await page.evaluate(() => window.testCamera.clench());
     if (turn < 3) await page.waitForFunction(turn => document.getElementById('turn').textContent === `${turn + 1} / 3`, turn, { timeout: 30000 });
   }
   await page.locator('#final').waitFor({ timeout: 30000 });
@@ -148,7 +148,7 @@ try {
   await page.close();
   page = await open(b); await register(page, 'Interrupted');
   const interrupted = app.database.db.prepare("SELECT id FROM runs WHERE name='Interrupted'").get();
-  await page.evaluate(() => window.testCamera.clasp());
+  await page.evaluate(() => window.testCamera.clench());
   await page.waitForFunction(() => document.getElementById('turn').textContent === '2 / 3', {}, { timeout: 30000 });
   await page.reload(); await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
   await page.waitForTimeout(2500);
