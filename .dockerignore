@@ -1,0 +1,10 @@
+node_modules
+dist
+.git
+.screenshots
+.local-data
+.context
+.env*
+*.sqlite*
+tests
+docs

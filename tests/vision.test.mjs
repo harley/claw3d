@@ -137,3 +137,14 @@ test('obsolete camera enumeration cannot update camera choices', async () => {
     assert.equal(updates, 0);
   } finally { if (originalNavigator) Object.defineProperty(globalThis, 'navigator', originalNavigator); else delete globalThis.navigator; }
 });
+
+test('a rejected clasp never reports an accepted drop and requires a fresh gesture', () => {
+  const f = fixture(); f.setPhase('aim');
+  let attempts = 0; f.controller.onDrop = () => { attempts++; return false; };
+  f.frame([hand(.4)], 10); f.frame([hand(.4), hand(.7, 'Right')], 6);
+  f.frame([hand(.46), hand(.55, 'Right')], 11);
+  assert.equal(attempts, 1);
+  assert.notEqual(f.read().state.kind, 'accepted');
+  assert.ok(!f.read().state.message.includes('confirmed'));
+  f.frame([hand(.46), hand(.55, 'Right')], 20); assert.equal(attempts, 1);
+});

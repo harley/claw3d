@@ -13,7 +13,7 @@ The wow moment is direct control followed by a believable grab, a tense lift and
 - Five stationary toys worth 100 points; moving star worth 200. Higher reward requires visibly harder timing. Keep results skill-based and avoid hidden random losses.
 - Dark arcade presentation, clear CoderPush/AWS branding, spacious zoomed-out play area, brief state-dependent instructions.
 - A missed grab should make physical sense. Current contact stops and grounded rocking are constrained approximations, not full rigid-body toppling.
-- Scores and sessions currently stay in the browser. They are not a verified competition backend.
+- Standalone preview scores stay in the browser. The protected shared staff pilot stores names and results centrally; client-reported catches remain trusted, so it is not a verified competition backend.
 - The leaderboard is for fun and comparison only; rank earns no additional prize. Physical giveaway rules are separate. Min's ball artwork and 20/30/50-point proposal still need alignment with the game before adoption or printing.
 
 ## Current milestone: finish a run without coaching
@@ -38,9 +38,11 @@ Test five first-time players on the intended booth camera/display, without coach
 
 After each session, select the single biggest obstacle, change it, commit it and replay the same scenario. Adjust scores/difficulty only after control reliability is established; competitive rule changes need a new leaderboard session.
 
-## Next: shared staff playtest
+## Shared staff playtest
 
-After camera usability meets the current milestone, add a protected HTTPS staff link with name entry and one persistent shared leaderboard. Staff may replay during this pilot; names are display labels, not verified badge identities. Camera frames stay in each browser. See `docs/plans/2026-09-07-1445-feat-camera-staff-playtest-plan.md` for the staged coding plan. Shared scores are a planned change, not available in the current browser-local build.
+The September 8 shipping request authorizes the protected pilot implementation while physical acceptance remains unverified. Staff may replay; names are display labels, not verified badge identities. A server-acknowledged run follows rehearsal, and exactly three completed turns determine the total. Each run retains its original board and rules through host rotation. Pending scores retry from the same browser and never show a saved rank before acknowledgement. Reload abandons an unfinished physical scene after draining completed results. Camera frames stay in each browser; existing local boards are never imported.
+
+The staff code grants game/leaderboard access. A separate host code protects rotation and export. Persistent SQLite storage requires one service and one mounted volume. See README for backup, restoration and deletion. See `docs/plans/2026-09-07-1445-feat-camera-staff-playtest-plan.md` for the staged plan. Two real laptops and five first-time players remain acceptance gates; automated browser sessions do not replace them.
 
 ## Later
 
@@ -48,7 +50,7 @@ Badge scanning, verified competition results, replay enforcement, queue/admin an
 
 ## Evidence
 
-The first camera-feedback iteration keeps recognition and the controlling-hand highlight visible before play and during delivery, while blocking game actions outside aiming. The preview follows the camera aspect ratio and gives a readable next instruction. Automated regressions cover setup without actions, a fresh clasp after blocked input, and preview alignment. The U1–U3 implementation adds an unscored steering-ring and clasp rehearsal for each new visitor before run creation. Exit Practice returns to setup without spending a turn. Scored aiming still waits for acquired control; accepted delivery completes after input loss.
+The first camera-feedback iteration keeps recognition and the controlling-hand highlight visible before play and during delivery, while blocking game actions outside aiming. The preview follows the camera aspect ratio and gives a readable next instruction. Automated regressions cover setup without actions, a fresh clasp after blocked input, and preview alignment. Practice now performs one real unscored drop before run creation. The ring is a steering guide, never a gate: an accepted clasp drops at the current position even before reaching it. The complete animation finishes without hands, then PRACTICE COMPLETE visibly leads into three scored turns only after server acknowledgement. Practice creates no run or score submission. Exit Practice is available before a drop and after its result; it cannot interrupt an accepted animation or an outstanding ranked start. Failed ranked starts retain the same retry key. Scored aiming still waits for acquired control; accepted delivery completes after input loss.
 
 Camera captures older than 300 ms, out of order, or from a stopped/restarted/hidden camera generation cannot affect control. Owner loss beyond 650 ms releases the track and requires a stable single hand again. Calibration uses a fixed anchor; the highlighted hand is labeled YOU and its neutral point is shown. Developer snapshots expose capture age and rejection reason without recording frames.
 

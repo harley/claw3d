@@ -6,10 +6,12 @@ function git(...args) {
 }
 
 export default defineConfig(() => {
+  const suppliedCommit = process.env.BUILD_COMMIT;
+  if (suppliedCommit && !/^[a-f0-9]{7,40}$/.test(suppliedCommit)) throw new Error('Invalid BUILD_COMMIT');
   const build = {
-    commit: git('rev-parse', '--short', 'HEAD'),
-    branch: git('branch', '--show-current') || 'detached',
-    dirty: Boolean(git('status', '--porcelain', '--untracked-files=normal')),
+    commit: suppliedCommit ? suppliedCommit.slice(0, 7) : git('rev-parse', '--short', 'HEAD'),
+    branch: suppliedCommit ? process.env.BUILD_BRANCH || 'deployment' : git('branch', '--show-current') || 'detached',
+    dirty: suppliedCommit ? process.env.BUILD_DIRTY !== 'false' : Boolean(git('status', '--porcelain', '--untracked-files=normal')),
     builtAt: new Date().toISOString(),
   };
   return {

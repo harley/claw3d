@@ -17,7 +17,9 @@
     "test:contact": "node tests/contact.browser.mjs",
     "test:camera": "node tests/camera.browser.mjs",
     "check": "npm test && npm run build",
-    "check:booth": "npm run check && node scripts/check-browser.mjs"
+    "check:booth": "npm run check && node scripts/check-browser.mjs",
+    "start": "node server/index.js",
+    "test:shared": "node tests/shared-session.browser.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "1.0.1",
@@ -27,5 +29,8 @@
   "devDependencies": {
     "playwright": "^1.63.0",
     "vite": "^7.3.1"
+  },
+  "engines": {
+    "node": ">=22.13.0"
   }
 }

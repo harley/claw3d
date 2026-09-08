@@ -1,0 +1,155 @@
+import { createServer } from 'node:http';
+import { isIP } from 'node:net';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { readFile, stat, mkdir, realpath } from 'node:fs/promises';
+import { resolve, extname, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { ApiError, openDatabase } from './database.js';
+
+const hash = value => createHash('sha256').update(value).digest('hex');
+const matches = (a, b) => typeof a === 'string' && timingSafeEqual(Buffer.from(hash(a)), Buffer.from(hash(b)));
+const token = () => randomBytes(32).toString('base64url');
+const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.wasm': 'application/wasm', '.glb': 'model/gltf-binary', '.svg': 'image/svg+xml', '.png': 'image/png', '.task': 'application/octet-stream' };
+const gate = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Cloud Claw · Staff pilot</title><style>body{background:#080e1c;color:#f4eee5;font:18px system-ui;display:grid;place-content:center;min-height:95vh;margin:0}main{max-width:360px;padding:24px}small{color:#ffba60}input,button{box-sizing:border-box;width:100%;font:inherit;padding:14px;margin:12px 0;border-radius:8px;border:1px solid #aaa}button{background:#ffba60;color:#111;font-weight:700}p{line-height:1.5}</style><main><small>CODERPUSH × AWS CLOUD DAY</small><h1>Cloud Claw</h1><p>Staff pilot · enter your access code.</p><form id="login"><label for="code">Staff code</label><input id="code" type="password" autocomplete="current-password" required maxlength="128"><button>ENTER THE ARCADE</button><p id="message" role="status"></p></form></main><script>document.getElementById('login').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:document.getElementById('code').value})});if(!r.ok)throw Error((await r.json()).error);location.replace('/')}catch(e){document.getElementById('message').textContent=e.message}finally{button.disabled=false}};</script></html>`;
+
+export async function createPilotServer(options) {
+  const { filename, origin, staffCode, hostCode, dist = resolve('dist'), secure = true } = options;
+  if (!origin || !staffCode || !hostCode || staffCode.length < 16 || hostCode.length < 16 || staffCode === hostCode) throw new Error('A fixed origin and distinct staff/host secrets of at least 16 characters are required.');
+  const database = openDatabase(filename), { db } = database;
+  const root = await realpath(dist), attempts = new Map();
+  function cookie(name, value, age) { return `${name}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${age}${secure ? '; Secure' : ''}`; }
+  function cookies(req) { return Object.fromEntries((req.headers.cookie || '').split(';').map(part => part.trim().split('='))); }
+  function session(req) {
+    const value = cookies(req).cc_session;
+    return value ? db.prepare('SELECT * FROM sessions WHERE token=? AND expires>?').get(hash(value), Date.now()) : null;
+  }
+  function issue(owner, role, res) {
+    const value = token();
+    db.prepare('DELETE FROM sessions WHERE expires<=?').run(Date.now());
+    db.prepare('INSERT INTO sessions VALUES (?,?,?,?)').run(hash(value), owner, role, Date.now() + 12 * 3600_000);
+    res.setHeader('Set-Cookie', cookie('cc_session', value, 12 * 3600));
+  }
+  function limit(req, auth, login = false) {
+    // Railway supplies X-Real-IP. Missing/invalid proxy metadata shares a conservative fallback bucket.
+    const forwarded = req.headers['x-real-ip'];
+    const ip = secure ? typeof forwarded === 'string' && isIP(forwarded) ? forwarded : 'unknown-proxy-client' : req.socket.remoteAddress;
+    const key = login ? `login:${ip}` : `write:${auth.owner_id}`;
+    const time = Date.now(), entry = attempts.get(key);
+    if (entry && entry.until > time && entry.count >= (login ? 12 : 120)) throw new ApiError(429, 'Too many attempts. Try again in a minute.');
+    if (!entry || entry.until <= time) attempts.set(key, { count: 1, until: time + 60_000 });
+    else entry.count++;
+    if (attempts.size > 5000) for (const [id, value] of attempts) if (value.until <= time) attempts.delete(id);
+  }
+  async function body(req) {
+    if (req.headers.origin !== origin) throw new ApiError(403, 'Use this pilot’s own page to make changes.');
+    if (!req.headers['content-type']?.startsWith('application/json')) throw new ApiError(415, 'JSON required.');
+    let size = 0, data = '';
+    for await (const chunk of req) {
+      size += chunk.length;
+      if (size > 4096) throw new ApiError(413, 'Request too large.');
+      data += chunk;
+    }
+    try { const parsed = JSON.parse(data); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw Error(); return parsed; }
+    catch { throw new ApiError(400, 'Invalid request.'); }
+  }
+  function json(res, status, data) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); }
+  const server = createServer(async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()');
+    if (secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
+    try {
+      const path = new URL(req.url, origin).pathname;
+      if (req.method === 'GET' && path === '/healthz') return json(res, 200, { ok: true });
+      const auth = session(req);
+      if (req.method === 'POST' && path === '/api/login') {
+        limit(req, null, true);
+        const input = await body(req);
+        if (!matches(input.code, staffCode)) throw new ApiError(401, 'That staff code was not accepted.');
+        let ownerToken = cookies(req).cc_owner;
+        if (!ownerToken || !db.prepare('SELECT id FROM owners WHERE id=?').get(hash(ownerToken))) {
+          ownerToken = token(); db.prepare('INSERT INTO owners VALUES (?)').run(hash(ownerToken));
+        }
+        if (auth) db.prepare('DELETE FROM sessions WHERE token=?').run(auth.token);
+        issue(hash(ownerToken), 'staff', res);
+        res.setHeader('Set-Cookie', [res.getHeader('Set-Cookie'), cookie('cc_owner', ownerToken, 90 * 86400)]);
+        return json(res, 200, { ok: true });
+      }
+      if (!auth) {
+        if (path === '/' && req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(gate); }
+        throw new ApiError(401, 'Sign in with the staff code to continue.');
+      }
+      if (path.startsWith('/api/')) {
+        if (req.method === 'GET' && path === '/api/session') return json(res, 200, { role: auth.role, board: database.board() });
+        if (req.method === 'GET' && path === '/api/board') return json(res, 200, database.board());
+        const runMatch = /^\/api\/runs\/([a-f0-9-]{36})(?:\/(turns|abandon))?$/.exec(path);
+        if (req.method === 'GET' && runMatch && !runMatch[2]) return json(res, 200, database.getRun(runMatch[1], auth.owner_id));
+        if (req.method === 'GET' && path === '/api/host/export') {
+          if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');
+          res.setHeader('Content-Disposition', 'attachment; filename="cloud-claw-sessions.json"');
+          return json(res, 200, database.exportData());
+        }
+        if (req.method !== 'POST') throw new ApiError(404, 'Route not found.');
+        limit(req, auth);
+        const input = await body(req);
+        if (path === '/api/logout') {
+          db.prepare('DELETE FROM sessions WHERE token=?').run(auth.token);
+          res.setHeader('Set-Cookie', cookie('cc_session', '', 0)); return json(res, 200, { ok: true });
+        }
+        if (path === '/api/host/login') {
+          limit(req, auth, true);
+          if (!matches(input.code, hostCode)) throw new ApiError(403, 'That host code was not accepted.');
+          db.prepare('DELETE FROM sessions WHERE token=?').run(auth.token);
+          issue(auth.owner_id, 'host', res); return json(res, 200, { role: 'host' });
+        }
+        if (path === '/api/host/boards') {
+          if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');
+          return json(res, 201, database.rotate(input.name));
+        }
+        if (path === '/api/runs') return json(res, 201, database.createRun(auth.owner_id, input));
+        if (runMatch?.[2] === 'turns') return json(res, 200, database.record(runMatch[1], auth.owner_id, input));
+        if (runMatch?.[2] === 'abandon') return json(res, 200, database.abandon(runMatch[1], auth.owner_id));
+        throw new ApiError(404, 'Route not found.');
+      }
+      if (!['GET', 'HEAD'].includes(req.method)) throw new ApiError(405, 'Method not allowed.');
+      let relative;
+      try { relative = decodeURIComponent(path); } catch { throw new ApiError(400, 'Invalid path.'); }
+      const file = resolve(root, `.${relative === '/' ? '/index.html' : relative}`);
+      if (!file.startsWith(root + sep)) throw new ApiError(404, 'File not found.');
+      let actual;
+      try { actual = await realpath(file); if (!actual.startsWith(root + sep) || !(await stat(actual)).isFile()) throw Error(); }
+      catch { throw new ApiError(404, 'File not found.'); }
+      let content = await readFile(actual);
+      if (actual === resolve(root, 'index.html')) content = Buffer.from(content.toString().replace('<head>', '<head><script>window.__SHARED_PILOT__=true;</script>'));
+      res.writeHead(200, { 'Content-Type': mime[extname(actual)] || 'application/octet-stream', 'Content-Length': content.length });
+      res.end(req.method === 'HEAD' ? undefined : content);
+    } catch (error) {
+      if (!res.headersSent) json(res, error.status || 500, { error: error.status ? error.message : 'The score service is unavailable. Please retry.' });
+      else res.end();
+      if (!error.status) console.error('Pilot request failed:', error.code || error.name);
+    }
+  });
+  server.requestTimeout = 10_000;
+  server.headersTimeout = 10_000;
+  return { server, database };
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const production = process.env.NODE_ENV === 'production';
+  const dataDir = resolve(process.env.DATA_DIR || '.local-data');
+  if (production) {
+    const mount = process.env.RAILWAY_VOLUME_MOUNT_PATH;
+    if (!mount || resolve(mount) !== dataDir) throw new Error('Production requires DATA_DIR to match the attached Railway volume.');
+    const mounts = await readFile('/proc/self/mountinfo', 'utf8');
+    if (!mounts.split('\n').some(line => line.split(' ')[4] === dataDir)) throw new Error('Persistent volume is not mounted.');
+    if (!process.env.PUBLIC_ORIGIN?.startsWith('https://')) throw new Error('Production requires an HTTPS PUBLIC_ORIGIN.');
+  }
+  await mkdir(dataDir, { recursive: true, mode: 0o700 });
+  const { server, database } = await createPilotServer({ filename: resolve(dataDir, 'pilot.sqlite'), origin: process.env.PUBLIC_ORIGIN,
+    staffCode: process.env.STAFF_CODE, hostCode: process.env.HOST_CODE, secure: production });
+  server.listen(Number(process.env.PORT || 4200), production ? '0.0.0.0' : '127.0.0.1', () => console.log('Cloud Claw pilot listening.'));
+  const stop = () => { server.close(() => { database.close(); process.exit(0); }); setTimeout(() => process.exit(1), 8000).unref(); };
+  process.on('SIGTERM', stop); process.on('SIGINT', stop);
+}
