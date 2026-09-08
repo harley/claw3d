@@ -27,7 +27,7 @@ export function carouselCue(time, holdRemaining = FIST_HOLD_MS / 1000) {
   const delta = ((time - cue + CAROUSEL.period / 2) % CAROUSEL.period + CAROUSEL.period) % CAROUSEL.period - CAROUSEL.period / 2;
   const now = Math.abs(delta) <= .20;
   const lights = now ? 3 : delta < -.20 && delta >= -1.4 ? Math.min(3, Math.floor((delta + 1.4) / .4) + 1) : 0;
-  return { now, lights, text: now ? 'BRING HANDS TOGETHER' : lights ? String(4 - lights) : 'WAIT FOR THE LIGHTS' };
+  return { now, lights, text: now ? 'CLENCH FIST & HOLD' : lights ? String(4 - lights) : 'WAIT FOR THE LIGHTS' };
 }
 export function moveCarousel(game, dt) {
   if (!game.carousel || !['idle', 'aim', 'anticipate', 'descend'].includes(game.phase)) return;

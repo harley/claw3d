@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame, begin, drop, advance, moveCarousel, aimTarget, carouselPose, carouselCue, CAROUSEL, CONTACT_DELAY, PHASES, BODY, BED, clawPose } from '../src/arcade-mechanics.js';
+import { FIST_HOLD_MS } from '../src/fist.js';
+const holdSeconds = FIST_HOLD_MS / 1000;
 const pickup = { x: CAROUSEL.x, z: CAROUSEL.z + CAROUSEL.radius };
 function shot(time, dt = 1 / 60, position = pickup) {
   const game = createGame({ carousel: true }); begin(game); moveCarousel(game, time); game.position = { ...position }; drop(game);
@@ -39,16 +41,17 @@ test('carousel motion has a repeatable orbit clear of the stationary support env
   }
   const first = carouselPose(0), last = carouselPose(CAROUSEL.period);
   assert.ok(Math.hypot(first.x - last.x, first.z - last.z) < 1e-8);
-  assert.equal(carouselCue(CAROUSEL.period - CONTACT_DELAY - .65 - 1).lights, 1);
-  assert.equal(carouselCue(CAROUSEL.period - CONTACT_DELAY - .65 - .6).lights, 2);
-  assert.equal(carouselCue(CAROUSEL.period - CONTACT_DELAY - .65 - .3).lights, 3);
+  assert.equal(carouselCue(CAROUSEL.period - CONTACT_DELAY - holdSeconds - 1).lights, 1);
+  assert.equal(carouselCue(CAROUSEL.period - CONTACT_DELAY - holdSeconds - .6).lights, 2);
+  assert.equal(carouselCue(CAROUSEL.period - CONTACT_DELAY - holdSeconds - .3).lights, 3);
 });
 
 test('camera cue includes the hold delay across repeated orbits', () => {
   for (let cycle = 1; cycle <= 5; cycle++) {
-    const time = cycle * CAROUSEL.period - CONTACT_DELAY - .65;
+    const time = cycle * CAROUSEL.period - CONTACT_DELAY - holdSeconds;
+    assert.equal(carouselCue(time - .21).now, false);
     assert.equal(carouselCue(time).now, true);
-    assert.equal(carouselCue(time).text, 'BRING HANDS TOGETHER');
-    assert.equal(shot(time + .65).plan.prize?.id, CAROUSEL.id);
+    assert.equal(carouselCue(time).text, 'CLENCH FIST & HOLD');
+    assert.equal(shot(time + holdSeconds).plan.prize?.id, CAROUSEL.id);
   }
 });

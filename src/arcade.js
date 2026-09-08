@@ -89,7 +89,7 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
     else if (['clenching', 'dropping'].includes(feedback.kind) && feedback.controlEnabled) { title = feedback.progress > 0 ? 'Hold to drop' : 'Ready for a drop?'; hint = feedback.message || 'Clench your fist. Open to cancel.'; }
     else if (feedback.kind === 'tracking') {
       if (phase === 'idle') { title = 'You’re ready'; hint = 'Press Play for a quick practice.'; }
-      else if (!nearPickup || rehearsal) { title = 'Move your hand'; hint = rehearsal === 'steer' ? 'Try the ring, or clench your fist to drop.' : 'Clench your fist and hold to drop.'; }
+      else if (!nearPickup || rehearsal) { title = 'Move your hand'; hint = rehearsal === 'steer' ? 'Try the ring. Clench your fist and hold to drop.' : 'Clench your fist and hold to drop.'; }
     } else if (feedback.kind === 'error') { title = 'Let’s check the camera'; hint = 'Open Camera to try again.'; }
     else if (feedback.kind === 'loading') { title = 'Waking up the camera…'; hint = 'Allow camera access to play.'; }
   }

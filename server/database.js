@@ -12,7 +12,7 @@ export function label(value, max = 24) {
   return value.trim();
 }
 const now = () => new Date().toISOString();
-const PILOT_RULES = { ...RULES, controlVersion: 'camera-rehearsal-hold-650-v1' };
+const PILOT_RULES = { ...RULES, controlVersion: 'camera-fist-hold-550-v2' };
 export function openDatabase(filename) {
   const db = new DatabaseSync(filename);
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;

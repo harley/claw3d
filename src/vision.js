@@ -271,7 +271,7 @@ export class HandController {
       this.input.x += (target.x - this.input.x) * .5;
       this.input.z += (target.z - this.input.z) * .5;
       sendInput(this.input); this.openSince = 0; this.dropArmed = true;
-      report({ kind: 'tracking', message: !acceptsInput ? 'Hand ready.' : profile==='fist' ? 'Steer with a relaxed hand. Clench and hold to DROP.' : profile==='clasp' ? 'Steer with one hand. Bring both hands together to DROP.' : easy ? 'Move gently to steer. Press Space or your DROP button.' : 'Steer gently. Open your palm when you are ready.', progress: 0 });
+      report({ kind: 'tracking', message: !acceptsInput ? 'Hand ready.' : profile==='fist' ? 'Steer with an open hand. Clench your fist and hold to drop.' : profile==='clasp' ? 'Steer with one hand. Bring both hands together to DROP.' : easy ? 'Move gently to steer. Press Space or your DROP button.' : 'Steer gently. Open your palm when you are ready.', progress: 0 });
     } else {
       this.gripping = false;
       this.input = { x: 0, z: 0 }; sendInput(this.input); this.neutral = null;

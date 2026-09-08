@@ -37,6 +37,7 @@ try {
     const state = window.__littleCloud.snapshot();
     if (!window.starHoldStarted) {
       if (!state.event.cue.now) return false;
+      window.starCueText = document.getElementById('jackpot-cue').textContent;
       window.starHoldStarted = state.event.carouselTime;
       return false;
     }
@@ -45,6 +46,7 @@ try {
     window.starBeforeDrop = state.toys.find(toy => toy.id === 'sprout').position;
     window.testCamera.clench(); return true;
   });
+  assert.match(await page.evaluate(() => window.starCueText), /CLENCH.*FIST.*HOLD/);
   const before = await page.evaluate(() => window.starBeforeDrop);
   const tag = await page.evaluate(() => window.starTagCheck);
   assert.equal(tag.visible, true); assert.ok(tag.distance < 2, `Star label must follow visible toy, offset ${tag.distance}px`);

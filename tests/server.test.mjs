@@ -130,3 +130,36 @@ test('large boards preserve competition ties with a constant number of result qu
   queries = 0; assert.equal(database.getRun('2', 'test-owner').rank, 3); assert.ok(queries < 10);
   database.close();
 });
+
+
+test('fist control upgrade starts one fresh board and preserves old scores and pending turns', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cloud-claw-control-upgrade-'));
+  const filename = join(dir, 'pilot.sqlite');
+  let database = openDatabase(filename);
+  try {
+    const oldBoard = database.board();
+    const oldRules = { ...oldBoard.rules, controlVersion: 'camera-rehearsal-hold-650-v1' };
+    database.db.prepare('UPDATE boards SET rules=? WHERE id=?').run(JSON.stringify(oldRules), oldBoard.id);
+    database.db.prepare('INSERT INTO owners VALUES (?)').run('upgrade-owner');
+    const completed = database.createRun('upgrade-owner', { name: 'Completed', requestKey: randomUUID() });
+    const pending = database.createRun('upgrade-owner', { name: 'Pending', requestKey: randomUUID() });
+    for (const turn of [1, 2, 3]) database.record(completed.id, 'upgrade-owner', { turn, prizeId: 'butter' });
+    database.record(pending.id, 'upgrade-owner', { turn: 1, prizeId: 'sprout' });
+    database.close(); database = openDatabase(filename);
+    const current = database.board();
+    assert.notEqual(current.id, oldBoard.id);
+    assert.equal(current.rules.controlVersion, 'camera-fist-hold-550-v2');
+    assert.equal(current.runs.length, 0);
+    assert.equal(database.getRun(completed.id, 'upgrade-owner').total, 300);
+    for (const turn of [2, 3]) database.record(pending.id, 'upgrade-owner', { turn, prizeId: 'butter' });
+    const saved = database.getRun(pending.id, 'upgrade-owner');
+    assert.equal(saved.total, 400); assert.equal(saved.boardId, oldBoard.id);
+    assert.deepEqual(saved.rules, oldRules);
+    const fresh = database.createRun('upgrade-owner', { name: 'Fresh', requestKey: randomUUID() });
+    assert.equal(fresh.boardId, current.id); assert.deepEqual(fresh.rules, current.rules);
+    assert.equal(database.exportData().boards.find(b => b.id === oldBoard.id).runs.length, 2);
+    database.close(); database = openDatabase(filename);
+    assert.equal(database.board().id, current.id);
+    assert.equal(database.exportData().boards.length, 2);
+  } finally { database.close(); await rm(dir, { recursive: true, force: true }); }
+});

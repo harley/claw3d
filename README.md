@@ -21,7 +21,11 @@ For development, run `npm run dev` and open **http://127.0.0.1:4196**.
 
 ## Shared staff pilot
 
+Play at **https://claw.coderpush.com** using the existing staff access code. Host controls require the separate host code.
+
 The Node service serves the built game, camera models and API from one protected origin. All data routes and assets require a staff session. A separate host code unlocks board rotation and export. Codes live only in server environment variables, never in the bundle or repository. Camera frames and landmarks stay in the browser. Names are display labels. Client-reported catches are trusted for this small pilot; server-calculated totals are not anti-cheat.
+
+The fist-control release starts a fresh shared board under `camera-fist-hold-550-v2`; previous boards and scores remain in the host export. Pending old runs keep their original rules and board.
 
 The server issues a run only after rehearsal. A ranked run waits for that acknowledgement. Each run keeps its board and rule snapshot; host rotation affects new runs, and old in-flight runs finish on the original board. Every completed run is ranked, including repeat names, with tied totals sharing rank. Practice stays unranked and local.
 
@@ -73,7 +77,7 @@ The operator can pause, reset the current player, select practice for the next p
 
 Scores and player progress persist in this browser's local storage. Reloading an unfinished run requires the host to resume its uncompleted turn. Completed turns remain scored. Focus loss does not latch an operator pause. Hidden pages suspend gameplay until visible again; missing hands hold only the aiming timer, never an in-flight drop. Storage failures are displayed; export before closing if results are only in memory. Clearing browser data removes local history, so export regularly. This single-browser prototype has no server verification, badge enforcement, queue tracking or physical prize inventory. Staff supervise name entry; player IDs and a nullable badge ID leave room for later scanning. Do not use this local leaderboard as a tamper-resistant competition backend.
 
-Camera controls are required for play. START CAMERA requests access and shows the readiness panel. Hold one hand still until HAND READY appears, then press PLAY to enter a name; CAMERA opens a separate setup dialog with device selection and re-centring. The only active gesture profile is one-hand steering with a fist clench to drop. A missing or stale hand holds aiming and carousel motion. Once a drop starts, hand loss and settings dialogs do not stop delivery. Only the host's explicit PAUSE GAME stops the animation. Camera code and tracking models load only after explicit activation. Frames remain local and are not recorded. Face identification is not implemented. Camera integration is tested with a synthetic video device and the actual inference model; physical gesture feel still needs a booth rehearsal. Geometry and textures are generated locally.
+Camera controls are required for play. START CAMERA requests access and shows the readiness panel. Hold one open hand still until “You’re ready” appears, then press Play to enter a name; CAMERA opens a separate setup dialog with device selection and re-centring. The only active gesture profile is one-hand steering with a fist clench to drop. A missing or stale hand holds aiming and carousel motion. Once a drop starts, hand loss and settings dialogs do not stop delivery. Only the host's explicit PAUSE GAME stops the animation. Camera code and tracking models load only after explicit activation. Frames remain local and are not recorded. Face identification is not implemented. Camera integration is tested with a synthetic video device and the actual inference model; physical gesture feel still needs a booth rehearsal. Geometry and textures are generated locally.
 
 ## Implementation
 
