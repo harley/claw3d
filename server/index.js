@@ -5,6 +5,7 @@ import { readFile, stat, mkdir, realpath } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ApiError, openDatabase } from './database.js';
+import { createPlaytestStore } from './playtest.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const matches = (a, b) => typeof a === 'string' && timingSafeEqual(Buffer.from(hash(a)), Buffer.from(hash(b)));
@@ -17,6 +18,7 @@ export async function createPilotServer(options) {
   if (!origin || !staffCode || !hostCode || staffCode.length < 16 || hostCode.length < 16 || staffCode === hostCode) throw new Error('A fixed origin and distinct staff/host secrets of at least 16 characters are required.');
   const database = openDatabase(filename), { db } = database;
   const root = await realpath(dist), attempts = new Map();
+  const playtest = createPlaytestStore(db);
   function cookie(name, value, age) { return `${name}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${age}${secure ? '; Secure' : ''}`; }
   function cookies(req) { return Object.fromEntries((req.headers.cookie || '').split(';').map(part => part.trim().split('='))); }
   function session(req) {
@@ -29,27 +31,27 @@ export async function createPilotServer(options) {
     db.prepare('INSERT INTO sessions VALUES (?,?,?,?)').run(hash(value), owner, role, Date.now() + 12 * 3600_000);
     res.setHeader('Set-Cookie', cookie('cc_session', value, 12 * 3600));
   }
-  function limit(req, auth, login = false) {
+  function limit(req, auth, login = false, telemetry = false) {
     // Railway supplies X-Real-IP. Missing/invalid proxy metadata shares a conservative fallback bucket.
     const forwarded = req.headers['x-real-ip'];
     const ip = secure ? typeof forwarded === 'string' && isIP(forwarded) ? forwarded : 'unknown-proxy-client' : req.socket.remoteAddress;
-    const key = login ? `login:${ip}` : `write:${auth.owner_id}`;
+    const key = login ? `login:${ip}` : `${telemetry ? 'playtest' : 'write'}:${auth.owner_id}`;
     const time = Date.now(), entry = attempts.get(key);
-    if (entry && entry.until > time && entry.count >= (login ? 12 : 120)) throw new ApiError(429, 'Too many attempts. Try again in a minute.');
+    if (entry && entry.until > time && entry.count >= (login ? 12 : telemetry ? 60 : 120)) throw new ApiError(429, 'Too many attempts. Try again in a minute.');
     if (!entry || entry.until <= time) attempts.set(key, { count: 1, until: time + 60_000 });
     else entry.count++;
     if (attempts.size > 5000) for (const [id, value] of attempts) if (value.until <= time) attempts.delete(id);
   }
-  async function body(req) {
+  async function body(req, maxBytes = 4096) {
     if (req.headers.origin !== origin) throw new ApiError(403, 'Use this pilot’s own page to make changes.');
     if (!req.headers['content-type']?.startsWith('application/json')) throw new ApiError(415, 'JSON required.');
-    let size = 0, data = '';
+    let size = 0; const chunks = [];
     for await (const chunk of req) {
       size += chunk.length;
-      if (size > 4096) throw new ApiError(413, 'Request too large.');
-      data += chunk;
+      if (size > maxBytes) throw new ApiError(413, 'Request too large.');
+      chunks.push(chunk);
     }
-    try { const parsed = JSON.parse(data); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw Error(); return parsed; }
+    try { const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw Error(); return parsed; }
     catch { throw new ApiError(400, 'Invalid request.'); }
   }
   function json(res, status, data) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); }
@@ -61,7 +63,7 @@ export async function createPilotServer(options) {
     res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()');
     if (secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
     try {
-      const path = new URL(req.url, origin).pathname;
+      const url = new URL(req.url, origin), path = url.pathname;
       if (req.method === 'GET' && path === '/healthz') return json(res, 200, { ok: true });
       const auth = session(req);
       if (req.method === 'POST' && path === '/api/login') {
@@ -90,6 +92,14 @@ export async function createPilotServer(options) {
           if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');
           res.setHeader('Content-Disposition', 'attachment; filename="cloud-claw-sessions.json"');
           return json(res, 200, database.exportData());
+        }
+        if (req.method === 'GET' && path === '/api/host/playtest') {
+          if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');
+          return json(res, 200, playtest.read(url.searchParams.get('since')));
+        }
+        if (req.method === 'POST' && path === '/api/playtest') {
+          limit(req, auth, false, true);
+          return json(res, 200, playtest.ingest(await body(req, 65536)));
         }
         if (req.method !== 'POST') throw new ApiError(404, 'Route not found.');
         limit(req, auth);
@@ -133,7 +143,12 @@ export async function createPilotServer(options) {
   });
   server.requestTimeout = 10_000;
   server.headersTimeout = 10_000;
-  return { server, database };
+  const retentionTimer = setInterval(() => {
+    try { playtest.prune(); } catch (error) { console.error('Playtest retention failed:', error.code || error.name); }
+  }, 3600_000);
+  retentionTimer.unref();
+  server.once('close', () => clearInterval(retentionTimer));
+  return { server, database, playtest };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

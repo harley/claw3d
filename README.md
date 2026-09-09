@@ -21,15 +21,15 @@ For development, run `npm run dev` and open **http://127.0.0.1:4196**.
 
 ## Shared staff pilot
 
-Play at **https://claw.coderpush.com** using the existing staff access code. Host controls require the separate host code.
+Play at **https://claw.coderpush.com** using the existing staff access code. Practice is the default: nickname optional, one warm-up, three scored turns and unlimited replays. Practice scores do not enter event rankings. Use “Something felt wrong” during play or from results to send feedback. Host controls require the separate host code; uncheck Practice mode to rank the next named player.
 
 The Node service serves the built game, camera models and API from one protected origin. All data routes and assets require a staff session. A separate host code unlocks board rotation and export. Codes live only in server environment variables, never in the bundle or repository. Camera frames and landmarks stay in the browser. Names are display labels. Client-reported catches are trusted for this small pilot; server-calculated totals are not anti-cheat.
 
 The fist-control release starts a fresh shared board under `camera-fist-hold-550-v2`; previous boards and scores remain in the host export. Pending old runs keep their original rules and board.
 
-The server issues a run only after rehearsal. A ranked run waits for that acknowledgement. Each run keeps its board and rule snapshot; host rotation affects new runs, and old in-flight runs finish on the original board. Every completed run is ranked, including repeat names, with tied totals sharing rank. Practice stays unranked and local.
+The server issues a run only after rehearsal. A ranked run waits for that acknowledgement. Each run keeps its board and rule snapshot; host rotation affects new runs, and old in-flight runs finish on the original board. Every completed event run is ranked, including repeat names, with tied totals sharing rank. Practice stays unranked and local.
 
-Completed turns enter a browser outbox before being submitted in order. “Score waiting to sync” means no saved rank has been confirmed. The service accepts duplicate identical submissions once and rejects conflicting results. Keep the browser open until saving finishes. Reload replays completed turns, then abandons an unfinished run rather than recreating its physics. Sign in again in the same browser to recover pending scores after session expiry. A private HTTP-only owner cookie persists for 90 days; clearing browser data removes ownership and pending results. Existing standalone scores are never imported.
+Completed event turns enter a browser outbox before being submitted in order. “Score waiting to sync” means no saved rank has been confirmed. The service accepts duplicate identical submissions once and rejects conflicting results. Keep the browser open until saving finishes. Reload replays completed turns, then abandons an unfinished run rather than recreating its physics. Sign in again in the same browser to recover pending scores after session expiry. A private HTTP-only owner cookie persists for 90 days; clearing browser data removes ownership and pending results. Existing standalone scores are never imported.
 
 Run the shared service locally with Node 22.13+ (deployment uses Node 24):
 
@@ -42,6 +42,28 @@ PUBLIC_ORIGIN=http://127.0.0.1:4200 DATA_DIR=.local-data npm start
 ```
 
 Open `http://127.0.0.1:4200` and enter the staff code. Ordinary `npm run play` remains explicitly browser-local; network failures in the shared service never switch to that board.
+
+### Playtest observations and feedback
+
+The protected pilot stores bounded playtest observations in `playtest_events`, a separate table in the existing `/data/pilot.sqlite`. A random page-session UUID, build commit, practice/event mode and elapsed time describe each observation. Camera readiness, control/phase changes, drops, completions, bounded performance samples and fixed error categories help identify where players hesitate. Practice observations do not create leaderboard runs or scores. These are client-reported observations, not proof of physical gesture accuracy.
+
+The collector does not send camera frames, landmarks, player names, credentials or raw error messages/stacks. Feedback records one category (`controls`, `unexpected_drop`, `unfair_miss`, `stuck` or `other`) and an optional comment of at most 500 characters. Comments contain whatever the player chooses to write; keep them within the staff review process.
+
+`POST /api/playtest` requires a staff session and the configured page origin. Its envelope is `{ sessionId, build, events }`, with 1–20 events per request and a 64 KiB request limit. Each event has `{ id, type, mode, elapsedMs, runId?, data? }`: both IDs are UUIDs, build is 7–12 lowercase hexadecimal characters, mode is `practice` or `event`, and elapsed time is bounded to seven days. Data fields and event types are allowlisted. Feedback requires `data.category`; `data.comment` is optional. Successful responses return `{ accepted: [eventId, ...] }`, including exact retries. Reusing an ID with conflicting data rejects the entire batch with 409. Telemetry has its own 60-request/minute bucket, separate from score writes.
+
+The live table retains a rolling 30-day window and at most 100,000 events, evicting oldest observations first. Cleanup runs on startup, reads, writes and hourly while idle. Report reads always exclude expired observations. The cap bounds observation rows, not the whole score database or its physical file size; SQLite can reuse freed pages. Existing database backups also include observations and comments, so the pilot's backup retention and deletion rules apply to those copies.
+
+Hosts can read `GET /api/host/playtest?since=2026-09-09T00:00:00.000Z`. Without `since`, the report covers the last 24 hours. It includes the newest 500 events and, separately, the newest 100 feedback events so control noise cannot hide comments. `truncated` and `feedbackTruncated` flag omitted rows. Counts cover all matching retained observations, with event type/mode/category totals and up to 40 build-and-mode cohorts containing session counts, starts, completions and performance aggregates; `cohortsTruncated` flags omitted cohorts. Times refer to server receipt, while `elapsedMs` is relative to the page session. No ownership or authentication IDs are returned.
+
+For a daily review from an authorized shell on the service, read the same report without obtaining or printing a host code:
+
+```sh
+node server/playtest-report.js /data/pilot.sqlite
+# Or select an explicit UTC start:
+node server/playtest-report.js /data/pilot.sqlite 2026-09-09T00:00:00.000Z
+```
+
+This command opens the existing SQLite file read-only. It does not create a database, rotate a board or modify scores. Review practice and event cohorts separately, cite the build, and use reported friction to choose a small next playtest improvement.
 
 ### Hosting and build identity
 
@@ -68,6 +90,8 @@ Rollback uses the prior compatible application deployment with the same mounted 
 Keep pilot names/results only until the host ends the pilot. Removal requires stopping the service, deleting the pilot database/volume and any Railway snapshots, and deleting private downloaded exports/backups. Host board rotation preserves history and is not deletion. Rotate both secrets if access should be revoked; existing sessions last up to 12 hours unless their session rows are cleared by the operator while preserving scores.
 
 ## Event play (standalone local mode)
+
+Practice is also the local default. Open the operator gear and uncheck Practice mode to use event ranking.
 
 Enter a leaderboard name, play three turns, then see the total and rank. Each turn has 15 seconds of aiming and the original catch/delivery animation. All turns restock the same six-toy layout and restart the same carousel phase and start over an empty patch. Expiry drops the claw once; there is no random win roll or forced catch. Five stationary toys earn 100 points each. The moving star earns 200 points. Its carousel uses a fixed 5.6-second cycle; aim at the gold pickup ring and time the fist confirmation for green. The camera cue includes the 550 ms fist hold plus the 1.05-second contact delay. The star continues moving during descent, then the mechanism brakes for grasping and delivery. Catch resolution uses the actual contact position, with no random success or target snapping. Timing and game feel still need human playtesting.
 

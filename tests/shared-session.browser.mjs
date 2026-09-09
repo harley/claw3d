@@ -40,9 +40,27 @@ async function open(context) {
   assert.equal(await page.evaluate(() => window.__littleCloud), undefined, 'production omits diagnostics');
   return page;
 }
+async function openOperator(page) {
+  await page.locator('#operator-open').click();
+  if (await page.locator('#host-access').isVisible()) {
+    await page.locator('#host-code').fill(hostCode); await page.locator('#host-form button').click();
+  }
+  await page.locator('#operator').waitFor();
+}
+async function openRegistration(page) {
+  if (!await page.evaluate(() => window.testCamera?.running)) {
+    await page.locator('#play').click(); await page.waitForFunction(() => window.testCamera?.running);
+  }
+  await page.locator('#play').click(); await page.locator('#registration').waitFor();
+}
 async function register(page, name) {
-  await page.locator('#play').click(); await page.waitForFunction(() => window.testCamera?.running);
-  await page.locator('#play').click(); await page.locator('#name').fill(name); await page.locator('#name').press('Enter');
+  await openOperator(page); await page.locator('#practice').uncheck();
+  await page.locator('#operator .panel-head button').click();
+  await openRegistration(page);
+  assert.equal(await page.locator('#name').getAttribute('required') !== null, true, 'event mode still requires a name');
+  await page.locator('#name').press('Enter');
+  assert.equal(await page.locator('#registration').isVisible(), true, 'empty event name cannot begin');
+  await page.locator('#name').fill(name); await page.locator('#name').press('Enter');
   const count = () => app.database.db.prepare('SELECT COUNT(*) AS n FROM runs WHERE name=?').get(name).n;
   assert.equal(count(), 0);
   assert.equal(await page.evaluate(() => window.testCamera.clench()), true);
@@ -75,7 +93,112 @@ async function finish(page) {
   }
   await page.locator('#final').waitFor({ timeout: 30000 });
 }
+async function practiceAndFeedback() {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  const page = await open(context), boardBefore = app.database.board();
+  let starts = 0;
+  page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/runs') starts++; });
+  assert.equal(await page.locator('#practice').isChecked(), true);
+  await openRegistration(page);
+  assert.equal(await page.locator('#name').getAttribute('required'), null);
+  await page.locator('#name').press('Enter');
+  await page.waitForFunction(() => !document.getElementById('rehearsal-exit').hidden);
+  assert.equal(await page.evaluate(() => window.testCamera.clench()), true);
+  // Opening feedback cannot freeze an accepted rehearsal drop.
+  await page.locator('#feedback-open').click();
+  await page.locator('#feedback-dialog').waitFor();
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'You’ve got it', {}, { timeout: 30000 });
+  assert.equal(await page.locator('#turn').textContent(), '— / 3');
+  await page.locator('#feedback-dialog [aria-label="Close feedback"]').click();
+  await page.locator('#feedback-dialog').waitFor({ state: 'hidden' });
+  await page.waitForFunction(() => document.getElementById('turn').textContent === '1 / 3');
+  assert.equal(await page.locator('#player-name').textContent(), 'Player');
+
+  const attempts = [];
+  let feedbackAvailable = false;
+  await page.route('**/api/playtest', async route => {
+    const batch = route.request().postDataJSON(), feedback = batch.events.filter(event => event.type === 'feedback');
+    if (!feedback.length) { await route.continue(); return; }
+    attempts.push(...feedback);
+    if (!feedbackAvailable) await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Feedback temporarily unavailable' }) });
+    else await route.continue();
+  });
+  await page.locator('#feedback-open').click();
+  const remaining = await page.locator('#timer').textContent();
+  await page.waitForTimeout(1100);
+  assert.equal(await page.locator('#timer').textContent(), remaining, 'feedback pauses active aiming');
+  assert.equal(await page.evaluate(() => window.testCamera.clench()), false, 'feedback cannot accept a new drop');
+  const comment = 'The fist hold needed a clearer cue.';
+  await page.locator('#feedback-category').selectOption('controls');
+  await page.locator('#feedback-comment').fill(comment);
+  const failed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/playtest' && response.status() === 503);
+  await page.locator('#feedback-send').click(); await failed;
+  await page.waitForFunction(() => !document.getElementById('feedback-send').disabled && document.getElementById('feedback-status').textContent.length > 0);
+  assert.equal(await page.locator('#feedback-comment').inputValue(), comment, 'failure preserves draft');
+  assert.equal(await page.locator('#feedback-category').inputValue(), 'controls');
+  assert.notEqual(await page.locator('#feedback-status').textContent(), 'Thanks. Your feedback is saved.');
+  feedbackAvailable = true;
+  await page.locator('#feedback-send').click();
+  await page.waitForFunction(() => document.getElementById('feedback-status').textContent === 'Thanks. Your feedback is saved.');
+  assert.ok(attempts.length >= 2);
+  assert.ok(attempts.every(event => event.id === attempts[0].id && event.data.comment === comment), 'retry retains one feedback event and draft');
+  const feedbackRows = () => app.database.db.prepare("SELECT * FROM playtest_events WHERE type='feedback' ORDER BY received_at").all();
+  assert.equal(feedbackRows().length, 1, 'acknowledgement corresponds to one persisted feedback');
+  assert.equal(JSON.parse(feedbackRows()[0].data).comment, comment);
+  assert.equal(feedbackRows()[0].mode, 'practice');
+  await page.screenshot({ path: '.screenshots/practice-feedback-saved.png' });
+  await page.locator('#feedback-dialog [aria-label="Close feedback"]').click();
+  await page.locator('#feedback-dialog').waitFor({ state: 'hidden' });
+  await finish(page);
+  assert.equal(await page.locator('#final-rank').textContent(), 'Practice · unranked');
+  await page.screenshot({ path: '.screenshots/practice-result.png' });
+  assert.equal(await page.locator('#final-turns .turn-chip').count(), 3);
+  assert.equal(starts, 0, 'anonymous practice never creates a server run');
+  assert.deepEqual(app.database.board(), boardBefore, 'practice leaves the shared event board unchanged');
+  assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM runs').get().n, 0);
+
+  await page.locator('#final-feedback').click();
+  await page.locator('#feedback-dialog').waitFor();
+  await page.locator('#feedback-category').selectOption('controls');
+  await page.locator('#feedback-comment').fill('Finished all three turns without help.');
+  await page.locator('#feedback-send').click();
+  await page.waitForFunction(() => document.getElementById('feedback-status').textContent === 'Thanks. Your feedback is saved.');
+  assert.equal(feedbackRows().length, 2);
+  assert.deepEqual(feedbackRows().map(row => JSON.parse(row.data).comment).sort(), [comment, 'Finished all three turns without help.'].sort());
+  const forbidden = new Set(['name', 'playerName', 'frame', 'cameraFrames', 'landmarks', 'rawError']);
+  const checkPrivateKeys = value => {
+    if (!value || typeof value !== 'object') return;
+    for (const [key, child] of Object.entries(value)) { assert.equal(forbidden.has(key), false, `Telemetry must omit ${key}`); if (key === 'frames') assert.equal(typeof child, 'number', 'frame metric is a count, never images'); checkPrivateKeys(child); }
+  };
+  for (const row of app.database.db.prepare('SELECT data FROM playtest_events').all()) checkPrivateKeys(JSON.parse(row.data));
+  await page.locator('#feedback-dialog [aria-label="Close feedback"]').click();
+  await page.locator('#feedback-dialog').waitFor({ state: 'hidden' });
+  await page.locator('#next-player').click();
+  assert.equal(await page.locator('#name').getAttribute('required'), null, 'replay keeps nickname optional');
+  await page.locator('#name').press('Enter');
+  await page.locator('#rehearsal-exit').waitFor();
+  await page.locator('#rehearsal-exit').click();
+  await page.locator('#rehearsal-exit').waitFor({ state: 'hidden' });
+  await openRegistration(page);
+  assert.equal(await page.locator('#name').getAttribute('required'), null);
+  await page.locator('#name').press('Enter');
+  await page.locator('#rehearsal-exit').waitFor();
+  assert.equal(starts, 0, 'blank replay and restart remain unranked');
+  assert.deepEqual(app.database.board(), boardBefore);
+  await page.evaluate(() => document.getElementById('scene').dispatchEvent(new Event('webglcontextlost', { cancelable: true })));
+  await page.locator('#error').waitFor();
+  await page.locator('#error-feedback').click();
+  await page.locator('#feedback-dialog').waitFor();
+  await page.locator('#feedback-category').selectOption('stuck');
+  await page.locator('#feedback-comment').fill('Synthetic renderer failure report.');
+  await page.locator('#feedback-send').click();
+  await page.waitForFunction(() => document.getElementById('feedback-status').textContent === 'Thanks. Your feedback is saved.');
+  assert.equal(feedbackRows().length, 3, 'renderer error surface can report before reload');
+  await context.close();
+  console.log('PASS anonymous default practice, three unranked turns, feedback modal/drop isolation, retry retains draft, final feedback and blank replay');
+}
 try {
+  await practiceAndFeedback();
   const a = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   const b = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   let page = await open(a);
@@ -120,8 +243,7 @@ try {
   await page.screenshot({ path: '.screenshots/shared-saved.png' });
   await page.close();
   page = await open(a); assert.equal(await page.locator('#leaders li').count(), 2);
-  await page.locator('#operator-open').click(); await page.locator('#host-code').fill(hostCode); await page.locator('#host-form button').click();
-  await page.locator('#operator').waitFor();
+  await openOperator(page);
   assert.match(await page.locator('#storage-status').textContent(), /SHARED/);
   await page.screenshot({ path: '.screenshots/shared-host.png' });
   backup(join(dir, 'pilot.sqlite'), join(dir, 'restored.sqlite'));

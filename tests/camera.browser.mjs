@@ -41,6 +41,8 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.screenshot({ path: '.screenshots/camera-ready-narrow.png' });
   await page.setViewportSize({ width: 1440, height: 900 });
+  await page.locator('#operator-open').click(); await page.locator('#practice').uncheck();
+  await page.locator('#operator .panel-head button').click();
   await page.locator('#play').click(); await page.locator('#name').fill('   '); await page.locator('#name').press('Enter');
   assert.equal(await page.locator('#registration').isVisible(), true); assert.equal((await snap()).event.rehearsal, null);
   await page.locator('#name').fill('Camera test'); await page.locator('#name').press('Enter');

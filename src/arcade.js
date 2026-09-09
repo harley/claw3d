@@ -1,5 +1,6 @@
 import './arcade.css';
 import { createSessionApi } from './session-api.js';
+import { createPlaytestClient } from './playtest-client.js';
 const shared = globalThis.__SHARED_PILOT__ === true;
 import { ArcadeScene } from './arcade-scene.js';
 import { createGame, begin, drop, advance, move, planGrab, clawPose, PHASES, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
@@ -24,6 +25,11 @@ game.position = { x: -1.12, z: .66 };
 let run = store.active, completedRun = null, turnNumber = run ? run.turns.length + 1 : 0, remaining = RULES.seconds;
 let recovering = Boolean(run), sound = false, audioContext;
 const frames = [], errors = [];
+const playtest = createPlaytestClient({ build: __BUILD_INFO__.commit, enabled: shared });
+const track = (type, data = {}, subject = run || pendingPlayer || completedRun) => playtest.track(type, data, { mode: (subject?.practice ?? $('practice').checked) ? 'practice' : 'event', ...(subject?.id ? { runId: subject.id } : {}) });
+track('page_open');
+let observedControl = '', observedPhase = '', observedSaveError = false;
+let performanceFrames = [], performanceSince = 0;
 const deliveryPhases = new Set(['anticipate', 'descend', 'grip', 'lift', 'transfer', 'release', 'deliver', 'reveal']);
 let nextTurnElapsed = 0;
 const tags = game.toys.map(toy => {
@@ -111,7 +117,7 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
   $('reset').disabled = startingRun;
   setText('timer', String(Math.ceil(remaining)).padStart(2, '0'));
   $('arcade').classList.toggle('last-claw', Boolean(run && turnNumber === 3)); $('arcade').classList.toggle('urgent', phase === 'aim' && remaining <= 5);
-  setText('mode-label', shared ? (run?.practice ? 'PRACTICE · NOT RANKED' : sharedStatus) : storageError ? 'UNSAVED · OPEN OPERATOR' : run?.practice ? 'PRACTICE · NOT RANKED' : '');
+  setText('mode-label', (run?.practice ?? pendingPlayer?.practice ?? completedRun?.practice ?? $('practice').checked) ? 'PRACTICE · NOT RANKED' : shared ? sharedStatus : storageError ? 'UNSAVED · OPEN OPERATOR' : 'EVENT · RANKED');
   $('mode-label').hidden = !$('mode-label').textContent;
   if (!run && !recovering && !rehearsal) button = cameraLoading ? 'Starting…' : cameraControls?.running ? 'Play' : 'Start camera';
   const signature = JSON.stringify([title, hint, button, kicker, total, run?.name, pendingPlayer?.name, completedRun?.id, paused]);
@@ -131,7 +137,7 @@ function beginTurn() {
   else { burst(turnNumber === 1 ? `${run.name.toUpperCase()}, YOU’RE UP!` : `TURN ${turnNumber}`); note(523); }
   updateUI();
 }
-function openRegistration() { if (stopped || !scene) return; $('name').value = ''; $('registration').showModal(); $('name').focus(); }
+function openRegistration() { if (stopped || !scene) return; const practice = $('practice').checked || storageBlocked; $('name').required = !practice; $('name').setCustomValidity(''); setText('name-label', practice ? 'Nickname (optional)' : 'Leaderboard name'); setText('registration-copy', practice ? 'One warm-up, then three practice turns. Replay as often as you like.' : 'One warm-up, then three ranked turns.'); $('name').value = ''; $('registration').showModal(); $('name').focus(); }
 function finishTurn() {
   if (rehearsal) {
     if (rehearsal === 'delivery') { rehearsal = 'complete'; nextTurnElapsed = 0; }
@@ -140,10 +146,12 @@ function finishTurn() {
   if (!run) return;
   const outcome = recordTurn(store, turnNumber, game.plan?.prize?.id || null); if (!outcome) return;
   persist();
+  track('turn_complete', { turn: turnNumber, score: outcome.run.turns.at(-1).score, prizeId: outcome.run.turns.at(-1).prizeId }, outcome.run);
   if (shared && !outcome.run.practice) sharedApi.queue(outcome.run);
   const points = outcome.run.turns.at(-1).score;
   if (points) { burst(outcome.run.turns.at(-1).prizeId === CAROUSEL.id ? `JACKPOT +${points}` : `+${points}`); [523, 659, 784, 1047].forEach((f, i) => note(f, .18, i * .11)); } else note(165, .25, 0, 'triangle');
   if (outcome.completed) {
+    track('run_complete', { score: outcome.run.total }, outcome.run);
     completedRun = outcome.run; run = null; renderBoard();
     $('final-name').textContent = completedRun.name.toUpperCase(); $('final-score').textContent = String(completedRun.total).padStart(3, '0');
     const rank = shared ? undefined : leaderboard(currentBoard(store)).find(r => r.id === completedRun.id)?.rank;
@@ -172,6 +180,7 @@ async function startScoredRun() {
       store = { version: 1, current: issued.boardId, boards: [{ id: issued.boardId, name: '', rules: issued.rules, runs: [] }], active: issued };
       run = issued;
     } else run = startRun(store, pendingPlayer.name, pendingPlayer.practice);
+    track('run_start', {}, run);
     pendingPlayer = null; rehearsal = null; completedRun = null; persist(); beginTurn();
     $('shared-start').close();
   } catch (error) {
@@ -187,24 +196,26 @@ async function startScoredRun() {
 function gestureDrop() {
   if ((!run && !rehearsal) || game.phase !== 'aim' || startingRun || paused || frozen || stopped || document.hidden || document.querySelector('dialog[open]')) return false;
   if (!drop(game)) return false;
+  track('drop', { trigger: 'gesture', phase: game.phase, turn: rehearsal ? 0 : turnNumber });
   if (rehearsal) rehearsal = 'delivery';
   note(220, .2); updateUI();
   return true;
 }
-function fail(message, error) { stopped = true; cameraControls?.stop(); clearTimeout(window.__arcadeBootTimer); errors.push(String(error || message)); $('loading').hidden = true; $('error').hidden = false; $('error-message').textContent = message; console.error('Cloud Claw:', error || message); }
+function fail(message, error) { track('client_error', { reason: 'renderer' }); stopped = true; cameraControls?.stop(); clearTimeout(window.__arcadeBootTimer); errors.push(String(error || message)); $('loading').hidden = true; $('error').hidden = false; $('error-message').textContent = message; console.error('Cloud Claw:', error || message); }
 function openOperator() { if (shared && sharedRole !== 'host') { $('host-access').showModal(); return; } renderBoard(); $('operator').showModal(); $('pause').textContent = recovering ? 'RESUME INTERRUPTED TURN' : paused ? 'RESUME GAME' : 'PAUSE GAME'; }
 document.addEventListener('visibilitychange', () => { previous = 0; });
 $('player-form').addEventListener('submit', event => { event.preventDefault(); if (!scene || stopped || !cameraControls?.running) return;
-  const name = $('name').value.trim();
+  const practice = $('practice').checked || storageBlocked;
+  const name = $('name').value.trim() || (practice ? 'Player' : '');
   if (!name) { $('name').setCustomValidity('Enter a name for the leaderboard.'); $('name').reportValidity(); return; }
-  pendingPlayer = { name, practice: $('practice').checked || storageBlocked };
+  pendingPlayer = { name, practice };
   $('registration').close(); $('scene').focus();
-  freshGame(); remaining = RULES.seconds; rehearsal = 'steer'; begin(game); updateUI();
+  freshGame(); remaining = RULES.seconds; rehearsal = 'steer'; track('rehearsal_start'); begin(game); updateUI();
 });
 $('name').addEventListener('input', () => $('name').setCustomValidity(''));
 $('rehearsal-exit').addEventListener('click', () => { if (startingRun || rehearsal === 'delivery') return; rehearsal = null; pendingPlayer = null; freshGame(); updateUI(); });
 $('register-cancel').addEventListener('click', () => $('registration').close());
-$('next-player').addEventListener('click', () => { $('final').close(); completedRun = null; freshGame(); updateUI(); play(); });
+$('next-player').addEventListener('click', () => { track('replay'); $('final').close(); completedRun = null; freshGame(); updateUI(); play(); });
 $('final').addEventListener('cancel', event => event.preventDefault());
 $('play').addEventListener('click', () => { $('scene').focus(); play(); });
 $('operator-open').addEventListener('click', openOperator);
@@ -227,10 +238,41 @@ $('new-board').addEventListener('click', async () => {
 $('export').addEventListener('click', () => { if (shared) { window.location.assign('/api/host/export'); return; } let data = JSON.stringify(store, null, 2); if (storageBlocked) { try { data = localStorage.getItem(STORAGE_KEY) || data; } catch { /* In-memory export remains available. */ } } const url = URL.createObjectURL(new Blob([data], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = `cloud-claw-sessions-${new Date().toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
 $('quality').addEventListener('click', () => { if (!scene) return; scene.setQuality(!scene.lowQuality); $('quality').textContent = `QUALITY: ${scene.lowQuality ? 'SIMPLE' : 'FULL'}`; });
 $('sound').addEventListener('click', () => { sound = !sound; $('sound').textContent = sound ? 'SOUND ON' : 'SOUND OFF'; $('sound').setAttribute('aria-pressed', String(sound)); note(523); });
+let feedbackSubmission = null, feedbackContext = null;
+function openFeedback() {
+  feedbackContext = { phase: game.phase, turn: rehearsal ? 0 : Math.min(3, turnNumber) };
+  if (!feedbackSubmission) setText('feedback-status', shared ? '' : 'Feedback is available on the shared playtest site.');
+  $('feedback-send').disabled = !shared;
+  $('feedback-dialog').showModal();
+}
+$('feedback-open').addEventListener('click', openFeedback);
+$('final-feedback').addEventListener('click', openFeedback);
+$('error-feedback').addEventListener('click', openFeedback);
+$('feedback-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!shared) return;
+  if (feedbackSubmission) { void playtest.flush(); return; }
+  const data = { ...feedbackContext, category: $('feedback-category').value, comment: $('feedback-comment').value.trim() };
+  const submission = track('feedback', data);
+  feedbackSubmission = submission;
+  $('feedback-send').textContent = 'Retry sending';
+  $('feedback-category').disabled = $('feedback-comment').disabled = true;
+  setText('feedback-status', 'Sending feedback…');
+  const waiting = setTimeout(() => { if (feedbackSubmission === submission) setText('feedback-status', 'Not saved yet. Keep this page open; retrying.'); }, 9000);
+  const result = await submission.acknowledged;
+  clearTimeout(waiting);
+  if (feedbackSubmission !== submission) return;
+  feedbackSubmission = null;
+  $('feedback-category').disabled = $('feedback-comment').disabled = false;
+  $('feedback-send').textContent = 'Send feedback';
+  setText('feedback-status', result.sent ? 'Thanks. Your feedback is saved.' : 'Feedback was not saved. Please try again.');
+  if (result.sent) $('feedback-comment').value = '';
+});
 $('fullscreen').addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { $('hint').textContent = 'Use your browser’s fullscreen command.'; } });
 $('camera-open').addEventListener('click', () => $('camera-setup').showModal());
 async function startCamera() {
   if (cameraLoading) return;
+  track('camera_start');
   cameraLoading = true; $('camera-toggle').disabled = true; $('camera-status').textContent = 'Starting camera…';
   updateUI();
   try {
@@ -251,9 +293,9 @@ async function startCamera() {
       });
     }
     await cameraControls.start();
-    if (cameraControls.running) $('camera-setup').close();
-    else $('camera-setup').showModal();
-  } catch (error) { $('camera-status').textContent = `Camera unavailable: ${error.message}`; $('camera-setup').showModal(); }
+    if (cameraControls.running) { track('camera_ready'); $('camera-setup').close(); }
+    else { track('camera_error', { code: 'camera_unavailable' }); $('camera-setup').showModal(); }
+  } catch (error) { track('camera_error', { code: 'camera_unavailable' }); $('camera-status').textContent = `Camera unavailable: ${error.message}`; $('camera-setup').showModal(); }
   finally { cameraLoading = false; $('camera-toggle').disabled = false; updateUI(); }
 }
 $('camera-toggle').addEventListener('click', () => {
@@ -261,7 +303,9 @@ $('camera-toggle').addEventListener('click', () => {
   else startCamera();
 });
 $('camera-recenter').addEventListener('click', () => { cameraControls?.reset(); $('camera-setup').close(); });
-window.addEventListener('pagehide', () => cameraControls?.stop());
+window.addEventListener('pagehide', () => { cameraControls?.stop(); void playtest.flush(); });
+window.addEventListener('error', () => track('client_error', { reason: 'runtime' }));
+window.addEventListener('unhandledrejection', () => track('client_error', { reason: 'unhandled' }));
 $('scene').addEventListener('webglcontextlost', event => { event.preventDefault(); fail('The renderer stopped. Reload, then ask your host to resume the interrupted turn.'); });
 function frame(time) {
   if (stopped) return;
@@ -279,7 +323,7 @@ function frame(time) {
       if (rehearsal) {
         if (rehearsal === 'steer' && Math.hypot(game.position.x - practiceMarker.x, game.position.z - practiceMarker.z) < .13) { rehearsal = 'drop'; }
       } else {
-      const before = Math.ceil(remaining); remaining = Math.max(0, remaining - dt); if (Math.ceil(remaining) < before && remaining <= 5) note(remaining < 1 ? 220 : 440, .08); if (!remaining) drop(game);
+      const before = Math.ceil(remaining); remaining = Math.max(0, remaining - dt); if (Math.ceil(remaining) < before && remaining <= 5) note(remaining < 1 ? 220 : 440, .08); if (!remaining && drop(game)) track('drop', { trigger: 'timeout', phase: game.phase, turn: turnNumber });
       }
     } else {
       input.x = input.z = 0;
@@ -294,6 +338,16 @@ function frame(time) {
   try {
     const feedback = cameraControls?.feedback || { kind: 'off', progress: 0, controlEnabled: false };
     updateUI(feedback);
+    if (feedback.kind !== observedControl) { observedControl = feedback.kind; track('control_state', { state: feedback.kind, phase: game.phase }); }
+    if (game.phase !== observedPhase) { observedPhase = game.phase; track('phase_change', { phase: game.phase }); }
+    if (!document.hidden) {
+      performanceFrames.push(raw * 1000); if (performanceFrames.length > 1800) performanceFrames.shift();
+      if (time - performanceSince >= 30000) {
+        const sorted = [...performanceFrames].sort((a, b) => a - b);
+        track('performance', { frames: sorted.length, averageFps: Math.min(1000, 1000 / (sorted.reduce((a, b) => a + b, 0) / sorted.length)), p95FrameMs: Math.min(60000, sorted[Math.floor(sorted.length * .95)]), framesOver33ms: sorted.filter(ms => ms > 33.4).length });
+        performanceFrames = []; performanceSince = time;
+      }
+    }
     if (paused || modal || document.hidden) feedback.kind = 'blocked';
     scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, feedback); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
     $('practice-marker').hidden = rehearsal !== 'steer';
@@ -343,6 +397,8 @@ if (shared) {
   $('operator-help').textContent = 'Shared scores persist on the pilot server. Existing runs keep their original board when you rotate. Names are display labels; scores are for fun.';
   sharedApi = createSessionApi({ onChange: state => {
     if (state.saved) { updateSavedRank(state.saved); void refreshSharedBoard(); return; }
+    if (state.error && !observedSaveError) track('save_error', { reason: 'sync' });
+    observedSaveError = Boolean(state.error);
     sharedStatus = state.error || (state.pending ? 'Score waiting to sync' : 'SHARED STAFF LEADERBOARD');
     $('sync-message').textContent = state.error || (state.pending ? 'Score waiting to sync' : '');
     $('shared-reauth').hidden = !state.needsLogin;
