@@ -2,7 +2,7 @@ import { RULES } from './event-session.js';
 
 const TYPES = new Set(['page_open', 'camera_start', 'camera_ready', 'camera_error', 'control_state', 'phase_change', 'rehearsal_start', 'drop', 'run_start', 'turn_complete', 'run_complete', 'replay', 'feedback', 'client_error', 'performance', 'save_error']);
 const PRIZES = new Set(Object.keys(RULES.points));
-const STATES = new Set(['off', 'loading', 'ready', 'calibrating', 'tracking', 'clenching', 'clasping', 'dropping', 'accepted', 'lost', 'error', 'blocked']);
+const STATES = new Set(['off', 'loading', 'ready', 'calibrating', 'tracking', 'clenching', 'clasping', 'dropping', 'accepted', 'lost', 'delayed', 'error', 'blocked']);
 const PHASES = new Set(['idle', 'aim', 'anticipate', 'descend', 'grip', 'lift', 'transfer', 'release', 'deliver', 'reveal', 'result']);
 const TRIGGERS = new Set(['gesture', 'timeout']);
 const REASONS = new Set(['renderer', 'runtime', 'unhandled', 'sync']);

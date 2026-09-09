@@ -148,3 +148,34 @@ test('a rejected clasp never reports an accepted drop and requires a fresh gestu
   assert.ok(!f.read().state.message.includes('confirmed'));
   f.frame([hand(.46), hand(.55, 'Right')], 20); assert.equal(attempts, 1);
 });
+
+test('continuously late results do not masquerade as a stopped camera or control the game', async () => {
+  const f=fixture(), c=f.controller, originalDocument=globalThis.document;
+  globalThis.document={hidden:false};
+  Object.assign(c,{running:true,busy:true,generation:1,lastCapture:1000,lastResult:1000,lastActivity:1000});
+  let handled=0,failed=0;c.handle=()=>handled++;c.fail=()=>failed++;
+  try {
+    for(let captured=1400;captured<=11000;captured+=400){
+      assert.equal(c.acceptResult({},captured,1,captured+350),false);
+      await c.frame(captured+390);
+      assert.equal(f.read().state.kind,'delayed');
+      assert.deepEqual(f.read().input,{x:0,z:0});
+    }
+    assert.equal(handled,0);assert.equal(failed,0);assert.equal(c.running,true);
+    const lastActivity=c.lastActivity;
+    assert.equal(c.acceptResult({},1000,1,12000),false);
+    assert.equal(c.lastActivity,lastActivity,'replayed results cannot keep the worker alive');
+    await c.frame(lastActivity+7001);assert.equal(failed,1,'a genuinely silent worker still stops');
+  } finally {globalThis.document=originalDocument;}
+});
+
+test('a late result cancels confirmation and fresh tracking can resume without restarting',()=>{
+  const f=fixture(),c=f.controller;
+  Object.assign(c,{running:true,generation:1,lastCapture:1000,lastResult:1000,lastActivity:1000});
+  c.fist.armed=true;c.fist.held=400;
+  assert.equal(c.acceptResult({},1400,1,1750),false);
+  assert.equal(c.fist.armed,false);assert.equal(c.fist.held,0);
+  let handled=0;c.handle=()=>handled++;
+  assert.equal(c.acceptResult({},1800,1,1900),true);
+  assert.equal(handled,1);assert.equal(c.lastFreshReceipt,1900);
+});

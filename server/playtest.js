@@ -6,7 +6,7 @@ export const PLAYTEST_MAX_EVENTS = 100_000;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const TYPES = new Set(['page_open', 'camera_start', 'camera_ready', 'camera_error', 'control_state', 'phase_change', 'rehearsal_start', 'drop', 'run_start', 'turn_complete', 'run_complete', 'replay', 'feedback', 'client_error', 'performance', 'save_error']);
 const ENUMS = {
-  state: ['off', 'loading', 'ready', 'calibrating', 'tracking', 'clenching', 'clasping', 'dropping', 'accepted', 'lost', 'error', 'blocked'],
+  state: ['off', 'loading', 'ready', 'calibrating', 'tracking', 'clenching', 'clasping', 'dropping', 'accepted', 'lost', 'delayed', 'error', 'blocked'],
   phase: ['idle', 'aim', 'anticipate', 'descend', 'grip', 'lift', 'transfer', 'release', 'deliver', 'reveal', 'result'],
   trigger: ['gesture', 'timeout'],
   reason: ['renderer', 'runtime', 'unhandled', 'sync'],

@@ -93,7 +93,7 @@ export class HandController {
         if (generation === this.generation) this.fail(new Error('Camera disconnected. Reconnect it, then start again.'));
       }, { once: true });
       this.running = true; this.starting = false; this.lastFrame = -1; this.busy = false;
-      this.lastResult = performance.now(); this.lastActivity = this.lastResult; this.lastCapture = -Infinity;
+      this.lastResult = performance.now(); this.lastActivity = this.lastResult; this.lastCapture = -Infinity; this.lastResponseCapture = -Infinity; this.lastFreshReceipt = this.lastResult;
       await this.listCameras(stream.getVideoTracks()[0]?.getSettings().deviceId);
       if (generation !== this.generation || !this.running) return;
       this.onState({ kind: 'ready', message: 'Show one hand in the camera. Hold it still to begin.' });
@@ -125,17 +125,17 @@ export class HandController {
     if (announce) this.onState({ kind: 'off', message: 'Camera is off. Start it again to play.' });
   }
 
-  async frame() {
+  async frame(now = performance.now()) {
     if (!this.running) return;
-    const now = performance.now();
     if (document.hidden) return;
     if (now - this.lastResult > CAPTURE_MAX_AGE) {
       this.onInput({ x: 0, z: 0 });
-      this.clasp.reset(); this.fist.reset();
-      this.onState({ kind: 'lost', message: 'Bring one hand back into view.' });
+      // Stop stale steering immediately. A still-running inference must not
+      // erase consecutive fresh detections merely because capture is older.
+      if (now - (this.lastFreshReceipt ?? this.lastResult) > CAPTURE_MAX_AGE) this.delayTracking();
       if (now - this.lastResult > OWNER_LOSS_GRACE) this.resetOwner();
     }
-    if (now - (this.lastActivity ?? this.lastResult) > 7000) { this.fail(new Error('Camera frames stopped. Start the camera again.')); return; }
+    if (now - (this.lastActivity ?? this.lastResult) > 7000) { this.fail(new Error('Hand tracking stopped responding. Start the camera again.')); return; }
     if (this.busy || this.video.readyState < 2 || this.video.currentTime === this.lastFrame) return;
     this.busy = true; this.lastFrame = this.video.currentTime;
     const generation = this.generation;
@@ -151,17 +151,28 @@ export class HandController {
     const age = receivedAt - capturedAt;
     const reason = !Number.isFinite(capturedAt) || age < 0 ? 'invalid capture'
       : capturedAt <= (this.visibilityCutoff ?? -Infinity) ? 'hidden capture'
-      : capturedAt <= (this.lastCapture ?? -Infinity) ? 'out of order'
+      : capturedAt <= (this.lastResponseCapture ?? this.lastCapture ?? -Infinity) ? 'out of order'
       : age > CAPTURE_MAX_AGE ? 'over age' : null;
     this.onDiagnostic?.({ captureAge: age, rejected: reason });
+    // A late response proves the worker is alive, but cannot control the game.
+    if (!reason || reason === 'over age') {
+      this.lastActivity = receivedAt; this.lastResponseCapture = capturedAt;
+    }
     if (reason) {
       this.clasp.reset(); this.fist.reset(); this.onInput({ x: 0, z: 0 });
+      if (reason === 'over age') this.delayTracking();
       return false;
     }
     if (capturedAt - (this.lastCapture ?? capturedAt) > OWNER_LOSS_GRACE) this.resetOwner();
-    this.lastCapture = capturedAt; this.lastResult = capturedAt; this.lastActivity = receivedAt;
+    this.lastCapture = capturedAt; this.lastResult = capturedAt; this.lastFreshReceipt = receivedAt;
     this.handle(result, capturedAt);
     return true;
+  }
+
+  delayTracking() {
+    this.clasp.reset(); this.fist.reset();
+    this.onInput({ x: 0, z: 0 });
+    this.onState({ kind: 'delayed', message: 'Tracking is slow. Keep your hand steady while it catches up.', progress: 0 });
   }
 
   handle(result, now) {

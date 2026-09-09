@@ -39,9 +39,9 @@ try {
 
   // Silence must expire both the input and its visible control claim.
   await page.evaluate(() => clearInterval(window.testCamera.timer));
-  await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.feedback.kind === 'lost');
+  await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.feedback.kind === 'delayed');
   await page.waitForFunction(() => !window.__littleCloud.snapshot().joystick.visible);
-  assert.equal(await page.locator('#status').textContent(), 'Bring your hand back');
+  assert.equal(await page.locator('#status').textContent(), 'Tracking is catching up');
   assert.equal((await snap()).event.remaining, 15);
   await page.screenshot({ path: '.screenshots/gesture-lost.png' });
   await page.evaluate(() => { window.testCamera.tick(); window.testCamera.timer = setInterval(() => window.testCamera.tick(), 30); });

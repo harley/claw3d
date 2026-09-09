@@ -17,7 +17,7 @@ export async function createCameraControls({ video, overlay, select, onChange, c
     // Presentation expires with input, including when the worker stops reporting.
     get feedback() {
       const fresh = performance.now() - at < 700;
-      return { ...state, kind: !controller.running ? controller.starting ? 'loading' : state.kind === 'error' ? 'error' : 'off' : fresh ? state.kind : 'lost',
+      return { ...state, kind: !controller.running ? controller.starting ? 'loading' : state.kind === 'error' ? 'error' : 'off' : fresh ? state.kind : 'delayed',
         progress: fresh ? state.progress || 0 : 0, controlEnabled: controller.running && fresh && canControl() };
     },
     get running() { return controller.running; }, get starting() { return controller.starting; },

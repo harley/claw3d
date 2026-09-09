@@ -17,22 +17,25 @@ export function fistEvidence(landmarks,gesture,score=0,aspect=1){
 // confirmation; a long frame gap or another hand cancels the pending action.
 export class FistDrop {
   constructor(){this.reset();}
-  reset(){this.armed=false;this.openMs=0;this.held=0;this.last=0;this.uncertainSince=0;this.fired=false;}
+  reset(){this.armed=false;this.openMs=0;this.held=0;this.last=0;this.wasClosed=false;this.uncertainSince=0;this.fired=false;}
   update({open=false,closed=false,visible=true},now){
     const gap=this.last?now-this.last:0;
-    if(!visible||gap>220){this.reset();this.last=now;return{active:false,progress:0,fired:false};}
-    const dt=clamp(gap,0,100);this.last=now;
+    if(!visible||gap>300){this.reset();this.last=now;return{active:false,progress:0,fired:false};}
+    const dt=clamp(gap,0,300);this.last=now;
     if(this.fired)return{active:true,progress:1,fired:false};
-    if(open){this.held=0;this.uncertainSince=0;this.openMs+=dt;if(this.openMs>=200)this.armed=true;return{active:false,progress:0,fired:false};}
+    if(open){this.wasClosed=false;this.held=0;this.uncertainSince=0;this.openMs+=dt;if(this.openMs>=200)this.armed=true;return{active:false,progress:0,fired:false};}
     if(!this.armed){this.openMs=0;return{active:false,progress:0,fired:false};}
     if(!closed){
+      this.wasClosed=false;
       this.uncertainSince||=now;
       if(now-this.uncertainSince>130)this.held=0;
       return{active:this.held>0,progress:this.held/FIST_HOLD_MS,fired:false};
     }
     if(this.uncertainSince && now-this.uncertainSince>130)this.held=0;
-    // The returning detection does not get credit for time spent uncertain.
-    if(!this.uncertainSince)this.held+=dt;
+    // Only the interval between two closed detections counts as a hold.
+    // Opening or uncertainty must not receive credit on the returning frame.
+    if(this.wasClosed&&!this.uncertainSince)this.held+=dt;
+    this.wasClosed=true;
     this.uncertainSince=0;
     const progress=clamp(this.held/FIST_HOLD_MS,0,1);this.fired=progress===1;
     return{active:true,progress,fired:this.fired};

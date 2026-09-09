@@ -29,14 +29,15 @@ test('a fist needs an open hand first and a sustained hold, and fires only once'
   const g=new FistDrop();for(let t=100;t<1000;t+=65)assert.equal(g.update(closed,t).fired,false);
   g.reset();arm(g);
   for(let t=1325;t<=1780;t+=65)assert.equal(g.update(closed,t).fired,false);
-  assert.equal(g.update(closed,1845).fired,true);
-  for(let t=1910;t<3000;t+=65)assert.equal(g.update(closed,t).fired,false);
+  assert.equal(g.update(closed,1845).fired,false);
+  assert.equal(g.update(closed,1910).fired,true);
+  for(let t=1975;t<3000;t+=65)assert.equal(g.update(closed,t).fired,false);
 });
 test('opening cancels a pending fist without carrying hold time into the next attempt',()=>{
   const g=new FistDrop();arm(g);
   for(let t=1325;t<=1585;t+=65)g.update(closed,t);
   assert.equal(g.update(open,1650).active,false);
-  assert.equal(g.update(closed,1715).progress,65/550);
+  assert.equal(g.update(closed,1715).progress,0);
 });
 test('uncertain frames do not advance the hold and a long loss requires rearming',()=>{
   const g=new FistDrop();arm(g);g.update(closed,1325);const held=g.held;
@@ -65,8 +66,8 @@ function claim(c){c.handle(result(),1000);c.handle(result(),1520);for(let t=1585
 test('camera steering freezes during fist confirmation and drops once',()=>{
   const{c,events}=controller();claim(c);assert.equal(events.starts,1);
   c.handle(result(0,-.06),1910);assert.ok(events.inputs.at(-1).x>0);
-  for(let t=1975;t<=2495;t+=65){c.handle(result(4,-.06),t);assert.deepEqual(events.inputs.at(-1),{x:0,z:0});}
-  assert.equal(events.drops,1);c.handle(result(4,-.06),2560);assert.equal(events.drops,1);
+  for(let t=1975;t<=2560;t+=65){c.handle(result(4,-.06),t);assert.deepEqual(events.inputs.at(-1),{x:0,z:0});}
+  assert.equal(events.drops,1);c.handle(result(4,-.06),2625);assert.equal(events.drops,1);
 });
 test('opening after a partial fist recentres the joystick without a jump',()=>{
   const{c,events}=controller();claim(c);
@@ -109,13 +110,13 @@ test('blocked input clears fist arming and requires reopening in the next turn',
 test('rejected fist drop reports no acceptance and cannot retry until reopened',()=>{
   const {c,events}=controller();claim(c);let attempts=0;
   c.onDrop=()=>{attempts++;return false;};
-  for(let t=1910;t<2510;t+=65)c.handle(result(4),t);
+  for(let t=1910;t<2570;t+=65)c.handle(result(4),t);
   assert.equal(attempts,1);assert.notEqual(events.states.at(-1).kind,'accepted');
   for(let t=2560;t<3400;t+=65)c.handle(result(4),t);
   assert.equal(attempts,1);
   for(let t=3400;t<3730;t+=65)c.handle(result(),t);
   c.onDrop=()=>{attempts++;return true;};
-  for(let t=3790;t<=4310;t+=65)c.handle(result(4),t);
+  for(let t=3790;t<=4375;t+=65)c.handle(result(4),t);
   assert.equal(attempts,2);assert.equal(events.states.at(-1).kind,'accepted');
 });
 
@@ -131,4 +132,32 @@ test('rejected capture cancels an armed fist even when fresh frames follow quick
 test('a returning closed detection after prolonged uncertainty clears old hold time',()=>{
   const g=new FistDrop();arm(g);g.update(closed,1325);g.update({},1390);g.update({},1455);
   assert.equal(g.update(closed,1585).progress,0);
+});
+
+test('fresh 4 FPS detections retain a deliberate hold between capture-age sweeps', async()=>{
+  const {c,events}=controller(), originalDocument=globalThis.document;
+  globalThis.document={hidden:false};
+  Object.assign(c,{running:true,busy:true,generation:1,lastCapture:-Infinity,lastResult:1000,lastActivity:1000});
+  try {
+    for(let t=1000;t<=2250;t+=250){
+      assert.equal(c.acceptResult(result(),t,1,t+200),true);
+      await c.frame(t+325);
+      assert.deepEqual(events.inputs.at(-1),{x:0,z:0},'stale steering is still neutral');
+    }
+    assert.ok(c.owner);assert.equal(c.fist.armed,true);
+    for(let t=2500;t<=3500;t+=250){
+      c.acceptResult(result(4),t,1,t+200);
+      await c.frame(t+325);
+    }
+    assert.equal(events.drops,1);
+  } finally {globalThis.document=originalDocument;}
+});
+
+test('slow detections count only time between closed frames, never the open-to-fist interval',()=>{
+  const g=new FistDrop();
+  g.update(open,1000);g.update(open,1250);g.update(open,1500);
+  assert.equal(g.update(closed,1750).progress,0);
+  assert.equal(g.update(closed,2000).fired,false);
+  assert.equal(g.update(closed,2250).fired,false);
+  assert.equal(g.update(closed,2500).fired,true);
 });
