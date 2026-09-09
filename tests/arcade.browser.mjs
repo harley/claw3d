@@ -30,6 +30,15 @@ async function catchTurn(){
 }
 try {
  await open();await page.screenshot({path:'.screenshots/event-hero.png'});
+ const idleWrites = await page.evaluate(async () => {
+  let writes = 0;
+  const observer = new MutationObserver(records => { writes += records.length; });
+  observer.observe(document.getElementById('arcade'), { subtree: true, attributes: true, attributeFilter: ['hidden'] });
+  for (let i = 0; i < 20; i++) await new Promise(requestAnimationFrame);
+  observer.disconnect();
+  return writes;
+ });
+ assert.equal(idleWrites, 0, 'idle presentation must not rewrite unchanged visibility every frame');
  assert.equal(await page.locator('#practice').isChecked(),true,'new sessions default to unranked practice');
  await page.locator('#operator-open').click();await page.locator('#practice').uncheck();await page.locator('#operator .panel-head button').click();
  await register('Linh r h'); assert.equal((await snap()).event.run.name,'Linh r h');

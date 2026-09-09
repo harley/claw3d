@@ -9,6 +9,7 @@ import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, record
 const elements = new Map();
 const $ = id => { if (!elements.has(id)) elements.set(id, document.getElementById(id)); return elements.get(id); };
 const setText = (id, value) => { const text = String(value); if ($(id).textContent !== text) $(id).textContent = text; };
+const setHidden = (element, hidden) => { if (element.hidden !== hidden) element.hidden = hidden; };
 $('build-info').textContent = `BUILD ${__BUILD_INFO__.commit}${__BUILD_INFO__.dirty ? ' · uncommitted changes' : ''} · ${__BUILD_INFO__.branch}`;
 let game = createGame({ carousel: true }), scene, previous = 0, stopped = false, frozen = false;
 let cameraControls, cameraLoading = false;
@@ -79,7 +80,7 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
     setText('jackpot-cue', ['idle', 'aim'].includes(phase) ? cue.text : 'Claw in action');
     [...$('jackpot-lights').children].forEach((light, i) => light.classList.toggle('on', ['idle', 'aim'].includes(phase) && i < cue.lights));
   }
-  $('jackpot-signal').hidden = phase !== 'aim' || Boolean(rehearsal) || !nearPickup;
+  setHidden($('jackpot-signal'), phase !== 'aim' || Boolean(rehearsal) || !nearPickup);
   if (phase === 'aim' && !rehearsal && nearPickup) { title = 'Go for the star'; hint = aligned?.id === CAROUSEL.id ? 'Clench your fist and hold.' : 'Gold ring. Wait for green.'; }
   if (rehearsal) {
     kicker = 'PRACTICE · NO SCORE';
@@ -103,7 +104,7 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
   if (startingRun) { title = 'Getting your run ready'; hint = 'Connecting to the leaderboard…'; }
   const holding = phase === 'aim' && feedback.controlEnabled && ['clenching', 'dropping'].includes(feedback.kind);
   const progress = holding ? Math.round(Math.max(0, Math.min(1, feedback.progress || 0)) * 100) : 0;
-  $('gesture-meter').hidden = !holding;
+  setHidden($('gesture-meter'), !holding);
   if ($('gesture-meter').getAttribute('aria-valuenow') !== String(progress)) {
     $('gesture-meter').setAttribute('aria-valuenow', String(progress));
     $('gesture-progress').style.transform = `scaleX(${progress / 100})`;
@@ -113,13 +114,13 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
   const cameraLabels = { ready: 'Camera view', calibrating: 'Hand found', tracking: 'Hand found', accepted: 'Drop confirmed', lost: 'Hand out of view', delayed: 'Tracking delayed', clenching: 'Fist found', dropping: 'Hands found', loading: 'Starting camera', off: 'Camera off', error: 'Check camera' };
   setText('camera-recognition', cameraLabels[feedback.kind] || 'Camera view');
   if ($('camera-preview').dataset.state !== feedback.kind) $('camera-preview').dataset.state = feedback.kind;
-  $('rehearsal-exit').hidden = !rehearsal;
+  setHidden($('rehearsal-exit'), !rehearsal);
   $('rehearsal-exit').disabled = startingRun || rehearsal === 'delivery';
   $('reset').disabled = startingRun;
   setText('timer', String(Math.ceil(remaining)).padStart(2, '0'));
   $('arcade').classList.toggle('last-claw', Boolean(run && turnNumber === 3)); $('arcade').classList.toggle('urgent', phase === 'aim' && remaining <= 5);
   setText('mode-label', (run?.practice ?? pendingPlayer?.practice ?? completedRun?.practice ?? $('practice').checked) ? 'PRACTICE · NOT RANKED' : shared ? sharedStatus : storageError ? 'UNSAVED · OPEN OPERATOR' : 'EVENT · RANKED');
-  $('mode-label').hidden = !$('mode-label').textContent;
+  setHidden($('mode-label'), !$('mode-label').textContent);
   if (!run && !recovering && !rehearsal) button = cameraLoading ? 'Starting…' : cameraControls?.running ? 'Play' : 'Start camera';
   const signature = JSON.stringify([title, hint, button, kicker, total, run?.name, pendingPlayer?.name, completedRun?.id, paused]);
   if (signature === lastStatus) return; lastStatus = signature;
@@ -316,7 +317,7 @@ function frame(time) {
   const cameraWaiting = aiming && (!cameraControls?.running || cameraControls.waiting);
   // Only explicit operator pause stops a drop already in flight.
   const blocked = paused || (aiming && (cameraWaiting || modal || document.hidden));
-  $('pause-banner').hidden = !paused;
+  setHidden($('pause-banner'), !paused);
   setText('pause-banner', 'Paused by host');
   const input = { ...cameraControls?.input || { x: 0, z: 0 } };
   if (!frozen && !blocked && !document.hidden) {
@@ -351,12 +352,12 @@ function frame(time) {
     }
     if (paused || modal || document.hidden) feedback.kind = 'blocked';
     scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, feedback, Boolean(cameraControls?.running || cameraControls?.starting)); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
-    $('practice-marker').hidden = rehearsal !== 'steer';
+    setHidden($('practice-marker'), rehearsal !== 'steer');
     if (rehearsal === 'steer') { const point = scene.screenPoint(practiceMarker.x, BED + .10, practiceMarker.z); $('practice-marker').style.left = `${point.x}px`; $('practice-marker').style.top = `${point.y}px`; }
     const tagged = game.phase === 'aim' && aligned ? game.toys.find(toy => toy.id === aligned.id) : null;
     const target = tagged ? scene.screenPoint(tagged.x, BED + (tagged.elevation || 0) + .08, tagged.z) : null;
     for (const { toy, element } of tags) {
-      element.hidden = !target || aligned.id !== toy.id;
+      setHidden(element, !target || aligned.id !== toy.id);
       if (element.hidden) continue;
       element.style.transform = `translate(${Math.round(target.x)}px, ${Math.round(target.y)}px) translate(-50%, -50%)`;
       element.classList.add('targeted');
