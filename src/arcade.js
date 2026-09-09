@@ -350,7 +350,7 @@ function frame(time) {
       }
     }
     if (paused || modal || document.hidden) feedback.kind = 'blocked';
-    scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, feedback); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
+    scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, feedback, Boolean(cameraControls?.running || cameraControls?.starting)); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
     $('practice-marker').hidden = rehearsal !== 'steer';
     if (rehearsal === 'steer') { const point = scene.screenPoint(practiceMarker.x, BED + .10, practiceMarker.z); $('practice-marker').style.left = `${point.x}px`; $('practice-marker').style.top = `${point.y}px`; }
     const tagged = game.phase === 'aim' && aligned ? game.toys.find(toy => toy.id === aligned.id) : null;

@@ -261,7 +261,7 @@ export class ArcadeScene {
     });
   }
 
-  update(game, dt, time, input, aligned, feedback) {
+  update(game, dt, time, input, aligned, feedback, cameraActive = false) {
     const phase = game.phase, elapsed = game.elapsed, plan = game.plan, motion = this.reducedMotion ? 0 : 1;
     this.carousel.visible = Boolean(game.carousel);
     if (game.carousel) {
@@ -332,6 +332,15 @@ export class ArcadeScene {
     if (['aim', 'idle'].includes(phase) || !motion) { this.camera.position.copy(this.home); this.currentLook.copy(this.look); }
     else { const k = 1 - Math.exp(-dt * 3); this.camera.position.lerp(cameraPos, k); this.currentLook.lerp(look, k); }
     this.camera.lookAt(this.currentLook);
+    this.draw(time, cameraActive);
+  }
+
+  draw(time, cameraActive) {
+    // Leave GPU time for camera recognition, especially on 120/144 Hz displays.
+    // Only draw submission is capped; transforms and contact response still update.
+    const frame = Math.floor((time + .000001) * 30);
+    if (cameraActive && frame === this.cameraRenderFrame) return;
+    this.cameraRenderFrame = cameraActive ? frame : undefined;
     this.renderer.render(this.scene, this.camera);
   }
 

@@ -8,12 +8,21 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(() => { window.mediaCalls = 0; const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); navigator.mediaDevices.getUserMedia = options => { window.mediaCalls++; return original(options); }; });
   await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud);
+  await page.evaluate(async () => {
+    const { ArcadeScene } = await import('/src/arcade-scene.js');
+    const draw = ArcadeScene.prototype.draw;
+    ArcadeScene.prototype.draw = function (time, cameraActive) {
+      window.cameraRenderBudget = cameraActive;
+      return draw.call(this, time, cameraActive);
+    };
+  });
   const snap = () => page.evaluate(() => window.__littleCloud.snapshot());
   assert.equal(await page.evaluate(() => window.mediaCalls), 0);
   await page.locator('#camera-open').click(); assert.equal(await page.evaluate(() => window.mediaCalls), 0);
   await page.locator('#camera-setup .panel-head button').click();
   await page.locator('#play').click();
   await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running, { }, { timeout: 35000 });
+  await page.waitForFunction(() => window.cameraRenderBudget === true);
   assert.equal((await snap()).event.run, null); assert.equal((await snap()).phase, 'idle');
   assert.equal(await page.locator('#registration').isVisible(), false);
   assert.equal(await page.locator('#camera-preview').isVisible(), true);
@@ -55,6 +64,7 @@ try {
   await page.evaluate(() => window.dispatchEvent(new Event('blur'))); assert.equal((await snap()).event.paused, false);
   await page.locator('#camera-open').click(); assert.equal(await page.locator('#operator').isVisible(), false);
   await page.locator('#camera-toggle').click(); assert.equal((await snap()).event.handCamera.running, false);
+  await page.waitForFunction(() => window.cameraRenderBudget === false);
   assert.equal(await page.evaluate(() => document.getElementById('camera-video').srcObject), null);
   await page.locator('#camera-setup .panel-head button').click();
   await page.screenshot({ path: '.screenshots/camera-only.png' });

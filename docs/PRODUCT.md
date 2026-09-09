@@ -50,6 +50,10 @@ Badge scanning, verified competition results, replay enforcement, queue/admin an
 
 ## Current camera behavior
 
+While the camera starts or runs, submit at most 30 scene draws per second. Mechanics, transforms and contact response keep their normal update cadence. This preserves full graphics while leaving processing time for recognition on high refresh displays; stopping the camera restores display-rate rendering. Do not relax capture freshness to hide rendering contention.
+
+September 9 physical-camera diagnosis on the development Mac: the same CPU recognizer measured 66 ms median with the scene off, versus 613 ms with uncapped full graphics. Full graphics capped at 30 FPS measured 66 ms median / 107 ms p95, with all 170 replies under 300 ms (148 detected a hand). The implemented draw-only cap with a larger scene measured 58 ms median / 163 ms p95 over 275 replies; 270 were under 300 ms and 73 detected a hand. These are bounded physical-camera timing samples, not first-time-player or three-turn acceptance results. No camera images or landmarks were saved.
+
 Camera recognition and the controlling-hand highlight remain visible during setup and delivery, but only aiming accepts game actions. Calibration uses a fixed anchor; the highlighted hand is labeled YOU and its neutral point is shown. Captures older than 300 ms, out of order, or from a stopped/restarted/hidden camera generation cannot control the game. Capture age stops steering; receipt time detects a tracking delay. Slow but live replies cannot trigger the seven-second no-response shutdown. Owner loss beyond 650 ms requires stable single-hand acquisition again. Frames are not recorded.
 
 Practice performs one real unscored drop before run creation. The ring is a steering guide, never a gate. An accepted drop finishes without hands, then the completed practice leads into exactly three scored turns after server acknowledgement. Exit Practice cannot interrupt an accepted animation or an outstanding ranked start. Scored aiming waits for acquired control.
