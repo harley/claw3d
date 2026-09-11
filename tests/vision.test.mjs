@@ -190,6 +190,20 @@ test('steering filters hand jitter while staying responsive to real moves', () =
   assert.ok(f.read().input.x > .3, `filtered steering too sluggish: ${f.read().input.x}`);
 });
 
+test('vision gates forward hold cancellations with their cause', () => {
+  const f = fixture(), c = f.controller;
+  const gestures = []; c.onGesture = (name, cause) => gestures.push(cause ? `${name}:${cause}` : name);
+  Object.assign(c, { running: true, generation: 1, lastCapture: 1000, lastResult: 1000, lastActivity: 1000 });
+  c.fist.armed = true; c.fist.held = 400;
+  assert.equal(c.acceptResult({}, 1400, 1, 1750), false);
+  assert.deepEqual(gestures, ['hold_cancelled:stale']);
+  gestures.length = 0;
+  f.setPhase('aim'); f.frame([hand(.5)], 12);
+  c.fist.armed = true; c.fist.held = 300; c.fist.last = 0;
+  f.frame([]);
+  assert.deepEqual(gestures, ['hold_cancelled:hand_lost']);
+});
+
 test('re-acquiring a hand that moved during a brief loss re-centres steering at zero', () => {
   const f = fixture(); f.setPhase('aim');
   f.frame([hand(.5)], 12);

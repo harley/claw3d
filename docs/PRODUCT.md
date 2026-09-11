@@ -38,6 +38,8 @@ Test five first-time players on the intended booth camera/display, without coach
 
 After each session, select the single biggest obstacle, change it, commit it and replay the same scenario. Adjust scores/difficulty only after control reliability is established; competitive rule changes need a new leaderboard session.
 
+Production telemetry now measures these targets directly: `time_to_control` records camera-ready-to-first-tracking acquisition against the 10-second target, the gesture funnel (`hold_start` → `drop` or `hold_cancelled` with cause opened/uncertain_reset/hand_lost/frame_gap/blocked/stale) quantifies unintended drops and confirmation friction, and the 30-second `performance` rollup carries vision latency percentiles, result rate and capture-reject counts. Telemetry supports but never replaces observing the five players in person.
+
 ## Current player journey
 
 Camera ready → optional nickname (blank becomes Player) → server-acknowledged start → exactly three scored turns → server-confirmed total and personal rank. The first drop counts. There is no practice toggle or warm-up. Historical practice scores and telemetry remain stored and excluded from event rankings; they are never imported into the shared board.

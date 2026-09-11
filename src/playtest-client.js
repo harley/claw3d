@@ -1,6 +1,6 @@
 import { RULES } from './event-session.js';
 
-const TYPES = new Set(['page_open', 'camera_start', 'camera_ready', 'camera_error', 'control_state', 'phase_change', 'rehearsal_start', 'drop', 'run_start', 'turn_complete', 'run_complete', 'replay', 'feedback', 'client_error', 'performance', 'save_error']);
+const TYPES = new Set(['page_open', 'camera_start', 'camera_ready', 'camera_error', 'control_state', 'phase_change', 'rehearsal_start', 'hold_start', 'hold_cancelled', 'time_to_control', 'drop', 'run_start', 'turn_complete', 'run_complete', 'replay', 'feedback', 'client_error', 'performance', 'save_error']);
 const PRIZES = new Set(Object.keys(RULES.points));
 const STATES = new Set(['off', 'loading', 'ready', 'calibrating', 'tracking', 'clenching', 'clasping', 'dropping', 'accepted', 'lost', 'delayed', 'error', 'blocked']);
 const PHASES = new Set(['idle', 'aim', 'anticipate', 'descend', 'grip', 'lift', 'transfer', 'release', 'deliver', 'reveal', 'result']);
@@ -8,14 +8,17 @@ const TRIGGERS = new Set(['gesture', 'timeout']);
 const REASONS = new Set(['renderer', 'runtime', 'unhandled', 'sync']);
 const CODES = new Set(['permission_denied', 'no_camera', 'camera_busy', 'camera_unavailable', 'tracking_error', 'tracking_init_error', 'worker_error', 'worker_timeout', 'camera_disconnected', 'capture_error', 'renderer_error', 'network_error', 'save_error', 'unknown']);
 const CATEGORIES = new Set(['controls', 'unexpected_drop', 'unfair_miss', 'stuck', 'other']);
+const CAUSES = new Set(['opened', 'uncertain_reset', 'hand_lost', 'frame_gap', 'blocked', 'stale']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const WEEK = 604800000;
 const METRICS = {
   acquisitionMs: WEEK, durationMs: WEEK, captureAgeMs: WEEK, averageFps: 1000,
   p95FrameMs: 60000, framesOver33ms: 10000000, frames: 10000000, sampleMs: WEEK,
   turn: 3, score: 600, total: 600,
+  resultHz: 240, visionP50Ms: 60000, visionP95Ms: 60000,
+  rejectOverAge: 10000000, rejectOutOfOrder: 10000000, rejectHidden: 10000000, rejectInvalid: 10000000,
 };
-const INTEGERS = new Set(['turn', 'score', 'total', 'frames', 'framesOver33ms']);
+const INTEGERS = new Set(['turn', 'score', 'total', 'frames', 'framesOver33ms', 'rejectOverAge', 'rejectOutOfOrder', 'rejectHidden', 'rejectInvalid']);
 
 function cleanData(type, source) {
   const data = {};
@@ -25,6 +28,9 @@ function cleanData(type, source) {
   if (TRIGGERS.has(source.trigger)) data.trigger = source.trigger;
   if (REASONS.has(source.reason)) data.reason = source.reason;
   if (source.prizeId === null || PRIZES.has(source.prizeId)) data.prizeId = source.prizeId;
+  if (CAUSES.has(source.cause)) data.cause = source.cause;
+  // A cause-less cancellation would 400 the whole batch server-side.
+  if (type === 'hold_cancelled' && !data.cause) return null;
   for (const [key, max] of Object.entries(METRICS)) {
     if (typeof source[key] !== 'number' || !Number.isFinite(source[key])) continue;
     const value = Math.min(max, Math.max(0, source[key]));
