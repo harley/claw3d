@@ -26,8 +26,8 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       # check:booth includes unit tests and build; WebGL suites must not overlap.
-      - run: npm run check:booth
-      - run: npm run test:shared
+      - run: xvfb-run --auto-servernum npm run check:booth
+      - run: xvfb-run --auto-servernum npm run test:shared
       - name: Check production container startup and backup ordering
         run: bash scripts/check-release-container.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -108,7 +108,7 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           EXPECTED_BUILD: ${{ github.sha }}
-        run: node scripts/verify-release.mjs
+        run: xvfb-run --auto-servernum node scripts/verify-release.mjs
       - name: Report release failure
         if: failure()
         run: |
