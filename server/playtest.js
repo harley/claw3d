@@ -10,7 +10,7 @@ const ENUMS = {
   phase: ['idle', 'aim', 'anticipate', 'descend', 'grip', 'lift', 'transfer', 'release', 'deliver', 'reveal', 'result'],
   trigger: ['gesture', 'timeout'],
   reason: ['renderer', 'runtime', 'unhandled', 'sync'],
-  code: ['permission_denied', 'no_camera', 'camera_busy', 'camera_unavailable', 'tracking_error', 'renderer_error', 'network_error', 'save_error', 'unknown'],
+  code: ['permission_denied', 'no_camera', 'camera_busy', 'camera_unavailable', 'tracking_error', 'tracking_init_error', 'worker_error', 'worker_timeout', 'camera_disconnected', 'capture_error', 'renderer_error', 'network_error', 'save_error', 'unknown'],
   category: ['controls', 'unexpected_drop', 'unfair_miss', 'stuck', 'other'],
   prizeId: [null, ...Object.keys(RULES.points)],
 };
@@ -91,17 +91,23 @@ export function readPlaytestReport(db, since, { now = Date.now, maxEvents = PLAY
     since = new Date(Date.parse(since)).toISOString();
     since = new Date(Math.max(Date.parse(since), now() - PLAYTEST_RETENTION_MS)).toISOString();
     const counts = db.prepare('SELECT COUNT(*) AS events,COUNT(DISTINCT session_id) AS sessions,MIN(received_at) AS firstReceivedAt,MAX(received_at) AS lastReceivedAt FROM playtest_events WHERE received_at>=?').get(since);
+    // Older clients emitted runtime failures only as control states. Count affected
+    // page sessions across both signals, without double-counting newer clients.
+    const cameraFailure = "(type='camera_error' OR (type='control_state' AND json_extract(data,'$.state')='error'))";
+    const cameraFailureCounts = `COUNT(DISTINCT CASE WHEN ${cameraFailure} THEN session_id END) AS cameraFailureSessions`;
+    const cameraFailures = db.prepare(`SELECT ${cameraFailureCounts} FROM playtest_events WHERE received_at>=?`).get(since);
     const grouped = column => Object.fromEntries(db.prepare(`SELECT ${column} AS key,COUNT(*) AS count FROM playtest_events WHERE received_at>=? GROUP BY ${column}`).all(since).map(row => [row.key, row.count]));
     const feedback = Object.fromEntries(db.prepare("SELECT json_extract(data,'$.category') AS category,COUNT(*) AS count FROM playtest_events WHERE received_at>=? AND type='feedback' GROUP BY category").all(since).map(row => [row.category, row.count]));
     const builds = db.prepare('SELECT build,COUNT(*) AS events FROM playtest_events WHERE received_at>=? GROUP BY build ORDER BY events DESC,build LIMIT 20').all(since);
     const typeCounts = [...TYPES].map(type => `SUM(type='${type}') AS "${type}"`).join(',');
     const feedbackCounts = ENUMS.category.map(category => `SUM(type='feedback' AND json_extract(data,'$.category')='${category}') AS feedback_${category}`).join(',');
     const cohorts = db.prepare(`SELECT build,mode,COUNT(*) AS events,COUNT(DISTINCT session_id) AS sessions,
-      ${typeCounts},${feedbackCounts},AVG(CASE WHEN type='performance' THEN json_extract(data,'$.averageFps') END) AS averageFps,
+      ${typeCounts},${feedbackCounts},${cameraFailureCounts},AVG(CASE WHEN type='performance' THEN json_extract(data,'$.averageFps') END) AS averageFps,
       MAX(CASE WHEN type='performance' THEN json_extract(data,'$.p95FrameMs') END) AS worstP95FrameMs
       FROM playtest_events WHERE received_at>=? GROUP BY build,mode ORDER BY events DESC,build,mode LIMIT 40`).all(since).map(row => ({
         build: row.build, mode: row.mode, events: row.events, sessions: row.sessions,
         runStarts: row.run_start, runCompletes: row.run_complete,
+        cameraFailureSessions: row.cameraFailureSessions,
         byType: Object.fromEntries([...TYPES].map(type => [type, row[type]])),
         feedback: Object.fromEntries(ENUMS.category.map(category => [category, row[`feedback_${category}`] || 0])),
         averageFps: row.averageFps, worstP95FrameMs: row.worstP95FrameMs,
@@ -112,6 +118,6 @@ export function readPlaytestReport(db, since, { now = Date.now, maxEvents = PLAY
     const project = row => ({ id: row.id, sessionId: row.session_id, build: row.build, mode: row.mode, type: row.type, elapsedMs: row.elapsed_ms, ...(row.run_id ? { runId: row.run_id } : {}), data: JSON.parse(row.data), receivedAt: row.received_at });
     return { since, generatedAt: new Date(now()).toISOString(), retentionDays: 30, maxEvents, truncated: counts.events > rows.length,
       feedbackEvents: feedbackRows.reverse().map(project), feedbackTruncated: Object.values(feedback).reduce((sum, count) => sum + count, 0) > feedbackRows.length,
-      summary: { ...counts, byType: grouped('type'), byMode: grouped('mode'), feedback, builds, cohorts, cohortsTruncated: cohortCount > cohorts.length },
+      summary: { ...counts, ...cameraFailures, byType: grouped('type'), byMode: grouped('mode'), feedback, builds, cohorts, cohortsTruncated: cohortCount > cohorts.length },
       events: rows.reverse().map(project) };
   }

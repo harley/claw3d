@@ -147,3 +147,19 @@ test('playtest API requires staff origin and host report access; telemetry limit
     assert.equal((await request('/api/host/playtest')).status, 401);
   } finally { await new Promise(resolve => app.server.close(resolve)); app.database.close(); await rm(dir, { recursive: true, force: true }); }
 });
+
+test('camera failure sessions include old control errors and deduplicate new error events', () => {
+  const database = openDatabase(':memory:'), store = createPlaytestStore(database.db);
+  try {
+    const legacy = batch(event('control_state', { state: 'error', phase: 'aim' }));
+    const modern = batch(event('camera_error', { code: 'worker_timeout', phase: 'aim' }), event('control_state', { state: 'error', phase: 'aim' }));
+    store.ingest(legacy); store.ingest(modern); store.ingest(modern);
+    for (let i = 0; i < 26; i++) store.ingest(batch(...Array.from({ length: 20 }, () => event())));
+    const report = store.read();
+    assert.equal(report.summary.cameraFailureSessions, 2);
+    assert.equal(report.summary.cohorts[0].cameraFailureSessions, 2);
+    assert.equal(report.summary.byType.camera_error, 1);
+    assert.ok(report.truncated);
+    assert.ok(!report.events.some(e => e.type === 'camera_error'), 'complete failure count survives event truncation');
+  } finally { database.close(); }
+});

@@ -153,7 +153,7 @@ test('continuously late results do not masquerade as a stopped camera or control
   const f=fixture(), c=f.controller, originalDocument=globalThis.document;
   globalThis.document={hidden:false};
   Object.assign(c,{running:true,busy:true,generation:1,lastCapture:1000,lastResult:1000,lastActivity:1000});
-  let handled=0,failed=0;c.handle=()=>handled++;c.fail=()=>failed++;
+  let handled=0,failed=0,failureCode;c.handle=()=>handled++;c.fail=(_error,code)=>{failed++;failureCode=code;};
   try {
     for(let captured=1400;captured<=11000;captured+=400){
       assert.equal(c.acceptResult({},captured,1,captured+350),false);
@@ -165,7 +165,7 @@ test('continuously late results do not masquerade as a stopped camera or control
     const lastActivity=c.lastActivity;
     assert.equal(c.acceptResult({},1000,1,12000),false);
     assert.equal(c.lastActivity,lastActivity,'replayed results cannot keep the worker alive');
-    await c.frame(lastActivity+7001);assert.equal(failed,1,'a genuinely silent worker still stops');
+    await c.frame(lastActivity+7001);assert.equal(failed,1,'a genuinely silent worker still stops');assert.equal(failureCode,'worker_timeout');
   } finally {globalThis.document=originalDocument;}
 });
 
@@ -178,4 +178,26 @@ test('a late result cancels confirmation and fresh tracking can resume without r
   let handled=0;c.handle=()=>handled++;
   assert.equal(c.acceptResult({},1800,1,1900),true);
   assert.equal(handled,1);assert.equal(c.lastFreshReceipt,1900);
+});
+
+test('camera failure exposes a bounded reason and clears steering before reporting', () => {
+  const f = fixture(), c = f.controller;
+  c.stop = () => { c.running = false; c.resetOwner(); };
+  for (const [name, supplied, expected] of [
+    ['Error', 'worker_timeout', 'worker_timeout'],
+    ['Error', 'worker_error', 'worker_error'],
+    ['Error', 'camera_disconnected', 'camera_disconnected'],
+    ['Error', 'capture_error', 'capture_error'],
+    ['Error', 'tracking_init_error', 'tracking_init_error'],
+    ['NotAllowedError', undefined, 'permission_denied'],
+    ['NotFoundError', undefined, 'no_camera'],
+    ['NotReadableError', undefined, 'camera_busy'],
+  ]) {
+    c.running = true; c.fist.held = 400;
+    c.fail(Object.assign(new Error('diagnostic detail'), { name }), supplied);
+    assert.equal(f.read().state.code, expected);
+    assert.equal(f.read().state.kind, 'error');
+    assert.equal(c.running, false); assert.equal(c.fist.held, 0);
+    assert.deepEqual(f.read().input, { x: 0, z: 0 });
+  }
 });

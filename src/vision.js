@@ -56,7 +56,7 @@ export class HandController {
     const generation = ++this.generation;
     this.starting = true;
     this.onState({ kind: 'loading', message: 'Starting your camera…' });
-    let stream;
+    let stream, failureCode = 'camera_unavailable';
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera access needs HTTPS or localhost in Chrome or Edge.');
       const deviceId = this.select.value;
@@ -69,6 +69,7 @@ export class HandController {
       this.video.srcObject = stream;
       await this.video.play();
       if (generation !== this.generation) return;
+      failureCode = 'tracking_init_error';
       this.onState({ kind: 'loading', message: 'Waking up hand tracking…' });
       this.worker = new Worker(new URL('./vision-worker.js', import.meta.url), { type: 'module' });
       await new Promise((resolve, reject) => {
@@ -86,11 +87,11 @@ export class HandController {
         if (generation !== this.generation) return;
         this.busy = false;
         if (data.type === 'result') this.acceptResult(data.result, data.now, generation);
-        if (data.type === 'error') this.fail(new Error(data.message));
+        if (data.type === 'error') this.fail(new Error(data.message), 'worker_error');
       };
-      this.worker.onerror = () => { if (generation === this.generation) this.fail(new Error('Hand tracking stopped. Start the camera again.')); };
+      this.worker.onerror = () => { if (generation === this.generation) this.fail(new Error('Hand tracking stopped. Start the camera again.'), 'worker_error'); };
       stream.getVideoTracks()[0]?.addEventListener('ended', () => {
-        if (generation === this.generation) this.fail(new Error('Camera disconnected. Reconnect it, then start again.'));
+        if (generation === this.generation) this.fail(new Error('Camera disconnected. Reconnect it, then start again.'), 'camera_disconnected');
       }, { once: true });
       this.running = true; this.starting = false; this.lastFrame = -1; this.busy = false;
       this.lastResult = performance.now(); this.lastActivity = this.lastResult; this.lastCapture = -Infinity; this.lastResponseCapture = -Infinity; this.lastFreshReceipt = this.lastResult;
@@ -99,17 +100,18 @@ export class HandController {
       this.onState({ kind: 'ready', message: 'Show one hand in the camera. Hold it still to begin.' });
       this.timer = setInterval(() => this.frame(), 65);
     } catch (error) {
-      if (generation === this.generation) this.fail(error);
+      if (generation === this.generation) this.fail(error, failureCode);
       else stream?.getTracks().forEach(t => t.stop());
     }
   }
 
-  fail(error) {
+  fail(error, code = 'camera_unavailable') {
     this.stop(false);
     let message = error.message;
-    if (error.name === 'NotAllowedError') message = 'Camera permission is blocked. Allow camera access in your browser, then try again.';
-    if (error.name === 'NotFoundError' || error.name === 'OverconstrainedError') message = 'That camera is unavailable. Choose another camera and try again.';
-    this.onState({ kind: 'error', message });
+    if (error.name === 'NotAllowedError') { code = 'permission_denied'; message = 'Camera permission is blocked. Allow camera access in your browser, then try again.'; }
+    if (error.name === 'NotFoundError' || error.name === 'OverconstrainedError') { code = 'no_camera'; message = 'That camera is unavailable. Choose another camera and try again.'; }
+    if (error.name === 'NotReadableError') code = 'camera_busy';
+    this.onState({ kind: 'error', message, code });
   }
 
   stop(announce = true) {
@@ -135,7 +137,7 @@ export class HandController {
       if (now - (this.lastFreshReceipt ?? this.lastResult) > CAPTURE_MAX_AGE) this.delayTracking();
       if (now - this.lastResult > OWNER_LOSS_GRACE) this.resetOwner();
     }
-    if (now - (this.lastActivity ?? this.lastResult) > 7000) { this.fail(new Error('Hand tracking stopped responding. Start the camera again.')); return; }
+    if (now - (this.lastActivity ?? this.lastResult) > 7000) { this.fail(new Error('Hand tracking stopped responding. Start the camera again.'), 'worker_timeout'); return; }
     if (this.busy || this.video.readyState < 2 || this.video.currentTime === this.lastFrame) return;
     this.busy = true; this.lastFrame = this.video.currentTime;
     const generation = this.generation;
@@ -143,7 +145,7 @@ export class HandController {
       const bitmap = await createImageBitmap(this.video, { resizeWidth: 640, resizeHeight: Math.round(640 * this.video.videoHeight / this.video.videoWidth) });
       if (!this.running || generation !== this.generation) { bitmap.close(); return; }
       this.worker.postMessage({ type: 'frame', bitmap, now }, [bitmap]);
-    } catch (error) { if (generation === this.generation) this.fail(error); }
+    } catch (error) { if (generation === this.generation) this.fail(error, 'capture_error'); }
   }
 
   acceptResult(result, capturedAt, generation, receivedAt = performance.now()) {

@@ -29,7 +29,7 @@ const frames = [], errors = [];
 const playtest = createPlaytestClient({ build: __BUILD_INFO__.commit, enabled: shared });
 const track = (type, data = {}, subject = run || pendingPlayer || completedRun) => playtest.track(type, data, { mode: 'event', ...(subject?.id ? { runId: subject.id } : {}) });
 track('page_open');
-let observedControl = '', observedPhase = '', observedSaveError = false;
+let observedControl = '', observedPhase = '', observedSaveError = false, cameraFailureReported = false;
 let performanceFrames = [], performanceSince = 0;
 const deliveryPhases = new Set(['anticipate', 'descend', 'grip', 'lift', 'transfer', 'release', 'deliver', 'reveal']);
 let nextTurnElapsed = 0;
@@ -127,11 +127,16 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
   setHidden($('mode-label'), !$('mode-label').textContent);
   setHidden($('result-open'), !completedRun || startingRun || Boolean(run) || cameraLoading);
   if (!run && !recovering) button = cameraLoading ? 'Starting…' : cameraControls?.running ? 'Play' : 'Start camera';
+  const cameraRecovery = Boolean(run && !recovering && phase === 'aim' && !cameraControls?.running);
+  if (cameraRecovery) {
+    button = cameraLoading ? 'Starting…' : 'Restart camera';
+    if (!cameraLoading) hint = 'Restart camera to continue this turn.';
+  }
   const signature = JSON.stringify([title, hint, button, kicker, total, run?.name, pendingPlayer?.name, completedRun?.id, paused]);
   if (signature === lastStatus) return; lastStatus = signature;
   $('player-name').textContent = run?.name || pendingPlayer?.name || completedRun?.name || 'Your turn?'; $('score').textContent = String(total).padStart(3, '0'); $('turn').textContent = run ? `${turnNumber} / 3` : '— / 3';
   $('phase-label').textContent = kicker; $('status').textContent = title; $('hint').textContent = hint; $('button-text').textContent = button;
-  $('play').hidden = Boolean(startingRun || (run && !recovering));
+  $('play').hidden = Boolean(startingRun || (run && !recovering && !cameraRecovery));
   $('play').disabled = paused || cameraLoading;
   $('turn-chips').replaceChildren();
   for (let i = 0; i < 3; i++) { const turn = run?.turns[i] || completedRun?.turns[i]; const chip = document.createElement('span'); chip.className = `turn-chip ${turn?.score ? 'scored' : ''}`; chip.textContent = turn ? turn.score ? `+${turn.score}` : 'MISS' : '—'; $('turn-chips').append(chip); }
@@ -176,6 +181,7 @@ function play() {
   if (!scene || stopped || frozen || paused || document.querySelector('dialog[open]')) return;
   if (recovering) return openOperator();
   if (!run) { if (!cameraControls?.running) return startCamera(); return openRegistration(); }
+  if (game.phase === 'aim' && !cameraControls?.running) return startCamera();
   updateUI();
 }
 async function startScoredRun() {
@@ -312,8 +318,14 @@ $('feedback-form').addEventListener('submit', async event => {
 });
 $('fullscreen').addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { $('hint').textContent = 'Use your browser’s fullscreen command.'; } });
 $('camera-open').addEventListener('click', () => $('camera-setup').showModal());
+function reportCameraFailure(code) {
+  if (cameraFailureReported) return;
+  cameraFailureReported = true;
+  track('camera_error', { code, phase: game.phase, turn: turnNumber });
+}
 async function startCamera() {
   if (cameraLoading) return;
+  cameraFailureReported = false;
   track('camera_start');
   cameraLoading = true; $('camera-toggle').disabled = true; $('camera-status').textContent = 'Starting camera…';
   updateUI();
@@ -324,6 +336,8 @@ async function startCamera() {
         canControl: () => Boolean(!startingRun && run && game.phase === 'aim' && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]')),
         onDrop: gestureDrop,
         onChange: state => {
+          if (state.kind === 'loading') cameraFailureReported = false;
+          if (state.kind === 'error') reportCameraFailure(state.code || 'unknown');
           $('camera-status').textContent = state.message;
           const video = $('camera-video');
           if (video.videoWidth && video.videoHeight) $('camera-preview').style.setProperty('--camera-aspect', `${video.videoWidth} / ${video.videoHeight}`);
@@ -336,8 +350,8 @@ async function startCamera() {
     }
     await cameraControls.start();
     if (cameraControls.running) { track('camera_ready'); $('camera-setup').close(); }
-    else { track('camera_error', { code: 'camera_unavailable' }); $('camera-setup').showModal(); }
-  } catch (error) { track('camera_error', { code: 'camera_unavailable' }); $('camera-status').textContent = `Camera unavailable: ${error.message}`; $('camera-setup').showModal(); }
+    else { reportCameraFailure('camera_unavailable'); $('camera-setup').showModal(); }
+  } catch (error) { reportCameraFailure('camera_unavailable'); $('camera-status').textContent = `Camera unavailable: ${error.message}`; $('camera-setup').showModal(); }
   finally { cameraLoading = false; $('camera-toggle').disabled = false; updateUI(); }
 }
 $('camera-toggle').addEventListener('click', () => {

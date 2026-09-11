@@ -26,9 +26,10 @@ async function open(context) {
       class HandController {
         constructor(options) { Object.assign(this, options); this.running=false; this.visible=true; this.input={x:0,z:0}; window.testCamera=this; }
         resetOwner() { this.input={x:0,z:0}; this.onInput(this.input); }
-        async start() { this.running=true; this.tick(); this.timer=setInterval(()=>this.tick(),30); }
+        async start() { if(this.failNextStart) { this.failNextStart=false; this.fail('camera_busy'); return; } this.running=true; this.tick(); this.timer=setInterval(()=>this.tick(),30); }
         tick() { this.onInput(this.visible ? this.input : {x:0,z:0}); this.onState({kind:this.visible ? 'tracking' : 'lost',message:'Camera fixture'}); }
         stop() { clearInterval(this.timer); this.running=false; }
+        fail(code='worker_timeout') { this.stop(); this.onState({kind:'error',code,message:'Synthetic camera failure. Restart camera.'}); }
         clench() { return this.onDrop(); }
       } export { HandController as ${alias} };` });
   });
@@ -76,7 +77,7 @@ async function finish(page, firstTurn = 1, stopCameraOnLastDrop = false) {
   for (const turn of [1, 2, 3].filter(turn => turn >= firstTurn)) {
     await page.waitForFunction(turn => document.getElementById('turn').textContent === `${turn} / 3` && !document.getElementById('phase-label').textContent.includes('COMPLETE'), turn);
     await page.evaluate(() => window.testCamera.clench());
-    if (turn === 3 && stopCameraOnLastDrop) await page.evaluate(() => window.testCamera.stop());
+    if (turn === 3 && stopCameraOnLastDrop) await page.evaluate(() => window.testCamera.fail('camera_disconnected'));
     if (turn < 3) await page.waitForFunction(turn => document.getElementById('turn').textContent === `${turn + 1} / 3`, turn, { timeout: 30000 });
   }
   await page.locator('#final').waitFor({ timeout: 30000 });
@@ -106,6 +107,30 @@ async function scoredAndFeedback() {
   await page.locator('#feedback-dialog [aria-label="Close feedback"]').click();
   await page.evaluate(() => { window.testCamera.visible = true; window.testCamera.tick(); });
   await page.waitForFunction(() => document.getElementById('turn').textContent === '2 / 3');
+
+  // A runtime failure must preserve the current run, score and remaining time.
+  await page.waitForFunction(() => Number(document.getElementById('timer').textContent) <= 13);
+  await page.evaluate(() => window.testCamera.fail());
+  await page.getByRole('button', { name: 'Restart camera', exact: true }).waitFor();
+  const beforeRecovery = await page.locator('#timer').textContent();
+  await page.waitForTimeout(1800);
+  assert.equal(await page.locator('#timer').textContent(), beforeRecovery);
+  const cameraFailures = () => app.database.db.prepare("SELECT * FROM playtest_events WHERE type='camera_error'").all();
+  assert.equal(cameraFailures().length, 1, 'runtime error is persisted once');
+  assert.equal(JSON.parse(cameraFailures()[0].data).code, 'worker_timeout');
+  assert.equal(app.playtest.read().summary.cameraFailureSessions, 1);
+  await page.screenshot({ path: '.screenshots/camera-recovery.png' });
+  await page.evaluate(() => { window.testCamera.failNextStart = true; });
+  await page.getByRole('button', { name: 'Restart camera', exact: true }).click();
+  await page.locator('#camera-setup').waitFor();
+  await page.waitForTimeout(1800);
+  assert.equal(cameraFailures().length, 2, 'failed restart is counted once despite startup fallback');
+  assert.equal(JSON.parse(cameraFailures()[1].data).code, 'camera_busy');
+  await page.locator('#camera-toggle').click();
+  await page.waitForFunction(() => window.testCamera.running);
+  assert.equal(await page.locator('#timer').textContent(), beforeRecovery, 'restart must not reset the aiming budget');
+  assert.equal(starts, 1, 'camera restart does not create a new scored run');
+  assert.equal(await page.locator('#turn').textContent(), '2 / 3');
 
   const attempts = [];
   let feedbackAvailable = false;
