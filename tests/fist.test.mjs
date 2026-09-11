@@ -56,7 +56,7 @@ test('another hand or disappearance cancels the fist confirmation',()=>{
 
 function controller(){
   const c=Object.create(HandController.prototype),events={drops:0,starts:0,inputs:[],states:[]};
-  let phase='idle';c.getPhase=()=>phase;c.getProfile=()=>'fist';
+  let phase='idle';c.getPhase=()=>phase;
   c.onInput=input=>events.inputs.push({...input});c.onState=state=>events.states.push(state);
   c.onDrop=()=>events.drops++;c.onStart=()=>{events.starts++;phase='aim';};c.draw=()=>{};c.resetOwner();
   return{c,events,setPhase:value=>{phase=value;}};
@@ -216,4 +216,29 @@ test('a throwing signal callback never alters recognition or leaves state behind
   assert.equal(results.at(-1).fired,true);
   g.reset();
   assert.equal(g.held,0);assert.equal(g.armed,false);
+});
+
+test('a second visible hand prevents claiming the machine',()=>{
+  const{c,events}=controller();
+  const two=result(),other=result(0,.2);
+  two.landmarks.push(other.landmarks[0]);two.handedness.push([{categoryName:'Left'}]);two.gestures.push(other.gestures[0]);
+  for(let t=1000;t<2600;t+=65)c.handle(two,t);
+  assert.equal(events.starts,0);
+  assert.deepEqual(events.inputs.at(-1)??{x:0,z:0},{x:0,z:0});
+});
+
+test('a single-frame handedness flip keeps the same spatial hand steering',()=>{
+  const{c,events}=controller();claim(c);
+  const frame=result(0,-.05);frame.handedness[0][0].categoryName='Left';
+  c.handle(frame,1910);
+  assert.notEqual(events.states.at(-1).kind,'lost');
+  assert.ok(events.inputs.at(-1).x>0);
+});
+
+test('losing the hand zeroes steering immediately while deflected',()=>{
+  const{c,events}=controller();claim(c);
+  c.handle(result(0,-.06),1910);assert.ok(events.inputs.at(-1).x>0);
+  c.handle({landmarks:[],handedness:[],gestures:[]},1975);
+  assert.deepEqual(events.inputs.at(-1),{x:0,z:0});
+  assert.equal(events.states.at(-1).kind,'lost');
 });

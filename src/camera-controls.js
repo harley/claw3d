@@ -7,7 +7,7 @@ export async function createCameraControls({ video, overlay, select, onChange, c
   // reject counts, drained by the caller's periodic rollup.
   let stats = { latencies: [], results: 0, rejected: {} };
   const notify = next => { state = next; at = performance.now(); onChange(next); };
-  const controller = new HandController({ video, overlay, select, getProfile: () => 'fist',
+  const controller = new HandController({ video, overlay, select,
     getPhase: () => canControl() ? 'aim' : 'blocked',
     onDiagnostic: next => {
       if (import.meta.env?.DEV) diagnostic = { ...diagnostic, ...next };
@@ -40,7 +40,7 @@ export async function createCameraControls({ video, overlay, select, onChange, c
     },
     get running() { return controller.running; }, get starting() { return controller.starting; },
     get input() { return canControl() && controller.running && performance.now() - at < 700 ? input : { x: 0, z: 0 }; },
-    get waiting() { return controller.running && (!['tracking', 'clenching', 'clasping', 'dropping'].includes(state.kind) || performance.now() - at >= 700); },
+    get waiting() { return controller.running && (!['tracking', 'clenching'].includes(state.kind) || performance.now() - at >= 700); },
     start: () => controller.start(), stop: () => controller.stop(), reset,
   };
 }

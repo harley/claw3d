@@ -15,7 +15,6 @@ try {
   const feedback = state => page.evaluate(state => { window.testCamera.feedback = state; window.testCamera.tick(); }, state);
   await page.locator('#play').click();
   await page.waitForFunction(() => document.getElementById('status').textContent === 'You’re ready');
-  assert.equal(await page.evaluate(() => window.testCamera.getProfile()), 'fist');
   assert.equal((await snap()).joystick.visible, false, 'setup is not acquired gameplay control');
   await page.locator('#play').click();
   await page.locator('#name').fill('Gesture check');
