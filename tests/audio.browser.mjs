@@ -67,6 +67,13 @@ try {
     if (state.event.carouselTime - window.audioHold < .55) return false;
     window.testCamera.clench(); return true;
   });
+  await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'lift');
+  assert.equal(await page.locator('#status').textContent(), 'Caught it!', 'catch feedback appears at lift, before delivery');
+  assert.equal(await page.evaluate(() => window.__littleCloud.snapshot().event.run.turns.length), 0, 'early feedback does not score early');
+  assert.ok(await page.evaluate(() => [360, 280, 120, 180, 554].every(f => window.audioCheck.notes.some(n => n.frequency === f))), 'descent, grip and lift have sound cues');
+  await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'release');
+  assert.equal(await page.locator('#status').textContent(), 'Releasing…');
+  assert.equal(await page.evaluate(() => window.audioCheck.notes.filter(n => n.frequency === 980).length), 1, 'release cue plays once');
   await page.waitForFunction(() => {
     if (!window.audioCheck.notes.some(n => n.frequency === 1047)) return false;
     document.getElementById('sound').click(); return true;

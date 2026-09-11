@@ -15,7 +15,16 @@ const register=async name=>{if(!(await snap()).event.handCamera.running){await p
 async function aimButter(){ for(const axis of ['x','z']) for(let i=0;i<6;i++){const delta=({x:-.38,z:.72})[axis]-(await snap()).position[axis];if(Math.abs(delta)<.025)break;const speed=Math.abs(delta)<.14?.25:1;await cameraInput(page,{x:0,z:0,[axis]:Math.sign(delta)*speed});await page.waitForTimeout(Math.abs(delta)/(.85*speed)*1000);await cameraInput(page,{x:0,z:0});} assert.equal((await snap()).aligned,'butter');}
 let checkedDelivery = false;
 async function catchTurn(){
- await cameraDrop(page);for(let i=0;i<5;i++)await cameraDrop(page);
+ await cameraDrop(page);
+ assert.equal(await page.locator('#status').textContent(), 'Drop accepted!', 'drop text updates synchronously');
+ for(let i=0;i<5;i++)await cameraDrop(page);
+ await phase('lift');
+ const caught = (await snap()).caught;
+ assert.equal(await page.locator('#status').textContent(), caught ? 'Caught it!' : 'No catch this time');
+ if (!caught) {
+  await phase('reveal');
+  assert.equal(await page.locator('#status').textContent(), 'No catch this time', 'a miss never claims a successful delivery');
+ }
  if (!checkedDelivery) {
   await phase('deliver');
   await page.evaluate(() => { window.dispatchEvent(new Event('blur')); window.testCamera.visible = false; window.testCamera.tick(); });

@@ -17,7 +17,7 @@ let pendingPlayer = null, startingRun = false;
 let sharedBoard = null, sharedRole = 'staff', sharedStatus = 'Connecting to shared leaderboard…';
 let sharedApi, boardRefresh = null, boardVersion = 0, rotatingBoard = false;
 let celebrationTimer, scoreAnimation;
-let lastCue = '';
+let lastCue = '', lastSoundPhase = '';
 let lastStatus = '', aligned = null, paused = false;
 let store, storageError = '', storageBlocked = false;
 try { store = shared ? newStore() : loadStore(localStorage); } catch (error) { store = newStore(); storageError = error.message; storageBlocked = true; }
@@ -75,14 +75,33 @@ function note(frequency, duration = .12, delay = 0, type = 'square') {
   } catch { sound = false; updateSound(); }
 }
 function burst(text) { $('celebration').textContent = text; $('celebration').classList.remove('pop'); void $('celebration').offsetWidth; $('celebration').classList.add('pop'); clearTimeout(celebrationTimer); celebrationTimer = setTimeout(() => $('celebration').classList.remove('pop'), 1800); }
-const phaseCopy = { anticipate: 'Drop locked in', descend: 'Here we go…', grip: 'Got it?', lift: 'Hold on…', transfer: 'Coming your way', release: 'Special delivery', deliver: 'Coming your way', reveal: 'Nice catch!' };
+const phaseCopy = { anticipate: 'Drop accepted!', descend: 'Dropping…', grip: 'Grabbing…', lift: 'Caught it!', transfer: 'Bringing it over…', release: 'Releasing…', deliver: 'Here comes your catch!', reveal: 'Nice catch!' };
+function phaseSound(phase) {
+  if (phase === lastSoundPhase) return;
+  lastSoundPhase = phase;
+  if (paused || document.hidden || document.querySelector('dialog[open]')) return;
+  if (phase === 'anticipate') note(220, .2);
+  else if (phase === 'descend') [360, 280, 200].forEach((f, i) => note(f, .1, i * .09, 'triangle'));
+  else if (phase === 'grip') { note(120, .08, 0, 'triangle'); note(180, .08, .09, 'triangle'); }
+  else if (phase === 'lift') {
+    if (game.plan?.prize) [440, 554, 660].forEach((f, i) => note(f, .13, i * .1, 'triangle'));
+    else { note(240, .16, 0, 'triangle'); note(160, .2, .13, 'triangle'); }
+  } else if (phase === 'release' && game.plan?.prize) { note(740, .1, 0, 'sine'); note(980, .14, .1, 'sine'); }
+}
 function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ? 'loading' : 'off' }) {
   const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
   let title = 'Your hands. Your high score.', hint = 'Three turns. Make them count.', button = 'Play', kicker = 'CLOUD CLAW';
   if (recovering) { title = 'Let’s get you back in'; hint = 'Ask your host to resume.'; button = 'OPERATOR'; }
   else if (phase === 'aim') { kicker = turnNumber === 3 ? 'LAST CLAW!' : `TURN ${turnNumber} OF 3`; title = 'Move your hand'; hint = 'Clench your fist and hold to drop.'; button = '';  }
   else if (phase === 'result') { const points = run?.turns.at(-1)?.score || 0; kicker = `TURN ${turnNumber} COMPLETE`; title = points ? `+${points} · Nice catch!` : 'So close!'; hint = 'Next turn starting…'; button = '';  }
-  else if (phaseCopy[phase]) { title = phaseCopy[phase]; kicker = `TURN ${turnNumber} OF 3`; hint = 'Hands down. Watch the claw.'; button = '';  }
+  else if (phaseCopy[phase]) {
+    const resolved = ['lift', 'transfer', 'release', 'deliver', 'reveal'].includes(phase);
+    title = resolved && !game.plan?.prize ? 'No catch this time' : phaseCopy[phase];
+    kicker = `TURN ${turnNumber} OF 3`;
+    hint = resolved && !game.plan?.prize ? 'The claw is returning.' : 'Hands down. Watch the claw.';
+    button = '';
+  }
+  phaseSound(phase);
   const cue = carouselCue(game.carouselTime), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
   const cueVisible = phase === 'aim' && nearPickup && !paused && !frozen && !document.hidden && !document.querySelector('dialog[open]') && cameraControls?.running && !cameraControls.waiting;
   setHidden($('jackpot-signal'), !cueVisible);
@@ -213,7 +232,7 @@ function gestureDrop() {
   if (!run || game.phase !== 'aim' || startingRun || paused || frozen || stopped || document.hidden || document.querySelector('dialog[open]')) return false;
   if (!drop(game)) return false;
   track('drop', { trigger: 'gesture', phase: game.phase, turn: turnNumber });
-  note(220, .2); updateUI();
+  updateUI();
   return true;
 }
 function fail(message, error) { track('client_error', { reason: 'renderer' }); stopped = true; cameraControls?.stop(); clearTimeout(window.__arcadeBootTimer); errors.push(String(error || message)); $('loading').hidden = true; $('error').hidden = false; $('error-message').textContent = message; console.error('Cloud Claw:', error || message); }
