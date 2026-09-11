@@ -91,23 +91,30 @@ button:focus-visible, input:focus-visible, select:focus-visible, #scene:focus-vi
 #camera-preview[data-state="tracking"] #camera-recognition { color: #66ffb3; }
 #camera-preview:is([data-state="lost"], [data-state="clenching"]) #camera-recognition { color: #ffc14d; }
 
-/* One central instruction, with gesture progress next to the action. */
+/* A single arcade announcement above the claw, without a bottom text panel. */
 .controls {
-  bottom: 42px; left: 50%; transform: translateX(-50%);
-  width: 570px; min-height: 110px;
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 18px;
-  background: #0c1729ee; border: 1px solid #33435f; border-top: 3px solid #ff4057;
-  border-radius: 8px; padding: 16px 20px; box-shadow: 0 14px 45px #0007;
+  top: 88px; left: 50%; transform: translateX(-50%); width: min(540px, 48vw);
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  text-align: center; pointer-events: none;
 }
-.controls:has(#play[hidden]) { grid-template-columns: minmax(0, 1fr); text-align: center; }
-.round-copy, #action-copy { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.round-copy strong { font-weight: 700; font-size: 26px; line-height: 1.15; letter-spacing: -.5px; text-wrap: balance; }
-#hint { font-size: 12px; line-height: 1.45; color: #acbfd8; text-wrap: balance; }
-#arcade[data-control="tracking"] .controls { border-top-color: #35c9ff; }
-#arcade:is([data-control="holding"], [data-control="lost"]) .controls { border-top-color: #ffc14d; }
-#arcade[data-control="delivery"] .controls { border-top-color: #66ffb3; }
-#gesture-meter { height: 6px; margin: 3px 0 0; border-radius: 6px; background: #293950; overflow: hidden; }
-#gesture-progress { display: block; width: 100%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #66ffb3, #ffc14d); transform: scaleX(0); transform-origin: left; transition: transform 65ms linear; }
+.controls button { pointer-events: auto; position: absolute; top: calc(100svh - 240px); }
+.round-copy, #action-copy { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+#phase-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.round-copy strong {
+  font: 900 clamp(28px, 3.6vw, 54px)/1.05 ui-monospace, monospace;
+  letter-spacing: -2px; text-transform: uppercase; color: #fff4bd;
+  text-shadow: 3px 3px 0 #891e32, -2px -2px 0 #080e1c, 2px -2px 0 #080e1c, -2px 2px 0 #080e1c;
+  text-wrap: balance;
+}
+#arcade:is([data-phase="idle"], [data-phase="aim"]) #status { font-size: clamp(28px, 2.8vw, 40px); }
+#hint { font-size: 13px; line-height: 1.4; color: #fff; text-shadow: 0 2px 3px #000, 0 0 5px #000; text-wrap: balance; }
+#hint:empty { display: none; }
+#action-copy.expired { opacity: 0; }
+#action-copy.strike { animation: arcade-strike 160ms ease-out; }
+@keyframes arcade-strike { from { transform: scale(.9); } to { transform: scale(1); } }
+#arcade[data-phase="lift"] #status, #arcade[data-phase="result"] #status { color: #ffc14d; }
+#gesture-meter { width: 180px; height: 8px; margin-top: 3px; border: 1px solid #ffc14d; background: #152138; overflow: hidden; }
+#gesture-progress { display: block; width: 100%; height: 100%; background: #ffc14d; transform: scaleX(0); transform-origin: left; }
 .play-button {
   display: flex; align-items: center; justify-content: center; gap: 22px;
   background: #ed304b; border: 1px solid #ff6c76; box-shadow: 0 4px 0 #891e32;
@@ -156,12 +163,6 @@ dialog .play-button { width: 100%; margin-top: 24px; }
 
 /* Announcements occupy the clear strip above the cabinet. */
 #pause-banner { position: absolute; top: 100px; left: 50%; transform: translateX(-50%); max-width: 80vw; z-index: 4; background: #ffc14d; color: #081021; padding: 10px 20px; text-align: center; font-size: 10px; font-weight: 700; }
-#celebration { position: absolute; left: 50%; top: 90px; transform: translate(-50%, -50%); max-width: min(660px, 70vw); z-index: 3; pointer-events: none; color: #ffc14d; font-size: clamp(20px, 2.3vw, 34px); font-weight: 700; text-align: center; line-height: 1.1; background: #080e1cf2; border: 1px solid #ffc14d77; border-radius: 6px; padding: 10px 20px; text-shadow: 0 2px 0 #552c27; opacity: 0; }
-#celebration.pop { animation: announcement 1.8s both; }
-@keyframes announcement {
-  0%, 100% { opacity: 0; transform: translate(-50%, -50%) scale(.95); }
-  15%, 80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-}
 #loading, #error { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #080e1c; text-align: center; padding: 30px; }
 #loading h2, #error h2 { font-size: 28px; }
 #loading p, #error p { font-size: 12px; color: #9db3d0; max-width: 440px; line-height: 1.6; }
@@ -175,10 +176,11 @@ dialog .play-button { width: 100%; margin-top: 24px; }
   #timer { font-size: 52px; }
   .leaderboard { width: 158px; right: 22px; }
   .leaderboard li { font-size: 10px; gap: 4px; }
-  .controls { width: 530px; }
+  .controls { width: 48vw; }
   .prize-tag:not(.targeted) { display: none; }
 }
 @media (max-width: 650px) {
+  #arcade { min-height: 740px; }
   .masthead { top: 18px; }
   .brand { font-size: 24px; }
   .brand small { font-size: 7px; letter-spacing: .7px; }
@@ -195,8 +197,8 @@ dialog .play-button { width: 100%; margin-top: 24px; }
   .turn-chip { width: 45px; }
   .leaderboard li:nth-child(n+4) { display: none; }
   .leaderboard h2, #mode-label { font-size: 8px; }
-  .controls { width: calc(100% - 28px); padding: 12px; gap: 10px; }
-  .round-copy strong { font-size: 22px; }
+  .controls { top: 280px; width: calc(100% - 32px); gap: 10px; }
+  .round-copy strong { font-size: 30px; letter-spacing: -1px; }
   #hint { font-size: 11px; }
   .play-button { padding: 12px; font-size: 12px; gap: 9px; }
   .footer > span:nth-child(2) { display: none; }
@@ -205,10 +207,10 @@ dialog .play-button { width: 100%; margin-top: 24px; }
   #jackpot-lights { margin: 8px 0; }
   #jackpot-lights i { width: 13px; height: 13px; }
   #jackpot-signal > span, #jackpot-cue { font-size: 8px; }
-  #camera-preview { width: 150px; }
+  #camera-preview { width: 150px; position: absolute; top: 450px; margin-top: 0; }
+  .controls button { top: 310px; left: 170px; right: 0; }
   .camera-feedback { padding: 7px 8px; }
   #camera-recognition { font-size: 9px; letter-spacing: .3px; }
-  #celebration { top: 82px; max-width: 90vw; font-size: 19px; padding: 7px 12px; }
   dialog { padding: 24px; }
 }
 @media (max-width: 374px) {
@@ -219,12 +221,10 @@ dialog .play-button { width: 100%; margin-top: 24px; }
   .timer-card { width: 64px; }
   .leaderboard { right: 14px; width: 116px; }
   .brand small { max-width: 140px; line-height: 1.5; }
-  .controls { grid-template-columns: minmax(0, 1fr); }
   .controls .play-button { padding: 9px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
-  #celebration.pop { opacity: 1; transform: translate(-50%, -50%); }
 }
 
 /* Quiet playtest reporting, also reachable from the result dialog. */

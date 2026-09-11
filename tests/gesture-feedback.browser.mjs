@@ -41,7 +41,7 @@ try {
   await page.evaluate(() => clearInterval(window.testCamera.timer));
   await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.feedback.kind === 'delayed');
   await page.waitForFunction(() => !window.__littleCloud.snapshot().joystick.visible);
-  assert.equal(await page.locator('#status').textContent(), 'Tracking is catching up');
+  assert.equal(await page.locator('#status').textContent(), 'Hold steady');
   const heldRemaining = (await snap()).event.remaining;
   await page.waitForTimeout(300); assert.equal((await snap()).event.remaining, heldRemaining);
   await page.screenshot({ path: '.screenshots/gesture-lost.png' });

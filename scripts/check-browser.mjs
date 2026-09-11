@@ -21,7 +21,7 @@ try {
     await delay(250);
   }
   if (!ready) throw new Error('Check server did not become ready.');
-  for (const suite of ['audio', 'camera', 'gesture-feedback', 'arcade', 'carousel', 'contact', 'delivery-clearance']) {
+  for (const suite of ['arcade-presentation', 'audio', 'camera', 'gesture-feedback', 'arcade', 'carousel', 'contact', 'delivery-clearance']) {
     active = spawn(process.execPath, [`tests/${suite}.browser.mjs`], { stdio: 'inherit' });
     const [code] = await once(active, 'exit');
     active = null;

@@ -16,14 +16,14 @@ async function aimButter(){ for(const axis of ['x','z']) for(let i=0;i<6;i++){co
 let checkedDelivery = false;
 async function catchTurn(){
  await cameraDrop(page);
- assert.equal(await page.locator('#status').textContent(), 'Drop accepted!', 'drop text updates synchronously');
+ assert.equal(await page.locator('#status').textContent(), 'DROP!', 'drop text updates synchronously');
  for(let i=0;i<5;i++)await cameraDrop(page);
  await phase('lift');
  const caught = (await snap()).caught;
- assert.equal(await page.locator('#status').textContent(), caught ? 'Caught it!' : 'No catch this time');
+ assert.equal(await page.locator('#status').textContent(), caught ? 'GOT IT!' : 'MISSED');
  if (!caught) {
   await phase('reveal');
-  assert.equal(await page.locator('#status').textContent(), 'No catch this time', 'a miss never claims a successful delivery');
+  assert.equal(await page.locator('#status').textContent(), '', 'return clears the outcome instead of claiming delivery');
  }
  if (!checkedDelivery) {
   await phase('deliver');

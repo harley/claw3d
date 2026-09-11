@@ -16,7 +16,7 @@ let cameraControls, cameraLoading = false;
 let pendingPlayer = null, startingRun = false;
 let sharedBoard = null, sharedRole = 'staff', sharedStatus = 'Connecting to shared leaderboard…';
 let sharedApi, boardRefresh = null, boardVersion = 0, rotatingBoard = false;
-let celebrationTimer, scoreAnimation;
+let scoreAnimation;
 let lastCue = '', lastSoundPhase = '';
 let lastStatus = '', aligned = null, paused = false;
 let store, storageError = '', storageBlocked = false;
@@ -64,41 +64,54 @@ function updateSound() {
     activeNotes.clear();
   }
 }
-function note(frequency, duration = .12, delay = 0, type = 'square') {
+function note(frequency, duration = .12, delay = 0, type = 'square', endFrequency = frequency) {
   if (!sound || !volume || !audioMaster) return;
   try {
     const t = audioContext.currentTime + delay, oscillator = audioContext.createOscillator(), gain = audioContext.createGain();
-    oscillator.type = type; oscillator.frequency.setValueAtTime(frequency, t); gain.gain.setValueAtTime(.025, t); gain.gain.exponentialRampToValueAtTime(.001, t + duration);
+    oscillator.type = type; oscillator.frequency.setValueAtTime(frequency, t);
+    oscillator.frequency.exponentialRampToValueAtTime(endFrequency, t + duration);
+    gain.gain.setValueAtTime(.001, t); gain.gain.linearRampToValueAtTime(.025, t + .005);
+    gain.gain.exponentialRampToValueAtTime(.001, t + duration);
     oscillator.connect(gain); gain.connect(audioMaster); activeNotes.set(oscillator, gain);
     oscillator.onended = () => { activeNotes.delete(oscillator); oscillator.disconnect(); gain.disconnect(); };
     oscillator.start(t); oscillator.stop(t + duration);
   } catch { sound = false; updateSound(); }
 }
-function burst(text) { $('celebration').textContent = text; $('celebration').classList.remove('pop'); void $('celebration').offsetWidth; $('celebration').classList.add('pop'); clearTimeout(celebrationTimer); celebrationTimer = setTimeout(() => $('celebration').classList.remove('pop'), 1800); }
-const phaseCopy = { anticipate: 'Drop accepted!', descend: 'Dropping…', grip: 'Grabbing…', lift: 'Caught it!', transfer: 'Bringing it over…', release: 'Releasing…', deliver: 'Here comes your catch!', reveal: 'Nice catch!' };
+// One announcement surface; delivery messages expire without changing game timing.
+const phaseCopy = { anticipate: 'DROP!', descend: 'DROP!', grip: '', lift: 'GOT IT!', transfer: '', release: '', deliver: '', reveal: '' };
+let messageKey = '', messageUntil = 0;
+function presentMessage(title, hint, key, duration = 0) {
+  if (key !== messageKey) {
+    messageKey = key; messageUntil = duration ? performance.now() + duration : 0;
+    setText('status', title); setText('hint', hint);
+    $('action-copy').classList.remove('strike');
+    if (duration && title) { void $('action-copy').offsetWidth; $('action-copy').classList.add('strike'); }
+  }
+  // Opacity preserves the live region; timed announcements stay available to assistive tech.
+  $('action-copy').classList.toggle('expired', Boolean(messageUntil && performance.now() >= messageUntil));
+}
 function phaseSound(phase) {
   if (phase === lastSoundPhase) return;
   lastSoundPhase = phase;
   if (paused || document.hidden || document.querySelector('dialog[open]')) return;
-  if (phase === 'anticipate') note(220, .2);
-  else if (phase === 'descend') [360, 280, 200].forEach((f, i) => note(f, .1, i * .09, 'triangle'));
-  else if (phase === 'grip') { note(120, .08, 0, 'triangle'); note(180, .08, .09, 'triangle'); }
+  if (phase === 'anticipate') note(880, .22, 0, 'square', 110);
+  else if (phase === 'descend') [360, 280, 200].forEach((f, i) => note(f, .1, i * .09, 'square', f / 2));
+  else if (phase === 'grip') { note(120, .08, 0, 'square', 60); note(180, .08, .09, 'square', 90); }
   else if (phase === 'lift') {
-    if (game.plan?.prize) [440, 554, 660].forEach((f, i) => note(f, .13, i * .1, 'triangle'));
-    else { note(240, .16, 0, 'triangle'); note(160, .2, .13, 'triangle'); }
+    if (game.plan?.prize) [440, 554, 660].forEach((f, i) => note(f, .13, i * .1, 'square', f * 1.5));
+    else { note(240, .16, 0, 'sawtooth', 180); note(160, .2, .13, 'triangle', 65); }
   } else if (phase === 'release' && game.plan?.prize) { note(740, .1, 0, 'sine'); note(980, .14, .1, 'sine'); }
 }
 function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ? 'loading' : 'off' }) {
   const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
-  let title = 'Your hands. Your high score.', hint = 'Three turns. Make them count.', button = 'Play', kicker = 'CLOUD CLAW';
+  let title = 'READY PLAYER?', hint = 'Three turns. One high score.', button = 'Play', kicker = 'CLOUD CLAW';
   if (recovering) { title = 'Let’s get you back in'; hint = 'Ask your host to resume.'; button = 'OPERATOR'; }
   else if (phase === 'aim') { kicker = turnNumber === 3 ? 'LAST CLAW!' : `TURN ${turnNumber} OF 3`; title = 'Move your hand'; hint = 'Clench your fist and hold to drop.'; button = '';  }
-  else if (phase === 'result') { const points = run?.turns.at(-1)?.score || 0; kicker = `TURN ${turnNumber} COMPLETE`; title = points ? `+${points} · Nice catch!` : 'So close!'; hint = 'Next turn starting…'; button = '';  }
-  else if (phaseCopy[phase]) {
-    const resolved = ['lift', 'transfer', 'release', 'deliver', 'reveal'].includes(phase);
-    title = resolved && !game.plan?.prize ? 'No catch this time' : phaseCopy[phase];
+  else if (phase === 'result') { const points = run?.turns.at(-1)?.score || 0; kicker = `TURN ${turnNumber} COMPLETE`; title = points ? `+${points}` : 'NEXT TURN'; hint = ''; button = '';  }
+  else if (phase in phaseCopy) {
+    title = phase === 'lift' && !game.plan?.prize ? 'MISSED' : phaseCopy[phase];
     kicker = `TURN ${turnNumber} OF 3`;
-    hint = resolved && !game.plan?.prize ? 'The claw is returning.' : 'Hands down. Watch the claw.';
+    hint = '';
     button = '';
   }
   phaseSound(phase);
@@ -117,11 +130,11 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
   if (learning) {
     if (feedback.kind === 'off') { title = 'Let’s see your hand'; hint = 'Open Camera to continue.'; }
     else if (['ready', 'lost'].includes(feedback.kind)) { title = feedback.kind === 'lost' ? 'Bring your hand back' : 'Show one open hand'; hint = feedback.handCount > 1 ? 'Lower one hand to begin.' : 'Hold it still in the camera.'; }
-    else if (feedback.kind === 'delayed') { title = 'Tracking is catching up'; hint = 'Keep your hand steady. Close other busy tabs if this continues.'; }
+    else if (feedback.kind === 'delayed') { title = 'Hold steady'; hint = 'Tracking delayed.'; }
     else if (feedback.kind === 'calibrating') { title = 'Hand found'; hint = 'Hold still for a moment.'; }
     else if (['clenching', 'dropping'].includes(feedback.kind) && feedback.controlEnabled) { title = feedback.progress > 0 ? 'Hold to drop' : 'Ready for a drop?'; hint = feedback.message || 'Clench your fist. Open to cancel.'; }
     else if (feedback.kind === 'tracking') {
-      if (phase === 'idle') { title = 'You’re ready'; hint = 'Press Play for your three turns.'; }
+      if (phase === 'idle') { title = 'You’re ready'; hint = ''; }
       else if (!nearPickup) { title = 'Move your hand'; hint = 'Clench your fist and hold to drop.'; }
     } else if (feedback.kind === 'error') { title = 'Let’s check the camera'; hint = 'Open Camera to try again.'; }
     else if (feedback.kind === 'loading') { title = 'Waking up the camera…'; hint = 'Allow camera access to play.'; }
@@ -151,10 +164,13 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
     button = cameraLoading ? 'Starting…' : 'Restart camera';
     if (!cameraLoading) hint = 'Restart camera to continue this turn.';
   }
+  const timed = deliveryPhases.has(phase) || phase === 'result';
+  presentMessage(title, hint, `${['anticipate', 'descend'].includes(phase) ? 'drop' : phase}:${turnNumber}:${title}:${hint}`, timed ? 1600 : 0);
+  if ($('arcade').dataset.phase !== phase) $('arcade').dataset.phase = phase;
   const signature = JSON.stringify([title, hint, button, kicker, total, run?.name, pendingPlayer?.name, completedRun?.id, paused]);
   if (signature === lastStatus) return; lastStatus = signature;
   $('player-name').textContent = run?.name || pendingPlayer?.name || completedRun?.name || 'Your turn?'; $('score').textContent = String(total).padStart(3, '0'); $('turn').textContent = run ? `${turnNumber} / 3` : '— / 3';
-  $('phase-label').textContent = kicker; $('status').textContent = title; $('hint').textContent = hint; $('button-text').textContent = button;
+  $('phase-label').textContent = kicker; $('button-text').textContent = button;
   $('play').hidden = Boolean(startingRun || (run && !recovering && !cameraRecovery));
   $('play').disabled = paused || cameraLoading;
   $('turn-chips').replaceChildren();
@@ -164,8 +180,8 @@ function freshGame() { cameraControls?.reset(); game = createGame({ carousel: tr
 function beginTurn() {
   nextTurnElapsed = 0;
   freshGame(); turnNumber = run.turns.length + 1; remaining = run.rules.seconds; begin(game); recovering = false;
-  if (turnNumber === 3) { burst('LAST CLAW!'); [330, 440, 660].forEach((f, i) => note(f, .16, i * .15)); }
-  else { burst(turnNumber === 1 ? `${run.name.toUpperCase()}, YOU’RE UP!` : `TURN ${turnNumber}`); note(523); }
+  if (turnNumber === 3) { [330, 440, 660].forEach((f, i) => note(f, .16, i * .15)); }
+  else { [523, 784].forEach((f, i) => note(f, .12, i * .09)); }
   updateUI();
 }
 function openRegistration(name = $('name').value) {
@@ -180,7 +196,7 @@ function finishTurn() {
   track('turn_complete', { turn: turnNumber, score: outcome.run.turns.at(-1).score, prizeId: outcome.run.turns.at(-1).prizeId }, outcome.run);
   if (shared) sharedApi.queue(outcome.run);
   const points = outcome.run.turns.at(-1).score;
-  if (points) { burst(outcome.run.turns.at(-1).prizeId === CAROUSEL.id ? `JACKPOT +${points}` : `+${points}`); [523, 659, 784, 1047].forEach((f, i) => note(f, .18, i * .11)); } else note(165, .25, 0, 'triangle');
+  if (points) { [523, 659, 784, 1047].forEach((f, i) => note(f, .18, i * .11)); } else note(165, .25, 0, 'triangle');
   if (outcome.completed) {
     track('run_complete', { score: outcome.run.total }, outcome.run);
     completedRun = outcome.run; run = null; renderBoard();
