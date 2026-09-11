@@ -106,7 +106,7 @@ Camera controls are required for play. START CAMERA requests access and shows th
 ## Implementation
 
 - `src/arcade-mechanics.js`: deterministic state machine, aiming limits, independent finger support and curated assortment.
-- `src/arcade-art.js`: original procedural toys, fabric grain, wood grain, smooth jelly geometry and face details.
+- `src/arcade-art.js`: original procedural toys, fabric grain, wood grain, smooth candy-star geometry and face details.
 - `src/arcade-scene.js`: cabinet, articulated claw, carriage, prize hatch, courier, gallery and material-specific performances.
 - `src/event-session.js`: versioned rules and local scoring/presentation.
 - `src/session-api.js`: shared run requests, persistent turn outbox and acknowledgement state.
@@ -114,7 +114,7 @@ Camera controls are required for play. START CAMERA requests access and shows th
 - `server/index.js`: same-origin access protection, ownership, host authorization and static serving.
 - `src/arcade.js` and `src/arcade.css`: camera-driven event flow, compact presentation, bounded loading/error states and reduced motion.
 
-Grasping uses authored ellipsoid support envelopes and a guided animation. The jelly wave, cushion compression and trailing ears are expressive approximations, not a general soft-body or rigid-body solver. The couriers and glass are simplified miniature mechanisms. Human booth-camera acceptance remains outstanding. The shared pilot is a testing environment, not event-readiness evidence.
+Grasping uses authored ellipsoid support envelopes and a guided animation. The star squish wave, cushion compression and trailing ears are expressive approximations, not a general soft-body or rigid-body solver. The couriers and glass are simplified miniature mechanisms. Human booth-camera acceptance remains outstanding. The shared pilot is a testing environment, not event-readiness evidence.
 
 ## Verify
 

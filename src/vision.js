@@ -337,9 +337,12 @@ export class HandController {
   }
 
   draw(hands, active) {
-    this.overlay.width = 640; this.overlay.height = Math.round(640 * (this.video.videoHeight || 360) / (this.video.videoWidth || 640));
-    const height = this.overlay.height;
+    // Resizing a canvas clears it and resets context state; only do that when
+    // the aspect actually changed, and clear explicitly otherwise.
+    const height = Math.round(640 * (this.video.videoHeight || 360) / (this.video.videoWidth || 640));
     const ctx = this.overlay.getContext('2d');
+    if (this.overlay.width !== 640 || this.overlay.height !== height) { this.overlay.width = 640; this.overlay.height = height; }
+    else ctx.clearRect(0, 0, 640, height);
     if (this.neutral && active) {
       ctx.strokeStyle = '#abd3ff'; ctx.lineWidth = 2;
       const x = this.neutral.x * 640, y = this.neutral.y * height;
