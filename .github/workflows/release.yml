@@ -1,0 +1,116 @@
+name: Check and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Unit, build and browser checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chrome
+      # check:booth includes unit tests and build; WebGL suites must not overlap.
+      - run: npm run check:booth
+      - run: npm run test:shared
+      - name: Check production container startup and backup ordering
+        run: bash scripts/check-release-container.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: synthetic-browser-failure-${{ github.run_id }}
+          path: .screenshots/
+          include-hidden-files: true
+          retention-days: 7
+
+  deploy:
+    name: Deploy and verify live BUILD
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Never cancel an upload already in progress. One production writer at a time.
+    concurrency:
+      group: cloud-claw-production
+      cancel-in-progress: false
+    environment:
+      name: production
+      url: https://claw.coderpush.com
+    env:
+      RAILWAY_PROJECT_ID: 6c39fc46-faaa-49e5-8c81-784a4d95e12d
+      RAILWAY_ENVIRONMENT_ID: 2a739b9f-1ada-43c9-ad22-67680a5bb470
+      RAILWAY_SERVICE_ID: 6cd4794a-0ef1-4de5-9d1c-4d099d9aa2ad
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Skip commits superseded while checks were running
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          current=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if [ "$current" = "$GITHUB_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipped superseded commit $GITHUB_SHA; main is $current." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.head.outputs.current == 'true'
+        with:
+          node-version: '24'
+          cache: npm
+      - if: steps.head.outputs.current == 'true'
+        run: npm ci && npm install --global @railway/cli@5.44.0
+      - if: steps.head.outputs.current == 'true'
+        run: npx playwright install --with-deps chrome
+      - name: Recheck main immediately before production mutation
+        id: release
+        if: steps.head.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          current=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if [ "$current" = "$GITHUB_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipped superseded commit $GITHUB_SHA; main is $current." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Set exact build identity without triggering a separate deployment
+        if: steps.release.outputs.current == 'true'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          test -n "$RAILWAY_TOKEN"
+          railway variable set --project "$RAILWAY_PROJECT_ID" --environment "$RAILWAY_ENVIRONMENT_ID" --service "$RAILWAY_SERVICE_ID" --skip-deploys "BUILD_COMMIT=$GITHUB_SHA" BUILD_BRANCH=main BUILD_DIRTY=false
+      - name: Deploy checked source
+        if: steps.release.outputs.current == 'true'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --project "$RAILWAY_PROJECT_ID" --environment "$RAILWAY_ENVIRONMENT_ID" --service "$RAILWAY_SERVICE_ID" --ci --message "main $GITHUB_SHA (GitHub run $GITHUB_RUN_ID)"
+      - name: Verify protected BUILD and rendered operator panel
+        if: steps.release.outputs.current == 'true'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          EXPECTED_BUILD: ${{ github.sha }}
+        run: node scripts/verify-release.mjs
+      - name: Report release failure
+        if: failure()
+        run: |
+          echo "::error::Release failed. Check the live BUILD before retrying; an uploaded deployment may still be running. Do not reset the database."
+          echo "Release failed. Inspect this run and Railway; verify live BUILD before retrying or rolling back to a compatible deployment. The database is preserved." >> "$GITHUB_STEP_SUMMARY"

@@ -6,6 +6,7 @@ import { resolve, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ApiError, openDatabase } from './database.js';
 import { createPlaytestStore } from './playtest.js';
+import { backupForRelease } from './release-backup.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const matches = (a, b) => typeof a === 'string' && timingSafeEqual(Buffer.from(hash(a)), Buffer.from(hash(b)));
@@ -162,6 +163,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (!process.env.PUBLIC_ORIGIN?.startsWith('https://')) throw new Error('Production requires an HTTPS PUBLIC_ORIGIN.');
   }
   await mkdir(dataDir, { recursive: true, mode: 0o700 });
+  if (production) {
+    const build = JSON.parse(await readFile(new URL('../dist/build-info.json', import.meta.url), 'utf8'));
+    const snapshot = backupForRelease(dataDir, build.sourceCommit || build.commit, process.env.RAILWAY_DEPLOYMENT_ID);
+    if (snapshot) console.log(`Pre-release database snapshot verified for ${build.commit}.`);
+  }
   const { server, database } = await createPilotServer({ filename: resolve(dataDir, 'pilot.sqlite'), origin: process.env.PUBLIC_ORIGIN,
     staffCode: process.env.STAFF_CODE, hostCode: process.env.HOST_CODE, secure: production });
   server.listen(Number(process.env.PORT || 4200), production ? '0.0.0.0' : '127.0.0.1', () => console.log('Cloud Claw pilot listening.'));
