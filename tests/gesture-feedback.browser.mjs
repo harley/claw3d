@@ -42,7 +42,8 @@ try {
   await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.feedback.kind === 'delayed');
   await page.waitForFunction(() => !window.__littleCloud.snapshot().joystick.visible);
   assert.equal(await page.locator('#status').textContent(), 'Tracking is catching up');
-  assert.equal((await snap()).event.remaining, 15);
+  const heldRemaining = (await snap()).event.remaining;
+  await page.waitForTimeout(300); assert.equal((await snap()).event.remaining, heldRemaining);
   await page.screenshot({ path: '.screenshots/gesture-lost.png' });
   await page.evaluate(() => { window.testCamera.tick(); window.testCamera.timer = setInterval(() => window.testCamera.tick(), 30); });
   await page.waitForFunction(() => window.__littleCloud.snapshot().joystick.visible);
@@ -57,10 +58,10 @@ try {
   assert.equal(await cameraDrop(page), true);
   assert.equal(await cameraDrop(page), false);
   await feedback({ kind: 'lost' });
-  await page.waitForFunction(() => window.__littleCloud.snapshot().event.rehearsal === 'complete', {}, { timeout: 30000 });
-  assert.equal((await snap()).event.run, null);
+  await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'result', {}, { timeout: 30000 });
+  assert.equal((await snap()).event.run.turns.length, 1);
   assert.equal((await snap()).joystick.visible, false);
-  assert.equal(await page.locator('#status').textContent(), 'You’ve got it');
+  assert.match(await page.locator('#phase-label').textContent(), /TURN 1 COMPLETE/);
   assert.equal(await page.locator('#gesture-meter').isVisible(), false);
   assert.deepEqual(errors, []);
   console.log('PASS visible grip, arming guidance, hold/cancel, stale input, modal suppression, narrow layout and accepted delivery after hand loss');

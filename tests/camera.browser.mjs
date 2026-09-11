@@ -50,12 +50,9 @@ try {
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.screenshot({ path: '.screenshots/camera-ready-narrow.png' });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.locator('#operator-open').click(); await page.locator('#practice').uncheck();
-  await page.locator('#operator .panel-head button').click();
   await page.locator('#play').click(); await page.locator('#name').fill('   '); await page.locator('#name').press('Enter');
-  assert.equal(await page.locator('#registration').isVisible(), true); assert.equal((await snap()).event.rehearsal, null);
-  await page.locator('#name').fill('Camera test'); await page.locator('#name').press('Enter');
-  assert.equal((await snap()).event.run, null); assert.equal((await snap()).event.rehearsal, 'steer');
+  assert.equal(await page.locator('#registration').isVisible(), false);
+  assert.equal((await snap()).event.run.name, 'Player'); assert.equal((await snap()).event.turn, 1);
   await page.waitForTimeout(300); const before = (await snap()).event.remaining;
   await page.waitForTimeout(700); assert.equal((await snap()).event.remaining, before); assert.equal((await snap()).event.handCamera.waiting, true);
   const position = (await snap()).position;

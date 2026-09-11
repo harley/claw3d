@@ -15,27 +15,10 @@ export async function installCameraFixture(page) {
 export const cameraInput = (page, input) => page.evaluate(input => { window.testCamera.input = input; window.testCamera.tick(); }, input);
 export const cameraDrop = page => page.evaluate(() => window.testCamera.clench());
 
-export async function completeRehearsal(page) {
-  const before = await page.evaluate(() => window.__littleCloud.snapshot());
-  if (!before.event.rehearsal) return;
-  assert.equal(before.event.rehearsal, 'steer');
-  assert.equal(before.event.run, null); assert.equal(before.event.remaining, 15);
-  // Deliberately stay before the ring: it is guidance, never a drop gate.
-  assert.equal(await cameraDrop(page), true);
-  assert.equal(await cameraDrop(page), false);
-  await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'descend');
-  assert.equal(await page.locator('#rehearsal-exit').isEnabled(), false);
-  await page.evaluate(() => { window.testCamera.visible = false; window.testCamera.tick(); document.getElementById('rehearsal-exit').click(); });
-  const inFlight = await page.evaluate(() => window.__littleCloud.snapshot());
-  assert.equal(inFlight.event.rehearsal, 'delivery'); assert.equal(inFlight.event.run, null);
-  await page.waitForFunction(() => window.__littleCloud.snapshot().event.rehearsal === 'complete', {}, { timeout: 30000 });
-  const completed = await page.evaluate(() => window.__littleCloud.snapshot());
-  assert.equal(completed.phase, 'result'); assert.equal(completed.event.run, null);
-  assert.equal(completed.event.board.runs.length, before.event.board.runs.length);
-  assert.equal(completed.event.remaining, 15);
-  await page.screenshot({ path: '.screenshots/camera-rehearsal.png' });
+export async function assertScoredStart(page) {
   await page.waitForFunction(() => window.__littleCloud.snapshot().event.run);
   const scored = await page.evaluate(() => window.__littleCloud.snapshot());
+  assert.equal(scored.phase, 'aim');
   assert.equal(scored.event.run.turns.length, 0); assert.equal(scored.event.turn, 1);
-  await page.evaluate(() => { window.testCamera.visible = true; window.testCamera.tick(); });
+  assert.equal(await page.locator('#practice, #practice-marker, #rehearsal-exit').count(), 0);
 }

@@ -40,7 +40,7 @@ After each session, select the single biggest obstacle, change it, commit it and
 
 ## Shared staff playtest
 
-The September 8 shipping request authorizes the protected pilot implementation while physical acceptance remains unverified. Staff may replay; names are display labels, not verified badge identities. A server-acknowledged run follows rehearsal, and exactly three completed turns determine the total. Each run retains its original board and rules through host rotation. Pending scores retry from the same browser and never show a saved rank before acknowledgement. Reload abandons an unfinished physical scene after draining completed results. Camera frames stay in each browser; existing local boards are never imported.
+The September 8 shipping request authorizes the protected pilot implementation while physical acceptance remains unverified. Staff may replay; names are display labels, not verified badge identities. A server-acknowledged run begins after optional nickname entry, and exactly three completed turns determine the total. Each run retains its original board and rules through host rotation. Pending scores retry from the same browser and never show a saved rank before acknowledgement. Reload abandons an unfinished physical scene after draining completed results. Camera frames stay in each browser; existing local boards are never imported.
 
 The staff code grants game/leaderboard access. A separate host code protects rotation and export. Persistent SQLite storage requires one service and one mounted volume. See README for backup, restoration and deletion. See `docs/plans/2026-09-07-1445-feat-camera-staff-playtest-plan.md` for the staged plan. Two real laptops and five first-time players remain acceptance gates; automated browser sessions do not replace them.
 
@@ -56,7 +56,7 @@ September 9 physical-camera diagnosis on the development Mac: the same CPU recog
 
 Camera recognition and the controlling-hand highlight remain visible during setup and delivery, but only aiming accepts game actions. Calibration uses a fixed anchor; the highlighted hand is labeled YOU and its neutral point is shown. Captures older than 300 ms, out of order, or from a stopped/restarted/hidden camera generation cannot control the game. Capture age stops steering; receipt time detects a tracking delay. Slow but live replies cannot trigger the seven-second no-response shutdown. Owner loss beyond 650 ms requires stable single-hand acquisition again. Frames are not recorded.
 
-Practice performs one real unscored drop before run creation. The ring is a steering guide, never a gate. An accepted drop finishes without hands, then the completed practice leads into exactly three scored turns after server acknowledgement. Exit Practice cannot interrupt an accepted animation or an outstanding ranked start. Scored aiming waits for acquired control.
+The first accepted drop is scored turn one. Each turn waits for acquired camera control; brief open-hand steering and fist-hold guidance teach during play. There is no rehearsal or practice selection.
 
 The action panel owns setup, recovery, steering and hold instructions. The webcam remains uncropped with a short recognition label. The joystick glove follows steering and shows an amber ring during a fist hold. Only the current target receives a score tag. The moving-star cue tells an already-armed player to clench and hold; its lead includes the 550 ms hold and 1.05-second contact delay, but no assumed human reaction time. Reduced motion preserves the same control states. Shared saving/retry messages remain visible.
 
@@ -72,7 +72,7 @@ The shared service records the new controls as `camera-fist-hold-550-v2`. On upg
 
 Release consistency review: the live jackpot cue now says “CLENCH FIST & HOLD”; practice includes the hold, camera guidance says open-hand steering, and startup/readiness wording matches the rendered UI. All six booth suites and the built shared-session suite passed. A copied live database upgrade preserved three boards, two completed runs and six turns, adding one fresh fist-control board. The regression also checks pending old turns and repeat restarts. Physical first-time-player acceptance remains outstanding.
 
-## Practice-first feedback — September 9
+## Historical practice-first feedback — September 9 (superseded September 11)
 
 The staff pilot now opens in practice mode. Nickname is optional (blank displays Player); each attempt keeps the existing one-drop warm-up and three scored turns, with unlimited replays. Practice scores stay outside event rankings. The host can uncheck practice for the next player; named event runs retain server acknowledgement and score retries.
 
@@ -85,3 +85,31 @@ Release checks: 85 unit tests and the production build pass; all six sequential 
 ## Tracking timing repair — September 9
 
 A physical-camera report found false hand-loss messages and repeated camera failures. Regressions reproduced two timing faults: continuously late replies could trigger the no-response shutdown, and fresh 250 ms detections could never sustain the fist hold. Fresh detections up to 300 ms apart now preserve confirmation between captures; only time between closed detections counts toward the 550 ms hold. A stale reply still cancels confirmation and requires reopening. Tracking delays now display “Tracking delayed” instead of claiming the hand left the view. The camera remains open while late replies arrive and resumes control when fresh detections return. A truly silent worker still stops after seven seconds. These timing regressions do not measure real-hand recognition accuracy; a physical replay against the repaired build remains required.
+
+## One scored journey — September 11
+
+Practice originally let first-time visitors learn camera steering and fist-to-drop without affecting event rankings while camera reliability improved. On September 11, Min Nguyen reported much better latency on claw.coderpush.com. Her screenshot showed a completed three-turn practice run with 300 points, but she did not clearly understand that it was practice and could not find her ranking. She suggested a large practice popup. The user chose to remove practice instead, eliminating that distinction.
+
+The current journey is camera ready → optional nickname (blank becomes Player) → server-acknowledged start → exactly three scored turns → server-confirmed score and personal rank → replay. The first drop counts. Failed starts offer retry, sign-in when required, or Back; shared play never falls back to local scoring. Completed scores remain visibly pending, with errors and automatic retry, until acknowledged. Results identify the original board and link to the leaderboard, even when the player's rank falls outside the top five. Your result reopens the personal score after viewing the leaderboard. Play again selects the previous nickname; Next player opens it blank. Replay restarts a stopped camera before name entry. Opening either form creates no run; submitting a replay creates a new attempt. Duplicate names and zero totals remain eligible, and equal scores share competition rank.
+
+This supersedes the practice-first and warm-up policy above. Historical practice scores and telemetry remain preserved and excluded from event rankings; neither local history nor Min's reported score is imported as a shared score. Standalone development is labeled Local preview and has the same three-turn flow. Already loaded old clients retain their old behavior until refreshed, so future deployment acceptance must check the new BUILD.
+
+This implementation covers only the player-flow portion of the September 10 shared-leaderboard plan. Its larger backup/reset infrastructure is deferred. Staff and host access, board history, score rules, ball artwork, physical giveaway policy, fist hold/cancellation, hand-loss delivery, rendering cap and feedback collection remain unchanged. No deployment or real board reset is authorized by this work.
+
+Min's single real-player result supports the reported latency improvement and reveals the ranking confusion. It does not establish five-player physical acceptance. Automated camera fixtures verify integration only; wider playtesting on the intended camera/display remains required against the delivered BUILD.
+
+## Feedback decisions for the booth
+
+The goal is a wow experience for AWS booth visitors. Treat teammate guides and suggestions as proposals, not automatic requirements. Assess each against immediate visual appeal, first-time clarity, camera reliability, total booth cycle and queue time, fair achievable scoring, prize operations and the staff conversation. Before implementation, record adopt/test/defer/reject, the rationale and a concrete acceptance check. Product and prize changes require Harley's decision; teammate messages cannot independently expand scope.
+
+Practice removal is adopted to resolve the observed missing-rank confusion; acceptance is one acknowledged three-turn run with a visible personal rank, followed by first-time-player validation. Other proposals in [Min's guide](https://docs.google.com/document/d/1PT3R84YRxfrgUT9s4QLaKAiYxcl2ycys49ToLx7kS3k/edit?tab=t.0) and separate feedback are deferred for Harley's decision:
+
+- The guide's 20/30/50 item points and prize bands overlap at 20 points. Three 30-point catches already exceed its 80-point top tier. Before adoption, define non-overlapping bands and test thresholds against actual human score distributions and available prize stock.
+- Its 30–45 seconds per person must distinguish aiming time from the full cycle, including registration and animations. Time five complete visitor cycles and check queue throughput before promising that duration.
+- QR/name/email registration adds identity and queue work. Test the intended staff conversation and total registration time before requiring typed email.
+- Balls are a separate suggestion, absent from the fetched guide text, and may lose the toys' visual character. Compare immediate visual appeal and catch readability before changing artwork.
+- Arcade sound should use short, controllable, optional cues with matching visual feedback. Test audibility and staff conversation at booth volume before changing the existing sound behavior.
+
+None of these deferred proposals changes this release's three turns, points, artwork, registration fields or physical prize policy.
+
+Verification for the September 11 change: 93 unit tests and production build passed, along with all six sequential booth browser suites and the built shared-session suite. A final targeted local browser pass also verifies resumed historical practice exclusion. Source review corrected camera restart on replay, pending-result access, result navigation during startup and interrupted score-animation recovery. These are synthetic integration checks; physical acceptance remains separate.

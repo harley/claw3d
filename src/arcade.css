@@ -117,8 +117,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, #scene:focus-vi
 .prize-tag { position: absolute; transform: translate(-50%, -50%); border: 1px solid #35c9ff99; background: #091426df; color: #7bdeff; font: 800 10px ui-monospace, monospace; padding: 3px 6px; border-radius: 4px; white-space: nowrap; }
 .prize-tag[data-points="200"] { color: #ff809c; border-color: #ff405799; }
 .prize-tag.targeted { box-shadow: 0 0 14px #35c9ff; outline: 2px solid #fff; }
-#practice-marker { position: absolute; transform: translate(-50%, -50%); font-size: 40px; line-height: 1; color: #66ffb3; pointer-events: none; text-shadow: 0 0 12px #07121f; z-index: 4; }
-#rehearsal-exit { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); margin: 0; padding: 5px 10px; z-index: 8; color: #abd3ff; }
 
 /* Dialogs retain the complete host and recovery controls. */
 dialog { color: #f3f6ff; background: #0d192c; border: 1px solid #355074; border-top: 4px solid #ff4057; border-radius: 12px; padding: 34px; width: min(440px, calc(100vw - 32px)); max-height: 85svh; overflow: auto; box-shadow: 0 20px 100px #0009; }

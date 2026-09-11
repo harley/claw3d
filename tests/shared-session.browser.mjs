@@ -54,24 +54,11 @@ async function openRegistration(page) {
   await page.locator('#play').click(); await page.locator('#registration').waitFor();
 }
 async function register(page, name) {
-  await openOperator(page); await page.locator('#practice').uncheck();
-  await page.locator('#operator .panel-head button').click();
   await openRegistration(page);
-  assert.equal(await page.locator('#name').getAttribute('required') !== null, true, 'event mode still requires a name');
-  await page.locator('#name').press('Enter');
-  assert.equal(await page.locator('#registration').isVisible(), true, 'empty event name cannot begin');
-  await page.locator('#name').fill(name); await page.locator('#name').press('Enter');
+  assert.equal(await page.locator('#name').getAttribute('required'), null);
   const count = () => app.database.db.prepare('SELECT COUNT(*) AS n FROM runs WHERE name=?').get(name).n;
-  assert.equal(count(), 0);
-  assert.equal(await page.evaluate(() => window.testCamera.clench()), true);
-  assert.equal(await page.evaluate(() => window.testCamera.clench()), false);
-  await page.waitForFunction(() => document.getElementById('status').textContent === 'Here we go…');
-  assert.equal(count(), 0, 'practice must not create a server run');
-  assert.equal(await page.locator('#rehearsal-exit').isEnabled(), false);
-  await page.evaluate(() => { window.testCamera.visible=false; window.testCamera.tick(); document.getElementById('rehearsal-exit').click(); });
-  await page.waitForFunction(() => document.getElementById('status').textContent === 'You’ve got it', {}, { timeout: 30000 });
-  assert.equal(count(), 0, 'full unscored animation finishes before server start');
-  assert.equal(await page.locator('#turn').textContent(), '— / 3');
+  await page.locator('#name').fill(name);
+  await page.evaluate(() => { document.getElementById('player-form').requestSubmit(); document.getElementById('player-form').requestSubmit(); });
   if (name === 'Browser A') {
     await page.locator('#shared-start').waitFor({ timeout: 15000 });
     assert.equal(await page.locator('#turn').textContent(), '— / 3');
@@ -85,34 +72,40 @@ async function register(page, name) {
   assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM turns WHERE run_id=?').get(issued.id).n, 0);
   await page.evaluate(() => { window.testCamera.visible=true; window.testCamera.tick(); });
 }
-async function finish(page) {
-  for (const turn of [1, 2, 3]) {
+async function finish(page, firstTurn = 1, stopCameraOnLastDrop = false) {
+  for (const turn of [1, 2, 3].filter(turn => turn >= firstTurn)) {
     await page.waitForFunction(turn => document.getElementById('turn').textContent === `${turn} / 3` && !document.getElementById('phase-label').textContent.includes('COMPLETE'), turn);
     await page.evaluate(() => window.testCamera.clench());
+    if (turn === 3 && stopCameraOnLastDrop) await page.evaluate(() => window.testCamera.stop());
     if (turn < 3) await page.waitForFunction(turn => document.getElementById('turn').textContent === `${turn + 1} / 3`, turn, { timeout: 30000 });
   }
   await page.locator('#final').waitFor({ timeout: 30000 });
 }
-async function practiceAndFeedback() {
+async function scoredAndFeedback() {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  app.database.db.prepare('INSERT INTO owners VALUES (?)').run('rank-owner');
+  for (let i = 0; i < 6; i++) {
+    const run = app.database.createRun('rank-owner', { requestKey: crypto.randomUUID(), name: 'Same nickname' });
+    for (let turn = 1; turn <= 3; turn++) app.database.record(run.id, 'rank-owner', { turn, prizeId: 'butter' });
+  }
   const page = await open(context), boardBefore = app.database.board();
   let starts = 0;
   page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/runs') starts++; });
-  assert.equal(await page.locator('#practice').isChecked(), true);
+  assert.equal(await page.locator('#practice, #shared-practice, #rehearsal-exit').count(), 0);
   await openRegistration(page);
   assert.equal(await page.locator('#name').getAttribute('required'), null);
   await page.locator('#name').press('Enter');
-  await page.waitForFunction(() => !document.getElementById('rehearsal-exit').hidden);
-  assert.equal(await page.evaluate(() => window.testCamera.clench()), true);
-  // Opening feedback cannot freeze an accepted rehearsal drop.
-  await page.locator('#feedback-open').click();
-  await page.locator('#feedback-dialog').waitFor();
-  await page.waitForFunction(() => document.getElementById('status').textContent === 'You’ve got it', {}, { timeout: 30000 });
-  assert.equal(await page.locator('#turn').textContent(), '— / 3');
-  await page.locator('#feedback-dialog [aria-label="Close feedback"]').click();
-  await page.locator('#feedback-dialog').waitFor({ state: 'hidden' });
   await page.waitForFunction(() => document.getElementById('turn').textContent === '1 / 3');
   assert.equal(await page.locator('#player-name').textContent(), 'Player');
+  assert.equal(await page.evaluate(() => window.testCamera.clench()), true);
+  assert.equal(await page.evaluate(() => window.testCamera.clench()), false);
+  await page.evaluate(() => { window.testCamera.visible = false; window.testCamera.tick(); });
+  await page.locator('#feedback-open').click();
+  await page.waitForFunction(() => document.getElementById('phase-label').textContent === 'TURN 1 COMPLETE', {}, { timeout: 30000 });
+  assert.equal(await page.locator('#turn').textContent(), '1 / 3');
+  await page.locator('#feedback-dialog [aria-label="Close feedback"]').click();
+  await page.evaluate(() => { window.testCamera.visible = true; window.testCamera.tick(); });
+  await page.waitForFunction(() => document.getElementById('turn').textContent === '2 / 3');
 
   const attempts = [];
   let feedbackAvailable = false;
@@ -145,17 +138,19 @@ async function practiceAndFeedback() {
   const feedbackRows = () => app.database.db.prepare("SELECT * FROM playtest_events WHERE type='feedback' ORDER BY received_at").all();
   assert.equal(feedbackRows().length, 1, 'acknowledgement corresponds to one persisted feedback');
   assert.equal(JSON.parse(feedbackRows()[0].data).comment, comment);
-  assert.equal(feedbackRows()[0].mode, 'practice');
-  await page.screenshot({ path: '.screenshots/practice-feedback-saved.png' });
+  assert.equal(feedbackRows()[0].mode, 'event');
+  await page.screenshot({ path: '.screenshots/scored-feedback-saved.png' });
   await page.locator('#feedback-dialog [aria-label="Close feedback"]').click();
   await page.locator('#feedback-dialog').waitFor({ state: 'hidden' });
-  await finish(page);
-  assert.equal(await page.locator('#final-rank').textContent(), 'Practice · unranked');
-  await page.screenshot({ path: '.screenshots/practice-result.png' });
+  await finish(page, 2, true);
+  await page.waitForFunction(() => document.getElementById('final-rank').textContent.includes('SAVED'));
+  await page.screenshot({ path: '.screenshots/scored-result.png' });
   assert.equal(await page.locator('#final-turns .turn-chip').count(), 3);
-  assert.equal(starts, 0, 'anonymous practice never creates a server run');
-  assert.deepEqual(app.database.board(), boardBefore, 'practice leaves the shared event board unchanged');
-  assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM runs').get().n, 0);
+  assert.match(await page.locator('#final-rank').textContent(), /RANK #7/);
+  assert.equal(await page.locator('#leaders li').count(), 5);
+  assert.equal(starts, 1, 'blank nickname creates exactly one server run');
+  assert.equal(app.database.board().runs.length, boardBefore.runs.length + 1);
+  assert.equal(app.database.board().runs[0].turns.length, 3);
 
   await page.locator('#final-feedback').click();
   await page.locator('#feedback-dialog').waitFor();
@@ -173,18 +168,31 @@ async function practiceAndFeedback() {
   for (const row of app.database.db.prepare('SELECT data FROM playtest_events').all()) checkPrivateKeys(JSON.parse(row.data));
   await page.locator('#feedback-dialog [aria-label="Close feedback"]').click();
   await page.locator('#feedback-dialog').waitFor({ state: 'hidden' });
-  await page.locator('#next-player').click();
-  assert.equal(await page.locator('#name').getAttribute('required'), null, 'replay keeps nickname optional');
-  await page.locator('#name').press('Enter');
-  await page.locator('#rehearsal-exit').waitFor();
-  await page.locator('#rehearsal-exit').click();
-  await page.locator('#rehearsal-exit').waitFor({ state: 'hidden' });
-  await openRegistration(page);
-  assert.equal(await page.locator('#name').getAttribute('required'), null);
-  await page.locator('#name').press('Enter');
-  await page.locator('#rehearsal-exit').waitFor();
-  assert.equal(starts, 0, 'blank replay and restart remain unranked');
-  assert.deepEqual(app.database.board(), boardBefore);
+  await page.locator('#final-leaderboard').click();
+  await page.locator('#result-open').click();
+  assert.match(await page.locator('#final-rank').textContent(), /RANK #7/);
+  assert.equal(await page.evaluate(() => window.testCamera.running), false);
+  await page.locator('#play-again').click();
+  await page.locator('#registration').waitFor();
+  assert.equal(await page.evaluate(() => window.testCamera.running), true);
+  assert.equal(await page.locator('#name').inputValue(), 'Player');
+  assert.equal(await page.locator('#name').evaluate(el => el.selectionEnd - el.selectionStart), 6);
+  assert.equal(starts, 1, 'opening replay does not create a run');
+  let releaseReplay, replayRequest;
+  const replayStarted = new Promise(resolve => { replayRequest = resolve; });
+  await page.route('**/api/runs', async route => {
+    replayRequest(); await new Promise(resolve => { releaseReplay = resolve; }); await route.continue();
+  }, { times: 1 });
+  await page.locator('#name').press('Enter'); await replayStarted;
+  assert.equal(await page.locator('#result-open').isVisible(), false);
+  await page.evaluate(() => { document.getElementById('result-open').click(); document.getElementById('play-again').click(); });
+  assert.equal(await page.locator('#final').isVisible(), false);
+  assert.equal(await page.evaluate(() => window.testCamera.clench()), false);
+  releaseReplay();
+  await page.waitForFunction(() => document.getElementById('turn').textContent === '1 / 3');
+  assert.equal(starts, 2, 'submitted replay creates a new attempt');
+  const replays = app.database.db.prepare("SELECT request_key FROM runs WHERE name='Player'").all();
+  assert.equal(replays.length, 2); assert.notEqual(replays[0].request_key, replays[1].request_key);
   await page.evaluate(() => document.getElementById('scene').dispatchEvent(new Event('webglcontextlost', { cancelable: true })));
   await page.locator('#error').waitFor();
   await page.locator('#error-feedback').click();
@@ -195,10 +203,11 @@ async function practiceAndFeedback() {
   await page.waitForFunction(() => document.getElementById('feedback-status').textContent === 'Thanks. Your feedback is saved.');
   assert.equal(feedbackRows().length, 3, 'renderer error surface can report before reload');
   await context.close();
-  console.log('PASS anonymous default practice, three unranked turns, feedback modal/drop isolation, retry retains draft, final feedback and blank replay');
+  console.log('PASS blank nickname creates three scored turns; feedback retry retains draft; replay prefills selected nickname');
+  app.database.rotate('Shared recovery tests');
 }
 try {
-  await practiceAndFeedback();
+  await scoredAndFeedback();
   const a = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   const b = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   let page = await open(a);
@@ -227,6 +236,14 @@ try {
   });
   await finish(page);
   assert.equal(await page.locator('#final-rank').textContent(), 'Score waiting to sync');
+  await page.locator('#final-leaderboard').click();
+  await page.locator('#result-open').click();
+  assert.equal(await page.locator('#final-rank').textContent(), 'Score waiting to sync');
+  await page.locator('#play-again').click();
+  assert.equal(await page.locator('#name').inputValue(), 'Browser A');
+  assert.equal(startKeys.length, 2, 'pending replay form does not issue a new start');
+  assert.ok(await page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith('cloud-claw:pending:v2:'))));
+  await page.locator('#register-cancel').click();
   const cookies = await a.cookies();
   assert.ok(cookies.find(cookie => cookie.name === 'cc_owner').httpOnly);
   await page.screenshot({ path: '.screenshots/shared-pending.png' });
@@ -241,6 +258,9 @@ try {
   assert.equal(await page.locator('#leaders li').count(), 2);
   assert.match(await page.locator('#final-rank').textContent(), /RANK #1/);
   await page.screenshot({ path: '.screenshots/shared-saved.png' });
+  await page.locator('#next-player').click();
+  assert.equal(await page.locator('#name').inputValue(), '');
+  await page.locator('#register-cancel').click();
   await page.close();
   page = await open(a); assert.equal(await page.locator('#leaders li').count(), 2);
   await openOperator(page);

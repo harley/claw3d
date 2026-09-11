@@ -95,3 +95,35 @@ test('idle 401 remains visible across empty flushes until successful sign-in', a
   assert.equal(api.state().needsLogin, true);
   await api.request('/login', { code: 'staff' }); assert.equal(api.state().needsLogin, false);
 });
+
+test('unavailable browser storage prevents a shared start before any request', async () => {
+  let calls = 0;
+  const local = storage(); local.setItem = () => { throw new Error('Storage unavailable'); };
+  const api = createSessionApi({ storage: local, tabStorage: storage(), fetcher: async () => { calls++; return Response.json({}); } });
+  await assert.rejects(api.start('Player', crypto.randomUUID()), /Storage unavailable/);
+  assert.equal(calls, 0);
+});
+
+test('full storage after start retains all completed turns for same-page retry', async () => {
+  const local = storage(), tab = storage(), notices = [], received = new Set();
+  const write = local.setItem;
+  let full = false, online = false;
+  local.setItem = (key, value) => { if (full) throw new Error('Quota exceeded'); write(key, value); };
+  const issued = { id: crypto.randomUUID(), boardId: 'board', name: 'Player', status: 'active', turns: [], rules: RULES };
+  const api = createSessionApi({ storage: local, tabStorage: tab, onChange: notice => notices.push(notice), fetcher: async (url, options) => {
+    if (url === '/api/runs') return Response.json(issued);
+    if (!online) throw new Error('offline');
+    received.add(JSON.parse(options.body).turn);
+    return Response.json({ ...issued, status: received.size === 3 ? 'complete' : 'active', rank: 1, total: 0 });
+  } });
+  const run = await api.start('Player', crypto.randomUUID());
+  full = true;
+  run.turns = [1, 2, 3].map(turn => ({ turn, prizeId: null, score: 0 }));
+  api.queue(run); await api.flush();
+  assert.equal(api.state().pending, 1); assert.ok(api.state().error);
+  assert.equal(notices.some(notice => notice.saved), false);
+  full = false; online = true; await api.flush();
+  assert.deepEqual([...received], [1, 2, 3]); assert.equal(api.state().pending, 0);
+  assert.equal(notices.find(notice => notice.saved).saved.total, 0);
+  assert.equal(local.length, 0); assert.equal(tab.length, 0);
+});

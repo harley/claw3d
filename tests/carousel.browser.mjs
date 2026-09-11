@@ -1,4 +1,4 @@
-import { installCameraFixture, cameraInput, cameraDrop, completeRehearsal } from './camera-fixture.mjs';
+import { installCameraFixture, cameraInput, cameraDrop, assertScoredStart } from './camera-fixture.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { writeFile } from 'node:fs/promises';
@@ -31,7 +31,7 @@ try {
     }
   }
   await page.locator('#play').click(); await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running);
-  await page.locator('#play').click(); await page.locator('#name').fill('Star Pilot'); await page.locator('#name').press('Enter'); await completeRehearsal(page); await aim();
+  await page.locator('#play').click(); await page.locator('#name').fill('Star Pilot'); await page.locator('#name').press('Enter'); await assertScoredStart(page); await aim();
   // Dispatch in the observed timing window; screenshots/IPC must not delay DROP.
   await page.waitForFunction(() => {
     const state = window.__littleCloud.snapshot();
