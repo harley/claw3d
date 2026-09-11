@@ -332,21 +332,7 @@ export class ArcadeScene {
     const extra = Math.max(1, 1.45 / this.camera.aspect); this.home.set(7.25 * extra, 2.25 + 3.90 * extra, 11.6 * extra);
   }
 
-  setQuality(low) {
-    this.lowQuality = low; this.renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, 1.5)); this.renderer.shadowMap.enabled = !low; this.resize();
-    // The star jelly's transmission forces a full extra scene pass per frame
-    // (+115 draw calls measured synthetically); SIMPLE quality trades it for
-    // tinted opacity while FULL keeps the real refractive look.
-    for (const [, object] of this.toys) object.traverse(mesh => {
-      const material = mesh.isMesh && mesh.material;
-      if (!material || (!material.transmission && material.userData.fullTransmission === undefined)) return;
-      material.userData.fullTransmission ??= material.transmission;
-      material.transmission = low ? 0 : material.userData.fullTransmission;
-      material.transparent = low;
-      material.opacity = low ? .85 : 1;
-      material.needsUpdate = true;
-    });
-  }
+  setQuality(low) { this.lowQuality = low; this.renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, 1.5)); this.renderer.shadowMap.enabled = !low; this.resize(); }
 
   screenPoint(x, y, z) { const p = v(x, y, z).project(this.camera); return { x: (p.x + 1) / 2 * this.viewport.width, y: (1 - p.y) / 2 * this.viewport.height }; }
 
@@ -428,7 +414,7 @@ export class ArcadeScene {
       body.scale.set(1 + compression * .65, 1 - compression, 1 + compression * .45); body.rotation.z = wobble;
       const seed = ASSORTMENT.findIndex(t => t.id === toy.id);
       // Attract mode: on the empty machine each toy takes an occasional turn to
-      // wave — ears wiggle, the jelly ripples — inviting a passer-by to play.
+      // wave — ears wiggle, the candy star ripples — inviting a passer-by to play.
       let attract = 0;
       if (motion && phase === 'idle' && index < 0) { const beat = (time + seed * 2.83) % 11; if (beat < 1.1) attract = Math.sin(beat / 1.1 * Math.PI); }
       if (blink) { const tick = (time + seed * 1.317) % (4.1 + seed * .23); blink.scale.y = motion && tick < .13 ? .15 + Math.abs(tick - .065) / .065 * .85 : 1; }

@@ -42,7 +42,7 @@ export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, 
     try { board = await api.request('/host/boards', { name }); onBoard(); return board; }
     finally { version++; rotating = false; }
   }
-  async function loginStaff(code) { await api.request('/login', { code }); await api.flush(); await refresh(); }
+  async function loginStaff(code) { await api.request('/login', { code }); }
   async function loginHost(code) { await api.request('/host/login', { code }); role = 'host'; }
   return {
     connect, refresh, rotate, loginStaff, loginHost,

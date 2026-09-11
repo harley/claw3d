@@ -82,14 +82,17 @@ export class ToyContacts {
     }
   }
   // A full setFromObject traversal per obstacle per frame is the rock() hot
-  // cost; an unchanged world matrix means an unchanged box.
+  // cost. The box is a pure function of the toy's mesh world matrices, so the
+  // cache keys on exactly those — child animation under a static root (grip
+  // compression, lift jiggle, blinks) invalidates just like a moved root.
   boundsFor(id) {
     const object = this.toys.get(id);
     object.updateWorldMatrix(true, true);
+    const meshes = this.meshes.get(id);
     const cached = this.obstacleBounds.get(id);
-    if (cached && cached.matrix.equals(object.matrixWorld)) return cached.box;
+    if (cached && cached.matrices.every((matrix, i) => matrix.equals(meshes[i].matrixWorld))) return cached.box;
     const box = new T.Box3().setFromObject(object);
-    this.obstacleBounds.set(id, { box, matrix: object.matrixWorld.clone() });
+    this.obstacleBounds.set(id, { box, matrices: meshes.map(mesh => mesh.matrixWorld.clone()) });
     return box;
   }
   rock(game, toy, object, dt) {

@@ -97,7 +97,7 @@ Standalone mode uses the same optional-nickname, three-scored-turn journey and i
 
 Gameplay, gesture, scoring, audio and presentation decisions live in [docs/PRODUCT.md](docs/PRODUCT.md); they apply identically here. Standalone specifics: each turn has 15 seconds of aiming, turns advance automatically after two seconds, there are no keyboard movement or drop controls, and the gear button opens the operator panel. Timing and game feel still need human playtesting.
 
-The operator can pause, reset the current player, change rendering quality (SIMPLE also swaps the star jelly's costly refraction pass for tinted opacity), start a fresh leaderboard session, and export all sessions as JSON. Historical practice results remain stored but excluded from rankings. New standalone runs are labeled Local preview. Ties share rank. The leaderboard is for fun; rank does not earn an additional physical prize. Session rollover preserves old results and is blocked during an active run. Rules are saved with each run. Upgrading from the first static-prize prototype starts a separate carousel leaderboard; old results and any interrupted run remain available in the export.
+The operator can pause, reset the current player, change rendering quality, start a fresh leaderboard session, and export all sessions as JSON. Historical practice results remain stored but excluded from rankings. New standalone runs are labeled Local preview. Ties share rank. The leaderboard is for fun; rank does not earn an additional physical prize. Session rollover preserves old results and is blocked during an active run. Rules are saved with each run. Upgrading from the first static-prize prototype starts a separate carousel leaderboard; old results and any interrupted run remain available in the export.
 
 Scores and player progress persist in this browser's local storage. Reloading an unfinished run requires the host to resume its uncompleted turn. Completed turns remain scored. Focus loss does not latch an operator pause. Hidden pages suspend gameplay until visible again; missing hands hold only the aiming timer, never an in-flight drop. Storage failures are displayed; export before closing if results are only in memory. Clearing browser data removes local history, so export regularly. This single-browser prototype has no server verification, badge enforcement, queue tracking or physical prize inventory. Staff supervise name entry; player IDs and a nullable badge ID leave room for later scanning. Do not use this local leaderboard as a tamper-resistant competition backend.
 
@@ -106,7 +106,7 @@ Camera controls are required for play. START CAMERA requests access and shows th
 ## Implementation
 
 - `src/arcade-mechanics.js`: deterministic state machine, aiming limits, independent finger support and curated assortment.
-- `src/arcade-art.js`: original procedural toys, fabric grain, wood grain, smooth jelly geometry and face details.
+- `src/arcade-art.js`: original procedural toys, fabric grain, wood grain, smooth candy-star geometry and face details.
 - `src/arcade-scene.js`: cabinet, articulated claw, carriage, prize hatch, courier, gallery and material-specific performances.
 - `src/event-session.js`: versioned rules and local scoring/presentation.
 - `src/session-api.js`: shared run requests, persistent turn outbox and acknowledgement state.
@@ -114,7 +114,7 @@ Camera controls are required for play. START CAMERA requests access and shows th
 - `server/index.js`: same-origin access protection, ownership, host authorization and static serving.
 - `src/arcade.js` and `src/arcade.css`: camera-driven event flow, compact presentation, bounded loading/error states and reduced motion.
 
-Grasping uses authored ellipsoid support envelopes and a guided animation. The jelly wave, cushion compression and trailing ears are expressive approximations, not a general soft-body or rigid-body solver. The couriers and glass are simplified miniature mechanisms. Human booth-camera acceptance remains outstanding. The shared pilot is a testing environment, not event-readiness evidence.
+Grasping uses authored ellipsoid support envelopes and a guided animation. The star squish wave, cushion compression and trailing ears are expressive approximations, not a general soft-body or rigid-body solver. The couriers and glass are simplified miniature mechanisms. Human booth-camera acceptance remains outstanding. The shared pilot is a testing environment, not event-readiness evidence.
 
 ## Verify
 

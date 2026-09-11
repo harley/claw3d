@@ -401,7 +401,9 @@ if (shared) {
 for (const id of ['shared-reauth', 'final-reauth', 'start-reauth', 'host-reauth']) $(id).addEventListener('click', () => { $('staff-access').showModal(); });
 $('staff-form').addEventListener('submit', async event => {
   event.preventDefault();
-  try { await pilot.loginStaff($('staff-code').value); $('staff-code').value = ''; $('staff-access').close(); }
+  // The dialog closes on login success; queued scores and the board sync after,
+  // with the game unblocked (matching the pre-extraction ordering).
+  try { await pilot.loginStaff($('staff-code').value); $('staff-code').value = ''; $('staff-access').close(); await pilot.flush(); await pilot.refresh(); }
   catch (error) { $('staff-message').textContent = error.message; }
 });
 $('host-form').addEventListener('submit', async event => {

@@ -72,23 +72,3 @@ test('reduced motion keeps the marquee steady in every phase', () => {
     assert.equal(new Set(bulbs).size, 1, `${phase} shows one steady colour under reduced motion`);
   }
 });
-
-test('SIMPLE quality trades the star transmission pass for tinted opacity, reversibly', t => {
-  globalThis.devicePixelRatio ??= 1; t.after(() => { if (globalThis.devicePixelRatio === 1) delete globalThis.devicePixelRatio; });
-  const scene = Object.create(ArcadeScene.prototype);
-  scene.renderer = { setPixelRatio: () => {}, shadowMap: {} };
-  scene.resize = () => {};
-  const jelly = { transmission: .64, transparent: false, opacity: 1, needsUpdate: false, userData: {} };
-  const plush = { transmission: 0, transparent: false, opacity: 1, userData: {} };
-  const child = material => ({ isMesh: true, material, traverse(fn) { fn(this); } });
-  scene.toys = new Map([['peach', child(jelly)], ['butter', child(plush)]]);
-  scene.setQuality(true);
-  assert.equal(jelly.transmission, 0);
-  assert.equal(jelly.transparent, true);
-  assert.equal(jelly.opacity, .85);
-  assert.equal(plush.transparent, false, 'opaque toys are untouched');
-  scene.setQuality(false);
-  assert.equal(jelly.transmission, .64, 'FULL quality restores the refractive look');
-  assert.equal(jelly.transparent, false);
-  assert.equal(jelly.opacity, 1);
-});
