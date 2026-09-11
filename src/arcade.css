@@ -112,6 +112,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, #scene:focus-vi
 #action-copy.expired { opacity: 0; }
 #action-copy.strike { animation: arcade-strike 160ms ease-out; }
 @keyframes arcade-strike { from { transform: scale(.9); } to { transform: scale(1); } }
+@media (prefers-reduced-motion: no-preference) {
+  #action-copy.attract #status { animation: attract-pulse 2.6s ease-in-out infinite; }
+  @keyframes attract-pulse { 50% { opacity: .68; } }
+}
 #arcade[data-phase="lift"] #status, #arcade[data-phase="result"] #status { color: #ffc14d; }
 #gesture-meter { width: 180px; height: 8px; margin-top: 3px; border: 1px solid #ffc14d; background: #152138; overflow: hidden; }
 #gesture-progress { display: block; width: 100%; height: 100%; background: #ffc14d; transform: scaleX(0); transform-origin: left; }

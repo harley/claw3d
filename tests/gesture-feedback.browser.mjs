@@ -32,10 +32,14 @@ try {
   await page.waitForFunction(() => document.getElementById('gesture-meter').getAttribute('aria-valuenow') === '50');
   assert.equal((await snap()).joystick.progress, .5);
   assert.equal(await page.locator('#status').textContent(), 'Hold to drop');
+  // The target-ring arc mirrors the hold even under reduced motion: it is
+  // progress feedback, not decorative animation.
+  await page.waitForFunction(() => window.__littleCloud.snapshot().effects.holdArc === true);
   await page.screenshot({ path: '.screenshots/gesture-hold.png' });
   await feedback({ kind: 'tracking', progress: 0 });
   await page.waitForFunction(() => document.getElementById('gesture-meter').hidden);
   assert.equal((await snap()).joystick.progress, 0, 'cancelled hold clears the scene ring');
+  await page.waitForFunction(() => window.__littleCloud.snapshot().effects.holdArc === false);
 
   // Silence must expire both the input and its visible control claim.
   await page.evaluate(() => clearInterval(window.testCamera.timer));
