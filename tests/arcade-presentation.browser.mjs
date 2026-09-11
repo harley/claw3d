@@ -5,9 +5,15 @@ import { installCameraFixture } from './camera-fixture.mjs';
 const browser = await chromium.launch(browserOptions);
 try {
  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+ page.on('console', message => { if (message.type() === 'error') console.error('Browser console:', message.text()); });
  page.on('pageerror', error => console.error('Browser page error:', error.message));
  await installCameraFixture(page);
- await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud);
+ await page.goto('http://127.0.0.1:4196');
+ await page.waitForFunction(() => window.__littleCloud || !document.getElementById('error').hidden);
+ if (!await page.evaluate(() => Boolean(window.__littleCloud))) {
+   await page.screenshot({ path: '.screenshots/arcade-startup-failure.png' });
+   assert.fail(await page.locator('#error-message').textContent());
+ }
  await page.locator('#play').click(); await page.waitForFunction(() => window.testCamera?.running);
  await page.locator('#play').click(); await page.locator('#name').press('Enter');
  await page.evaluate(() => window.testCamera.clench());
