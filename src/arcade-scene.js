@@ -332,7 +332,21 @@ export class ArcadeScene {
     const extra = Math.max(1, 1.45 / this.camera.aspect); this.home.set(7.25 * extra, 2.25 + 3.90 * extra, 11.6 * extra);
   }
 
-  setQuality(low) { this.lowQuality = low; this.renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, 1.5)); this.renderer.shadowMap.enabled = !low; this.resize(); }
+  setQuality(low) {
+    this.lowQuality = low; this.renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, 1.5)); this.renderer.shadowMap.enabled = !low; this.resize();
+    // The star jelly's transmission forces a full extra scene pass per frame
+    // (+115 draw calls measured synthetically); SIMPLE quality trades it for
+    // tinted opacity while FULL keeps the real refractive look.
+    for (const [, object] of this.toys) object.traverse(mesh => {
+      const material = mesh.isMesh && mesh.material;
+      if (!material || (!material.transmission && material.userData.fullTransmission === undefined)) return;
+      material.userData.fullTransmission ??= material.transmission;
+      material.transmission = low ? 0 : material.userData.fullTransmission;
+      material.transparent = low;
+      material.opacity = low ? .85 : 1;
+      material.needsUpdate = true;
+    });
+  }
 
   screenPoint(x, y, z) { const p = v(x, y, z).project(this.camera); return { x: (p.x + 1) / 2 * this.viewport.width, y: (1 - p.y) / 2 * this.viewport.height }; }
 
