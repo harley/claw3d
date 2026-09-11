@@ -2,10 +2,10 @@
 import { installCameraFixture, cameraInput, cameraDrop, assertScoredStart } from './camera-fixture.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
+import { browserContextOptions, browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
 import { writeFile } from 'node:fs/promises';
 const browser = await chromium.launch(browserOptions);
-const context = await browser.newContext({viewport:{width:1440,height:900},reducedMotion:'no-preference'});
+const context = await browser.newContext({ ...browserContextOptions, viewport:{width:1440,height:900},reducedMotion:'no-preference'});
 await context.addInitScript(() => { window.mediaCalls=[]; if(navigator.mediaDevices) for(const name of ['getUserMedia','enumerateDevices','getDisplayMedia']) navigator.mediaDevices[name]=()=>{window.mediaCalls.push(name);throw Error('No camera');}; });
 const page = await context.newPage(), errors=[]; page.on('pageerror', e=>errors.push(e.message));
 await installCameraFixture(page);

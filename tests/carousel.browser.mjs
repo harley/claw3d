@@ -1,13 +1,13 @@
 import { installCameraFixture, cameraInput, cameraDrop, assertScoredStart } from './camera-fixture.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { browserOptions, captureScreenshot, captureArtifacts } from '../scripts/browser-options.mjs';
+import { browserContextOptions, browserOptions, captureScreenshot, captureArtifacts } from '../scripts/browser-options.mjs';
 import { writeFile } from 'node:fs/promises';
 const browser = await chromium.launch(browserOptions);
 try {
   const errors = [];
   if (!process.argv.includes('--clearance-only')) {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce', ...(captureArtifacts ? { recordVideo: { dir: '.screenshots/', size: { width: 1440, height: 900 } } } : {}) });
+  const page = await browser.newPage({ ...browserContextOptions,  viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce', ...(captureArtifacts ? { recordVideo: { dir: '.screenshots/', size: { width: 1440, height: 900 } } } : {}) });
   await installCameraFixture(page);
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud);
@@ -71,7 +71,7 @@ try {
   }
   // Sweep actual rendered star geometry against all stationary toys. No GPU
   // draws are needed to exercise the exact transforms and bounding geometry.
-  const sweep = await browser.newPage(); await sweep.goto('http://127.0.0.1:4196'); await sweep.waitForFunction(() => window.__littleCloud);
+  const sweep = await browser.newPage(browserContextOptions); await sweep.goto('http://127.0.0.1:4196'); await sweep.waitForFunction(() => window.__littleCloud);
   const clearance = await sweep.evaluate(async () => {
     const T = await import('/node_modules/three/build/three.module.js');
     const { ArcadeScene } = await import('/src/arcade-scene.js');

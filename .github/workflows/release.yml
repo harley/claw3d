@@ -25,11 +25,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - name: Check production container startup and backup ordering
+        run: bash scripts/check-release-container.sh
       # check:booth includes unit tests and build; WebGL suites must not overlap.
       - run: xvfb-run --auto-servernum npm run check:booth
       - run: xvfb-run --auto-servernum npm run test:shared
-      - name: Check production container startup and backup ordering
-        run: bash scripts/check-release-container.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:

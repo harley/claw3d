@@ -1,12 +1,12 @@
 // Synthetic camera states exercise presentation through the real adapter.
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
+import { browserContextOptions, browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
 import { installCameraFixture, cameraDrop } from './camera-fixture.mjs';
 
 const browser = await chromium.launch(browserOptions);
 try {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  const page = await browser.newPage({ ...browserContextOptions,  viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await installCameraFixture(page);

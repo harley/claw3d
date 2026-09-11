@@ -1,7 +1,7 @@
 // Built frontend, real shared API and isolated cookies. Synthetic camera events only.
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
+import { browserContextOptions, browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -84,7 +84,7 @@ async function finish(page, firstTurn = 1, stopCameraOnLastDrop = false) {
   await page.locator('#final').waitFor({ timeout: 30000 });
 }
 async function scoredAndFeedback() {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  const context = await browser.newContext({ ...browserContextOptions,  viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   app.database.db.prepare('INSERT INTO owners VALUES (?)').run('rank-owner');
   for (let i = 0; i < 6; i++) {
     const run = app.database.createRun('rank-owner', { requestKey: crypto.randomUUID(), name: 'Same nickname' });
@@ -234,8 +234,8 @@ async function scoredAndFeedback() {
 }
 try {
   await scoredAndFeedback();
-  const a = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
-  const b = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  const a = await browser.newContext({ ...browserContextOptions,  viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  const b = await browser.newContext({ ...browserContextOptions,  viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   let page = await open(a);
   await page.locator('#operator-open').click(); assert.equal(await page.locator('#host-access').isVisible(), true);
   await page.locator('#host-access [aria-label="Close host access"]').click();

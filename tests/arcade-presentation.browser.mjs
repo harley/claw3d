@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
+import { browserContextOptions, browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
 import { installCameraFixture } from './camera-fixture.mjs';
 const browser = await chromium.launch(browserOptions);
 try {
- const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+ const page = await browser.newPage({ ...browserContextOptions,  viewport: { width: 1440, height: 900 } });
  page.on('console', message => { if (message.type() === 'error') console.error('Browser console:', message.text()); });
  page.on('pageerror', error => console.error('Browser page error:', error.message));
  await installCameraFixture(page);
@@ -25,7 +25,10 @@ try {
  await page.evaluate(() => window.testCamera.clench());
  assert.equal(await page.locator('#status').textContent(), 'DROP!');
  await captureScreenshot(page, { path: '.screenshots/arcade-drop.png' });
- await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'lift');
+ await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'lift').catch(async error => {
+   console.error('Drop phase state:', await page.evaluate(() => { const s = window.__littleCloud.snapshot(); return { phase: s.phase, elapsed: s.elapsed, performance: s.performance, paused: s.event.paused, errors: s.errors }; }));
+   throw error;
+ });
  assert.match(await page.locator('#status').textContent(), /^(GOT IT!|MISSED)$/);
  assert.equal(await page.evaluate(() => window.__littleCloud.snapshot().event.run.turns.length), 0);
  await captureScreenshot(page, { path: '.screenshots/arcade-outcome.png' });

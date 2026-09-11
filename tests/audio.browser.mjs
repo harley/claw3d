@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
+import { browserContextOptions, browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
 import { installCameraFixture, cameraInput, assertScoredStart } from './camera-fixture.mjs';
 const browser = await chromium.launch(browserOptions);
 try {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const page = await browser.newPage({ ...browserContextOptions,  viewport: { width: 1440, height: 900 } });
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await installCameraFixture(page);
   await page.addInitScript(() => {
