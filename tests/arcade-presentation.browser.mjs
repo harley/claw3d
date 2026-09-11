@@ -9,7 +9,13 @@ try {
  page.on('pageerror', error => console.error('Browser page error:', error.message));
  await installCameraFixture(page);
  await page.goto('http://127.0.0.1:4196');
- await page.waitForFunction(() => window.__littleCloud || !document.getElementById('error').hidden);
+ try {
+   await page.waitForFunction(() => window.__littleCloud || !document.getElementById('error').hidden, null, { polling: 100 });
+ } catch (error) {
+   console.error('Startup state:', await page.evaluate(() => ({ ready: document.documentElement.dataset.arcadeReady, error: document.getElementById('error-message').textContent, errorHidden: document.getElementById('error').hidden, title: document.title, build: document.getElementById('build-info').textContent })));
+   await page.screenshot({ path: '.screenshots/arcade-startup-failure.png', timeout: 10000 });
+   throw error;
+ }
  if (!await page.evaluate(() => Boolean(window.__littleCloud))) {
    await page.screenshot({ path: '.screenshots/arcade-startup-failure.png' });
    assert.fail(await page.locator('#error-message').textContent());
