@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { appendFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
+import { browserOptions } from './browser-options.mjs';
 import { waitForRelease } from './release-readiness.mjs';
 import { createSecretRedactor } from './release-secrets.mjs';
 
@@ -25,7 +26,7 @@ secrets.add(credentials.HOST_CODE);
 const { build, cookies } = await waitForRelease({ origin, expected, staffCode: credentials.STAFF_CODE });
 for (const cookie of cookies) secrets.add(cookie.split(';')[0].slice(cookie.indexOf('=') + 1));
 
-const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const browser = await chromium.launch(browserOptions);
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   await context.addCookies(cookies.map(value => {

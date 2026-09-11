@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
+import { browserOptions } from '../scripts/browser-options.mjs';
 import { installCameraFixture } from './camera-fixture.mjs';
-const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const browser = await chromium.launch(browserOptions);
 try {
  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+ page.on('pageerror', error => console.error('Browser page error:', error.message));
  await installCameraFixture(page);
  await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud);
  await page.locator('#play').click(); await page.waitForFunction(() => window.testCamera?.running);

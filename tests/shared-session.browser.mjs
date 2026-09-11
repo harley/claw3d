@@ -1,6 +1,7 @@
 // Built frontend, real shared API and isolated cookies. Synthetic camera events only.
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
+import { browserOptions } from '../scripts/browser-options.mjs';
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,7 +14,7 @@ const dir = await mkdtemp(join(tmpdir(), 'cloud-claw-browser-'));
 await mkdir('.screenshots', { recursive: true });
 const app = await createPilotServer({ filename: join(dir, 'pilot.sqlite'), origin, staffCode, hostCode, secure: false });
 await new Promise(resolve => app.server.listen(4208, '127.0.0.1', resolve));
-const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const browser = await chromium.launch(browserOptions);
 const errors = []; let activePage;
 async function open(context) {
   const page = await context.newPage(); activePage = page; page.on('pageerror', error => errors.push(error.message));

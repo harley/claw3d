@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-const browser = await chromium.launch({ channel: 'chrome', headless: true });
+import { browserOptions } from '../scripts/browser-options.mjs';
+const browser = await chromium.launch(browserOptions);
 try {
  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
  await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud);
