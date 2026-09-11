@@ -14,6 +14,7 @@ function fingerSamples(r) {
 export class ToyContacts {
   constructor(toys) {
     this.toys = toys; this.meshes = new Map(); this.ray = new T.Raycaster(); this.ray.firstHitOnly = true;
+    this.obstacleBounds = new Map();
     for (const [id, root] of toys) {
       const meshes = [];
       root.traverse(mesh => { if (!mesh.isMesh) return; if (!mesh.geometry.boundsTree) mesh.geometry.boundsTree = new MeshBVH(mesh.geometry, { maxLeafSize: 8 }); mesh.raycast = acceleratedRaycast; meshes.push(mesh); });
@@ -80,6 +81,17 @@ export class ToyContacts {
       if (game.elapsed > .95) game.plan.radii = [...pose.radii];
     }
   }
+  // A full setFromObject traversal per obstacle per frame is the rock() hot
+  // cost; an unchanged world matrix means an unchanged box.
+  boundsFor(id) {
+    const object = this.toys.get(id);
+    object.updateWorldMatrix(true, true);
+    const cached = this.obstacleBounds.get(id);
+    if (cached && cached.matrix.equals(object.matrixWorld)) return cached.box;
+    const box = new T.Box3().setFromObject(object);
+    this.obstacleBounds.set(id, { box, matrix: object.matrixWorld.clone() });
+    return box;
+  }
   rock(game, toy, object, dt) {
     const impact = toy.impact; if (!impact) return;
     const pressed = ['descend', 'grip'].includes(game.phase), target = pressed ? impact.target : 0;
@@ -89,7 +101,7 @@ export class ToyContacts {
     const axis = vector(impact.z, 0, -impact.x).normalize(), bounds = new T.Box3();
     const baseline = new T.Box3().setFromObject(object);
     const overlap = (a, b) => Math.max(0, Math.min(a.max.x, b.max.x) - Math.max(a.min.x, b.min.x)) * Math.max(0, Math.min(a.max.y, b.max.y) - Math.max(a.min.y, b.min.y)) * Math.max(0, Math.min(a.max.z, b.max.z) - Math.max(a.min.z, b.min.z));
-    const obstacles = game.toys.filter(other => other !== toy && !other.claimed).map(other => new T.Box3().setFromObject(this.toys.get(other.id)));
+    const obstacles = game.toys.filter(other => other !== toy && !other.claimed).map(other => this.boundsFor(other.id));
     const apply = angle => { object.quaternion.copy(new T.Quaternion().setFromAxisAngle(axis, angle).multiply(yaw)); object.position.y = base; object.updateWorldMatrix(true, true); bounds.setFromObject(object); object.position.y += base - bounds.min.y; object.updateWorldMatrix(true, true); bounds.setFromObject(object); };
     let angle = impact.angle, accepted = false;
     for (let attempt = 0; attempt < 9; attempt++) {

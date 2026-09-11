@@ -108,10 +108,10 @@ function presentMessage(title, hint, key, duration = 0) {
   // Opacity preserves the live region; timed announcements stay available to assistive tech.
   $('action-copy').classList.toggle('expired', Boolean(messageUntil && performance.now() >= messageUntil));
 }
-function phaseSound(phase) {
+function phaseSound(phase, modal) {
   if (phase === lastSoundPhase) return;
   lastSoundPhase = phase;
-  if (paused || document.hidden || document.querySelector('dialog[open]')) return;
+  if (paused || document.hidden || modal) return;
   if (phase === 'anticipate') { note(880, .22, 0, 'square', 110); fanfare('drop'); }
   else if (phase === 'descend') [360, 280, 200].forEach((f, i) => note(f, .1, i * .09, 'square', f / 2));
   else if (phase === 'grip') { note(120, .08, 0, 'square', 60); note(180, .08, .09, 'square', 90); }
@@ -121,7 +121,9 @@ function phaseSound(phase) {
   } else if (phase === 'deliver' && game.plan?.prize) fanfare('shelf');
   else if (phase === 'release' && game.plan?.prize) { note(740, .1, 0, 'sine'); note(980, .14, .1, 'sine'); }
 }
-function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ? 'loading' : 'off' }) {
+// The frame loop passes its per-frame modal state; event-driven callers let
+// the default query run once here instead of once per consumer.
+function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ? 'loading' : 'off' }, modal = Boolean(document.querySelector('dialog[open]'))) {
   const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
   let title = 'READY PLAYER?', hint = 'Three turns. One high score.', button = 'Play', kicker = 'CLOUD CLAW';
   if (recovering) { title = 'Let’s get you back in'; hint = 'Ask your host to resume.'; button = 'OPERATOR'; }
@@ -133,12 +135,12 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
     hint = '';
     button = '';
   }
-  phaseSound(phase);
+  phaseSound(phase, modal);
   // Attract mode: the idle machine gently pulses its invitation until a hand
   // takes control. CSS disables the pulse under reduced motion.
   $('action-copy').classList.toggle('attract', phase === 'idle' && !paused && !recovering && (!cameraControls?.running || cameraControls.waiting));
   const cue = carouselCue(game.carouselTime), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
-  const cueVisible = phase === 'aim' && nearPickup && !paused && !frozen && !document.hidden && !document.querySelector('dialog[open]') && cameraControls?.running && !cameraControls.waiting;
+  const cueVisible = phase === 'aim' && nearPickup && !paused && !frozen && !document.hidden && !modal && cameraControls?.running && !cameraControls.waiting;
   setHidden($('jackpot-signal'), !cueVisible);
   const cueKey = `${phase}:${cue.lights}:${cue.now}`; if (cueKey !== lastCue) { if (cueVisible && cue.lights) note(cue.now ? 880 : 440 + cue.lights * 110, .09); lastCue = cueKey; }
   if ($('jackpot-signal').dataset.cue !== cueKey) {
@@ -189,7 +191,7 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
   const timed = deliveryPhases.has(phase) || phase === 'result';
   presentMessage(title, hint, `${['anticipate', 'descend'].includes(phase) ? 'drop' : phase}:${turnNumber}:${title}:${hint}`, timed ? 1600 : 0);
   if ($('arcade').dataset.phase !== phase) $('arcade').dataset.phase = phase;
-  const signature = JSON.stringify([title, hint, button, kicker, total, run?.name, pendingPlayer?.name, completedRun?.id, paused]);
+  const signature = [title, hint, button, kicker, total, run?.name, pendingPlayer?.name, completedRun?.id, paused].join('');
   if (signature === lastStatus) return; lastStatus = signature;
   $('player-name').textContent = run?.name || pendingPlayer?.name || completedRun?.name || 'Your turn?'; $('score').textContent = String(total).padStart(3, '0'); $('turn').textContent = run ? `${turnNumber} / 3` : '— / 3';
   $('phase-label').textContent = kicker; $('button-text').textContent = button;
@@ -436,11 +438,14 @@ function frame(time) {
   if (stopped) return;
   const raw = previous ? (time - previous) / 1000 : 1 / 60, dt = Math.min(raw, .05); previous = time;
   if (import.meta.env.DEV && !document.hidden) { frames.push(raw * 1000); if (frames.length > 1800) frames.shift(); }
-  const aiming = game.phase === 'aim', modal = Boolean(document.querySelector('dialog[open]'));
+  // One dialog query per frame; every consumer below shares it.
+  const openDialogs = document.querySelectorAll('dialog[open]');
+  const aiming = game.phase === 'aim', modal = openDialogs.length > 0;
+  const modalBeyondFinal = modal && [...openDialogs].some(dialog => dialog.id !== 'final');
   const cameraWaiting = aiming && (!cameraControls?.running || cameraControls.waiting);
   // Only explicit operator pause stops a drop already in flight.
   const blocked = paused || (aiming && (cameraWaiting || modal || document.hidden));
-  if (paused || document.querySelector('dialog[open]:not(#final)') || document.hidden) silenceNotes();
+  if (paused || modalBeyondFinal || document.hidden) silenceNotes();
   setHidden($('pause-banner'), !paused);
   setText('pause-banner', 'Paused by host');
   const input = { ...cameraControls?.input || { x: 0, z: 0 } };
@@ -463,7 +468,7 @@ function frame(time) {
   } else input.x = input.z = 0;
   try {
     const feedback = cameraControls?.feedback || { kind: 'off', progress: 0, controlEnabled: false };
-    updateUI(feedback);
+    updateUI(feedback, modal);
     if (feedback.kind !== observedControl) { observedControl = feedback.kind; track('control_state', { state: feedback.kind, phase: game.phase }); }
     if (cameraReadyAt !== null && feedback.kind === 'tracking') { track('time_to_control', { acquisitionMs: Math.min(604800000, performance.now() - cameraReadyAt) }); cameraReadyAt = null; }
     if (game.phase !== observedPhase) { observedPhase = game.phase; track('phase_change', { phase: game.phase }); }
