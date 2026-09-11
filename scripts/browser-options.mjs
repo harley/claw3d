@@ -5,3 +5,11 @@ export const browserOptions = {
   args: process.env.GITHUB_ACTIONS === 'true'
     ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : [],
 };
+
+// Routine captures can outlast short game phases on software rendering.
+// Keep them for local visual review; CI still runs every behavior assertion
+// and captures failures after the assertion has already failed.
+export const captureArtifacts = process.env.GITHUB_ACTIONS !== 'true';
+export async function captureScreenshot(page, options) {
+  if (captureArtifacts) await page.screenshot(options);
+}

@@ -1,7 +1,7 @@
 // Uses Chromium's synthetic video device, never a physical webcam.
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { browserOptions } from '../scripts/browser-options.mjs';
+import { browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
 const browser = await chromium.launch({ ...browserOptions, args: [...browserOptions.args, '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, permissions: ['camera'] });
@@ -45,11 +45,11 @@ try {
     await page.waitForFunction(() => { const video = document.getElementById('camera-video'), rect = video.getBoundingClientRect(); return Math.abs(rect.width / rect.height - video.videoWidth / video.videoHeight) < .01; });
     assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('camera-video')).transform.startsWith('matrix(-1')), true);
   }
-  await page.screenshot({ path: '.screenshots/camera-ready-wide.png' });
+  await captureScreenshot(page, { path: '.screenshots/camera-ready-wide.png' });
   await page.setViewportSize({ width: 820, height: 900 });
   assert.equal(await page.locator('#hint').isVisible(), true);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-  await page.screenshot({ path: '.screenshots/camera-ready-narrow.png' });
+  await captureScreenshot(page, { path: '.screenshots/camera-ready-narrow.png' });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.locator('#play').click(); await page.locator('#name').fill('   '); await page.locator('#name').press('Enter');
   assert.equal(await page.locator('#registration').isVisible(), false);
@@ -65,7 +65,7 @@ try {
   await page.waitForFunction(() => window.cameraRenderBudget === false);
   assert.equal(await page.evaluate(() => document.getElementById('camera-video').srcObject), null);
   await page.locator('#camera-setup .panel-head button').click();
-  await page.screenshot({ path: '.screenshots/camera-only.png' });
+  await captureScreenshot(page, { path: '.screenshots/camera-only.png' });
   assert.deepEqual(errors, []);
   console.log('PASS opt-in real worker/model with synthetic camera; camera-only input; hand-loss timer hold; blur does not latch pause; separate camera setup; shutdown');
   await context.close();

@@ -2,7 +2,7 @@
 import { installCameraFixture, cameraInput, cameraDrop, assertScoredStart } from './camera-fixture.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { browserOptions } from '../scripts/browser-options.mjs';
+import { browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
 import { writeFile } from 'node:fs/promises';
 const browser = await chromium.launch(browserOptions);
 const context = await browser.newContext({viewport:{width:1440,height:900},reducedMotion:'no-preference'});
@@ -40,7 +40,7 @@ async function catchTurn(){
  } else await phase('result');
 }
 try {
- await open();await page.screenshot({path:'.screenshots/event-hero.png'});
+ await open();await captureScreenshot(page, {path:'.screenshots/event-hero.png'});
  const idleWrites = await page.evaluate(async () => {
   let writes = 0;
   const observer = new MutationObserver(records => { writes += records.length; });
@@ -60,11 +60,11 @@ try {
  await cameraInput(page,{x:-1,z:0});await page.waitForTimeout(1800);await cameraInput(page,{x:0,z:0});await catchTurn();
  assert.equal((await snap()).event.run.turns[1].score,0);
  await phase('aim');assert.equal((await snap()).event.turn,3);
- await aimButter();await page.screenshot({path:'.screenshots/event-last-claw.png'});await catchTurn();await page.locator('#final').waitFor();
+ await aimButter();await captureScreenshot(page, {path:'.screenshots/event-last-claw.png'});await catchTurn();await page.locator('#final').waitFor();
  assert.equal((await snap()).event.complete.total,200);assert.equal((await snap()).event.board.runs.length,1);
  await page.locator('#final-leaderboard').click(); await page.locator('#result-open').click();
  assert.equal(await page.locator('#final-score').textContent(),'200','reopening restores the full score after interrupted count-up');
- await page.screenshot({path:'.screenshots/event-result.png'});
+ await captureScreenshot(page, {path:'.screenshots/event-result.png'});
  await page.reload();await page.waitForFunction(()=>window.__littleCloud);assert.equal((await snap()).event.board.runs.length,1);
  console.log('PASS official: catch + miss + catch, restock, exactly three turns, persisted total 200');
  await register('');
@@ -80,7 +80,7 @@ try {
  const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('coderpush:event:v1')));assert.equal(saved.boards[0].runs.length,2);
  const download=page.waitForEvent('download');await page.locator('#export').click();assert.match((await download).suggestedFilename(),/cloud-claw-sessions/);await page.locator('#operator .panel-head button').click();
  console.log('PASS interrupted player recovery, safe board rotation, export');
- await page.setViewportSize({width:820,height:900});await page.screenshot({path:'.screenshots/event-narrow.png'});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ await page.setViewportSize({width:820,height:900});await captureScreenshot(page, {path:'.screenshots/event-narrow.png'});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  // An unfinished practice run from an older client stays excluded when resumed.
  await page.evaluate(() => {
   const saved = JSON.parse(localStorage.getItem('coderpush:event:v1'));

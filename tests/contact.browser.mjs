@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { browserOptions } from '../scripts/browser-options.mjs';
+import { browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
 const browser = await chromium.launch(browserOptions);
 try {
  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -25,7 +25,7 @@ try {
   }
   scene.renderer.render=render; if(peakGame){scene.update(peakGame,0,0,{x:0,z:0},null);scene.inspect('butter');} return results;
  });
- console.log(JSON.stringify(report,null,2)); await page.screenshot({path:'.screenshots/toy-contact.png'});
+ console.log(JSON.stringify(report,null,2)); await captureScreenshot(page, {path:'.screenshots/toy-contact.png'});
  assert.equal(report.find(r=>r.name==='centred').caught,'butter'); assert.equal(report.find(r=>r.name==='jackpot').caught,'sprout');
  for(const name of ['side','front']) {const row=report.find(r=>r.name===name);assert.equal(row.caught,null);if(name==='front')assert.ok(row.maxTilt>.03,`${name} visible contact reaction`);assert.ok(row.blocked,`${name} mesh descent stop`);assert.ok(row.minGround>-.015);}
  assert.equal(report.find(r=>r.name==='empty').maxTilt,0);

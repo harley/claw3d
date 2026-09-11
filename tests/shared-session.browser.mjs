@@ -1,7 +1,7 @@
 // Built frontend, real shared API and isolated cookies. Synthetic camera events only.
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { browserOptions } from '../scripts/browser-options.mjs';
+import { browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -120,7 +120,7 @@ async function scoredAndFeedback() {
   assert.equal(cameraFailures().length, 1, 'runtime error is persisted once');
   assert.equal(JSON.parse(cameraFailures()[0].data).code, 'worker_timeout');
   assert.equal(app.playtest.read().summary.cameraFailureSessions, 1);
-  await page.screenshot({ path: '.screenshots/camera-recovery.png' });
+  await captureScreenshot(page, { path: '.screenshots/camera-recovery.png' });
   await page.evaluate(() => { window.testCamera.failNextStart = true; });
   await page.getByRole('button', { name: 'Restart camera', exact: true }).click();
   await page.locator('#camera-setup').waitFor();
@@ -165,12 +165,12 @@ async function scoredAndFeedback() {
   assert.equal(feedbackRows().length, 1, 'acknowledgement corresponds to one persisted feedback');
   assert.equal(JSON.parse(feedbackRows()[0].data).comment, comment);
   assert.equal(feedbackRows()[0].mode, 'event');
-  await page.screenshot({ path: '.screenshots/scored-feedback-saved.png' });
+  await captureScreenshot(page, { path: '.screenshots/scored-feedback-saved.png' });
   await page.locator('#feedback-dialog [aria-label="Close feedback"]').click();
   await page.locator('#feedback-dialog').waitFor({ state: 'hidden' });
   await finish(page, 2, true);
   await page.waitForFunction(() => document.getElementById('final-rank').textContent.includes('SAVED'));
-  await page.screenshot({ path: '.screenshots/scored-result.png' });
+  await captureScreenshot(page, { path: '.screenshots/scored-result.png' });
   assert.equal(await page.locator('#final-turns .turn-chip').count(), 3);
   assert.match(await page.locator('#final-rank').textContent(), /RANK #7/);
   assert.equal(await page.locator('#leaders li').count(), 5);
@@ -272,7 +272,7 @@ try {
   await page.locator('#register-cancel').click();
   const cookies = await a.cookies();
   assert.ok(cookies.find(cookie => cookie.name === 'cc_owner').httpOnly);
-  await page.screenshot({ path: '.screenshots/shared-pending.png' });
+  await captureScreenshot(page, { path: '.screenshots/shared-pending.png' });
   await page.reload(); await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
   assert.equal(await page.locator('#player-name').textContent(), 'Your turn?');
   hold = false;
@@ -283,7 +283,7 @@ try {
   await page.waitForFunction(() => document.getElementById('final-rank').textContent.includes('SAVED'));
   assert.equal(await page.locator('#leaders li').count(), 2);
   assert.match(await page.locator('#final-rank').textContent(), /RANK #1/);
-  await page.screenshot({ path: '.screenshots/shared-saved.png' });
+  await captureScreenshot(page, { path: '.screenshots/shared-saved.png' });
   await page.locator('#next-player').click();
   assert.equal(await page.locator('#name').inputValue(), '');
   await page.locator('#register-cancel').click();
@@ -291,7 +291,7 @@ try {
   page = await open(a); assert.equal(await page.locator('#leaders li').count(), 2);
   await openOperator(page);
   assert.match(await page.locator('#storage-status').textContent(), /SHARED/);
-  await page.screenshot({ path: '.screenshots/shared-host.png' });
+  await captureScreenshot(page, { path: '.screenshots/shared-host.png' });
   backup(join(dir, 'pilot.sqlite'), join(dir, 'restored.sqlite'));
   const restored = openDatabase(join(dir, 'restored.sqlite'));
   assert.equal(restored.board().runs.length, 2); restored.close();

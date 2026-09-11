@@ -1,13 +1,13 @@
 import { installCameraFixture, cameraInput, cameraDrop, assertScoredStart } from './camera-fixture.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { browserOptions } from '../scripts/browser-options.mjs';
+import { browserOptions, captureScreenshot, captureArtifacts } from '../scripts/browser-options.mjs';
 import { writeFile } from 'node:fs/promises';
 const browser = await chromium.launch(browserOptions);
 try {
   const errors = [];
   if (!process.argv.includes('--clearance-only')) {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce', recordVideo: { dir: '.screenshots/', size: { width: 1440, height: 900 } } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce', ...(captureArtifacts ? { recordVideo: { dir: '.screenshots/', size: { width: 1440, height: 900 } } } : {}) });
   await installCameraFixture(page);
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud);
@@ -54,7 +54,7 @@ try {
   await phase('descend'); assert.equal((await snap()).caught, null);
   await page.waitForTimeout(250); const during = (await snap()).toys.find(t => t.id === 'sprout').position;
   assert.ok(Math.hypot(before[0] - during[0], before[2] - during[2]) > .03);
-  await phase('grip'); assert.equal((await snap()).caught, 'sprout'); await page.screenshot({ path: '.screenshots/carousel-grip.png' });
+  await phase('grip'); assert.equal((await snap()).caught, 'sprout'); await captureScreenshot(page, { path: '.screenshots/carousel-grip.png' });
   await phase('result'); assert.equal((await snap()).event.run.turns[0].score, 200);
   console.log('PASS camera cue + simulated 550ms hold + moving descent + actual star catch: 200');
   await phase('aim'); await aim();
@@ -65,9 +65,9 @@ try {
   await page.waitForFunction(() => { const t = window.__littleCloud.snapshot().event.carouselTime % 5.6; return t >= 5.4 && t < 5.55; });
   await cameraDrop(page); await phase('result'); assert.equal((await snap()).event.complete.total, 200);
   assert.equal((await snap()).event.complete.turns[2].score, 0); assert.deepEqual(errors, []);
-  await page.screenshot({ path: '.screenshots/carousel-result.png' });
+  await captureScreenshot(page, { path: '.screenshots/carousel-result.png' });
   console.log('PASS late drop misses, final total 200, no browser errors');
-  const video = page.video(); await page.close(); await video.saveAs('.screenshots/carousel-gameplay.webm'); await video.delete();
+  const video = page.video(); await page.close(); if (video) { await video.saveAs('.screenshots/carousel-gameplay.webm'); await video.delete(); }
   }
   // Sweep actual rendered star geometry against all stationary toys. No GPU
   // draws are needed to exercise the exact transforms and bounding geometry.

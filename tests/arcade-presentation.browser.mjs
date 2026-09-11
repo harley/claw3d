@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { browserOptions } from '../scripts/browser-options.mjs';
+import { browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
 import { installCameraFixture } from './camera-fixture.mjs';
 const browser = await chromium.launch(browserOptions);
 try {
@@ -24,11 +24,11 @@ try {
  await page.locator('#play').click(); await page.locator('#name').press('Enter');
  await page.evaluate(() => window.testCamera.clench());
  assert.equal(await page.locator('#status').textContent(), 'DROP!');
- await page.screenshot({ path: '.screenshots/arcade-drop.png' });
+ await captureScreenshot(page, { path: '.screenshots/arcade-drop.png' });
  await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'lift');
  assert.match(await page.locator('#status').textContent(), /^(GOT IT!|MISSED)$/);
  assert.equal(await page.evaluate(() => window.__littleCloud.snapshot().event.run.turns.length), 0);
- await page.screenshot({ path: '.screenshots/arcade-outcome.png' });
+ await captureScreenshot(page, { path: '.screenshots/arcade-outcome.png' });
  await page.waitForTimeout(1700);
  // The outcome message must not linger: faded out, or already replaced by an
  // empty phase message (transfer/release show no copy and reset the fade).
@@ -49,7 +49,7 @@ try {
  await page.waitForTimeout(1800);
  assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).opacity), '1', 'recovery guidance never expires');
  assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).animationName), 'none');
- await page.screenshot({ path: '.screenshots/arcade-reduced-narrow.png', fullPage: true });
+ await captureScreenshot(page, { path: '.screenshots/arcade-reduced-narrow.png', fullPage: true });
  const preview = await page.locator('#camera-preview').boundingBox();
  assert.ok(preview && preview.height > 0, 'camera preview is visible before measuring');
  assert.ok(preview.y + preview.height < 710, 'uncropped preview and recognition fit above the short-screen footer');

@@ -1,7 +1,7 @@
 // Sample the actual animated mesh bounds, including the loaded toy and return.
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { browserOptions } from '../scripts/browser-options.mjs';
+import { browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
 const browser = await chromium.launch(browserOptions);
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -45,5 +45,5 @@ try {
   console.log(JSON.stringify(report));
   await page.goto('http://127.0.0.1:4196/?inspect=miso&phase=deliver');
   await page.waitForFunction(() => window.__littleCloud);
-  await page.screenshot({ path: '.screenshots/delivery-clearance.png' });
+  await captureScreenshot(page, { path: '.screenshots/delivery-clearance.png' });
 } finally { await browser.close(); }
