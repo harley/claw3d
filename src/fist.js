@@ -15,26 +15,31 @@ export function fistEvidence(landmarks,gesture,score=0,aspect=1){
 
 // Require an open hand first. Only visible, consecutive fist frames advance
 // confirmation; a long frame gap or another hand cancels the pending action.
+// `signal(name, cause)` reports the gesture funnel — hold_start when credit
+// begins, hold_cancelled with the precise cause when an unfired hold is lost.
+// Signals never alter recognition behaviour.
 export class FistDrop {
-  constructor(){this.reset();}
-  reset(){this.armed=false;this.openMs=0;this.held=0;this.last=0;this.wasClosed=false;this.uncertainSince=0;this.fired=false;}
+  constructor(signal){this.signal=signal;this.reset();}
+  emit(name,cause){try{this.signal?.(name,cause);}catch{/* telemetry must never alter recognition */}}
+  cancelled(cause){if(this.held>0&&!this.fired)this.emit('hold_cancelled',cause);}
+  reset(cause='blocked'){this.cancelled(cause);this.armed=false;this.openMs=0;this.held=0;this.last=0;this.wasClosed=false;this.uncertainSince=0;this.fired=false;}
   update({open=false,closed=false,visible=true},now){
     const gap=this.last?now-this.last:0;
-    if(!visible||gap>300){this.reset();this.last=now;return{active:false,progress:0,fired:false};}
+    if(!visible||gap>300){this.reset(!visible?'hand_lost':'frame_gap');this.last=now;return{active:false,progress:0,fired:false};}
     const dt=clamp(gap,0,300);this.last=now;
     if(this.fired)return{active:true,progress:1,fired:false};
-    if(open){this.wasClosed=false;this.held=0;this.uncertainSince=0;this.openMs+=dt;if(this.openMs>=200)this.armed=true;return{active:false,progress:0,fired:false};}
+    if(open){this.cancelled('opened');this.wasClosed=false;this.held=0;this.uncertainSince=0;this.openMs+=dt;if(this.openMs>=200)this.armed=true;return{active:false,progress:0,fired:false};}
     if(!this.armed){this.openMs=0;return{active:false,progress:0,fired:false};}
     if(!closed){
       this.wasClosed=false;
       this.uncertainSince||=now;
-      if(now-this.uncertainSince>130)this.held=0;
+      if(now-this.uncertainSince>130){this.cancelled('uncertain_reset');this.held=0;}
       return{active:this.held>0,progress:this.held/FIST_HOLD_MS,fired:false};
     }
-    if(this.uncertainSince && now-this.uncertainSince>130)this.held=0;
+    if(this.uncertainSince && now-this.uncertainSince>130){this.cancelled('uncertain_reset');this.held=0;}
     // Only the interval between two closed detections counts as a hold.
     // Opening or uncertainty must not receive credit on the returning frame.
-    if(this.wasClosed&&!this.uncertainSince)this.held+=dt;
+    if(this.wasClosed&&!this.uncertainSince){if(!this.held&&dt>0)this.emit('hold_start');this.held+=dt;}
     this.wasClosed=true;
     this.uncertainSince=0;
     const progress=clamp(this.held/FIST_HOLD_MS,0,1);this.fired=progress===1;

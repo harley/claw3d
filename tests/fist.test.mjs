@@ -161,3 +161,59 @@ test('slow detections count only time between closed frames, never the open-to-f
   assert.equal(g.update(closed,2250).fired,false);
   assert.equal(g.update(closed,2500).fired,true);
 });
+
+test('the gesture funnel reports hold_start once and precise cancellation causes',()=>{
+  const events=[];const signal=(name,cause)=>events.push(cause?`${name}:${cause}`:name);
+  const g=new FistDrop(signal);arm(g);
+  g.update(closed,1325);g.update(closed,1390);
+  assert.deepEqual(events,['hold_start']);
+  g.update(open,1455);
+  assert.deepEqual(events,['hold_start','hold_cancelled:opened']);
+  events.length=0;arm2(g,1520);
+  g.update(closed,1845);g.update(closed,1910);
+  for(let t=1975;t<=2170;t+=65)g.update({},t);
+  assert.deepEqual(events,['hold_start','hold_cancelled:uncertain_reset']);
+  events.length=0;arm2(g,2235);
+  g.update(closed,2560);g.update(closed,2625);
+  g.update(closed,3000);
+  assert.deepEqual(events,['hold_start','hold_cancelled:frame_gap']);
+  events.length=0;arm2(g,3065);
+  g.update(closed,3390);g.update(closed,3455);
+  g.update({closed:true,visible:false},3520);
+  assert.deepEqual(events,['hold_start','hold_cancelled:hand_lost']);
+  events.length=0;arm2(g,3585);
+  g.update(closed,3910);g.update(closed,3975);
+  g.reset();
+  assert.deepEqual(events,['hold_start','hold_cancelled:blocked']);
+  events.length=0;arm2(g,4040);
+  g.update(closed,4365);g.update(closed,4430);
+  g.reset('stale');
+  assert.deepEqual(events,['hold_start','hold_cancelled:stale']);
+});
+function arm2(g,from){for(let t=from;t<=from+260;t+=65)g.update(open,t);assert.equal(g.armed,true);}
+
+test('a fired hold never reports a cancellation and signals never change recognition',()=>{
+  const events=[];
+  const g=new FistDrop((name,cause)=>events.push(cause?`${name}:${cause}`:name));
+  const silent=new FistDrop();
+  arm(g);arm(silent);
+  const results=[],silents=[];
+  for(let t=1325;t<=1910;t+=65){results.push(g.update(closed,t));silents.push(silent.update(closed,t));}
+  assert.deepEqual(results,silents);
+  assert.equal(results.at(-1).fired,true);
+  assert.deepEqual(events,['hold_start']);
+  g.reset();
+  assert.deepEqual(events,['hold_start'],'an accepted drop is not a cancellation');
+});
+
+test('a throwing signal callback never alters recognition or leaves state behind',()=>{
+  const g=new FistDrop(()=>{throw new Error('telemetry down');});
+  const silent=new FistDrop();
+  arm(g);arm(silent);
+  const results=[],silents=[];
+  for(let t=1325;t<=1910;t+=65){results.push(g.update(closed,t));silents.push(silent.update(closed,t));}
+  assert.deepEqual(results,silents);
+  assert.equal(results.at(-1).fired,true);
+  g.reset();
+  assert.equal(g.held,0);assert.equal(g.armed,false);
+});

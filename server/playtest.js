@@ -4,7 +4,7 @@ import { RULES } from '../src/event-session.js';
 export const PLAYTEST_RETENTION_MS = 30 * 86400_000;
 export const PLAYTEST_MAX_EVENTS = 100_000;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
-const TYPES = new Set(['page_open', 'camera_start', 'camera_ready', 'camera_error', 'control_state', 'phase_change', 'rehearsal_start', 'drop', 'run_start', 'turn_complete', 'run_complete', 'replay', 'feedback', 'client_error', 'performance', 'save_error']);
+const TYPES = new Set(['page_open', 'camera_start', 'camera_ready', 'camera_error', 'control_state', 'phase_change', 'rehearsal_start', 'hold_start', 'hold_cancelled', 'time_to_control', 'drop', 'run_start', 'turn_complete', 'run_complete', 'replay', 'feedback', 'client_error', 'performance', 'save_error']);
 const ENUMS = {
   state: ['off', 'loading', 'ready', 'calibrating', 'tracking', 'clenching', 'clasping', 'dropping', 'accepted', 'lost', 'delayed', 'error', 'blocked'],
   phase: ['idle', 'aim', 'anticipate', 'descend', 'grip', 'lift', 'transfer', 'release', 'deliver', 'reveal', 'result'],
@@ -12,10 +12,11 @@ const ENUMS = {
   reason: ['renderer', 'runtime', 'unhandled', 'sync'],
   code: ['permission_denied', 'no_camera', 'camera_busy', 'camera_unavailable', 'tracking_error', 'tracking_init_error', 'worker_error', 'worker_timeout', 'camera_disconnected', 'capture_error', 'renderer_error', 'network_error', 'save_error', 'unknown'],
   category: ['controls', 'unexpected_drop', 'unfair_miss', 'stuck', 'other'],
+  cause: ['opened', 'uncertain_reset', 'hand_lost', 'frame_gap', 'blocked', 'stale'],
   prizeId: [null, ...Object.keys(RULES.points)],
 };
-const NUMBERS = { acquisitionMs: 604800000, durationMs: 604800000, captureAgeMs: 604800000, sampleMs: 604800000, averageFps: 1000, p95FrameMs: 60000, framesOver33ms: 10000000, frames: 10000000, turn: 3, score: 600, total: 600 };
-const integerFields = new Set(['turn', 'score', 'total', 'frames', 'framesOver33ms']);
+const NUMBERS = { acquisitionMs: 604800000, durationMs: 604800000, captureAgeMs: 604800000, sampleMs: 604800000, averageFps: 1000, p95FrameMs: 60000, framesOver33ms: 10000000, frames: 10000000, turn: 3, score: 600, total: 600, resultHz: 240, visionP50Ms: 60000, visionP95Ms: 60000, rejectOverAge: 10000000, rejectOutOfOrder: 10000000, rejectHidden: 10000000, rejectInvalid: 10000000 };
+const integerFields = new Set(['turn', 'score', 'total', 'frames', 'framesOver33ms', 'rejectOverAge', 'rejectOutOfOrder', 'rejectHidden', 'rejectInvalid']);
 const invalid = () => { throw new ApiError(400, 'Invalid playtest event.'); };
 function object(value, keys) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !keys.includes(key))) invalid();
@@ -35,6 +36,7 @@ function eventData(value, type) {
     result[key] = key === 'comment' ? field.trim() : field;
   }
   if (type === 'feedback' && !result.category) invalid();
+  if (type === 'hold_cancelled' && !result.cause) invalid();
   return result;
 }
 function batch(input) {
@@ -103,7 +105,11 @@ export function readPlaytestReport(db, since, { now = Date.now, maxEvents = PLAY
     const feedbackCounts = ENUMS.category.map(category => `SUM(type='feedback' AND json_extract(data,'$.category')='${category}') AS feedback_${category}`).join(',');
     const cohorts = db.prepare(`SELECT build,mode,COUNT(*) AS events,COUNT(DISTINCT session_id) AS sessions,
       ${typeCounts},${feedbackCounts},${cameraFailureCounts},AVG(CASE WHEN type='performance' THEN json_extract(data,'$.averageFps') END) AS averageFps,
-      MAX(CASE WHEN type='performance' THEN json_extract(data,'$.p95FrameMs') END) AS worstP95FrameMs
+      MAX(CASE WHEN type='performance' THEN json_extract(data,'$.p95FrameMs') END) AS worstP95FrameMs,
+      AVG(CASE WHEN type='performance' THEN json_extract(data,'$.visionP50Ms') END) AS visionP50Ms,
+      MAX(CASE WHEN type='performance' THEN json_extract(data,'$.visionP95Ms') END) AS worstVisionP95Ms,
+      AVG(CASE WHEN type='time_to_control' THEN json_extract(data,'$.acquisitionMs') END) AS averageAcquisitionMs,
+      MAX(CASE WHEN type='time_to_control' THEN json_extract(data,'$.acquisitionMs') END) AS worstAcquisitionMs
       FROM playtest_events WHERE received_at>=? GROUP BY build,mode ORDER BY events DESC,build,mode LIMIT 40`).all(since).map(row => ({
         build: row.build, mode: row.mode, events: row.events, sessions: row.sessions,
         runStarts: row.run_start, runCompletes: row.run_complete,
@@ -111,6 +117,8 @@ export function readPlaytestReport(db, since, { now = Date.now, maxEvents = PLAY
         byType: Object.fromEntries([...TYPES].map(type => [type, row[type]])),
         feedback: Object.fromEntries(ENUMS.category.map(category => [category, row[`feedback_${category}`] || 0])),
         averageFps: row.averageFps, worstP95FrameMs: row.worstP95FrameMs,
+        visionP50Ms: row.visionP50Ms, worstVisionP95Ms: row.worstVisionP95Ms,
+        averageAcquisitionMs: row.averageAcquisitionMs, worstAcquisitionMs: row.worstAcquisitionMs,
       }));
     const cohortCount = db.prepare("SELECT COUNT(DISTINCT build || ':' || mode) AS count FROM playtest_events WHERE received_at>=?").get(since).count;
     const rows = db.prepare('SELECT * FROM playtest_events WHERE received_at>=? ORDER BY received_at DESC,rowid DESC LIMIT 500').all(since);

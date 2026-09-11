@@ -9,8 +9,8 @@ export const OWNER_LOSS_GRACE = 650;
 const LINKS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 
 export class HandController {
-  constructor({ video, overlay, select, onState, onInput, onStart, onDrop, getPhase, getProfile, onDiagnostic = () => {} }) {
-    Object.assign(this, { video, overlay, select, onState, onInput, onStart, onDrop, getPhase, getProfile, onDiagnostic });
+  constructor({ video, overlay, select, onState, onInput, onStart, onDrop, getPhase, getProfile, onDiagnostic = () => {}, onGesture }) {
+    Object.assign(this, { video, overlay, select, onState, onInput, onStart, onDrop, getPhase, getProfile, onDiagnostic, onGesture });
     this.running = false;
     this.starting = false;
     this.generation = 0;
@@ -31,7 +31,8 @@ export class HandController {
   }
 
   resetOwner() {
-    this.clasp = new ClaspGesture(); this.fist = new FistDrop();
+    this.fist?.reset('blocked'); // a discarded mid-hold still reports its cancellation
+    this.clasp = new ClaspGesture(); this.fist = new FistDrop((name, cause) => this.onGesture?.(name, cause));
     this.pointer = new OneEuroPoint();
     this.owner = null; this.neutral = null; this.candidate = null;
     this.pinchSince = 0; this.openSince = 0; this.lostSince = 0;
@@ -232,7 +233,7 @@ export class HandController {
       this.lastActivity = receivedAt; this.lastResponseCapture = capturedAt;
     }
     if (reason) {
-      this.clasp.reset(); this.fist.reset(); this.onInput({ x: 0, z: 0 });
+      this.clasp.reset(); this.fist.reset('stale'); this.onInput({ x: 0, z: 0 });
       if (reason === 'over age') this.delayTracking();
       return false;
     }
@@ -243,7 +244,7 @@ export class HandController {
   }
 
   delayTracking() {
-    this.clasp.reset(); this.fist.reset();
+    this.clasp.reset(); this.fist.reset('stale');
     this.onInput({ x: 0, z: 0 });
     this.onState({ kind: 'delayed', message: 'Tracking is slow. Keep your hand steady while it catches up.', progress: 0 });
   }
@@ -325,7 +326,7 @@ export class HandController {
     // continuation is still the same spatial track; an extra hand never is.
     if (!hand && hands.length === 1 && Math.hypot(hands[0].center.x-this.owner.x,hands[0].center.y-this.owner.y) < .08) hand = hands[0];
     if (!hand) {
-      this.clasp.reset(); this.lostSince ||= now; this.openSince = 0; this.neutral = null;this.fist.reset();
+      this.clasp.reset(); this.lostSince ||= now; this.openSince = 0; this.neutral = null;this.fist.reset('hand_lost');
       sendInput({ x: 0, z: 0 });
       this.gripping = false;
       report({ kind: 'lost', message: easy ? 'Bring one hand back to the same area.' : 'Hand lost — paused. Bring your hand back and pinch.' });

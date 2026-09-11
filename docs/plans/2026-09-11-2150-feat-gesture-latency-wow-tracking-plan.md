@@ -53,4 +53,6 @@ What shipped: GPU delegate with automatic CPU fallback at init and on a failed f
 
 Whole-change evidence (synthetic camera, headless Chrome dev build — NOT physical validation): capture-age p50 25.2→9.8 ms, p95 28.5→21.6 ms, result rate 14.7→19.7 Hz, delegate GPU, driver stream. Booth-hardware before/after and felt-latency playtest remain open, as does the step 4 accuracy A/B.
 
-Tracks 2–5 not started. Tracks 1–3 are player-facing; 4–5 are hygiene.
+Track 2 implemented 2026-09-11 (branch `feat/track2-production-telemetry`): the 30 s `performance` rollup now carries vision latency p50/p95, result rate and capture-reject counts by reason (aggregated in `camera-controls.js`, no longer DEV-only); the gesture funnel ships as `hold_start`, `hold_cancelled {cause}` and `time_to_control {acquisitionMs}`, signalled from `FistDrop`/`HandController` without touching recognition behaviour. Deviation from the plan: no separate `drop_fired` event — the existing `drop {trigger: 'gesture'}` already records exactly that funnel terminal, so a duplicate type was not added. Host report cohorts aggregate the new fields; server allowlist extended accordingly. § Acceptance targets in PRODUCT.md now names the metric behind each target.
+
+Tracks 3–5 not started. Track 3 is player-facing; 4–5 are hygiene.

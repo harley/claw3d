@@ -30,7 +30,8 @@ const playtest = createPlaytestClient({ build: __BUILD_INFO__.commit, enabled: s
 const track = (type, data = {}, subject = run || pendingPlayer || completedRun) => playtest.track(type, data, { mode: 'event', ...(subject?.id ? { runId: subject.id } : {}) });
 track('page_open');
 let observedControl = '', observedPhase = '', observedSaveError = false, cameraFailureReported = false;
-let performanceFrames = [], performanceSince = 0;
+let performanceFrames = [], performanceVisibleMs = 0, cameraReadyAt = null;
+let holdSignalTurn = -1, holdSignalCount = 0;
 const deliveryPhases = new Set(['anticipate', 'descend', 'grip', 'lift', 'transfer', 'release', 'deliver', 'reveal']);
 let nextTurnElapsed = 0;
 const tags = game.toys.map(toy => {
@@ -389,6 +390,13 @@ async function startCamera() {
       cameraControls = await createCameraControls({ video: $('camera-video'), overlay: $('camera-overlay'), select: $('camera-select'),
         canControl: () => Boolean(!startingRun && run && game.phase === 'aim' && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]')),
         onDrop: gestureDrop,
+        // Bounded so a boundary-trembling hand cannot evict funnel-critical
+        // events (drop, turn_complete) from the retry queue.
+        onGesture: (name, cause) => {
+          if (holdSignalTurn !== turnNumber) { holdSignalTurn = turnNumber; holdSignalCount = 0; }
+          if (++holdSignalCount > 20) return;
+          track(name, { phase: game.phase, ...(name === 'hold_cancelled' ? { cause } : {}) });
+        },
         onChange: state => {
           if (state.kind === 'loading') cameraFailureReported = false;
           if (state.kind === 'error') reportCameraFailure(state.code || 'unknown');
@@ -403,7 +411,11 @@ async function startCamera() {
       });
     }
     await cameraControls.start();
-    if (cameraControls.running) { track('camera_ready'); $('camera-setup').close(); }
+    if (cameraControls.running) {
+      track('camera_ready'); cameraReadyAt = performance.now(); $('camera-setup').close();
+      // Restart the rollup window so pre-camera time never dilutes vision rates.
+      performanceFrames = []; performanceVisibleMs = 0;
+    }
     else { reportCameraFailure('camera_unavailable'); $('camera-setup').showModal(); }
   } catch (error) { reportCameraFailure('camera_unavailable'); $('camera-status').textContent = `Camera unavailable: ${error.message}`; $('camera-setup').showModal(); }
   finally { cameraLoading = false; $('camera-toggle').disabled = false; updateUI(); }
@@ -450,13 +462,25 @@ function frame(time) {
     const feedback = cameraControls?.feedback || { kind: 'off', progress: 0, controlEnabled: false };
     updateUI(feedback);
     if (feedback.kind !== observedControl) { observedControl = feedback.kind; track('control_state', { state: feedback.kind, phase: game.phase }); }
+    if (cameraReadyAt !== null && feedback.kind === 'tracking') { track('time_to_control', { acquisitionMs: Math.min(604800000, performance.now() - cameraReadyAt) }); cameraReadyAt = null; }
     if (game.phase !== observedPhase) { observedPhase = game.phase; track('phase_change', { phase: game.phase }); }
     if (!document.hidden) {
       performanceFrames.push(raw * 1000); if (performanceFrames.length > 1800) performanceFrames.shift();
-      if (time - performanceSince >= 30000) {
+      // Rates divide by visible time only; hidden spans neither accrue (frame()
+      // resets `previous` on visibilitychange) nor dilute the result rate.
+      performanceVisibleMs += raw * 1000;
+      if (performanceVisibleMs >= 30000) {
         const sorted = [...performanceFrames].sort((a, b) => a - b);
-        track('performance', { frames: sorted.length, averageFps: Math.min(1000, 1000 / (sorted.reduce((a, b) => a + b, 0) / sorted.length)), p95FrameMs: Math.min(60000, sorted[Math.floor(sorted.length * .95)]), framesOver33ms: sorted.filter(ms => ms > 33.4).length });
-        performanceFrames = []; performanceSince = time;
+        const vision = cameraControls?.visionStats();
+        const rejected = vision ? Object.values(vision.rejected).reduce((sum, count) => sum + count, 0) : 0;
+        track('performance', { frames: sorted.length, averageFps: Math.min(1000, 1000 / (sorted.reduce((a, b) => a + b, 0) / sorted.length)), p95FrameMs: Math.min(60000, sorted[Math.floor(sorted.length * .95)]), framesOver33ms: sorted.filter(ms => ms > 33.4).length,
+          ...(vision?.results || rejected ? {
+            resultHz: Math.min(240, +(vision.results / (performanceVisibleMs / 1000)).toFixed(2)),
+            ...(vision.latencyP50Ms !== null ? { visionP50Ms: vision.latencyP50Ms, visionP95Ms: vision.latencyP95Ms } : {}),
+            rejectOverAge: vision.rejected['over age'] || 0, rejectOutOfOrder: vision.rejected['out of order'] || 0,
+            rejectHidden: vision.rejected['hidden capture'] || 0, rejectInvalid: vision.rejected['invalid capture'] || 0,
+          } : {}) });
+        performanceFrames = []; performanceVisibleMs = 0;
       }
     }
     if (paused || modal || document.hidden) feedback.kind = 'blocked';

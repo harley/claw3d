@@ -163,3 +163,34 @@ test('camera failure sessions include old control errors and deduplicate new err
     assert.ok(!report.events.some(e => e.type === 'camera_error'), 'complete failure count survives event truncation');
   } finally { database.close(); }
 });
+
+test('gesture funnel and vision telemetry are allowlisted, bounded and aggregated', () => {
+  const database = openDatabase(':memory:');
+  const store = createPlaytestStore(database.db);
+  try {
+    const good = batch(
+      event('hold_start', { phase: 'aim' }),
+      event('hold_cancelled', { phase: 'aim', cause: 'uncertain_reset' }),
+      event('time_to_control', { acquisitionMs: 4200 }),
+      event('performance', { averageFps: 60, p95FrameMs: 17, frames: 1800, framesOver33ms: 0,
+        resultHz: 19.7, visionP50Ms: 9.8, visionP95Ms: 21.6,
+        rejectOverAge: 1, rejectOutOfOrder: 0, rejectHidden: 0, rejectInvalid: 0 }),
+    );
+    assert.deepEqual(store.ingest(good).accepted, good.events.map(e => e.id));
+    for (const bad of [
+      batch(event('hold_cancelled', { phase: 'aim' })),
+      batch(event('hold_cancelled', { phase: 'aim', cause: 'network glitch' })),
+      batch(event('performance', { resultHz: 241 })),
+      batch(event('performance', { visionP95Ms: 60001 })),
+      batch(event('performance', { rejectOverAge: 1.5 })),
+      batch(event('time_to_control', { acquisitionMs: -1 })),
+    ]) reject(() => store.ingest(bad));
+    const cohort = store.read().summary.cohorts[0];
+    assert.equal(cohort.byType.hold_start, 1);
+    assert.equal(cohort.byType.hold_cancelled, 1);
+    assert.equal(cohort.visionP50Ms, 9.8);
+    assert.equal(cohort.worstVisionP95Ms, 21.6);
+    assert.equal(cohort.averageAcquisitionMs, 4200);
+    assert.equal(cohort.worstAcquisitionMs, 4200);
+  } finally { database.close(); }
+});
