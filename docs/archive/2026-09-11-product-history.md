@@ -150,3 +150,10 @@ The September 11 trace review found one unfinished replay with a camera error st
 Acceptance: inject a runtime failure during turn two, verify the timer and scored run survive a failed restart and successful retry, then complete exactly three acknowledged turns; a camera failure during the last accepted drop must still reach the saved result. Physical-camera replay remains separate from these synthetic checks.
 
 Verification: 95 unit tests, the production build, all seven sequential booth suites and the built shared-session suite passed. The shared regression verifies one runtime error event, one failed-restart event, unchanged run identity and aiming time, and a saved three-turn result after a final-drop camera failure. A copied production database preserved every board, run, turn and setting row; the updated report identifies the historical error session. Focused source review found no material issues.
+
+
+## Release record superseded by the phase-feedback release
+
+Last live verification, September 11, 2026: authenticated `/build-info.json` and operator panel both show clean `ea256d1` on main at [claw.coderpush.com](https://claw.coderpush.com). It includes practice removal, optional audio, the larger timer and camera-failure reporting/recovery. Railway reports deployment `4de733fc-adaf-40e6-ad73-18c89e631907` successful. This is a dated observation; recheck actual live BUILD before reporting deployment status.
+
+For `ea256d1`, the implementation record reports 95 unit tests/build, seven sequential booth suites and the built shared-session suite passing. Shared recovery tests preserve the same run through runtime camera failure, failed restart and successful retry, then save exactly three turns. Earlier decisions and per-commit verification are retained in [the historical record](archive/2026-09-11-product-history.md). Automated integration and a healthy deployment do not establish physical-camera accuracy, enjoyment or booth readiness.
