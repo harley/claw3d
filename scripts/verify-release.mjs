@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { appendFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
-import { browserContextOptions, browserOptions } from './browser-options.mjs';
+import { configureCIPage, browserContextOptions, browserOptions } from './browser-options.mjs';
 import { waitForRelease } from './release-readiness.mjs';
 import { createSecretRedactor } from './release-secrets.mjs';
 
@@ -58,7 +58,7 @@ try {
   });
   const page = await context.newPage(), errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto(origin);
+  await configureCIPage(page); await page.goto(origin);
   await page.waitForFunction(() => document.documentElement?.dataset.arcadeReady === 'true');
   await page.locator('#operator-open').click();
   await page.locator('#host-code').fill(credentials.HOST_CODE);

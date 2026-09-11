@@ -1,7 +1,7 @@
 // Built frontend, real shared API and isolated cookies. Synthetic camera events only.
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { browserContextOptions, browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
+import { configureCIPage, browserContextOptions, browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
 import { mkdtemp, rm, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -34,7 +34,7 @@ async function open(context) {
         clench() { return this.onDrop(); }
       } export { HandController as ${alias} };` });
   });
-  await page.goto(origin);
+  await configureCIPage(page); await page.goto(origin);
   if (await page.locator('#code').count()) {
     await page.locator('#code').fill(staffCode); await page.locator('#login button').click();
   }

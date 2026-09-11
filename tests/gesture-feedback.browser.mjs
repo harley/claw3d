@@ -1,7 +1,7 @@
 // Synthetic camera states exercise presentation through the real adapter.
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { browserContextOptions, browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
+import { configureCIPage, browserContextOptions, browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
 import { installCameraFixture, cameraDrop } from './camera-fixture.mjs';
 
 const browser = await chromium.launch(browserOptions);
@@ -10,7 +10,7 @@ try {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await installCameraFixture(page);
-  await page.goto(process.env.GESTURE_TEST_ORIGIN || 'http://127.0.0.1:4196');
+  await configureCIPage(page); await page.goto(process.env.GESTURE_TEST_ORIGIN || 'http://127.0.0.1:4196');
   await page.waitForFunction(() => window.__littleCloud);
   const snap = () => page.evaluate(() => window.__littleCloud.snapshot());
   const feedback = state => page.evaluate(state => { window.testCamera.feedback = state; window.testCamera.tick(); }, state);

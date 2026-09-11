@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { browserContextOptions, browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
+import { configureCIPage, browserContextOptions, browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
 import { installCameraFixture, cameraInput, assertScoredStart } from './camera-fixture.mjs';
 const browser = await chromium.launch(browserOptions);
 try {
@@ -26,7 +26,7 @@ try {
       }
     };
   });
-  const open = async () => { await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud); };
+  const open = async () => { await configureCIPage(page); await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud); };
   const volume = value => page.locator('#sound-volume').evaluate((input, value) => { input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); }, value);
   const start = async () => {
     await page.locator('#play').click(); await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running);

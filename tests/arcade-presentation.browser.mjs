@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { browserContextOptions, browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
+import { configureCIPage, browserContextOptions, browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
 import { installCameraFixture } from './camera-fixture.mjs';
 const browser = await chromium.launch(browserOptions);
 try {
@@ -8,7 +8,7 @@ try {
  page.on('console', message => { if (message.type() === 'error') console.error('Browser console:', message.text()); });
  page.on('pageerror', error => console.error('Browser page error:', error.message));
  await installCameraFixture(page);
- await page.goto('http://127.0.0.1:4196');
+ await configureCIPage(page); await page.goto('http://127.0.0.1:4196');
  try {
    await page.waitForFunction(() => window.__littleCloud || !document.getElementById('error').hidden, null, { polling: 100 });
  } catch (error) {
