@@ -24,3 +24,8 @@ Read `docs/PRODUCT.md` before changing player behavior. The immediate milestone 
 - Run browser suites sequentially: concurrent WebGL instances distort timing tests. Synthetic camera tests verify integration, not human recognition accuracy.
 - Verify the operator BUILD value after rebuilding the preview. Record physical-camera playtest results against that commit; do not label synthetic input as physical validation.
 - Keep reusable decisions in `docs/PRODUCT.md`, setup in README, and historic experiments in `docs/archive`. Do not make the conversation the only record.
+
+## Keep documentation and delivery status current
+
+- Update README and docs/PRODUCT.md whenever behavior changes. Remove contradictory current instructions and resolved assumptions; move superseded decisions and release evidence to docs/archive with a clear historical label.
+- Before reporting shipped or unshipped work, compare current main with the authenticated live BUILD and refresh relevant coordinating-task status. Refresh actual tester messages before selecting another feedback-driven change. Separate deployed functionality, unfinished proposals and physical acceptance.

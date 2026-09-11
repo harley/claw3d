@@ -1,3 +1,5 @@
+> Historical plan, superseded by the current [PRODUCT.md](../PRODUCT.md). It records the original implementation scope, not current player instructions or new deployment authorization. Practice/warm-up policy is retired; current physical acceptance remains open.
+
 # Practice-first staff playtest
 
 Approved September 9, 2026. Ship on the existing protected Railway pilot before recruiting the first five coworkers, then widen toward 100+ before the September 28 demo.
