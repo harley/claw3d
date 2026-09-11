@@ -154,7 +154,7 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
     else if (['ready', 'lost'].includes(feedback.kind)) { title = feedback.kind === 'lost' ? 'Bring your hand back' : 'Show one open hand'; hint = feedback.handCount > 1 ? 'Lower one hand to begin.' : 'Hold it still in the camera.'; }
     else if (feedback.kind === 'delayed') { title = 'Hold steady'; hint = 'Tracking delayed.'; }
     else if (feedback.kind === 'calibrating') { title = 'Hand found'; hint = 'Hold still for a moment.'; }
-    else if (['clenching', 'dropping'].includes(feedback.kind) && feedback.controlEnabled) { title = feedback.progress > 0 ? 'Hold to drop' : 'Ready for a drop?'; hint = feedback.message || 'Clench your fist. Open to cancel.'; }
+    else if (feedback.kind === 'clenching' && feedback.controlEnabled) { title = feedback.progress > 0 ? 'Hold to drop' : 'Ready for a drop?'; hint = feedback.message || 'Clench your fist. Open to cancel.'; }
     else if (feedback.kind === 'tracking') {
       if (phase === 'idle') { title = 'You’re ready'; hint = ''; }
       else if (!nearPickup) { title = 'Move your hand'; hint = 'Clench your fist and hold to drop.'; }
@@ -162,7 +162,7 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
     else if (feedback.kind === 'loading') { title = 'Waking up the camera…'; hint = 'Allow camera access to play.'; }
   }
   if (startingRun) { title = 'Getting your run ready'; hint = 'Connecting to the leaderboard…'; }
-  const holding = phase === 'aim' && feedback.controlEnabled && ['clenching', 'dropping'].includes(feedback.kind);
+  const holding = phase === 'aim' && feedback.controlEnabled && feedback.kind === 'clenching';
   const progress = holding ? Math.round(Math.max(0, Math.min(1, feedback.progress || 0)) * 100) : 0;
   setHidden($('gesture-meter'), !holding);
   if ($('gesture-meter').getAttribute('aria-valuenow') !== String(progress)) {
@@ -171,7 +171,7 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
   }
   const control = deliveryPhases.has(phase) ? 'delivery' : holding ? 'holding' : feedback.controlEnabled && feedback.kind === 'tracking' ? 'tracking' : feedback.kind;
   if ($('arcade').dataset.control !== control) $('arcade').dataset.control = control;
-  const cameraLabels = { ready: 'Camera view', calibrating: 'Hand found', tracking: 'Hand found', accepted: 'Drop confirmed', lost: 'Hand out of view', delayed: 'Tracking delayed', clenching: 'Fist found', dropping: 'Hands found', loading: 'Starting camera', off: 'Camera off', error: 'Check camera' };
+  const cameraLabels = { ready: 'Camera view', calibrating: 'Hand found', tracking: 'Hand found', accepted: 'Drop confirmed', lost: 'Hand out of view', delayed: 'Tracking delayed', clenching: 'Fist found', loading: 'Starting camera', off: 'Camera off', error: 'Check camera' };
   setText('camera-recognition', cameraLabels[feedback.kind] || 'Camera view');
   if ($('camera-preview').dataset.state !== feedback.kind) $('camera-preview').dataset.state = feedback.kind;
   $('reset').disabled = startingRun;
