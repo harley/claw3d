@@ -24,7 +24,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chrome
+      - run: npx playwright install --with-deps chromium
       # check:booth includes unit tests and build; WebGL suites must not overlap.
       - run: npm run check:booth
       - run: npm run test:shared
@@ -78,7 +78,7 @@ jobs:
       - if: steps.head.outputs.current == 'true'
         run: npm ci && npm install --global @railway/cli@5.44.0
       - if: steps.head.outputs.current == 'true'
-        run: npx playwright install --with-deps chrome
+        run: npx playwright install --with-deps chromium
       - name: Recheck main immediately before production mutation
         id: release
         if: steps.head.outputs.current == 'true'

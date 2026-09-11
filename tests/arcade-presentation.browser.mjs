@@ -12,8 +12,8 @@ try {
  try {
    await page.waitForFunction(() => window.__littleCloud || !document.getElementById('error').hidden, null, { polling: 100 });
  } catch (error) {
-   console.error('Startup state:', await page.evaluate(() => ({ ready: document.documentElement.dataset.arcadeReady, error: document.getElementById('error-message').textContent, errorHidden: document.getElementById('error').hidden, title: document.title, build: document.getElementById('build-info').textContent })));
-   await page.screenshot({ path: '.screenshots/arcade-startup-failure.png', timeout: 10000 });
+   console.error('Startup state:', await page.evaluate(() => ({ ready: document.documentElement.dataset.arcadeReady, diagnostics: Boolean(window.__littleCloud), error: document.getElementById('error-message').textContent, errorHidden: document.getElementById('error').hidden, title: document.title, build: document.getElementById('build-info').textContent })));
+   await page.screenshot({ path: '.screenshots/arcade-startup-failure.png', timeout: 10000 }).catch(() => {});
    throw error;
  }
  if (!await page.evaluate(() => Boolean(window.__littleCloud))) {
