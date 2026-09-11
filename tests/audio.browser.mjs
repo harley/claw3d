@@ -10,7 +10,7 @@ try {
     const NativeAudio = window.AudioContext;
     window.audioCheck = { contexts: 0, notes: [], gains: [], rejectResume: false };
     window.AudioContext = class extends NativeAudio {
-      constructor() { super(); window.audioCheck.contexts++; }
+      constructor() { super(); window.audioCheck.contexts++; window.audioCheck.context = this; }
       resume() { return window.audioCheck.rejectResume ? Promise.reject(new Error('Audio blocked')) : super.resume(); }
       createGain() { const gain = super.createGain(), set = gain.gain.setValueAtTime.bind(gain.gain); gain.gain.setValueAtTime = (value, time) => { gain.scheduledLevel = value; return set(value, time); }; window.audioCheck.gains.push(gain); return gain; }
       createOscillator() {
@@ -19,7 +19,7 @@ try {
         const ramp = oscillator.frequency.exponentialRampToValueAtTime.bind(oscillator.frequency);
         oscillator.frequency.exponentialRampToValueAtTime = (value, time) => { record.endFrequency = value; return ramp(value, time); };
         oscillator.frequency.setValueAtTime = (value, time) => { record.frequency = value; return frequency(value, time); };
-        oscillator.start = time => { Object.assign(record, { start: time, visible: !document.getElementById('jackpot-signal').hidden }); window.audioCheck.notes.push(record); start(time); };
+        oscillator.start = time => { Object.assign(record, { start: time, visible: !document.getElementById('jackpot-signal').hidden, phase: window.__littleCloud?.snapshot().phase, turn: window.__littleCloud?.snapshot().event.turn }); window.audioCheck.notes.push(record); start(time); };
         oscillator.stop = time => { record.stops.push(time ?? this.currentTime); stop(time); };
         return oscillator;
       }
@@ -42,7 +42,15 @@ try {
   await page.locator('#sound').click(); await volume('0');
   assert.equal(await page.locator('#sound').textContent(), 'MUTED');
   await page.waitForFunction(() => window.audioCheck.gains[0].scheduledLevel === 0);
-  await volume('50'); await start(); await page.waitForTimeout(5700);
+  await volume('50'); await start();
+  const motorCount = () => page.evaluate(() => window.audioCheck.notes.filter(n => n.frequency === 130).length);
+  await page.waitForTimeout(250); assert.equal(await motorCount(), 0, 'hand presence alone makes no movement sound');
+  await cameraInput(page, { x: 1, z: 0 }); await page.waitForTimeout(450);
+  assert.ok(await motorCount() >= 2, 'actual steering has movement pulses');
+  await cameraInput(page, { x: 0, z: 0 }); await page.waitForTimeout(100);
+  const stoppedCount = await motorCount(); await page.waitForTimeout(350);
+  assert.equal(await motorCount(), stoppedCount, 'stationary claw is quiet');
+  await page.waitForTimeout(4700);
   assert.equal((await starNotes()).length, 0, 'no star beeps away from the visible ring');
   // Start a fresh aiming window for the near-ring and interruption checks.
   await open(); await page.locator('#operator-open').click(); await page.locator('#reset').click();
@@ -77,12 +85,33 @@ try {
   await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'release');
   assert.equal(await page.locator('#status').textContent(), '');
   assert.equal(await page.evaluate(() => window.audioCheck.notes.filter(n => n.frequency === 980).length), 1, 'release cue plays once');
+  await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'deliver');
+  assert.ok(await page.evaluate(() => window.audioCheck.notes.filter(n => n.phase === 'anticipate' && n.frequency >= 587).length >= 6), 'drop has a musical phrase');
+  assert.ok(await page.evaluate(() => window.audioCheck.notes.filter(n => n.phase === 'deliver' && n.frequency >= 587).length >= 8), 'trophy shelf travel has a fanfare');
+  await page.evaluate(() => { window.shelfPauseAt = window.audioCheck.context.currentTime; });
+  await page.locator('#operator-open').click(); await page.waitForTimeout(50);
+  assert.ok(await page.evaluate(() => { const queued = window.audioCheck.notes.filter(n => n.phase === 'deliver' && n.frequency >= 587 && n.start > window.shelfPauseAt); return queued.length >= 4 && queued.every(n => n.stops.length === 2); }), 'settings cancel queued trophy music');
+  await page.locator('#operator .panel-head button').click();
   await page.waitForFunction(() => {
     if (!window.audioCheck.notes.some(n => n.frequency === 1047)) return false;
     document.getElementById('sound').click(); return true;
   }, {}, { timeout: 30000 });
   assert.equal(await page.evaluate(() => window.audioCheck.notes.filter(n => n.frequency === 1047).length), 1);
   assert.ok(await page.evaluate(() => window.audioCheck.notes.filter(n => [659, 784, 1047].includes(n.frequency) && Math.abs(n.stops[0] - n.start - .18) < .0001).every(n => n.stops.length === 2)), 'mute cancels future catch melody notes');
+
+  await page.locator('#sound').click();
+  for (const turn of [2, 3]) {
+    await page.waitForFunction(turn => { const s = window.__littleCloud.snapshot(); return s.phase === 'aim' && s.event.turn === turn; }, turn);
+    await page.evaluate(() => window.testCamera.clench());
+    await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'result', {}, { timeout: 30000 });
+  }
+  assert.equal(await page.locator('#final').isVisible(), true);
+  assert.ok(await page.evaluate(() => window.audioCheck.notes.filter(n => n.phase === 'result' && n.turn === 3 && n.frequency >= 587).length >= 9), 'completed run has a distinct finale');
+
+  await page.evaluate(() => { window.finalePauseAt = window.audioCheck.context.currentTime; });
+  await page.locator('#final-feedback').click();
+  await page.waitForTimeout(50);
+  assert.ok(await page.evaluate(() => window.audioCheck.notes.filter(n => n.phase === 'result' && n.turn === 3 && n.frequency >= 587 && n.start > window.finalePauseAt).every(n => n.stops.length === 2)), 'feedback over results cancels the finale');
 
   // Browser refusal must restore the off state without an unhandled rejection.
   await open(); await page.evaluate(() => { window.audioCheck.rejectResume = true; }); await page.locator('#sound').click();

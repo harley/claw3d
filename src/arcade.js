@@ -17,7 +17,7 @@ let pendingPlayer = null, startingRun = false;
 let sharedBoard = null, sharedRole = 'staff', sharedStatus = 'Connecting to shared leaderboard…';
 let sharedApi, boardRefresh = null, boardVersion = 0, rotatingBoard = false;
 let scoreAnimation;
-let lastCue = '', lastSoundPhase = '';
+let lastCue = '', lastSoundPhase = '', lastMovementSound = -Infinity;
 let lastStatus = '', aligned = null, paused = false;
 let store, storageError = '', storageBlocked = false;
 try { store = shared ? newStore() : loadStore(localStorage); } catch (error) { store = newStore(); storageError = error.message; storageBlocked = true; }
@@ -55,27 +55,44 @@ function renderBoard() {
   $('operator-stats').textContent = `${official.length} completed · ${turns.length ? Math.round(turns.filter(t => t.score).length / turns.length * 100) : 0}% catch rate${shared ? '' : ` · ${store.boards.length} sessions stored`}`;
   $('storage-status').textContent = shared ? sharedStatus : storageError || store.notice || 'Scores saved on this browser.';
 }
+function silenceNotes() {
+  for (const [oscillator, gain] of activeNotes) { oscillator.stop(); oscillator.disconnect(); gain.disconnect(); }
+  activeNotes.clear();
+}
 function updateSound() {
   $('sound').textContent = !sound ? 'SOUND OFF' : volume ? 'SOUND ON' : 'MUTED';
   $('sound').setAttribute('aria-pressed', String(sound));
   if (audioMaster) audioMaster.gain.setValueAtTime(sound ? volume : 0, audioContext.currentTime);
   if (!sound || !volume) {
-    for (const [oscillator, gain] of activeNotes) { oscillator.stop(); oscillator.disconnect(); gain.disconnect(); }
-    activeNotes.clear();
+    silenceNotes();
   }
 }
-function note(frequency, duration = .12, delay = 0, type = 'square', endFrequency = frequency) {
+function note(frequency, duration = .12, delay = 0, type = 'square', endFrequency = frequency, level = .025) {
   if (!sound || !volume || !audioMaster) return;
   try {
     const t = audioContext.currentTime + delay, oscillator = audioContext.createOscillator(), gain = audioContext.createGain();
     oscillator.type = type; oscillator.frequency.setValueAtTime(frequency, t);
     oscillator.frequency.exponentialRampToValueAtTime(endFrequency, t + duration);
-    gain.gain.setValueAtTime(.001, t); gain.gain.linearRampToValueAtTime(.025, t + .005);
+    gain.gain.setValueAtTime(.001, t); gain.gain.linearRampToValueAtTime(level, t + .005);
     gain.gain.exponentialRampToValueAtTime(.001, t + duration);
     oscillator.connect(gain); gain.connect(audioMaster); activeNotes.set(oscillator, gain);
     oscillator.onended = () => { activeNotes.delete(oscillator); oscillator.disconnect(); gain.disconnect(); };
     oscillator.start(t); oscillator.stop(t + duration);
   } catch { sound = false; updateSound(); }
+}
+// Original, finite major-key fanfares. No audio files, timers or background loop.
+function fanfare(kind) {
+  const scores = {
+    drop: [587, 740, 880, 1175, 880, 1175],
+    shelf: [587, 740, 880, 740, 988, 1175, 1480, 1175],
+    complete: [587, 587, 740, 880, 1175, 988, 1175, 1480, 1760],
+  };
+  const melody = scores[kind], beat = kind === 'drop' ? .13 : .22;
+  melody.forEach((frequency, i) => {
+    const duration = i === melody.length - 1 ? .5 : beat * .85;
+    note(frequency, duration, i * beat, 'square', frequency, .014);
+    if (i % 2 === 0) note(i % 4 ? 220 : 147, beat * 1.6, i * beat, 'triangle', i % 4 ? 220 : 147, .007);
+  });
 }
 // One announcement surface; delivery messages expire without changing game timing.
 const phaseCopy = { anticipate: 'DROP!', descend: 'DROP!', grip: '', lift: 'GOT IT!', transfer: '', release: '', deliver: '', reveal: '' };
@@ -94,13 +111,14 @@ function phaseSound(phase) {
   if (phase === lastSoundPhase) return;
   lastSoundPhase = phase;
   if (paused || document.hidden || document.querySelector('dialog[open]')) return;
-  if (phase === 'anticipate') note(880, .22, 0, 'square', 110);
+  if (phase === 'anticipate') { note(880, .22, 0, 'square', 110); fanfare('drop'); }
   else if (phase === 'descend') [360, 280, 200].forEach((f, i) => note(f, .1, i * .09, 'square', f / 2));
   else if (phase === 'grip') { note(120, .08, 0, 'square', 60); note(180, .08, .09, 'square', 90); }
   else if (phase === 'lift') {
     if (game.plan?.prize) [440, 554, 660].forEach((f, i) => note(f, .13, i * .1, 'square', f * 1.5));
     else { note(240, .16, 0, 'sawtooth', 180); note(160, .2, .13, 'triangle', 65); }
-  } else if (phase === 'release' && game.plan?.prize) { note(740, .1, 0, 'sine'); note(980, .14, .1, 'sine'); }
+  } else if (phase === 'deliver' && game.plan?.prize) fanfare('shelf');
+  else if (phase === 'release' && game.plan?.prize) { note(740, .1, 0, 'sine'); note(980, .14, .1, 'sine'); }
 }
 function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ? 'loading' : 'off' }) {
   const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
@@ -196,7 +214,8 @@ function finishTurn() {
   track('turn_complete', { turn: turnNumber, score: outcome.run.turns.at(-1).score, prizeId: outcome.run.turns.at(-1).prizeId }, outcome.run);
   if (shared) sharedApi.queue(outcome.run);
   const points = outcome.run.turns.at(-1).score;
-  if (points) { [523, 659, 784, 1047].forEach((f, i) => note(f, .18, i * .11)); } else note(165, .25, 0, 'triangle');
+  if (outcome.completed) fanfare('complete');
+  else if (points) { [523, 659, 784, 1047].forEach((f, i) => note(f, .18, i * .11)); } else note(165, .25, 0, 'triangle');
   if (outcome.completed) {
     track('run_complete', { score: outcome.run.total }, outcome.run);
     completedRun = outcome.run; run = null; renderBoard();
@@ -253,7 +272,7 @@ function gestureDrop() {
 }
 function fail(message, error) { track('client_error', { reason: 'renderer' }); stopped = true; cameraControls?.stop(); clearTimeout(window.__arcadeBootTimer); errors.push(String(error || message)); $('loading').hidden = true; $('error').hidden = false; $('error-message').textContent = message; console.error('Cloud Claw:', error || message); }
 function openOperator() { if (shared && sharedRole !== 'host') { $('host-access').showModal(); return; } renderBoard(); $('operator').showModal(); $('pause').textContent = recovering ? 'RESUME INTERRUPTED TURN' : paused ? 'RESUME GAME' : 'PAUSE GAME'; }
-document.addEventListener('visibilitychange', () => { previous = 0; });
+document.addEventListener('visibilitychange', () => { previous = 0; if (document.hidden) silenceNotes(); });
 $('player-form').addEventListener('submit', event => { event.preventDefault(); if (!scene || stopped || !cameraControls?.running) return;
   if (startingRun || run) return;
   const name = $('name').value.trim() || 'Player';
@@ -406,11 +425,19 @@ function frame(time) {
   const cameraWaiting = aiming && (!cameraControls?.running || cameraControls.waiting);
   // Only explicit operator pause stops a drop already in flight.
   const blocked = paused || (aiming && (cameraWaiting || modal || document.hidden));
+  if (paused || document.querySelector('dialog[open]:not(#final)') || document.hidden) silenceNotes();
   setHidden($('pause-banner'), !paused);
   setText('pause-banner', 'Paused by host');
   const input = { ...cameraControls?.input || { x: 0, z: 0 } };
   if (!frozen && !blocked && !document.hidden) {
-    if (aiming) { game.position = move(game.position, input, dt); moveCarousel(game, dt); aligned = aimTarget(game);
+    if (aiming) {
+      const oldPosition = game.position;
+      game.position = move(game.position, input, dt); moveCarousel(game, dt); aligned = aimTarget(game);
+      // Actual movement, not hand presence: stay quiet at rest and at the travel limit.
+      if (Math.hypot(game.position.x - oldPosition.x, game.position.z - oldPosition.z) > .0001 && time - lastMovementSound >= 140) {
+        lastMovementSound = time;
+        note(130, .065, 0, 'triangle', 95, .008);
+      }
       const before = Math.ceil(remaining); remaining = Math.max(0, remaining - dt); if (Math.ceil(remaining) < before && remaining <= 5) note(remaining < 1 ? 220 : 440, .08); if (!remaining && drop(game)) track('drop', { trigger: 'timeout', phase: game.phase, turn: turnNumber });
     } else {
       input.x = input.z = 0;
