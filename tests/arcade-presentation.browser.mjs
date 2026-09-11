@@ -16,7 +16,9 @@ try {
  assert.equal(await page.evaluate(() => window.__littleCloud.snapshot().event.run.turns.length), 0);
  await page.screenshot({ path: '.screenshots/arcade-outcome.png' });
  await page.waitForTimeout(1700);
- assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).opacity), '0');
+ // The outcome message must not linger: faded out, or already replaced by an
+ // empty phase message (transfer/release show no copy and reset the fade).
+ assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).opacity === '0' || !document.getElementById('status').textContent), true);
  assert.equal(await page.locator('#action-copy').getAttribute('role'), 'status');
  assert.equal(await page.locator('#celebration').count(), 0);
  for (const width of [1440, 820, 390, 360]) {
