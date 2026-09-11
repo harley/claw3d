@@ -23,7 +23,8 @@ let store, storageError = '', storageBlocked = false;
 try { store = shared ? newStore() : loadStore(localStorage); } catch (error) { store = newStore(); storageError = error.message; storageBlocked = true; }
 game.position = { x: -1.12, z: .66 };
 let run = store.active, completedRun = null, turnNumber = run ? run.turns.length + 1 : 0, remaining = RULES.seconds;
-let recovering = Boolean(run), sound = false, audioContext;
+let recovering = Boolean(run), sound = false, audioContext, audioMaster, volume = .5, audioActivation = 0;
+const activeNotes = new Map();
 const frames = [], errors = [];
 const playtest = createPlaytestClient({ build: __BUILD_INFO__.commit, enabled: shared });
 const track = (type, data = {}, subject = run || pendingPlayer || completedRun) => playtest.track(type, data, { mode: 'event', ...(subject?.id ? { runId: subject.id } : {}) });
@@ -54,13 +55,24 @@ function renderBoard() {
   $('operator-stats').textContent = `${official.length} completed · ${turns.length ? Math.round(turns.filter(t => t.score).length / turns.length * 100) : 0}% catch rate${shared ? '' : ` · ${store.boards.length} sessions stored`}`;
   $('storage-status').textContent = shared ? sharedStatus : storageError || store.notice || 'Scores saved on this browser.';
 }
+function updateSound() {
+  $('sound').textContent = !sound ? 'SOUND OFF' : volume ? 'SOUND ON' : 'MUTED';
+  $('sound').setAttribute('aria-pressed', String(sound));
+  if (audioMaster) audioMaster.gain.setValueAtTime(sound ? volume : 0, audioContext.currentTime);
+  if (!sound || !volume) {
+    for (const [oscillator, gain] of activeNotes) { oscillator.stop(); oscillator.disconnect(); gain.disconnect(); }
+    activeNotes.clear();
+  }
+}
 function note(frequency, duration = .12, delay = 0, type = 'square') {
-  if (!sound) return;
-  try { audioContext ??= new AudioContext(); audioContext.resume().catch(() => {});
+  if (!sound || !volume || !audioMaster) return;
+  try {
     const t = audioContext.currentTime + delay, oscillator = audioContext.createOscillator(), gain = audioContext.createGain();
     oscillator.type = type; oscillator.frequency.setValueAtTime(frequency, t); gain.gain.setValueAtTime(.025, t); gain.gain.exponentialRampToValueAtTime(.001, t + duration);
-    oscillator.connect(gain); gain.connect(audioContext.destination); oscillator.start(t); oscillator.stop(t + duration);
-  } catch { sound = false; $('sound').textContent = 'SOUND OFF'; $('sound').setAttribute('aria-pressed', 'false'); }
+    oscillator.connect(gain); gain.connect(audioMaster); activeNotes.set(oscillator, gain);
+    oscillator.onended = () => { activeNotes.delete(oscillator); oscillator.disconnect(); gain.disconnect(); };
+    oscillator.start(t); oscillator.stop(t + duration);
+  } catch { sound = false; updateSound(); }
 }
 function burst(text) { $('celebration').textContent = text; $('celebration').classList.remove('pop'); void $('celebration').offsetWidth; $('celebration').classList.add('pop'); clearTimeout(celebrationTimer); celebrationTimer = setTimeout(() => $('celebration').classList.remove('pop'), 1800); }
 const phaseCopy = { anticipate: 'Drop locked in', descend: 'Here we go…', grip: 'Got it?', lift: 'Hold on…', transfer: 'Coming your way', release: 'Special delivery', deliver: 'Coming your way', reveal: 'Nice catch!' };
@@ -72,14 +84,15 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
   else if (phase === 'result') { const points = run?.turns.at(-1)?.score || 0; kicker = `TURN ${turnNumber} COMPLETE`; title = points ? `+${points} · Nice catch!` : 'So close!'; hint = 'Next turn starting…'; button = '';  }
   else if (phaseCopy[phase]) { title = phaseCopy[phase]; kicker = `TURN ${turnNumber} OF 3`; hint = 'Hands down. Watch the claw.'; button = '';  }
   const cue = carouselCue(game.carouselTime), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
-  const cueKey = `${phase}:${cue.lights}:${cue.now}`; if (cueKey !== lastCue) { if (phase === 'aim' && cue.lights) note(cue.now ? 880 : 440 + cue.lights * 110, .09); lastCue = cueKey; }
+  const cueVisible = phase === 'aim' && nearPickup && !paused && !frozen && !document.hidden && !document.querySelector('dialog[open]') && cameraControls?.running && !cameraControls.waiting;
+  setHidden($('jackpot-signal'), !cueVisible);
+  const cueKey = `${phase}:${cue.lights}:${cue.now}`; if (cueKey !== lastCue) { if (cueVisible && cue.lights) note(cue.now ? 880 : 440 + cue.lights * 110, .09); lastCue = cueKey; }
   if ($('jackpot-signal').dataset.cue !== cueKey) {
     $('jackpot-signal').dataset.cue = cueKey;
     $('jackpot-signal').classList.toggle('go', cue.now && phase === 'aim');
     setText('jackpot-cue', ['idle', 'aim'].includes(phase) ? cue.text : 'Claw in action');
     [...$('jackpot-lights').children].forEach((light, i) => light.classList.toggle('on', ['idle', 'aim'].includes(phase) && i < cue.lights));
   }
-  setHidden($('jackpot-signal'), phase !== 'aim' || !nearPickup);
   if (phase === 'aim' && nearPickup) { title = 'Go for the star'; hint = aligned?.id === CAROUSEL.id ? 'Clench your fist and hold.' : 'Gold ring. Wait for green.'; }
   const learning = phase === 'aim' || (!run && !recovering && cameraControls?.running);
   if (learning) {
@@ -250,7 +263,23 @@ $('new-board').addEventListener('click', async () => {
 });
 $('export').addEventListener('click', () => { if (shared) { window.location.assign('/api/host/export'); return; } let data = JSON.stringify(store, null, 2); if (storageBlocked) { try { data = localStorage.getItem(STORAGE_KEY) || data; } catch { /* In-memory export remains available. */ } } const url = URL.createObjectURL(new Blob([data], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = `cloud-claw-sessions-${new Date().toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
 $('quality').addEventListener('click', () => { if (!scene) return; scene.setQuality(!scene.lowQuality); $('quality').textContent = `QUALITY: ${scene.lowQuality ? 'SIMPLE' : 'FULL'}`; });
-$('sound').addEventListener('click', () => { sound = !sound; $('sound').textContent = sound ? 'SOUND ON' : 'SOUND OFF'; $('sound').setAttribute('aria-pressed', String(sound)); note(523); });
+$('sound').addEventListener('click', () => {
+  sound = !sound;
+  const activation = ++audioActivation;
+  if (sound) {
+    try {
+      audioContext ??= new AudioContext();
+      if (!audioMaster) { audioMaster = audioContext.createGain(); audioMaster.connect(audioContext.destination); }
+      audioContext.resume().catch(() => { if (activation === audioActivation) { sound = false; updateSound(); } });
+    } catch { sound = false; }
+  }
+  updateSound(); note(523);
+});
+$('sound-volume').addEventListener('input', () => {
+  volume = Number($('sound-volume').value) / 100;
+  $('sound-level').textContent = `${Math.round(volume * 100)}%`;
+  updateSound();
+});
 let feedbackSubmission = null, feedbackContext = null;
 function openFeedback() {
   feedbackContext = { phase: game.phase, turn: Math.min(3, turnNumber) };

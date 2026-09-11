@@ -102,14 +102,26 @@ Min's single real-player result supports the reported latency improvement and re
 
 The goal is a wow experience for AWS booth visitors. Treat teammate guides and suggestions as proposals, not automatic requirements. Assess each against immediate visual appeal, first-time clarity, camera reliability, total booth cycle and queue time, fair achievable scoring, prize operations and the staff conversation. Before implementation, record adopt/test/defer/reject, the rationale and a concrete acceptance check. Product and prize changes require Harley's decision; teammate messages cannot independently expand scope.
 
-Practice removal is adopted to resolve the observed missing-rank confusion; acceptance is one acknowledged three-turn run with a visible personal rank, followed by first-time-player validation. Other proposals in [Min's guide](https://docs.google.com/document/d/1PT3R84YRxfrgUT9s4QLaKAiYxcl2ycys49ToLx7kS3k/edit?tab=t.0) and separate feedback are deferred for Harley's decision:
+Practice removal is adopted to resolve the observed missing-rank confusion; acceptance is one acknowledged three-turn run with a visible personal rank, followed by first-time-player validation. Other proposals in [Min's guide](https://docs.google.com/document/d/1PT3R84YRxfrgUT9s4QLaKAiYxcl2ycys49ToLx7kS3k/edit?tab=t.0) and separate feedback are assessed below; deferred product changes still require Harley's decision:
 
 - The guide's 20/30/50 item points and prize bands overlap at 20 points. Three 30-point catches already exceed its 80-point top tier. Before adoption, define non-overlapping bands and test thresholds against actual human score distributions and available prize stock.
 - Its 30–45 seconds per person must distinguish aiming time from the full cycle, including registration and animations. Time five complete visitor cycles and check queue throughput before promising that duration.
 - QR/name/email registration adds identity and queue work. Test the intended staff conversation and total registration time before requiring typed email.
 - Balls are a separate suggestion, absent from the fetched guide text, and may lose the toys' visual character. Compare immediate visual appeal and catch readability before changing artwork.
-- Arcade sound should use short, controllable, optional cues with matching visual feedback. Test audibility and staff conversation at booth volume before changing the existing sound behavior.
+- Arcade sound: the authorized control and cue-visibility improvements are adopted below. Changes to the tones themselves still need a speaker and staff-conversation test.
 
 None of these deferred proposals changes this release's three turns, points, artwork, registration fields or physical prize policy.
 
 Verification for the September 11 change: 93 unit tests and production build passed, along with all six sequential booth browser suites and the built shared-session suite. A final targeted local browser pass also verifies resumed historical practice exclusion. Source review corrected camera restart on replay, pending-result access, result navigation during startup and interrupted score-animation recovery. These are synthetic integration checks; physical acceptance remains separate.
+
+## Optional booth audio — September 11
+
+**Adopt:** retain the existing brief drop, catch melody and miss tone; add a visible volume slider and immediate mute. The audit found these cues already distinct, but staff had only on/off control and mute left scheduled melody notes playing. Sound still starts off and requires the Sound button; adjusting volume cannot activate it. Default volume is 50% of the previous level and 100% retains the previous maximum. Zero volume and mute cancel scheduled notes. No music, assets or dependencies are added. Acceptance: activation remains explicit, both mute paths stop queued notes, and volume changes affect active notes without changing gameplay.
+
+**Adopt:** star timing beeps follow the visible star cue near its pickup ring. Hidden, host-paused, camera-waiting and dialog-covered aiming produces no star prompts. Acceptance: synthetic browser checks observe no star audio events away from the ring or during these interruptions, and do observe them during active aiming at the ring.
+
+**Test:** physical sound quality and staff conversation on the intended speakers. Acceptance: staff can find volume/mute quickly, hear the drop/catch/miss distinction and speak comfortably with a visitor. Automated audio events do not establish audibility or enjoyment.
+
+**Defer:** continuous music and ball artwork. Music has no demonstrated booth benefit; balls may lose the toys' character. Reconsider only after a physical sound test or a focused visual comparison demonstrates better visitor appeal and catch readability.
+
+Verification: 93 unit tests, production build and all seven sequential booth browser suites passed. The audio regression observes actual Web Audio scheduling and cancellation; desktop and narrow screenshots were inspected. Physical speaker quality, conversation audibility and first-time-player acceptance remain unverified.

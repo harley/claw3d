@@ -38,7 +38,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, #scene:focus-vi
 .brand { font-weight: 900; font-size: 30px; letter-spacing: -1.5px; }
 .brand > span { color: #ff4057; }
 .brand small { display: block; font-size: 9px; letter-spacing: 1.8px; color: #a2b8d8; margin-top: 8px; }
-.header-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.header-actions { display: flex; align-items: flex-start; gap: 8px; flex-shrink: 0; }
 .header-actions button { background: #101c2ddd; }
 
 /* Player and score panels frame the scene. */
@@ -221,3 +221,9 @@ dialog .play-button { width: 100%; margin-top: 24px; }
 #feedback-dialog select, #feedback-dialog textarea { box-sizing: border-box; width: 100%; margin: 10px 0 18px; padding: 12px; border: 1px solid #43516c; border-radius: 6px; background: #101b2e; color: #f4eee5; font: 16px Arial, sans-serif; }
 #feedback-dialog textarea { resize: vertical; }
 .playtest-notice { font-size: 12px; line-height: 1.5; color: #9db3d0; }
+
+/* Keep booth volume within reach without another dialog. */
+.sound-controls { display: grid; width: 96px; gap: 3px; }
+.sound-controls label { display: flex; justify-content: space-between; font-size: 9px; color: #acc2df; }
+.sound-controls input { width: 100%; height: 12px; margin: 0; accent-color: #ffc14d; }
+@media (max-width: 650px) { .sound-controls { width: 59px; } .sound-controls label { font-size: 8px; } }
