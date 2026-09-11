@@ -13,7 +13,7 @@ permissions:
 jobs:
   check:
     name: Unit, build and browser checks
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -24,12 +24,10 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - name: Check production container startup and backup ordering
-        run: bash scripts/check-release-container.sh
+      - run: npx playwright install chromium
       # check:booth includes unit tests and build; WebGL suites must not overlap.
-      - run: xvfb-run --auto-servernum npm run check:booth
-      - run: xvfb-run --auto-servernum npm run test:shared
+      - run: npm run check:booth
+      - run: npm run test:shared
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
@@ -38,11 +36,21 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
+  container:
+    name: Production Linux container and backup checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - run: bash scripts/check-release-container.sh
+
   deploy:
     name: Deploy and verify live BUILD
-    needs: check
+    needs: [check, container]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: macos-15
     timeout-minutes: 20
     # Never cancel an upload already in progress. One production writer at a time.
     concurrency:
@@ -78,7 +86,7 @@ jobs:
       - if: steps.head.outputs.current == 'true'
         run: npm ci && npm install --global @railway/cli@5.44.0
       - if: steps.head.outputs.current == 'true'
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
       - name: Recheck main immediately before production mutation
         id: release
         if: steps.head.outputs.current == 'true'
@@ -108,7 +116,7 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           EXPECTED_BUILD: ${{ github.sha }}
-        run: xvfb-run --auto-servernum node scripts/verify-release.mjs
+        run: node scripts/verify-release.mjs
       - name: Report release failure
         if: failure()
         run: |

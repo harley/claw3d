@@ -1,9 +1,7 @@
-// Hosted Linux runners have no GPU. Opt in only for trusted CI pages;
-// local browser checks retain their normal hardware-backed rendering.
+// Pin CI browsers to Playwright; local checks continue using installed Chrome.
 export const browserOptions = {
-  channel: process.env.GITHUB_ACTIONS === 'true' ? undefined : 'chrome', headless: process.env.GITHUB_ACTIONS !== 'true',
-  args: process.env.GITHUB_ACTIONS === 'true'
-    ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : [],
+  channel: process.env.GITHUB_ACTIONS === 'true' ? undefined : 'chrome', headless: true,
+
 };
 
 // Routine captures can outlast short game phases on software rendering.
@@ -14,6 +12,4 @@ export async function captureScreenshot(page, options) {
   if (captureArtifacts) await page.screenshot(options);
 }
 
-// Exercise the same CSS viewport and scene at fewer render pixels on CPU-only
-// runners. GPU speed and full-resolution visual acceptance stay local.
-export const browserContextOptions = { deviceScaleFactor: process.env.GITHUB_ACTIONS === 'true' ? 0.25 : 1 };
+export const browserContextOptions = { deviceScaleFactor: 1 };
