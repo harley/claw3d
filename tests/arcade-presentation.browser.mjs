@@ -34,11 +34,13 @@ try {
  assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).opacity), '1', 'recovery guidance never expires');
  assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).animationName), 'none');
  await page.screenshot({ path: '.screenshots/arcade-reduced-narrow.png', fullPage: true });
+ const preview = await page.locator('#camera-preview').boundingBox();
+ assert.ok(preview && preview.height > 0, 'camera preview is visible before measuring');
+ assert.ok(preview.y + preview.height < 710, 'uncropped preview and recognition fit above the short-screen footer');
  await page.evaluate(() => window.testCamera.stop());
  await page.waitForFunction(() => document.getElementById('button-text').textContent === 'Restart camera');
- const bounds = await page.evaluate(() => { const r = id => { const b = document.getElementById(id).getBoundingClientRect(); return { top: b.top, bottom: b.bottom }; }; return { arcade: r('arcade'), button: r('play'), preview: r('camera-preview') }; });
+ const bounds = await page.evaluate(() => { const r = id => { const b = document.getElementById(id).getBoundingClientRect(); return { top: b.top, bottom: b.bottom }; }; return { arcade: r('arcade'), button: r('play') }; });
  assert.ok(bounds.button.bottom < bounds.arcade.bottom - 30, 'restart is above footer on short screens');
- assert.ok(bounds.preview.bottom < bounds.arcade.bottom - 30, 'uncropped preview and recognition fit on short screens');
  await page.locator('#play').click();
  await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running);
  console.log('PASS immediate, timed, single-surface outcomes; persistent recovery; narrow layout and reduced motion');
