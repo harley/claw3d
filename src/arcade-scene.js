@@ -29,6 +29,7 @@ export class ArcadeScene {
     this.contacts = new ToyContacts(this.toys);
     this.buildCarousel();
     this.createTarget();
+    this.buildEffects();
     this.motionQuery = matchMedia('(prefers-reduced-motion: reduce)'); this.reducedMotion = this.motionQuery.matches;
     this.motionQuery.addEventListener('change', e => { this.reducedMotion = e.matches; });
     this.observer = new ResizeObserver(() => this.resize()); this.observer.observe(canvas.parentElement); this.resize();
@@ -152,6 +153,17 @@ export class ArcadeScene {
     for (const z of [-1.05, 1.05]) box(cab, m.glow, [0, 4.48, z], [2.88, .025, .034], .009);
     for (const x of [-1.758, 1.758]) for (const y of [2.08, 3.93]) box(cab, m.brass, [x, y, 1.16], [.045, .16, .09], .012);
     batch(cab);
+    // Marquee bulb row: one instanced draw call, per-bulb color for chases.
+    // Kept out of the static batch so instance colors stay addressable.
+    this.marqueeBulbs = new T.InstancedMesh(new T.SphereGeometry(1, 10, 8), new T.MeshBasicMaterial({ toneMapped: false }), 11);
+    this.marqueeBulbs.castShadow = this.marqueeBulbs.receiveShadow = false;
+    const bulb = new T.Object3D();
+    for (let i = 0; i < 11; i++) {
+      bulb.position.set(-1.5 + i * .3, 5.19, 1.375); bulb.scale.set(.030, .030, .015); bulb.updateMatrix();
+      this.marqueeBulbs.setMatrixAt(i, bulb.matrix);
+      this.marqueeBulbs.setColorAt(i, new T.Color('#8a7452'));
+    }
+    this.scene.add(this.marqueeBulbs);
     this.outletFlap = group(this.scene, -1.07, 1.50, 1.37);
     const flapGlass = new T.MeshPhysicalMaterial({ color: '#c4d9cd', transparent: true, opacity: .23, roughness: .21, metalness: .16, side: T.DoubleSide, depthWrite: false });
     const flap = mesh(this.outletFlap, new T.PlaneGeometry(1.03, .95), flapGlass, 0, -.475, 0); flap.castShadow = false;
@@ -229,8 +241,87 @@ export class ArcadeScene {
     for (let i = 0; i < 4; i++) { const tick = box(this.target, this.targetMat, [Math.cos(i * Math.PI / 2) * .227, 0, Math.sin(i * Math.PI / 2) * .227], [.09, .008, .016], .005); tick.rotation.y = -i * Math.PI / 2; }
     batch(this.target);
     this.target.traverse(m => { if (m.isMesh) m.castShadow = m.receiveShadow = false; });
+    // Hold-progress arc inside the ring: the confirmation lives where the
+    // player is already looking. Added after the batch so its draw range and
+    // colour stay addressable; progress reveals existing triangles only.
+    this.holdMat = new T.MeshBasicMaterial({ color: '#ffc14d', transparent: true, opacity: .92, depthWrite: false, side: T.DoubleSide, toneMapped: false });
+    this.holdArc = mesh(this.target, new T.RingGeometry(.115, .152, 64), this.holdMat);
+    this.holdArc.rotation.x = -Math.PI / 2; this.holdArc.rotation.z = Math.PI / 2;
+    this.holdArc.castShadow = this.holdArc.receiveShadow = false;
+    this.holdArc.visible = false;
+    this.holdWarm = new T.Color('#ffc14d'); this.holdGo = new T.Color('#66ffb3');
     this.beamMat = new T.LineBasicMaterial({ color: '#698d79', transparent: true, opacity: .34, depthWrite: false });
     this.beam = new T.Line(new T.BufferGeometry().setFromPoints([v(0, 0, 0), v(0, 1, 0)]), this.beamMat); this.scene.add(this.beam);
+  }
+
+  buildEffects() {
+    // Catch payoff: one instanced mesh, one draw call, CPU-driven particles.
+    this.burst = new T.InstancedMesh(new T.BoxGeometry(.05, .028, .01), new T.MeshBasicMaterial({ toneMapped: false }), 150);
+    this.burst.instanceMatrix.setUsage(T.DynamicDrawUsage);
+    this.burst.castShadow = this.burst.receiveShadow = false;
+    this.burst.frustumCulled = false;
+    this.burst.count = 0; this.burst.visible = false;
+    this.scene.add(this.burst);
+    this.burstParticles = []; this.burstDummy = new T.Object3D();
+    this.lastPhase = '';
+  }
+
+  spawnBurst(origin, star) {
+    const colors = (star ? ['#ffd75e', '#fff3c4', '#e82447', '#8de0c8', '#f5ac84'] : ['#e82447', '#e8edf4', '#c6a46a', '#8de0c8']).map(c => new T.Color(c));
+    const count = star ? 140 : 80;
+    this.burstParticles = Array.from({ length: count }, (_, i) => {
+      const a = Math.random() * Math.PI * 2, r = (.5 + Math.random() * 1.2) * (star ? 1.3 : 1);
+      this.burst.setColorAt(i, colors[i % colors.length]);
+      return {
+        position: origin.clone().add(v((Math.random() - .5) * .2, Math.random() * .12, (Math.random() - .5) * .2)),
+        velocity: v(Math.cos(a) * r, 1.7 + Math.random() * 2.1, Math.sin(a) * r),
+        rotation: v(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI),
+        spin: v((Math.random() - .5) * 14, (Math.random() - .5) * 14, (Math.random() - .5) * 14),
+        life: .95 + Math.random() * .45,
+      };
+    });
+    this.burst.count = count; this.burst.visible = true;
+    this.burst.instanceColor.needsUpdate = true;
+  }
+
+  updateBurst(dt) {
+    let alive = 0;
+    const d = this.burstDummy;
+    this.burstParticles.forEach((p, i) => {
+      p.life -= dt;
+      const fade = clamp(p.life / .3, 0, 1);
+      if (p.life > 0) alive++;
+      p.velocity.y -= dt * 5.2; p.velocity.multiplyScalar(Math.max(0, 1 - dt * 1.1));
+      p.position.addScaledVector(p.velocity, dt);
+      p.rotation.addScaledVector(p.spin, dt);
+      d.position.copy(p.position); d.rotation.set(p.rotation.x, p.rotation.y, p.rotation.z);
+      d.scale.setScalar(Math.max(.0001, fade));
+      d.updateMatrix();
+      this.burst.setMatrixAt(i, d.matrix);
+    });
+    this.burst.instanceMatrix.needsUpdate = true;
+    if (!alive) { this.burst.visible = false; this.burst.count = 0; this.burstParticles = []; }
+  }
+
+  updateMarquee(phase, plan, time, motion) {
+    const palette = this.marqueePalette ??= { dim: new T.Color('#5a4a33'), warm: new T.Color('#e8bd7a'), bright: new T.Color('#ffe9b0') };
+    const delivering = Boolean(plan?.prize) && ['transfer', 'release', 'deliver', 'reveal'].includes(phase);
+    const jackpot = delivering && phase === 'reveal' && plan.prize.family === 'star';
+    // Repaint and re-upload only when the lit pattern actually changes.
+    const key = jackpot ? `j${motion ? Math.floor(time * 14) % 2 : 's'}`
+      : delivering ? `d${motion ? Math.floor(time * 8) % 3 : 's'}`
+      : phase === 'idle' ? `i${motion ? Math.floor(time * 2.5) % 5 : 's'}`
+      : 'rest';
+    if (key === this.marqueeKey) return;
+    this.marqueeKey = key;
+    for (let i = 0; i < 11; i++) {
+      const color = jackpot ? (!motion || (time * 14 + i) % 2 < 1 ? palette.bright : palette.dim)
+        : delivering ? (!motion || (i - Math.floor(time * 8)) % 3 === 0 ? palette.bright : palette.dim)
+        : phase === 'idle' ? (motion ? (i - Math.floor(time * 2.5)) % 5 === 0 ? palette.warm : palette.dim : palette.warm)
+        : palette.dim;
+      this.marqueeBulbs.setColorAt(i, color);
+    }
+    this.marqueeBulbs.instanceColor.needsUpdate = true;
   }
 
   resize() {
@@ -261,7 +352,7 @@ export class ArcadeScene {
     });
   }
 
-  update(game, dt, time, input, aligned, feedback, cameraActive = false) {
+  update(game, dt, time, input, aligned, feedback = {}, cameraActive = false) {
     const phase = game.phase, elapsed = game.elapsed, plan = game.plan, motion = this.reducedMotion ? 0 : 1;
     this.carousel.visible = Boolean(game.carousel);
     if (game.carousel) {
@@ -274,6 +365,13 @@ export class ArcadeScene {
     this.stick.rotation.set(input.z * .24, 0, -input.x * .24); this.button.position.y = phase === 'anticipate' ? 1.688 : 1.72;
     this.joystickHand.update(phase, elapsed, dt, feedback, this.reducedMotion);
     this.target.visible = ['idle', 'aim'].includes(phase); this.target.position.set(game.position.x, BED + (game.carousel && Math.hypot(game.position.x - CAROUSEL.x, game.position.z - CAROUSEL.z) < .55 ? CAROUSEL.height : 0) + .014, game.position.z); this.targetMat.color.set(aligned ? '#547e69' : '#bb5b49');
+    // Fist-hold confirmation fills the ring the player is already watching.
+    const holding = phase === 'aim' && feedback.kind === 'clenching' ? clamp(feedback.progress, 0, 1) : 0;
+    this.holdArc.visible = holding > 0 && this.target.visible;
+    if (this.holdArc.visible) {
+      this.holdArc.geometry.setDrawRange(0, Math.floor(64 * holding) * 6);
+      this.holdMat.color.copy(this.holdWarm).lerp(this.holdGo, holding);
+    }
     this.beam.visible = this.target.visible; this.beam.position.set(game.position.x, BED + .02, game.position.z); this.beam.scale.y = HIGH - BED - 1.01; this.beamMat.color.copy(this.targetMat.color);
     this.deliveryTray.visible = false;
     const hatchOpen = plan?.prize && ['release', 'deliver', 'reveal', 'result'].includes(phase);
@@ -314,21 +412,42 @@ export class ArcadeScene {
         if (phase === 'reveal') { const t = elapsed / PHASES.reveal, slot = collectionSlot(toy.id); this.deliveryTray.visible = t < .97; this.deliveryTray.position.set(mix(slot.x, -1.08, ease((t - .45) / .55)), mix(slot.y, .50, ease((t - .22) / .60)), mix(slot.z, 1.69, ease(t / .30))); }
       }
       body.scale.set(1 + compression * .65, 1 - compression, 1 + compression * .45); body.rotation.z = wobble;
-      if (blink) { const seed = ASSORTMENT.findIndex(t => t.id === toy.id), tick = (time + seed * 1.317) % (4.1 + seed * .23); blink.scale.y = motion && tick < .13 ? .15 + Math.abs(tick - .065) / .065 * .85 : 1; }
+      const seed = ASSORTMENT.findIndex(t => t.id === toy.id);
+      // Attract mode: on the empty machine each toy takes an occasional turn to
+      // wave — ears wiggle, the jelly ripples — inviting a passer-by to play.
+      let attract = 0;
+      if (motion && phase === 'idle' && index < 0) { const beat = (time + seed * 2.83) % 11; if (beat < 1.1) attract = Math.sin(beat / 1.1 * Math.PI); }
+      if (blink) { const tick = (time + seed * 1.317) % (4.1 + seed * .23); blink.scale.y = motion && tick < .13 ? .15 + Math.abs(tick - .065) / .065 * .85 : 1; }
       if (motion && blink && held && phase === 'reveal' && elapsed > .32 && elapsed < .52) blink.scale.y = .13;
-      for (const ear of articulation) { ear.object.rotation.copy(ear.rest); const lag = motion * (held && ['lift', 'transfer'].includes(phase) ? Math.sin(elapsed * 6 + ear.side) * .14 * Math.exp(-elapsed * 1.2) : wobble * 2); ear.object.rotation.x += lag; ear.object.rotation.z += wobble; }
+      for (const ear of articulation) { ear.object.rotation.copy(ear.rest); const lag = motion * (held && ['lift', 'transfer'].includes(phase) ? Math.sin(elapsed * 6 + ear.side) * .14 * Math.exp(-elapsed * 1.2) : wobble * 2) + attract * Math.sin(time * 9 + ear.side) * .15; ear.object.rotation.x += lag; ear.object.rotation.z += wobble; }
       if (motion && plan && !affected && phase === 'lift' && Math.hypot(toy.x - plan.position.x, toy.z - plan.position.z) < .85 && !toy.claimed) body.rotation.z = Math.sin(elapsed * 4) * .026 * Math.exp(-elapsed * 1.7);
       if (motion && aligned?.id === toy.id && phase === 'aim') body.rotation.x = -.035;
-      if (wave) { wave.value = motion * (Math.abs(wobble) * .32 + compression * .18); waveTime.value = time; const drift = Math.sin(.4 * 11 - time * 13) * wave.value * .7; face.position.x = drift; blink.position.x = drift; }
+      if (wave) { wave.value = motion * (Math.abs(wobble) * .32 + compression * .18 + attract * .09); waveTime.value = time; const drift = Math.sin(.4 * 11 - time * 13) * wave.value * .7; face.position.x = drift; blink.position.x = drift; }
     }
     for (const toy of game.toys) if (toy.impact && !toy.claimed && game.plan?.prize?.id !== toy.id) this.contacts.rock(game, toy, this.toys.get(toy.id), dt);
     this.contacts.resolve(game, pose);
-    this.applyClawPose(pose);
+    // Pre-tension: the claw visibly readies itself as the hold fills. Contacts
+    // above resolved against the untensioned pose, so gameplay is untouched.
+    if (holding) {
+      const tremble = motion * Math.sin(time * 34) * .006 * holding;
+      this.applyClawPose({ ...pose, radii: pose.radii.map(r => Math.max(.06, r - .055 * ease(holding) + tremble)) });
+    } else this.applyClawPose(pose);
+    if (phase !== this.lastPhase) {
+      if (motion && phase === 'lift' && plan?.prize) this.spawnBurst(v(pose.x, pose.y - .45, pose.z), plan.prize.family === 'star');
+      this.lastPhase = phase;
+    }
+    // A reduced-motion toggle mid-flight ends the burst on the same frame,
+    // matching every other effect's per-frame motion read.
+    if (!motion && this.burst.visible) { this.burst.visible = false; this.burst.count = 0; this.burstParticles = []; }
+    else if (this.burst.visible) this.updateBurst(dt);
+    this.updateMarquee(phase, plan, time, motion);
     this.courier.visible = this.deliveryTray.visible;
     if (this.courier.visible) { const p = this.deliveryTray.position; this.courier.position.set(p.x, 0, 1.69); this.courierMast.scale.y = Math.max(.1, p.y - .44); this.courierMast.position.y = .44 + (p.y - .44) / 2; this.courierArm.scale.y = Math.max(.025, 1.69 - p.z); this.courierArm.position.set(0, p.y - .08, -(1.69 - p.z) / 2); }
     let cameraPos = this.home, look = this.look;
-    // Aiming never drifts. The only viewpoint move is the earned reveal.
+    // Aiming never drifts. The viewpoint moves only for the earned reveal and
+    // a slight lean-in while the drop plays out (input is frozen there).
     if (motion && focusToy && ['reveal', 'result'].includes(phase)) { look = focusToy.position.clone().add(v(.2, .40, .1)); cameraPos = look.clone().add(v(1.8, 1.0, 5.0)); }
+    else if (motion && ['descend', 'grip'].includes(phase)) { cameraPos = (this.pushIn ??= v(0, 0, 0)).copy(this.home).lerp(this.look, .085); }
     if (['aim', 'idle'].includes(phase) || !motion) { this.camera.position.copy(this.home); this.currentLook.copy(this.look); }
     else { const k = 1 - Math.exp(-dt * 3); this.camera.position.lerp(cameraPos, k); this.currentLook.lerp(look, k); }
     this.camera.lookAt(this.currentLook);

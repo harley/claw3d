@@ -21,6 +21,7 @@ async function catchTurn(){
  await phase('lift');
  const caught = (await snap()).caught;
  assert.equal(await page.locator('#status').textContent(), caught ? 'GOT IT!' : 'MISSED');
+ if (caught) assert.ok((await snap()).effects.burst > 0, 'catch payoff burst fires at lift');
  if (!caught) {
   await phase('reveal');
   assert.equal(await page.locator('#status').textContent(), '', 'return clears the outcome instead of claiming delivery');
