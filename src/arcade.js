@@ -1,30 +1,25 @@
 import './arcade.css';
-import { createSessionApi } from './session-api.js';
+import { createSharedBoard } from './shared-board.js';
 import { createPlaytestClient } from './playtest-client.js';
+import { createArcadeAudio } from './arcade-audio.js';
+import { createHud, $, setText, setHidden } from './arcade-hud.js';
 const shared = globalThis.__SHARED_PILOT__ === true;
 import { ArcadeScene } from './arcade-scene.js';
 import { createGame, begin, drop, advance, move, planGrab, clawPose, PHASES, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
 import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard } from './event-session.js';
 
-const elements = new Map();
-const $ = id => { if (!elements.has(id)) elements.set(id, document.getElementById(id)); return elements.get(id); };
-const setText = (id, value) => { const text = String(value); if ($(id).textContent !== text) $(id).textContent = text; };
-const setHidden = (element, hidden) => { if (element.hidden !== hidden) element.hidden = hidden; };
 $('build-info').textContent = `BUILD ${__BUILD_INFO__.commit}${__BUILD_INFO__.dirty ? ' · uncommitted changes' : ''} · ${__BUILD_INFO__.branch}`;
 let game = createGame({ carousel: true }), scene, previous = 0, stopped = false, frozen = false;
 let cameraControls, cameraLoading = false;
 let pendingPlayer = null, startingRun = false;
-let sharedBoard = null, sharedRole = 'staff', sharedStatus = 'Connecting to shared leaderboard…';
-let sharedApi, boardRefresh = null, boardVersion = 0, rotatingBoard = false;
 let scoreAnimation;
-let lastCue = '', lastSoundPhase = '', lastMovementSound = -Infinity;
-let lastStatus = '', aligned = null, paused = false;
+let lastSoundPhase = '', lastMovementSound = -Infinity;
+let aligned = null, paused = false;
 let store, storageError = '', storageBlocked = false;
 try { store = shared ? newStore() : loadStore(localStorage); } catch (error) { store = newStore(); storageError = error.message; storageBlocked = true; }
 game.position = { x: -1.12, z: .66 };
 let run = store.active, completedRun = null, turnNumber = run ? run.turns.length + 1 : 0, remaining = RULES.seconds;
-let recovering = Boolean(run), sound = false, audioContext, audioMaster, volume = .5, audioActivation = 0;
-const activeNotes = new Map();
+let recovering = Boolean(run);
 const frames = [], errors = [];
 const playtest = createPlaytestClient({ build: __BUILD_INFO__.commit, enabled: shared });
 const track = (type, data = {}, subject = run || pendingPlayer || completedRun) => playtest.track(type, data, { mode: 'event', ...(subject?.id ? { runId: subject.id } : {}) });
@@ -32,7 +27,6 @@ track('page_open');
 let observedControl = '', observedPhase = '', observedSaveError = false, cameraFailureReported = false;
 let performanceFrames = [], performanceVisibleMs = 0, cameraReadyAt = null;
 let holdSignalTurn = -1, holdSignalCount = 0;
-const deliveryPhases = new Set(['anticipate', 'descend', 'grip', 'lift', 'transfer', 'release', 'deliver', 'reveal']);
 let nextTurnElapsed = 0;
 const tags = game.toys.map(toy => {
   const element = document.createElement('span'); element.className = 'prize-tag'; element.dataset.points = RULES.points[toy.id]; element.textContent = RULES.points[toy.id]; $('prize-tags').append(element); return { toy, element };
@@ -42,10 +36,10 @@ function persist() {
   if (storageBlocked) return;
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(store)); storageError = ''; }
   catch { storageError = 'Storage unavailable. Results are in memory only. Export before closing.'; }
-  $('storage-status').textContent = shared ? sharedStatus : storageError || store.notice || 'Scores saved on this browser.';
+  $('storage-status').textContent = shared ? pilot.status : storageError || store.notice || 'Scores saved on this browser.';
 }
 function renderBoard() {
-  const board = shared ? sharedBoard || { name: 'Shared staff leaderboard', runs: [] } : currentBoard(store); $('board-name').textContent = board.name; $('leaders').replaceChildren();
+  const board = shared ? pilot.board || { name: 'Shared staff leaderboard', runs: [] } : currentBoard(store); $('board-name').textContent = board.name; $('leaders').replaceChildren();
   const leaders = shared ? board.runs : leaderboard(board); $('board-empty').hidden = leaders.length > 0;
   for (const row of leaders.slice(0, 5)) {
     const li = document.createElement('li'); li.classList.toggle('current', row.id === completedRun?.id);
@@ -54,156 +48,36 @@ function renderBoard() {
   }
   const official = board.runs.filter(r => !r.practice), turns = official.flatMap(r => r.turns);
   $('operator-stats').textContent = `${official.length} completed · ${turns.length ? Math.round(turns.filter(t => t.score).length / turns.length * 100) : 0}% catch rate${shared ? '' : ` · ${store.boards.length} sessions stored`}`;
-  $('storage-status').textContent = shared ? sharedStatus : storageError || store.notice || 'Scores saved on this browser.';
+  $('storage-status').textContent = shared ? pilot.status : storageError || store.notice || 'Scores saved on this browser.';
 }
-function silenceNotes() {
-  for (const [oscillator, gain] of activeNotes) { oscillator.stop(); oscillator.disconnect(); gain.disconnect(); }
-  activeNotes.clear();
+const audio = createArcadeAudio({ onChange: syncSoundUI });
+const hud = createHud({ audio, phaseSound });
+function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ? 'loading' : 'off' }, modal = Boolean(document.querySelector('dialog[open]'))) {
+  hud.update({ game, run, completedRun, pendingPlayer, turnNumber, remaining, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, sharedStatus: pilot.status, storageError, aligned }, feedback, modal);
 }
-function updateSound() {
-  $('sound').textContent = !sound ? 'SOUND OFF' : volume ? 'SOUND ON' : 'MUTED';
-  $('sound').setAttribute('aria-pressed', String(sound));
-  if (audioMaster) audioMaster.gain.setValueAtTime(sound ? volume : 0, audioContext.currentTime);
-  if (!sound || !volume) {
-    silenceNotes();
-  }
+function syncSoundUI() {
+  $('sound').textContent = !audio.enabled ? 'SOUND OFF' : audio.volume ? 'SOUND ON' : 'MUTED';
+  $('sound').setAttribute('aria-pressed', String(audio.enabled));
 }
-function note(frequency, duration = .12, delay = 0, type = 'square', endFrequency = frequency, level = .025) {
-  if (!sound || !volume || !audioMaster) return;
-  try {
-    const t = audioContext.currentTime + delay, oscillator = audioContext.createOscillator(), gain = audioContext.createGain();
-    oscillator.type = type; oscillator.frequency.setValueAtTime(frequency, t);
-    oscillator.frequency.exponentialRampToValueAtTime(endFrequency, t + duration);
-    gain.gain.setValueAtTime(.001, t); gain.gain.linearRampToValueAtTime(level, t + .005);
-    gain.gain.exponentialRampToValueAtTime(.001, t + duration);
-    oscillator.connect(gain); gain.connect(audioMaster); activeNotes.set(oscillator, gain);
-    oscillator.onended = () => { activeNotes.delete(oscillator); oscillator.disconnect(); gain.disconnect(); };
-    oscillator.start(t); oscillator.stop(t + duration);
-  } catch { sound = false; updateSound(); }
-}
-// Original, finite major-key fanfares. No audio files, timers or background loop.
-function fanfare(kind) {
-  const scores = {
-    drop: [587, 740, 880, 1175, 880, 1175],
-    shelf: [587, 740, 880, 740, 988, 1175, 1480, 1175],
-    complete: [587, 587, 740, 880, 1175, 988, 1175, 1480, 1760],
-  };
-  const melody = scores[kind], beat = kind === 'drop' ? .13 : .22;
-  melody.forEach((frequency, i) => {
-    const duration = i === melody.length - 1 ? .5 : beat * .85;
-    note(frequency, duration, i * beat, 'square', frequency, .014);
-    if (i % 2 === 0) note(i % 4 ? 220 : 147, beat * 1.6, i * beat, 'triangle', i % 4 ? 220 : 147, .007);
-  });
-}
-// One announcement surface; delivery messages expire without changing game timing.
-const phaseCopy = { anticipate: 'DROP!', descend: 'DROP!', grip: '', lift: 'GOT IT!', transfer: '', release: '', deliver: '', reveal: '' };
-let messageKey = '', messageUntil = 0;
-function presentMessage(title, hint, key, duration = 0) {
-  if (key !== messageKey) {
-    messageKey = key; messageUntil = duration ? performance.now() + duration : 0;
-    setText('status', title); setText('hint', hint);
-    $('action-copy').classList.remove('strike');
-    if (duration && title) { void $('action-copy').offsetWidth; $('action-copy').classList.add('strike'); }
-  }
-  // Opacity preserves the live region; timed announcements stay available to assistive tech.
-  $('action-copy').classList.toggle('expired', Boolean(messageUntil && performance.now() >= messageUntil));
-}
-function phaseSound(phase) {
+function phaseSound(phase, modal) {
   if (phase === lastSoundPhase) return;
   lastSoundPhase = phase;
-  if (paused || document.hidden || document.querySelector('dialog[open]')) return;
-  if (phase === 'anticipate') { note(880, .22, 0, 'square', 110); fanfare('drop'); }
-  else if (phase === 'descend') [360, 280, 200].forEach((f, i) => note(f, .1, i * .09, 'square', f / 2));
-  else if (phase === 'grip') { note(120, .08, 0, 'square', 60); note(180, .08, .09, 'square', 90); }
+  if (paused || document.hidden || modal) return;
+  if (phase === 'anticipate') { audio.note(880, .22, 0, 'square', 110); audio.fanfare('drop'); }
+  else if (phase === 'descend') [360, 280, 200].forEach((f, i) => audio.note(f, .1, i * .09, 'square', f / 2));
+  else if (phase === 'grip') { audio.note(120, .08, 0, 'square', 60); audio.note(180, .08, .09, 'square', 90); }
   else if (phase === 'lift') {
-    if (game.plan?.prize) [440, 554, 660].forEach((f, i) => note(f, .13, i * .1, 'square', f * 1.5));
-    else { note(240, .16, 0, 'sawtooth', 180); note(160, .2, .13, 'triangle', 65); }
-  } else if (phase === 'deliver' && game.plan?.prize) fanfare('shelf');
-  else if (phase === 'release' && game.plan?.prize) { note(740, .1, 0, 'sine'); note(980, .14, .1, 'sine'); }
+    if (game.plan?.prize) [440, 554, 660].forEach((f, i) => audio.note(f, .13, i * .1, 'square', f * 1.5));
+    else { audio.note(240, .16, 0, 'sawtooth', 180); audio.note(160, .2, .13, 'triangle', 65); }
+  } else if (phase === 'deliver' && game.plan?.prize) audio.fanfare('shelf');
+  else if (phase === 'release' && game.plan?.prize) { audio.note(740, .1, 0, 'sine'); audio.note(980, .14, .1, 'sine'); }
 }
-function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ? 'loading' : 'off' }) {
-  const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
-  let title = 'READY PLAYER?', hint = 'Three turns. One high score.', button = 'Play', kicker = 'CLOUD CLAW';
-  if (recovering) { title = 'Let’s get you back in'; hint = 'Ask your host to resume.'; button = 'OPERATOR'; }
-  else if (phase === 'aim') { kicker = turnNumber === 3 ? 'LAST CLAW!' : `TURN ${turnNumber} OF 3`; title = 'Move your hand'; hint = 'Clench your fist and hold to drop.'; button = '';  }
-  else if (phase === 'result') { const points = run?.turns.at(-1)?.score || 0; kicker = `TURN ${turnNumber} COMPLETE`; title = points ? `+${points}` : 'NEXT TURN'; hint = ''; button = '';  }
-  else if (phase in phaseCopy) {
-    title = phase === 'lift' && !game.plan?.prize ? 'MISSED' : phaseCopy[phase];
-    kicker = `TURN ${turnNumber} OF 3`;
-    hint = '';
-    button = '';
-  }
-  phaseSound(phase);
-  // Attract mode: the idle machine gently pulses its invitation until a hand
-  // takes control. CSS disables the pulse under reduced motion.
-  $('action-copy').classList.toggle('attract', phase === 'idle' && !paused && !recovering && (!cameraControls?.running || cameraControls.waiting));
-  const cue = carouselCue(game.carouselTime), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
-  const cueVisible = phase === 'aim' && nearPickup && !paused && !frozen && !document.hidden && !document.querySelector('dialog[open]') && cameraControls?.running && !cameraControls.waiting;
-  setHidden($('jackpot-signal'), !cueVisible);
-  const cueKey = `${phase}:${cue.lights}:${cue.now}`; if (cueKey !== lastCue) { if (cueVisible && cue.lights) note(cue.now ? 880 : 440 + cue.lights * 110, .09); lastCue = cueKey; }
-  if ($('jackpot-signal').dataset.cue !== cueKey) {
-    $('jackpot-signal').dataset.cue = cueKey;
-    $('jackpot-signal').classList.toggle('go', cue.now && phase === 'aim');
-    setText('jackpot-cue', ['idle', 'aim'].includes(phase) ? cue.text : 'Claw in action');
-    [...$('jackpot-lights').children].forEach((light, i) => light.classList.toggle('on', ['idle', 'aim'].includes(phase) && i < cue.lights));
-  }
-  if (phase === 'aim' && nearPickup) { title = 'Go for the star'; hint = aligned?.id === CAROUSEL.id ? 'Clench your fist and hold.' : 'Gold ring. Wait for green.'; }
-  const learning = phase === 'aim' || (!run && !recovering && cameraControls?.running);
-  if (learning) {
-    if (feedback.kind === 'off') { title = 'Let’s see your hand'; hint = 'Open Camera to continue.'; }
-    else if (['ready', 'lost'].includes(feedback.kind)) { title = feedback.kind === 'lost' ? 'Bring your hand back' : 'Show one open hand'; hint = feedback.handCount > 1 ? 'Lower one hand to begin.' : 'Hold it still in the camera.'; }
-    else if (feedback.kind === 'delayed') { title = 'Hold steady'; hint = 'Tracking delayed.'; }
-    else if (feedback.kind === 'calibrating') { title = 'Hand found'; hint = 'Hold still for a moment.'; }
-    else if (['clenching', 'dropping'].includes(feedback.kind) && feedback.controlEnabled) { title = feedback.progress > 0 ? 'Hold to drop' : 'Ready for a drop?'; hint = feedback.message || 'Clench your fist. Open to cancel.'; }
-    else if (feedback.kind === 'tracking') {
-      if (phase === 'idle') { title = 'You’re ready'; hint = ''; }
-      else if (!nearPickup) { title = 'Move your hand'; hint = 'Clench your fist and hold to drop.'; }
-    } else if (feedback.kind === 'error') { title = 'Let’s check the camera'; hint = 'Open Camera to try again.'; }
-    else if (feedback.kind === 'loading') { title = 'Waking up the camera…'; hint = 'Allow camera access to play.'; }
-  }
-  if (startingRun) { title = 'Getting your run ready'; hint = 'Connecting to the leaderboard…'; }
-  const holding = phase === 'aim' && feedback.controlEnabled && ['clenching', 'dropping'].includes(feedback.kind);
-  const progress = holding ? Math.round(Math.max(0, Math.min(1, feedback.progress || 0)) * 100) : 0;
-  setHidden($('gesture-meter'), !holding);
-  if ($('gesture-meter').getAttribute('aria-valuenow') !== String(progress)) {
-    $('gesture-meter').setAttribute('aria-valuenow', String(progress));
-    $('gesture-progress').style.transform = `scaleX(${progress / 100})`;
-  }
-  const control = deliveryPhases.has(phase) ? 'delivery' : holding ? 'holding' : feedback.controlEnabled && feedback.kind === 'tracking' ? 'tracking' : feedback.kind;
-  if ($('arcade').dataset.control !== control) $('arcade').dataset.control = control;
-  const cameraLabels = { ready: 'Camera view', calibrating: 'Hand found', tracking: 'Hand found', accepted: 'Drop confirmed', lost: 'Hand out of view', delayed: 'Tracking delayed', clenching: 'Fist found', dropping: 'Hands found', loading: 'Starting camera', off: 'Camera off', error: 'Check camera' };
-  setText('camera-recognition', cameraLabels[feedback.kind] || 'Camera view');
-  if ($('camera-preview').dataset.state !== feedback.kind) $('camera-preview').dataset.state = feedback.kind;
-  $('reset').disabled = startingRun;
-  setText('timer', String(Math.ceil(remaining)).padStart(2, '0'));
-  $('arcade').classList.toggle('last-claw', Boolean(run && turnNumber === 3)); $('arcade').classList.toggle('urgent', phase === 'aim' && remaining <= 5);
-  setText('mode-label', shared ? sharedStatus : storageError ? 'LOCAL PREVIEW · UNSAVED' : 'LOCAL PREVIEW');
-  setHidden($('mode-label'), !$('mode-label').textContent);
-  setHidden($('result-open'), !completedRun || startingRun || Boolean(run) || cameraLoading);
-  if (!run && !recovering) button = cameraLoading ? 'Starting…' : cameraControls?.running ? 'Play' : 'Start camera';
-  const cameraRecovery = Boolean(run && !recovering && phase === 'aim' && !cameraControls?.running);
-  if (cameraRecovery) {
-    button = cameraLoading ? 'Starting…' : 'Restart camera';
-    if (!cameraLoading) hint = 'Restart camera to continue this turn.';
-  }
-  const timed = deliveryPhases.has(phase) || phase === 'result';
-  presentMessage(title, hint, `${['anticipate', 'descend'].includes(phase) ? 'drop' : phase}:${turnNumber}:${title}:${hint}`, timed ? 1600 : 0);
-  if ($('arcade').dataset.phase !== phase) $('arcade').dataset.phase = phase;
-  const signature = JSON.stringify([title, hint, button, kicker, total, run?.name, pendingPlayer?.name, completedRun?.id, paused]);
-  if (signature === lastStatus) return; lastStatus = signature;
-  $('player-name').textContent = run?.name || pendingPlayer?.name || completedRun?.name || 'Your turn?'; $('score').textContent = String(total).padStart(3, '0'); $('turn').textContent = run ? `${turnNumber} / 3` : '— / 3';
-  $('phase-label').textContent = kicker; $('button-text').textContent = button;
-  $('play').hidden = Boolean(startingRun || (run && !recovering && !cameraRecovery));
-  $('play').disabled = paused || cameraLoading;
-  $('turn-chips').replaceChildren();
-  for (let i = 0; i < 3; i++) { const turn = run?.turns[i] || completedRun?.turns[i]; const chip = document.createElement('span'); chip.className = `turn-chip ${turn?.score ? 'scored' : ''}`; chip.textContent = turn ? turn.score ? `+${turn.score}` : 'MISS' : '—'; $('turn-chips').append(chip); }
-}
-function freshGame() { cameraControls?.reset(); game = createGame({ carousel: true }); game.position = { x: -1.12, z: .66 }; scene?.groundToys(game); aligned = null; lastStatus = ''; }
+function freshGame() { cameraControls?.reset(); game = createGame({ carousel: true }); game.position = { x: -1.12, z: .66 }; scene?.groundToys(game); aligned = null; hud.invalidate(); }
 function beginTurn() {
   nextTurnElapsed = 0;
   freshGame(); turnNumber = run.turns.length + 1; remaining = run.rules.seconds; begin(game); recovering = false;
-  if (turnNumber === 3) { [330, 440, 660].forEach((f, i) => note(f, .16, i * .15)); }
-  else { [523, 784].forEach((f, i) => note(f, .12, i * .09)); }
+  if (turnNumber === 3) { [330, 440, 660].forEach((f, i) => audio.note(f, .16, i * .15)); }
+  else { [523, 784].forEach((f, i) => audio.note(f, .12, i * .09)); }
   updateUI();
 }
 function openRegistration(name = $('name').value) {
@@ -216,10 +90,10 @@ function finishTurn() {
   const outcome = recordTurn(store, turnNumber, game.plan?.prize?.id || null); if (!outcome) return;
   persist();
   track('turn_complete', { turn: turnNumber, score: outcome.run.turns.at(-1).score, prizeId: outcome.run.turns.at(-1).prizeId }, outcome.run);
-  if (shared) sharedApi.queue(outcome.run);
+  if (shared) pilot.queue(outcome.run);
   const points = outcome.run.turns.at(-1).score;
-  if (outcome.completed) fanfare('complete');
-  else if (points) { [523, 659, 784, 1047].forEach((f, i) => note(f, .18, i * .11)); } else note(165, .25, 0, 'triangle');
+  if (outcome.completed) audio.fanfare('complete');
+  else if (points) { [523, 659, 784, 1047].forEach((f, i) => audio.note(f, .18, i * .11)); } else audio.note(165, .25, 0, 'triangle');
   if (outcome.completed) {
     track('run_complete', { score: outcome.run.total }, outcome.run);
     completedRun = outcome.run; run = null; renderBoard();
@@ -230,7 +104,7 @@ function finishTurn() {
     setText('final-board', `Board: ${completedRun.boardName || store.boards.find(board => board.id === completedRun.boardId)?.name || completedRun.boardId}`);
     $('final-turns').replaceChildren();
     for (const turn of completedRun.turns) { const chip = document.createElement('span'); chip.className = 'turn-chip scored'; chip.textContent = `+${turn.score}`; const name = document.createElement('small'); name.textContent = game.toys.find(t => t.id === turn.prizeId)?.name || 'Miss'; chip.append(name); $('final-turns').append(chip); }
-    setText('final-sync', shared ? sharedApi.state().error : storageError);
+    setText('final-sync', shared ? pilot.state().error : storageError);
     $('final').showModal(); $('play-again').focus();
     if (!scene.reducedMotion) { const total = completedRun.total, start = performance.now(); const count = time => { if (!$('final').open) return; const progress = Math.min(1, (time - start) / 850); $('final-score').textContent = String(Math.round(total * (1 - (1 - progress) ** 3))).padStart(3, '0'); if (progress < 1) scoreAnimation = requestAnimationFrame(count); }; scoreAnimation = requestAnimationFrame(count); }
   }
@@ -248,9 +122,9 @@ async function startScoredRun() {
   try {
     if (shared) {
       pendingPlayer.requestKey ??= crypto.randomUUID();
-      const issued = await sharedApi.start(pendingPlayer.name, pendingPlayer.requestKey);
+      const issued = await pilot.start(pendingPlayer.name, pendingPlayer.requestKey);
       // Presentation accumulates turns under the acknowledged immutable rule snapshot.
-      store = { version: 1, current: issued.boardId, boards: [{ id: issued.boardId, name: sharedBoard?.id === issued.boardId ? sharedBoard.name : issued.boardId, rules: issued.rules, runs: [] }], active: issued };
+      store = { version: 1, current: issued.boardId, boards: [{ id: issued.boardId, name: pilot.board?.id === issued.boardId ? pilot.board.name : issued.boardId, rules: issued.rules, runs: [] }], active: issued };
       run = issued;
       run.boardName = store.boards[0].name;
     } else run = startRun(store, pendingPlayer.name);
@@ -275,8 +149,8 @@ function gestureDrop() {
   return true;
 }
 function fail(message, error) { track('client_error', { reason: 'renderer' }); stopped = true; cameraControls?.stop(); clearTimeout(window.__arcadeBootTimer); errors.push(String(error || message)); $('loading').hidden = true; $('error').hidden = false; $('error-message').textContent = message; console.error('Cloud Claw:', error || message); }
-function openOperator() { if (shared && sharedRole !== 'host') { $('host-access').showModal(); return; } renderBoard(); $('operator').showModal(); $('pause').textContent = recovering ? 'RESUME INTERRUPTED TURN' : paused ? 'RESUME GAME' : 'PAUSE GAME'; }
-document.addEventListener('visibilitychange', () => { previous = 0; if (document.hidden) silenceNotes(); });
+function openOperator() { if (shared && pilot.role !== 'host') { $('host-access').showModal(); return; } renderBoard(); $('operator').showModal(); $('pause').textContent = recovering ? 'RESUME INTERRUPTED TURN' : paused ? 'RESUME GAME' : 'PAUSE GAME'; }
+document.addEventListener('visibilitychange', () => { previous = 0; if (document.hidden) audio.silence(); });
 $('player-form').addEventListener('submit', event => { event.preventDefault(); if (!scene || stopped || !cameraControls?.running) return;
   if (startingRun || run) return;
   const name = $('name').value.trim() || 'Player';
@@ -310,16 +184,16 @@ $('final').addEventListener('cancel', event => event.preventDefault());
 $('play').addEventListener('click', () => { $('scene').focus(); play(); });
 $('operator-open').addEventListener('click', openOperator);
 $('pause').addEventListener('click', () => { if (recovering) { beginTurn(); paused = false; } else paused = !paused; $('operator').close(); $('scene').focus(); });
-$('reset').addEventListener('click', () => { if (startingRun) return; if (shared && run) sharedApi.abandon(run); if (store.active) { store.active.abortedAt = new Date().toISOString(); store.active = null; } run = null; pendingPlayer = null; completedRun = null; recovering = paused = frozen = false; persist(); freshGame(); $('operator').close(); updateUI(); });
+$('reset').addEventListener('click', () => { if (startingRun) return; if (shared && run) pilot.abandon(run); if (store.active) { store.active.abortedAt = new Date().toISOString(); store.active = null; } run = null; pendingPlayer = null; completedRun = null; recovering = paused = frozen = false; persist(); freshGame(); $('operator').close(); updateUI(); });
 $('new-board').addEventListener('click', async () => {
   if (shared) {
-    if (rotatingBoard) return;
-    rotatingBoard = true; boardVersion++; $('new-board').disabled = true;
+    if (pilot.rotating) return;
+    $('new-board').disabled = true;
     try {
-      sharedBoard = await sharedApi.request('/host/boards', { name: $('session-name').value.trim() || 'Cloud Claw · Staff pilot' });
-      renderBoard(); $('operator-message').textContent = 'New shared board started. Existing runs finish on their original board.';
+      await pilot.rotate($('session-name').value.trim() || 'Cloud Claw · Staff pilot');
+      $('operator-message').textContent = 'New shared board started. Existing runs finish on their original board.';
     } catch (error) { $('operator-message').textContent = error.message; }
-    finally { boardVersion++; rotatingBoard = false; $('new-board').disabled = false; }
+    finally { $('new-board').disabled = false; }
     return;
   }
   try { rotateBoard(store, $('session-name').value); persist(); completedRun = null; renderBoard(); $('operator-message').textContent = 'New leaderboard started. Previous results are preserved.'; }
@@ -327,22 +201,10 @@ $('new-board').addEventListener('click', async () => {
 });
 $('export').addEventListener('click', () => { if (shared) { window.location.assign('/api/host/export'); return; } let data = JSON.stringify(store, null, 2); if (storageBlocked) { try { data = localStorage.getItem(STORAGE_KEY) || data; } catch { /* In-memory export remains available. */ } } const url = URL.createObjectURL(new Blob([data], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = `cloud-claw-sessions-${new Date().toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
 $('quality').addEventListener('click', () => { if (!scene) return; scene.setQuality(!scene.lowQuality); $('quality').textContent = `QUALITY: ${scene.lowQuality ? 'SIMPLE' : 'FULL'}`; });
-$('sound').addEventListener('click', () => {
-  sound = !sound;
-  const activation = ++audioActivation;
-  if (sound) {
-    try {
-      audioContext ??= new AudioContext();
-      if (!audioMaster) { audioMaster = audioContext.createGain(); audioMaster.connect(audioContext.destination); }
-      audioContext.resume().catch(() => { if (activation === audioActivation) { sound = false; updateSound(); } });
-    } catch { sound = false; }
-  }
-  updateSound(); note(523);
-});
+$('sound').addEventListener('click', () => audio.toggle());
 $('sound-volume').addEventListener('input', () => {
-  volume = Number($('sound-volume').value) / 100;
-  $('sound-level').textContent = `${Math.round(volume * 100)}%`;
-  updateSound();
+  audio.setVolume(Number($('sound-volume').value) / 100);
+  $('sound-level').textContent = `${Math.round(audio.volume * 100)}%`;
 });
 let feedbackSubmission = null, feedbackContext = null;
 function openFeedback() {
@@ -436,11 +298,14 @@ function frame(time) {
   if (stopped) return;
   const raw = previous ? (time - previous) / 1000 : 1 / 60, dt = Math.min(raw, .05); previous = time;
   if (import.meta.env.DEV && !document.hidden) { frames.push(raw * 1000); if (frames.length > 1800) frames.shift(); }
-  const aiming = game.phase === 'aim', modal = Boolean(document.querySelector('dialog[open]'));
+  // One dialog query per frame; every consumer below shares it.
+  const openDialogs = document.querySelectorAll('dialog[open]');
+  const aiming = game.phase === 'aim', modal = openDialogs.length > 0;
+  const modalBeyondFinal = modal && [...openDialogs].some(dialog => dialog.id !== 'final');
   const cameraWaiting = aiming && (!cameraControls?.running || cameraControls.waiting);
   // Only explicit operator pause stops a drop already in flight.
   const blocked = paused || (aiming && (cameraWaiting || modal || document.hidden));
-  if (paused || document.querySelector('dialog[open]:not(#final)') || document.hidden) silenceNotes();
+  if (paused || modalBeyondFinal || document.hidden) audio.silence();
   setHidden($('pause-banner'), !paused);
   setText('pause-banner', 'Paused by host');
   const input = { ...cameraControls?.input || { x: 0, z: 0 } };
@@ -451,9 +316,9 @@ function frame(time) {
       // Actual movement, not hand presence: stay quiet at rest and at the travel limit.
       if (Math.hypot(game.position.x - oldPosition.x, game.position.z - oldPosition.z) > .0001 && time - lastMovementSound >= 140) {
         lastMovementSound = time;
-        note(130, .065, 0, 'triangle', 95, .008);
+        audio.note(130, .065, 0, 'triangle', 95, .008);
       }
-      const before = Math.ceil(remaining); remaining = Math.max(0, remaining - dt); if (Math.ceil(remaining) < before && remaining <= 5) note(remaining < 1 ? 220 : 440, .08); if (!remaining && drop(game)) track('drop', { trigger: 'timeout', phase: game.phase, turn: turnNumber });
+      const before = Math.ceil(remaining); remaining = Math.max(0, remaining - dt); if (Math.ceil(remaining) < before && remaining <= 5) audio.note(remaining < 1 ? 220 : 440, .08); if (!remaining && drop(game)) track('drop', { trigger: 'timeout', phase: game.phase, turn: turnNumber });
     } else {
       input.x = input.z = 0;
       if (game.phase === 'idle') moveCarousel(game, dt);
@@ -463,7 +328,7 @@ function frame(time) {
   } else input.x = input.z = 0;
   try {
     const feedback = cameraControls?.feedback || { kind: 'off', progress: 0, controlEnabled: false };
-    updateUI(feedback);
+    updateUI(feedback, modal);
     if (feedback.kind !== observedControl) { observedControl = feedback.kind; track('control_state', { state: feedback.kind, phase: game.phase }); }
     if (cameraReadyAt !== null && feedback.kind === 'tracking') { track('time_to_control', { acquisitionMs: Math.min(604800000, performance.now() - cameraReadyAt) }); cameraReadyAt = null; }
     if (game.phase !== observedPhase) { observedPhase = game.phase; track('phase_change', { phase: game.phase }); }
@@ -503,7 +368,7 @@ function frame(time) {
 // Read-only development diagnostics.
 function snapshot(includeBounds = false) {
   const sorted = [...frames].sort((a, b) => a - b), average = frames.reduce((a, b) => a + b, 0) / (frames.length || 1);
-  return { phase: game.phase, elapsed: game.elapsed, position: { ...game.position }, rounds: game.rounds, event: { run, remaining, turn: turnNumber, paused, board: shared ? sharedBoard : currentBoard(store), complete: completedRun, storageError, handCamera: { running: cameraControls?.running || false, waiting: cameraControls?.waiting || false, feedback: cameraControls?.feedback, diagnostic: cameraControls?.diagnostic }, carouselTime: game.carouselTime, cue: carouselCue(game.carouselTime) }, aligned: aligned?.id || null, caught: game.plan?.prize?.id || null, contacts: game.plan?.contacts || null, claw: clawPose(game), stop: game.plan?.stop || null, collection: [...game.collection], reducedMotion: scene?.reducedMotion, camera: scene?.camera.position.toArray(), lowQuality: scene?.lowQuality, joystick: { mode: scene?.joystickHand.mode, visible: scene?.joystickHand.root.visible, progress: scene?.joystickHand.progress }, effects: { holdArc: scene?.holdArc.visible ?? false, burst: scene?.burst.count ?? 0 }, errors: [...errors], render: { calls: scene?.renderer.info.render.calls, triangles: scene?.renderer.info.render.triangles }, performance: { frames: frames.length, averageFps: +(1000 / average).toFixed(1), p95FrameMs: sorted[Math.floor(sorted.length * .95)], framesOver33ms: frames.filter(t => t > 33.4).length }, toys: game.toys.map(toy => ({ id: toy.id, family: toy.family, claimed: toy.claimed, position: scene?.toys.get(toy.id).position.toArray(), scale: scene?.toys.get(toy.id).scale.toArray(), bounds: includeBounds ? scene?.toyBounds(toy.id) : undefined })) };
+  return { phase: game.phase, elapsed: game.elapsed, position: { ...game.position }, rounds: game.rounds, event: { run, remaining, turn: turnNumber, paused, board: shared ? pilot.board : currentBoard(store), complete: completedRun, storageError, handCamera: { running: cameraControls?.running || false, waiting: cameraControls?.waiting || false, feedback: cameraControls?.feedback, diagnostic: cameraControls?.diagnostic }, carouselTime: game.carouselTime, cue: carouselCue(game.carouselTime) }, aligned: aligned?.id || null, caught: game.plan?.prize?.id || null, contacts: game.plan?.contacts || null, claw: clawPose(game), stop: game.plan?.stop || null, collection: [...game.collection], reducedMotion: scene?.reducedMotion, camera: scene?.camera.position.toArray(), lowQuality: scene?.lowQuality, joystick: { mode: scene?.joystickHand.mode, visible: scene?.joystickHand.root.visible, progress: scene?.joystickHand.progress }, effects: { holdArc: scene?.holdArc.visible ?? false, burst: scene?.burst.count ?? 0 }, errors: [...errors], render: { calls: scene?.renderer.info.render.calls, triangles: scene?.renderer.info.render.triangles }, performance: { frames: frames.length, averageFps: +(1000 / average).toFixed(1), p95FrameMs: sorted[Math.floor(sorted.length * .95)], framesOver33ms: frames.filter(t => t > 33.4).length }, toys: game.toys.map(toy => ({ id: toy.id, family: toy.family, claimed: toy.claimed, position: scene?.toys.get(toy.id).position.toArray(), scale: scene?.toys.get(toy.id).scale.toArray(), bounds: includeBounds ? scene?.toyBounds(toy.id) : undefined })) };
 }
 
 function updateSavedRank(saved) {
@@ -513,53 +378,37 @@ function updateSavedRank(saved) {
   $('final-kicker').textContent = saved.rank === 1 ? 'TOP OF THE BOARD!' : 'RUN COMPLETE';
   $('final-rank').textContent = `SAVED · RANK #${saved.rank}`;
 }
-async function refreshSharedBoard() {
-  if (!sharedApi || rotatingBoard) return;
-  if (boardRefresh) return boardRefresh;
-  const version = boardVersion;
-  boardRefresh = Promise.resolve().then(async () => {
-    try {
-      const board = await sharedApi.request('/board');
-      if (version !== boardVersion) return;
-      sharedBoard = board;
-      if (completedRun) updateSavedRank(await sharedApi.request(`/runs/${completedRun.id}`));
-      if (!sharedApi.state().pending && !sharedApi.state().error) sharedStatus = 'SHARED STAFF LEADERBOARD';
-      renderBoard();
-    } catch (error) { if (version === boardVersion) { sharedStatus = error.status === 401 ? 'SIGN IN TO SYNC' : 'LEADERBOARD OFFLINE · RETRYING'; renderBoard(); } }
-  }).finally(() => { boardRefresh = null; });
-  return boardRefresh;
-}
+const pilot = createSharedBoard({
+  enabled: shared,
+  getCompletedRun: () => completedRun,
+  onSaved: updateSavedRank,
+  onBoard: renderBoard,
+  onSyncState: state => {
+    if (state.error && !observedSaveError) track('save_error', { reason: 'sync' });
+    observedSaveError = Boolean(state.error);
+    $('sync-message').textContent = state.error || (state.pending ? 'Score waiting to sync' : '');
+    setText('final-sync', completedRun?.rank ? '' : state.error || '');
+    for (const id of ['shared-reauth', 'final-reauth', 'start-reauth', 'host-reauth']) $(id).hidden = !state.needsLogin;
+    renderBoard();
+  },
+  onConnectError: error => { $('sync-message').textContent = error.message; $('shared-reauth').hidden = error.status !== 401; renderBoard(); },
+});
 if (shared) {
   $('shared-access').hidden = false;
   $('operator-help').textContent = 'Shared scores persist on the pilot server. Existing runs keep their original board when you rotate. Names are display labels; scores are for fun.';
-  sharedApi = createSessionApi({ onChange: state => {
-    if (state.saved) { updateSavedRank(state.saved); void refreshSharedBoard(); return; }
-    if (state.error && !observedSaveError) track('save_error', { reason: 'sync' });
-    observedSaveError = Boolean(state.error);
-    sharedStatus = state.error || (state.pending ? 'Score waiting to sync' : 'SHARED STAFF LEADERBOARD');
-    $('sync-message').textContent = state.error || (state.pending ? 'Score waiting to sync' : '');
-    setText('final-sync', completedRun?.rank ? '' : state.error || '');
-    $('shared-reauth').hidden = !state.needsLogin;
-    $('final-reauth').hidden = !state.needsLogin;
-    $('start-reauth').hidden = !state.needsLogin;
-    $('host-reauth').hidden = !state.needsLogin;
-    if (state.needsLogin) sharedRole = 'staff';
-    renderBoard();
-  } });
-  sharedApi.initialize().then(session => { sharedRole = session.role; if (!boardVersion) sharedBoard = session.board; renderBoard(); })
-    .catch(error => { sharedStatus = 'SHARED SERVICE UNAVAILABLE'; $('sync-message').textContent = error.message; $('shared-reauth').hidden = error.status !== 401; renderBoard(); });
-  setInterval(() => { void sharedApi.flush(); void refreshSharedBoard(); }, 2000);
-  window.addEventListener('online', () => { void sharedApi.flush(); void refreshSharedBoard(); });
+  pilot.connect();
 }
 for (const id of ['shared-reauth', 'final-reauth', 'start-reauth', 'host-reauth']) $(id).addEventListener('click', () => { $('staff-access').showModal(); });
 $('staff-form').addEventListener('submit', async event => {
   event.preventDefault();
-  try { await sharedApi.request('/login', { code: $('staff-code').value }); $('staff-code').value = ''; $('staff-access').close(); await sharedApi.flush(); await refreshSharedBoard(); }
+  // The dialog closes on login success; queued scores and the board sync after,
+  // with the game unblocked (matching the pre-extraction ordering).
+  try { await pilot.loginStaff($('staff-code').value); $('staff-code').value = ''; $('staff-access').close(); await pilot.flush(); await pilot.refresh(); }
   catch (error) { $('staff-message').textContent = error.message; }
 });
 $('host-form').addEventListener('submit', async event => {
   event.preventDefault();
-  try { await sharedApi.request('/host/login', { code: $('host-code').value }); $('host-code').value = ''; sharedRole = 'host'; $('host-access').close(); openOperator(); }
+  try { await pilot.loginHost($('host-code').value); $('host-code').value = ''; $('host-access').close(); openOperator(); }
   catch (error) { $('host-message').textContent = error.message; }
 });
 $('shared-retry').addEventListener('click', () => { $('shared-start').close(); void startScoredRun(); });

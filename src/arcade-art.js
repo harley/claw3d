@@ -124,13 +124,15 @@ export function createToy(data, mats) {
     blink = eyes(body, mats, .079, .334, .19); smile(face, mats, .277, .192); cheeks(face, blush, .141, .288, .175);
     box(parts, material('#b65c55'), [.333, .19, .05], [.056, .026, .048], .004);
   } else if (data.family === 'star') {
-    const jelly = new T.MeshPhysicalMaterial({ color: data.color, roughness: .17, metalness: 0, transmission: .64, thickness: .58, ior: 1.38, attenuationColor: new T.Color(data.color), attenuationDistance: .75, clearcoat: 1, clearcoatRoughness: .11 });
+    // Glossy candy, not refractive jelly: the transmission pass cost a full
+    // extra scene render per frame and read as out of place beside the plush
+    // toys (product decision 2026-09-12). The squish wave stays — it is the
+    // jackpot's gameplay feedback.
+    const candy = new T.MeshPhysicalMaterial({ color: data.color, roughness: .24, clearcoat: 1, clearcoatRoughness: .14, sheen: .5, sheenColor: new T.Color(data.color).lerp(new T.Color('#fff2d6'), .55), sheenRoughness: .6 });
     const wave = { value: 0 }, waveTime = { value: 0 };
-    jelly.onBeforeCompile = shader => { shader.uniforms.uSquish = wave; shader.uniforms.uToyTime = waveTime; shader.vertexShader = 'uniform float uSquish; uniform float uToyTime;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.x += sin(position.y * 11.0 - uToyTime * 13.0) * uSquish * (0.3 + position.y);\ntransformed.z += cos(position.y * 9.0 - uToyTime * 11.0) * uSquish * 0.45;'); };
+    candy.onBeforeCompile = shader => { shader.uniforms.uSquish = wave; shader.uniforms.uToyTime = waveTime; shader.vertexShader = 'uniform float uSquish; uniform float uToyTime;\n' + shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.x += sin(position.y * 11.0 - uToyTime * 13.0) * uSquish * (0.3 + position.y);\ntransformed.z += cos(position.y * 9.0 - uToyTime * 11.0) * uSquish * 0.45;'); };
     root.userData.wave = wave; root.userData.waveTime = waveTime;
-    mesh(parts, starGeometry(), jelly);
-    const bubble = new T.MeshPhysicalMaterial({ color: '#faffdc', roughness: .09, metalness: .08, transparent: true, opacity: .36, depthWrite: false });
-    for (let i = 0; i < 7; i++) ball(parts, bubble, [Math.sin(i * 7.3) * .12, .31 + i * .032, .08], [.014 + (i % 3) * .004, .019, .013]);
+    mesh(parts, starGeometry(), candy);
     blink = eyes(body, mats, .077, .435, .168); smile(face, mats, .366, .17, .04); cheeks(face, blush, .127, .38, .157);
     const glint = material('#fff3dc', .18); ball(parts, glint, [-.119, .551, .143], [.027, .061, .006]).rotation.z = -.35;
   } else {
@@ -152,7 +154,6 @@ export function createToy(data, mats) {
   const groundOffset = bounds.min.y;
   body.position.y = -groundOffset;
   root.scale.setScalar(data.scale); root.rotation.y = data.yaw;
-  if (data.family === 'star') for (const facialPart of [face, blink]) facialPart.traverse(m => { if (!m.isMesh) return; m.material = m.material.clone(); m.material.transparent = true; m.renderOrder = 3; });
   Object.assign(root.userData, { body, articulation, blink, data, face, groundOffset, height: bounds.max.y - bounds.min.y });
   return root;
 }

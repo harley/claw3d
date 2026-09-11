@@ -414,7 +414,7 @@ export class ArcadeScene {
       body.scale.set(1 + compression * .65, 1 - compression, 1 + compression * .45); body.rotation.z = wobble;
       const seed = ASSORTMENT.findIndex(t => t.id === toy.id);
       // Attract mode: on the empty machine each toy takes an occasional turn to
-      // wave — ears wiggle, the jelly ripples — inviting a passer-by to play.
+      // wave — ears wiggle, the candy star ripples — inviting a passer-by to play.
       let attract = 0;
       if (motion && phase === 'idle' && index < 0) { const beat = (time + seed * 2.83) % 11; if (beat < 1.1) attract = Math.sin(beat / 1.1 * Math.PI); }
       if (blink) { const tick = (time + seed * 1.317) % (4.1 + seed * .23); blink.scale.y = motion && tick < .13 ? .15 + Math.abs(tick - .065) / .065 * .85 : 1; }

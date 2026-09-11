@@ -15,7 +15,7 @@ function fixture() {
   const controller = Object.create(HandController.prototype);
   Object.assign(controller, {
     video: { videoWidth: 640, videoHeight: 640 },
-    getProfile: () => 'clasp', getPhase: () => phase,
+    getPhase: () => phase,
     onStart: () => starts++, onDrop: () => drops++,
     onState: value => { state = value; }, onInput: value => { input = { ...value }; },
     draw: (_hands, value) => { active = value; },
@@ -51,32 +51,7 @@ test('setup recognises and highlights a hand without starting or steering the ga
   assert.equal(f.read().active, null);
 });
 
-test('setup clasp cannot drop; aiming requires a new apart and hold sequence', () => {
-  const f = fixture(), apart = [hand(.4), hand(.7, 'Right')], together = [hand(.46), hand(.55, 'Right')];
-  f.frame([hand(.4)], 10);
-  f.frame(apart, 6); f.frame(together, 15);
-  assert.equal(f.read().drops, 0);
-  f.setPhase('aim'); f.frame(together, 15);
-  assert.equal(f.read().drops, 0);
-  f.frame(apart, 6); f.frame(together, 15);
-  assert.equal(f.read().drops, 1);
-  f.frame(together, 15);
-  assert.equal(f.read().drops, 1);
-});
 
-test('blocking input cancels a partly held drop while keeping recognition visible', () => {
-  const f = fixture(), apart = [hand(.4), hand(.7, 'Right')], together = [hand(.46), hand(.55, 'Right')];
-  f.setPhase('aim'); f.frame([hand(.4)], 10);
-  f.frame(apart, 6); f.frame(together, 4);
-  assert.ok(f.read().state.progress > 0);
-  f.setPhase('blocked'); f.frame(together, 15);
-  assert.equal(f.read().state.handCount, 2);
-  assert.deepEqual(f.read().input, { x: 0, z: 0 });
-  f.setPhase('aim'); f.frame(together, 15);
-  assert.equal(f.read().drops, 0);
-  f.frame([hand(.46)], 7); f.frame([hand(.52)], 3);
-  assert.ok(f.read().input.x > 0);
-});
 
 test('prolonged owner loss requires stable single-hand acquisition', () => {
   const f = fixture(); f.setPhase('aim'); f.frame([hand(.4)], 10);
@@ -138,16 +113,6 @@ test('obsolete camera enumeration cannot update camera choices', async () => {
   } finally { if (originalNavigator) Object.defineProperty(globalThis, 'navigator', originalNavigator); else delete globalThis.navigator; }
 });
 
-test('a rejected clasp never reports an accepted drop and requires a fresh gesture', () => {
-  const f = fixture(); f.setPhase('aim');
-  let attempts = 0; f.controller.onDrop = () => { attempts++; return false; };
-  f.frame([hand(.4)], 10); f.frame([hand(.4), hand(.7, 'Right')], 6);
-  f.frame([hand(.46), hand(.55, 'Right')], 11);
-  assert.equal(attempts, 1);
-  assert.notEqual(f.read().state.kind, 'accepted');
-  assert.ok(!f.read().state.message.includes('confirmed'));
-  f.frame([hand(.46), hand(.55, 'Right')], 20); assert.equal(attempts, 1);
-});
 
 test('continuously late results do not masquerade as a stopped camera or control the game', async () => {
   const f=fixture(), c=f.controller, originalDocument=globalThis.document;

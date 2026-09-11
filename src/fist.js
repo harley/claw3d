@@ -1,4 +1,4 @@
-import {clamp} from './mechanics.js';
+import {clamp} from './arcade-mechanics.js';
 
 export const FIST_HOLD_MS = 550;
 
