@@ -1,6 +1,7 @@
 import './arcade.css';
 import { createSessionApi } from './session-api.js';
 import { createPlaytestClient } from './playtest-client.js';
+import { createArcadeAudio } from './arcade-audio.js';
 const shared = globalThis.__SHARED_PILOT__ === true;
 import { ArcadeScene } from './arcade-scene.js';
 import { createGame, begin, drop, advance, move, planGrab, clawPose, PHASES, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
@@ -23,8 +24,7 @@ let store, storageError = '', storageBlocked = false;
 try { store = shared ? newStore() : loadStore(localStorage); } catch (error) { store = newStore(); storageError = error.message; storageBlocked = true; }
 game.position = { x: -1.12, z: .66 };
 let run = store.active, completedRun = null, turnNumber = run ? run.turns.length + 1 : 0, remaining = RULES.seconds;
-let recovering = Boolean(run), sound = false, audioContext, audioMaster, volume = .5, audioActivation = 0;
-const activeNotes = new Map();
+let recovering = Boolean(run);
 const frames = [], errors = [];
 const playtest = createPlaytestClient({ build: __BUILD_INFO__.commit, enabled: shared });
 const track = (type, data = {}, subject = run || pendingPlayer || completedRun) => playtest.track(type, data, { mode: 'event', ...(subject?.id ? { runId: subject.id } : {}) });
@@ -56,44 +56,10 @@ function renderBoard() {
   $('operator-stats').textContent = `${official.length} completed · ${turns.length ? Math.round(turns.filter(t => t.score).length / turns.length * 100) : 0}% catch rate${shared ? '' : ` · ${store.boards.length} sessions stored`}`;
   $('storage-status').textContent = shared ? sharedStatus : storageError || store.notice || 'Scores saved on this browser.';
 }
-function silenceNotes() {
-  for (const [oscillator, gain] of activeNotes) { oscillator.stop(); oscillator.disconnect(); gain.disconnect(); }
-  activeNotes.clear();
-}
-function updateSound() {
-  $('sound').textContent = !sound ? 'SOUND OFF' : volume ? 'SOUND ON' : 'MUTED';
-  $('sound').setAttribute('aria-pressed', String(sound));
-  if (audioMaster) audioMaster.gain.setValueAtTime(sound ? volume : 0, audioContext.currentTime);
-  if (!sound || !volume) {
-    silenceNotes();
-  }
-}
-function note(frequency, duration = .12, delay = 0, type = 'square', endFrequency = frequency, level = .025) {
-  if (!sound || !volume || !audioMaster) return;
-  try {
-    const t = audioContext.currentTime + delay, oscillator = audioContext.createOscillator(), gain = audioContext.createGain();
-    oscillator.type = type; oscillator.frequency.setValueAtTime(frequency, t);
-    oscillator.frequency.exponentialRampToValueAtTime(endFrequency, t + duration);
-    gain.gain.setValueAtTime(.001, t); gain.gain.linearRampToValueAtTime(level, t + .005);
-    gain.gain.exponentialRampToValueAtTime(.001, t + duration);
-    oscillator.connect(gain); gain.connect(audioMaster); activeNotes.set(oscillator, gain);
-    oscillator.onended = () => { activeNotes.delete(oscillator); oscillator.disconnect(); gain.disconnect(); };
-    oscillator.start(t); oscillator.stop(t + duration);
-  } catch { sound = false; updateSound(); }
-}
-// Original, finite major-key fanfares. No audio files, timers or background loop.
-function fanfare(kind) {
-  const scores = {
-    drop: [587, 740, 880, 1175, 880, 1175],
-    shelf: [587, 740, 880, 740, 988, 1175, 1480, 1175],
-    complete: [587, 587, 740, 880, 1175, 988, 1175, 1480, 1760],
-  };
-  const melody = scores[kind], beat = kind === 'drop' ? .13 : .22;
-  melody.forEach((frequency, i) => {
-    const duration = i === melody.length - 1 ? .5 : beat * .85;
-    note(frequency, duration, i * beat, 'square', frequency, .014);
-    if (i % 2 === 0) note(i % 4 ? 220 : 147, beat * 1.6, i * beat, 'triangle', i % 4 ? 220 : 147, .007);
-  });
+const audio = createArcadeAudio({ onChange: syncSoundUI });
+function syncSoundUI() {
+  $('sound').textContent = !audio.enabled ? 'SOUND OFF' : audio.volume ? 'SOUND ON' : 'MUTED';
+  $('sound').setAttribute('aria-pressed', String(audio.enabled));
 }
 // One announcement surface; delivery messages expire without changing game timing.
 const phaseCopy = { anticipate: 'DROP!', descend: 'DROP!', grip: '', lift: 'GOT IT!', transfer: '', release: '', deliver: '', reveal: '' };
@@ -112,14 +78,14 @@ function phaseSound(phase, modal) {
   if (phase === lastSoundPhase) return;
   lastSoundPhase = phase;
   if (paused || document.hidden || modal) return;
-  if (phase === 'anticipate') { note(880, .22, 0, 'square', 110); fanfare('drop'); }
-  else if (phase === 'descend') [360, 280, 200].forEach((f, i) => note(f, .1, i * .09, 'square', f / 2));
-  else if (phase === 'grip') { note(120, .08, 0, 'square', 60); note(180, .08, .09, 'square', 90); }
+  if (phase === 'anticipate') { audio.note(880, .22, 0, 'square', 110); audio.fanfare('drop'); }
+  else if (phase === 'descend') [360, 280, 200].forEach((f, i) => audio.note(f, .1, i * .09, 'square', f / 2));
+  else if (phase === 'grip') { audio.note(120, .08, 0, 'square', 60); audio.note(180, .08, .09, 'square', 90); }
   else if (phase === 'lift') {
-    if (game.plan?.prize) [440, 554, 660].forEach((f, i) => note(f, .13, i * .1, 'square', f * 1.5));
-    else { note(240, .16, 0, 'sawtooth', 180); note(160, .2, .13, 'triangle', 65); }
-  } else if (phase === 'deliver' && game.plan?.prize) fanfare('shelf');
-  else if (phase === 'release' && game.plan?.prize) { note(740, .1, 0, 'sine'); note(980, .14, .1, 'sine'); }
+    if (game.plan?.prize) [440, 554, 660].forEach((f, i) => audio.note(f, .13, i * .1, 'square', f * 1.5));
+    else { audio.note(240, .16, 0, 'sawtooth', 180); audio.note(160, .2, .13, 'triangle', 65); }
+  } else if (phase === 'deliver' && game.plan?.prize) audio.fanfare('shelf');
+  else if (phase === 'release' && game.plan?.prize) { audio.note(740, .1, 0, 'sine'); audio.note(980, .14, .1, 'sine'); }
 }
 // The frame loop passes its per-frame modal state; event-driven callers let
 // the default query run once here instead of once per consumer.
@@ -142,7 +108,7 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
   const cue = carouselCue(game.carouselTime), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
   const cueVisible = phase === 'aim' && nearPickup && !paused && !frozen && !document.hidden && !modal && cameraControls?.running && !cameraControls.waiting;
   setHidden($('jackpot-signal'), !cueVisible);
-  const cueKey = `${phase}:${cue.lights}:${cue.now}`; if (cueKey !== lastCue) { if (cueVisible && cue.lights) note(cue.now ? 880 : 440 + cue.lights * 110, .09); lastCue = cueKey; }
+  const cueKey = `${phase}:${cue.lights}:${cue.now}`; if (cueKey !== lastCue) { if (cueVisible && cue.lights) audio.note(cue.now ? 880 : 440 + cue.lights * 110, .09); lastCue = cueKey; }
   if ($('jackpot-signal').dataset.cue !== cueKey) {
     $('jackpot-signal').dataset.cue = cueKey;
     $('jackpot-signal').classList.toggle('go', cue.now && phase === 'aim');
@@ -204,8 +170,8 @@ function freshGame() { cameraControls?.reset(); game = createGame({ carousel: tr
 function beginTurn() {
   nextTurnElapsed = 0;
   freshGame(); turnNumber = run.turns.length + 1; remaining = run.rules.seconds; begin(game); recovering = false;
-  if (turnNumber === 3) { [330, 440, 660].forEach((f, i) => note(f, .16, i * .15)); }
-  else { [523, 784].forEach((f, i) => note(f, .12, i * .09)); }
+  if (turnNumber === 3) { [330, 440, 660].forEach((f, i) => audio.note(f, .16, i * .15)); }
+  else { [523, 784].forEach((f, i) => audio.note(f, .12, i * .09)); }
   updateUI();
 }
 function openRegistration(name = $('name').value) {
@@ -220,8 +186,8 @@ function finishTurn() {
   track('turn_complete', { turn: turnNumber, score: outcome.run.turns.at(-1).score, prizeId: outcome.run.turns.at(-1).prizeId }, outcome.run);
   if (shared) sharedApi.queue(outcome.run);
   const points = outcome.run.turns.at(-1).score;
-  if (outcome.completed) fanfare('complete');
-  else if (points) { [523, 659, 784, 1047].forEach((f, i) => note(f, .18, i * .11)); } else note(165, .25, 0, 'triangle');
+  if (outcome.completed) audio.fanfare('complete');
+  else if (points) { [523, 659, 784, 1047].forEach((f, i) => audio.note(f, .18, i * .11)); } else audio.note(165, .25, 0, 'triangle');
   if (outcome.completed) {
     track('run_complete', { score: outcome.run.total }, outcome.run);
     completedRun = outcome.run; run = null; renderBoard();
@@ -278,7 +244,7 @@ function gestureDrop() {
 }
 function fail(message, error) { track('client_error', { reason: 'renderer' }); stopped = true; cameraControls?.stop(); clearTimeout(window.__arcadeBootTimer); errors.push(String(error || message)); $('loading').hidden = true; $('error').hidden = false; $('error-message').textContent = message; console.error('Cloud Claw:', error || message); }
 function openOperator() { if (shared && sharedRole !== 'host') { $('host-access').showModal(); return; } renderBoard(); $('operator').showModal(); $('pause').textContent = recovering ? 'RESUME INTERRUPTED TURN' : paused ? 'RESUME GAME' : 'PAUSE GAME'; }
-document.addEventListener('visibilitychange', () => { previous = 0; if (document.hidden) silenceNotes(); });
+document.addEventListener('visibilitychange', () => { previous = 0; if (document.hidden) audio.silence(); });
 $('player-form').addEventListener('submit', event => { event.preventDefault(); if (!scene || stopped || !cameraControls?.running) return;
   if (startingRun || run) return;
   const name = $('name').value.trim() || 'Player';
@@ -329,22 +295,10 @@ $('new-board').addEventListener('click', async () => {
 });
 $('export').addEventListener('click', () => { if (shared) { window.location.assign('/api/host/export'); return; } let data = JSON.stringify(store, null, 2); if (storageBlocked) { try { data = localStorage.getItem(STORAGE_KEY) || data; } catch { /* In-memory export remains available. */ } } const url = URL.createObjectURL(new Blob([data], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = `cloud-claw-sessions-${new Date().toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
 $('quality').addEventListener('click', () => { if (!scene) return; scene.setQuality(!scene.lowQuality); $('quality').textContent = `QUALITY: ${scene.lowQuality ? 'SIMPLE' : 'FULL'}`; });
-$('sound').addEventListener('click', () => {
-  sound = !sound;
-  const activation = ++audioActivation;
-  if (sound) {
-    try {
-      audioContext ??= new AudioContext();
-      if (!audioMaster) { audioMaster = audioContext.createGain(); audioMaster.connect(audioContext.destination); }
-      audioContext.resume().catch(() => { if (activation === audioActivation) { sound = false; updateSound(); } });
-    } catch { sound = false; }
-  }
-  updateSound(); note(523);
-});
+$('sound').addEventListener('click', () => audio.toggle());
 $('sound-volume').addEventListener('input', () => {
-  volume = Number($('sound-volume').value) / 100;
-  $('sound-level').textContent = `${Math.round(volume * 100)}%`;
-  updateSound();
+  audio.setVolume(Number($('sound-volume').value) / 100);
+  $('sound-level').textContent = `${Math.round(audio.volume * 100)}%`;
 });
 let feedbackSubmission = null, feedbackContext = null;
 function openFeedback() {
@@ -445,7 +399,7 @@ function frame(time) {
   const cameraWaiting = aiming && (!cameraControls?.running || cameraControls.waiting);
   // Only explicit operator pause stops a drop already in flight.
   const blocked = paused || (aiming && (cameraWaiting || modal || document.hidden));
-  if (paused || modalBeyondFinal || document.hidden) silenceNotes();
+  if (paused || modalBeyondFinal || document.hidden) audio.silence();
   setHidden($('pause-banner'), !paused);
   setText('pause-banner', 'Paused by host');
   const input = { ...cameraControls?.input || { x: 0, z: 0 } };
@@ -456,9 +410,9 @@ function frame(time) {
       // Actual movement, not hand presence: stay quiet at rest and at the travel limit.
       if (Math.hypot(game.position.x - oldPosition.x, game.position.z - oldPosition.z) > .0001 && time - lastMovementSound >= 140) {
         lastMovementSound = time;
-        note(130, .065, 0, 'triangle', 95, .008);
+        audio.note(130, .065, 0, 'triangle', 95, .008);
       }
-      const before = Math.ceil(remaining); remaining = Math.max(0, remaining - dt); if (Math.ceil(remaining) < before && remaining <= 5) note(remaining < 1 ? 220 : 440, .08); if (!remaining && drop(game)) track('drop', { trigger: 'timeout', phase: game.phase, turn: turnNumber });
+      const before = Math.ceil(remaining); remaining = Math.max(0, remaining - dt); if (Math.ceil(remaining) < before && remaining <= 5) audio.note(remaining < 1 ? 220 : 440, .08); if (!remaining && drop(game)) track('drop', { trigger: 'timeout', phase: game.phase, turn: turnNumber });
     } else {
       input.x = input.z = 0;
       if (game.phase === 'idle') moveCarousel(game, dt);
