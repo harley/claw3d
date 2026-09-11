@@ -1,6 +1,7 @@
 import { pinchRatio, joystickAxis, matchHand, clamp } from './mechanics.js';
 import { ClaspGesture } from './clasp.js';
 import {FistDrop,fistEvidence} from './fist.js';
+import { OneEuroPoint } from './one-euro.js';
 
 export const CAPTURE_MAX_AGE = 300;
 export const OWNER_LOSS_GRACE = 650;
@@ -31,6 +32,7 @@ export class HandController {
 
   resetOwner() {
     this.clasp = new ClaspGesture(); this.fist = new FistDrop();
+    this.pointer = new OneEuroPoint();
     this.owner = null; this.neutral = null; this.candidate = null;
     this.pinchSince = 0; this.openSince = 0; this.lostSince = 0;
     this.input = { x: 0, z: 0 }; this.gripping = false; this.dropArmed = false;
@@ -76,7 +78,7 @@ export class HandController {
         this.initReject = reject;
         const timeout = setTimeout(() => reject(new Error('Hand tracking took too long to load. Try again.')), 25000);
         this.worker.onmessage = ({ data }) => {
-          if (data.type === 'ready') { clearTimeout(timeout); this.initReject = null; resolve(); }
+          if (data.type === 'ready') { clearTimeout(timeout); this.initReject = null; this.delegate = data.delegate; resolve(); }
           else if (data.type === 'error') { clearTimeout(timeout); reject(new Error(data.message)); }
         };
         this.worker.onerror = event => { clearTimeout(timeout); reject(new Error(event.message || 'Hand tracking could not start.')); };
@@ -85,6 +87,10 @@ export class HandController {
       if (generation !== this.generation) return;
       this.worker.onmessage = ({ data }) => {
         if (generation !== this.generation) return;
+        // Rebuild notices keep the liveness watchdog fed without releasing the
+        // busy latch: the retried frame is still in flight inside the worker.
+        if (data.type === 'progress') { this.lastActivity = performance.now(); return; }
+        if (data.type === 'delegate') { this.lastActivity = performance.now(); this.demoteCapture(generation, data.delegate); return; }
         this.busy = false;
         if (data.type === 'result') this.acceptResult(data.result, data.now, generation);
         if (data.type === 'error') this.fail(new Error(data.message), 'worker_error');
@@ -98,6 +104,26 @@ export class HandController {
       await this.listCameras(stream.getVideoTracks()[0]?.getSettings().deviceId);
       if (generation !== this.generation || !this.running) return;
       this.onState({ kind: 'ready', message: 'Show one hand in the camera. Hold it still to begin.' });
+      // ?capture=N forces main-thread bitmap capture at that width (A/B testing
+      // resolution or escaping the stream path). Default: zero-copy VideoFrame
+      // transfer when available, then requestVideoFrameCallback pacing, then a
+      // plain timer. The timer always runs as the staleness/liveness watchdog.
+      const requested = Number(new URLSearchParams(location.search).get('capture'));
+      this.captureWidth = requested >= 160 && requested <= 1280 ? Math.round(requested) : 0;
+      const track = stream.getVideoTracks()[0];
+      this.captureDriver = 'timer';
+      // A CPU recognizer was tuned on the resized bitmap path; only the GPU
+      // delegate gets full-resolution zero-copy frames.
+      if (!this.captureWidth && this.delegate !== 'CPU' && typeof MediaStreamTrackProcessor === 'function' && track) {
+        try { this.frameReader = new MediaStreamTrackProcessor({ track }).readable.getReader(); this.captureDriver = 'stream'; }
+        catch { this.frameReader = null; }
+      }
+      if (this.captureDriver !== 'stream' && typeof this.video.requestVideoFrameCallback === 'function') this.captureDriver = 'rvfc';
+      this.onDiagnostic?.({ delegate: this.delegate, driver: this.captureDriver });
+      if (this.captureDriver === 'stream') this.readFrames(generation);
+      if (this.captureDriver === 'rvfc') this.paceVideoFrames(generation);
+      // The timer is the always-on staleness/liveness watchdog; with a
+      // dedicated capture driver active its ticks supervise without capturing.
       this.timer = setInterval(() => this.frame(), 65);
     } catch (error) {
       if (generation === this.generation) this.fail(error, failureCode);
@@ -119,6 +145,7 @@ export class HandController {
     this.running = false; this.starting = false;
     clearInterval(this.timer);
     this.initReject?.(new Error('Camera start cancelled.')); this.initReject = null;
+    this.frameReader?.cancel().catch(() => {}); this.frameReader = null; this.captureDriver = null;
     this.worker?.terminate(); this.worker = null;
     this.stream?.getTracks().forEach(t => t.stop()); this.stream = null;
     this.video.srcObject = null;
@@ -127,9 +154,9 @@ export class HandController {
     if (announce) this.onState({ kind: 'off', message: 'Camera is off. Start it again to play.' });
   }
 
-  async frame(now = performance.now()) {
-    if (!this.running) return;
-    if (document.hidden) return;
+  supervise(now) {
+    if (!this.running) return false;
+    if (document.hidden) return false;
     if (now - this.lastResult > CAPTURE_MAX_AGE) {
       this.onInput({ x: 0, z: 0 });
       // Stop stale steering immediately. A still-running inference must not
@@ -137,15 +164,59 @@ export class HandController {
       if (now - (this.lastFreshReceipt ?? this.lastResult) > CAPTURE_MAX_AGE) this.delayTracking();
       if (now - this.lastResult > OWNER_LOSS_GRACE) this.resetOwner();
     }
-    if (now - (this.lastActivity ?? this.lastResult) > 7000) { this.fail(new Error('Hand tracking stopped responding. Start the camera again.'), 'worker_timeout'); return; }
+    if (now - (this.lastActivity ?? this.lastResult) > 7000) { this.fail(new Error('Hand tracking stopped responding. Start the camera again.'), 'worker_timeout'); return false; }
+    return true;
+  }
+
+  async frame(now = performance.now(), paced = false) {
+    if (!this.supervise(now)) return;
+    // When a dedicated driver paces capture, the watchdog timer must not also
+    // grab frames — it would double-capture behind the driver's back.
+    if (!paced && this.captureDriver && this.captureDriver !== 'timer') return;
     if (this.busy || this.video.readyState < 2 || this.video.currentTime === this.lastFrame) return;
     this.busy = true; this.lastFrame = this.video.currentTime;
     const generation = this.generation;
+    const width = this.captureWidth || 640;
     try {
-      const bitmap = await createImageBitmap(this.video, { resizeWidth: 640, resizeHeight: Math.round(640 * this.video.videoHeight / this.video.videoWidth) });
+      const bitmap = await createImageBitmap(this.video, { resizeWidth: width, resizeHeight: Math.round(width * this.video.videoHeight / this.video.videoWidth) });
       if (!this.running || generation !== this.generation) { bitmap.close(); return; }
       this.worker.postMessage({ type: 'frame', bitmap, now }, [bitmap]);
     } catch (error) { if (generation === this.generation) this.fail(error, 'capture_error'); }
+  }
+
+  paceVideoFrames(generation) {
+    this.video.requestVideoFrameCallback(() => {
+      if (!this.running || generation !== this.generation) return;
+      this.frame(performance.now(), true);
+      this.paceVideoFrames(generation);
+    });
+  }
+
+  // The worker abandoned the GPU mid-session: record the flip and stop feeding
+  // full-resolution VideoFrames to a CPU recognizer.
+  demoteCapture(generation, delegate) {
+    this.delegate = delegate;
+    this.onDiagnostic?.({ delegate });
+    if (delegate !== 'CPU' || this.captureDriver !== 'stream') return;
+    this.frameReader?.cancel().catch(() => {}); this.frameReader = null;
+    this.captureDriver = typeof this.video.requestVideoFrameCallback === 'function' ? 'rvfc' : 'timer';
+    this.onDiagnostic?.({ driver: this.captureDriver });
+    if (this.captureDriver === 'rvfc') this.paceVideoFrames(generation);
+  }
+
+  // Chrome path: VideoFrames stream straight from the camera track and transfer
+  // to the worker with no main-thread resize. Reading while busy drains the
+  // queue so inference always sees the freshest frame.
+  async readFrames(generation) {
+    const reader = this.frameReader;
+    while (this.running && generation === this.generation) {
+      let frame = null;
+      try { ({ value: frame } = await reader.read()); } catch { /* cancelled or track ended */ }
+      if (!frame) return;
+      if (!this.running || generation !== this.generation || this.busy || document.hidden) { frame.close(); continue; }
+      this.busy = true;
+      this.worker.postMessage({ type: 'frame', frame, now: performance.now() }, [frame]);
+    }
   }
 
   acceptResult(result, capturedAt, generation, receivedAt = performance.now()) {
@@ -279,10 +350,15 @@ export class HandController {
     }
     if ((hand.pinch && !hand.open) || easy) {
       this.gripping = true;
-      this.neutral ||= { ...hand.center };
-      const target = { x: joystickAxis(hand.center.x - this.neutral.x), z: joystickAxis(hand.center.y - this.neutral.y) };
-      this.input.x += (target.x - this.input.x) * .5;
-      this.input.z += (target.z - this.input.z) * .5;
+      // One-euro on the hand centre: still hands stay planted, fast moves land
+      // without the trailing lag of the old fixed lerp. A fresh grab discards
+      // filter state so neutral seeds at the true hand position and steering
+      // starts at exactly zero — never at the filter's convergence residue.
+      if (!this.neutral) this.pointer.reset();
+      const point = this.pointer.filter(hand.center, now);
+      this.neutral ||= { ...point };
+      this.input.x = joystickAxis(point.x - this.neutral.x);
+      this.input.z = joystickAxis(point.y - this.neutral.y);
       sendInput(this.input); this.openSince = 0; this.dropArmed = true;
       report({ kind: 'tracking', message: !acceptsInput ? 'Hand ready.' : profile==='fist' ? 'Steer with an open hand. Clench your fist and hold to drop.' : profile==='clasp' ? 'Steer with one hand. Bring both hands together to DROP.' : easy ? 'Move gently to steer. Press Space or your DROP button.' : 'Steer gently. Open your palm when you are ready.', progress: 0 });
     } else {

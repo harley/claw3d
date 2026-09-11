@@ -19,6 +19,8 @@ Open the operator gear to see the build commit, branch and whether it contains u
 
 For development, run `npm run dev` and open **http://127.0.0.1:4196**.
 
+Camera capture normally streams frames zero-copy to the tracking worker on Chrome. Appending `?capture=640` (any width 160–1280) forces the older main-thread bitmap capture at that width — useful for A/B testing recognition accuracy at 320 vs 640 px at booth distance, or as an escape hatch from the stream path. The DEV-only diagnostic (operator snapshot `handCamera.diagnostic`) reports the active `delegate` (GPU/CPU) and capture `driver` alongside per-result latency.
+
 ## Shared staff pilot
 
 Play at **https://claw.coderpush.com** using the existing staff access code. Start the camera, enter an optional nickname, then play exactly three scored turns and receive a server-confirmed total and rank. The first drop counts; there is no practice mode or warm-up. Staff can replay for testing. Use “Something felt wrong” during play or from results to send feedback. Host controls require the separate host code. Event-day one-play/one-gift policy and badge integration remain undecided; see [current product decisions](docs/PRODUCT.md).

@@ -180,6 +180,94 @@ test('a late result cancels confirmation and fresh tracking can resume without r
   assert.equal(handled,1);assert.equal(c.lastFreshReceipt,1900);
 });
 
+test('steering filters hand jitter while staying responsive to real moves', () => {
+  const f = fixture(); f.setPhase('aim');
+  f.frame([hand(.5)], 12);
+  assert.ok(f.controller.owner);
+  for (let i = 0; i < 30; i++) f.frame([hand(.5 + (i % 2 ? .02 : -.02))]);
+  assert.ok(Math.abs(f.read().input.x) < .1, `jitter leaked into steering: ${f.read().input.x}`);
+  f.frame([hand(.62)], 4);
+  assert.ok(f.read().input.x > .3, `filtered steering too sluggish: ${f.read().input.x}`);
+});
+
+test('re-acquiring a hand that moved during a brief loss re-centres steering at zero', () => {
+  const f = fixture(); f.setPhase('aim');
+  f.frame([hand(.5)], 12);
+  assert.ok(f.controller.owner);
+  f.frame([hand(.5)], 4);
+  f.frame([], 2);
+  f.frame([hand(.68)], 6);
+  assert.equal(f.read().state.kind, 'tracking');
+  // The filter's convergence residue must not become a phantom deflection.
+  assert.deepEqual(f.read().input, { x: 0, z: 0 });
+});
+
+test('a mid-session CPU fallback stops the zero-copy stream and reports the flip', () => {
+  const f = fixture(), c = f.controller;
+  const diagnostics = []; c.onDiagnostic = d => diagnostics.push(d);
+  let cancelled = 0;
+  Object.assign(c, { running: true, generation: 4, captureDriver: 'stream', delegate: 'GPU',
+    frameReader: { cancel: () => { cancelled++; return Promise.resolve(); } }, video: {} });
+  c.demoteCapture(4, 'CPU');
+  assert.equal(c.delegate, 'CPU');
+  assert.equal(cancelled, 1);
+  assert.equal(c.frameReader, null);
+  assert.equal(c.captureDriver, 'timer');
+  assert.ok(diagnostics.some(d => d.delegate === 'CPU'));
+  assert.ok(diagnostics.some(d => d.driver === 'timer'));
+});
+
+test('a dedicated capture driver keeps the watchdog timer from double-capturing', async () => {
+  const f = fixture(), c = f.controller, originalDocument = globalThis.document;
+  globalThis.document = { hidden: false };
+  try {
+    const now = performance.now();
+    Object.assign(c, { running: true, busy: false, captureDriver: 'stream', lastResult: now, lastActivity: now,
+      video: { readyState: 4, currentTime: 9, videoWidth: 640, videoHeight: 360 } });
+    // Reaching capture would throw: createImageBitmap does not exist in node.
+    await c.frame();
+    assert.equal(c.busy, false);
+    c.captureDriver = 'rvfc';
+    await c.frame();
+    assert.equal(c.busy, false);
+  } finally { globalThis.document = originalDocument; }
+});
+
+test('stream capture transfers only the freshest frame and closes the rest', async () => {
+  const f = fixture(), c = f.controller, originalDocument = globalThis.document;
+  globalThis.document = { hidden: false };
+  const closed = [], posted = [];
+  const makeFrame = id => ({ id, close: () => closed.push(id) });
+  const queue = [makeFrame(1), makeFrame(2), makeFrame(3)];
+  try {
+    Object.assign(c, { running: true, generation: 5, busy: true });
+    c.worker = { postMessage: message => posted.push(message.frame.id) };
+    c.frameReader = { read: async () => {
+      const value = queue.shift();
+      if (value?.id === 2) c.busy = false;
+      return value ? { value } : { done: true, value: undefined };
+    } };
+    await c.readFrames(5);
+    assert.deepEqual(closed, [1, 3], 'busy frames must be closed, not queued');
+    assert.deepEqual(posted, [2]);
+    assert.equal(c.busy, true);
+  } finally { globalThis.document = originalDocument; }
+});
+
+test('stream capture closes frames and exits after a camera switch', async () => {
+  const f = fixture(), c = f.controller, originalDocument = globalThis.document;
+  globalThis.document = { hidden: false };
+  const closed = [], posted = [];
+  try {
+    Object.assign(c, { running: true, generation: 5, busy: false });
+    c.worker = { postMessage: message => posted.push(message.frame.id) };
+    c.frameReader = { read: async () => { c.generation = 6; return { value: { id: 1, close: () => closed.push(1) } }; } };
+    await c.readFrames(5);
+    assert.deepEqual(closed, [1]);
+    assert.deepEqual(posted, []);
+  } finally { globalThis.document = originalDocument; }
+});
+
 test('camera failure exposes a bounded reason and clears steering before reporting', () => {
   const f = fixture(), c = f.controller;
   c.stop = () => { c.running = false; c.resetOwner(); };
