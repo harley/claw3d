@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { configureCIPage, browserContextOptions, browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
+import { browserOptions } from '../scripts/browser-options.mjs';
 const browser = await chromium.launch(browserOptions);
 try {
- const page = await browser.newPage({ ...browserContextOptions,  viewport: { width: 1440, height: 900 } });
- await configureCIPage(page); await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud);
+ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+ await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud);
  const report = await page.evaluate(async () => {
   const { ArcadeScene } = await import('/src/arcade-scene.js');
   const { createGame, begin, drop, advance, moveCarousel, CAROUSEL, CONTACT_DELAY, BED } = await import('/src/arcade-mechanics.js');
@@ -25,7 +25,7 @@ try {
   }
   scene.renderer.render=render; if(peakGame){scene.update(peakGame,0,0,{x:0,z:0},null);scene.inspect('butter');} return results;
  });
- console.log(JSON.stringify(report,null,2)); await captureScreenshot(page, {path:'.screenshots/toy-contact.png'});
+ console.log(JSON.stringify(report,null,2)); await page.screenshot({path:'.screenshots/toy-contact.png'});
  assert.equal(report.find(r=>r.name==='centred').caught,'butter'); assert.equal(report.find(r=>r.name==='jackpot').caught,'sprout');
  for(const name of ['side','front']) {const row=report.find(r=>r.name===name);assert.equal(row.caught,null);if(name==='front')assert.ok(row.maxTilt>.03,`${name} visible contact reaction`);assert.ok(row.blocked,`${name} mesh descent stop`);assert.ok(row.minGround>-.015);}
  assert.equal(report.find(r=>r.name==='empty').maxTilt,0);

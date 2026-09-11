@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { configureCIPage, browserContextOptions, browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
+import { browserOptions } from '../scripts/browser-options.mjs';
 import { installCameraFixture, cameraInput, assertScoredStart } from './camera-fixture.mjs';
 const browser = await chromium.launch(browserOptions);
 try {
-  const page = await browser.newPage({ ...browserContextOptions,  viewport: { width: 1440, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await installCameraFixture(page);
   await page.addInitScript(() => {
@@ -26,7 +26,7 @@ try {
       }
     };
   });
-  const open = async () => { await configureCIPage(page); await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud); };
+  const open = async () => { await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud); };
   const volume = value => page.locator('#sound-volume').evaluate((input, value) => { input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); }, value);
   const start = async () => {
     await page.locator('#play').click(); await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running);
@@ -71,7 +71,7 @@ try {
   await page.locator('#operator-open').click(); await page.locator('#pause').click();
   await page.evaluate(() => { window.testCamera.visible = false; window.testCamera.tick(); }); await quiet();
   await page.evaluate(() => { window.testCamera.visible = true; window.testCamera.tick(); });
-  await captureScreenshot(page, { path: '.screenshots/audio-controls.png' });
+  await page.screenshot({ path: '.screenshots/audio-controls.png' });
   await page.waitForFunction(() => {
     const state = window.__littleCloud.snapshot();
     if (!window.audioHold) { if (state.event.cue.now) window.audioHold = state.event.carouselTime; return false; }
@@ -118,6 +118,6 @@ try {
   await open(); await page.evaluate(() => { window.audioCheck.rejectResume = true; }); await page.locator('#sound').click();
   await page.waitForFunction(() => document.getElementById('sound').getAttribute('aria-pressed') === 'false');
   assert.deepEqual(errors, []);
-  await page.setViewportSize({ width: 390, height: 844 }); await captureScreenshot(page, { path: '.screenshots/audio-mobile.png' });
+  await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: '.screenshots/audio-mobile.png' });
   console.log('PASS explicit activation, volume, queued-note mute, visible star cues, dialog/pause/hand-loss silence and audio refusal');
 } finally { await browser.close(); }

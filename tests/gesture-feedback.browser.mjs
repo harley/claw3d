@@ -1,16 +1,16 @@
 // Synthetic camera states exercise presentation through the real adapter.
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-import { configureCIPage, browserContextOptions, browserOptions, captureScreenshot } from '../scripts/browser-options.mjs';
+import { browserOptions } from '../scripts/browser-options.mjs';
 import { installCameraFixture, cameraDrop } from './camera-fixture.mjs';
 
 const browser = await chromium.launch(browserOptions);
 try {
-  const page = await browser.newPage({ ...browserContextOptions,  viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await installCameraFixture(page);
-  await configureCIPage(page); await page.goto(process.env.GESTURE_TEST_ORIGIN || 'http://127.0.0.1:4196');
+  await page.goto(process.env.GESTURE_TEST_ORIGIN || 'http://127.0.0.1:4196');
   await page.waitForFunction(() => window.__littleCloud);
   const snap = () => page.evaluate(() => window.__littleCloud.snapshot());
   const feedback = state => page.evaluate(state => { window.testCamera.feedback = state; window.testCamera.tick(); }, state);
@@ -22,7 +22,7 @@ try {
   await page.locator('#name').press('Enter');
   await page.waitForFunction(() => window.__littleCloud.snapshot().joystick.mode === 'tracking');
   assert.equal(await page.locator('#status').textContent(), 'Move your hand');
-  await captureScreenshot(page, { path: '.screenshots/gesture-tracking.png' });
+  await page.screenshot({ path: '.screenshots/gesture-tracking.png' });
 
   // A closed hand must first open to arm a new drop.
   await feedback({ kind: 'clenching', progress: 0, message: 'Open your hand first, then clench to drop.' });
@@ -35,7 +35,7 @@ try {
   // The target-ring arc mirrors the hold even under reduced motion: it is
   // progress feedback, not decorative animation.
   await page.waitForFunction(() => window.__littleCloud.snapshot().effects.holdArc === true);
-  await captureScreenshot(page, { path: '.screenshots/gesture-hold.png' });
+  await page.screenshot({ path: '.screenshots/gesture-hold.png' });
   await feedback({ kind: 'tracking', progress: 0 });
   await page.waitForFunction(() => document.getElementById('gesture-meter').hidden);
   assert.equal((await snap()).joystick.progress, 0, 'cancelled hold clears the scene ring');
@@ -48,7 +48,7 @@ try {
   assert.equal(await page.locator('#status').textContent(), 'Hold steady');
   const heldRemaining = (await snap()).event.remaining;
   await page.waitForTimeout(300); assert.equal((await snap()).event.remaining, heldRemaining);
-  await captureScreenshot(page, { path: '.screenshots/gesture-lost.png' });
+  await page.screenshot({ path: '.screenshots/gesture-lost.png' });
   await page.evaluate(() => { window.testCamera.tick(); window.testCamera.timer = setInterval(() => window.testCamera.tick(), 30); });
   await page.waitForFunction(() => window.__littleCloud.snapshot().joystick.visible);
   await page.locator('#camera-open').click();
@@ -58,7 +58,7 @@ try {
   await page.setViewportSize({ width: 820, height: 900 });
   await page.waitForFunction(() => window.__littleCloud.snapshot().joystick.visible);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-  await captureScreenshot(page, { path: '.screenshots/gesture-narrow.png' });
+  await page.screenshot({ path: '.screenshots/gesture-narrow.png' });
   assert.equal(await cameraDrop(page), true);
   assert.equal(await cameraDrop(page), false);
   await feedback({ kind: 'lost' });
