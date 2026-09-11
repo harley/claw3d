@@ -1,8 +1,9 @@
 import { installCameraFixture, cameraInput, cameraDrop, assertScoredStart } from './camera-fixture.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
+import { browserOptions } from '../scripts/browser-options.mjs';
 import { writeFile } from 'node:fs/promises';
-const browser = await chromium.launch({ channel: 'chrome', headless: true });
+const browser = await chromium.launch(browserOptions);
 try {
   const errors = [];
   if (!process.argv.includes('--clearance-only')) {

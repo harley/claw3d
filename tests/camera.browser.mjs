@@ -1,7 +1,8 @@
 // Uses Chromium's synthetic video device, never a physical webcam.
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
-const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
+import { browserOptions } from '../scripts/browser-options.mjs';
+const browser = await chromium.launch({ ...browserOptions, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, permissions: ['camera'] });
   const page = await context.newPage(), errors = [];

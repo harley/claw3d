@@ -71,13 +71,21 @@ This command opens the existing SQLite file read-only. It does not create a data
 
 Railway project `claw3d`, service `staff-pilot`, one instance with `/data` on a persistent volume. The Docker build needs `BUILD_COMMIT`, `BUILD_BRANCH`, and `BUILD_DIRTY=false` from the exact clean commit being deployed. Runtime needs `NODE_ENV=production`, `PORT=4200`, `DATA_DIR=/data`, `PUBLIC_ORIGIN` equal to the exact HTTPS origin, and the two secrets. The service refuses production startup without the actual Railway volume mount. SQLite uses WAL and transactional writes. Do not scale this pilot to multiple instances.
 
-Before release, run `npm run check`, `npm run check:booth`, and `npm run test:shared` sequentially. Compare the protected `/build-info.json` and operator BUILD with the release commit. Deployment uses `railway up` against the explicit project/service/environment; the local preview remains available independently. A `/healthz` response only proves that the process is available, not that the camera or game is accepted.
+Pushes to `main` run [Check and deploy](.github/workflows/release.yml): a Linux production-container startup/backup check and macOS `npm run check:booth` (unit tests, build and eight sequential browser suites), followed by `npm run test:shared`. Only a passing main run can deploy the checked commit to Railway. Pull requests run the same checks without production credentials or deployment. Hosted browser checks use lockfile-pinned, headed Playwright Chromium on standard macOS runners to access their virtual Metal GPU. The headless shell used software rendering at about 1 FPS, too slow for interactive phase checks. All original assertions, full graphics quality, screenshots and video remain active. macOS consumes more Actions minutes. These checks do not establish physical camera accuracy or booth-machine performance. Feature branches never deploy. A manual workflow run on main repeats the same gates.
+
+Production deployments are serialized; a queued commit that main has superseded is skipped. Build identity is set from the checked SHA with `--skip-deploys`, then `railway up --ci` uploads that source. The follow-up probe waits for authenticated `/build-info.json`, opens the rendered operator panel and verifies the same clean main BUILD without starting the camera, submitting scores or recording playtest telemetry. A `/healthz` response alone is not release proof. GitHub marks failures in the run and uses the account's configured Actions notifications; Min's testing messages remain a separate, selective follow-up after verified releases.
+
+Setup: the GitHub `production` environment holds `RAILWAY_TOKEN`, a Railway project token scoped to the pilot's production environment. Keep Railway's direct GitHub source disconnected so it cannot bypass the check gate. Project/service/environment IDs are explicit in the workflow; staff and host codes are read in memory from Railway only during verification. Never store an account-wide Railway token in GitHub. Restrict the production environment to `main`.
+
+If a release fails, inspect the Actions run and Railway deployment before retrying: a CLI failure can leave a deployment running. Re-run the workflow on current main, or revert the offending change on main to deploy a fix through the same checks. A manual emergency rollback must select a compatible previous application deployment and preserve the database. A successful smoke check does not replace physical-camera acceptance. The local preview remains independent.
 
 ### Export, backup, restore and removal
 
 Host controls export all boards and interrupted runs as JSON. This export omits authentication material. Treat exports as staff data and store them privately. There is no browser import of local scores.
 
-Before a release, create a consistent SQLite snapshot in the mounted volume using a new filename:
+Each production deployment creates an integrity-checked SQLite snapshot in `/data/release-backups/<commit>-<deployment>.sqlite` before opening the database. The first deployment has no database to back up. Restarts of that deployment reuse the same verified snapshot; a redeploy or rollback gets a fresh snapshot (a fresh startup snapshot is used if Railway supplies no deployment ID); a failed backup stops startup. Snapshots preserve committed WAL data and are never overwritten or automatically deleted. They contain private authentication records as well as scores; include them in the pilot's retention/deletion process and monitor volume usage. They protect application rollback, not loss of the volume itself.
+
+For a separate manual snapshot, use a new filename:
 
 ```sh
 node server/backup.js /data/pilot.sqlite /data/pilot-backup-YYYYMMDD-HHMM.sqlite

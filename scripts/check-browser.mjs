@@ -7,7 +7,7 @@ const origin = 'http://127.0.0.1:4196';
 if (await fetch(origin).then(() => true, () => false)) {
   throw new Error('Port 4196 is already in use. Stop that dev server before running check:booth.');
 }
-const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '4196', '--strictPort'], { stdio: 'inherit' });
+const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '4196', '--strictPort'], { stdio: 'inherit', env: { ...process.env, NODE_ENV: 'development' } });
 const exited = once(server, 'exit');
 let active;
 const stop = () => { active?.kill('SIGTERM'); server.kill('SIGTERM'); };
