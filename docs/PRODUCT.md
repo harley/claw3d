@@ -52,7 +52,7 @@ Standalone development is labeled Local preview and keeps scores in that browser
 
 ## Camera control and recovery
 
-One open hand steers; a deliberate fist held for 550 ms locks the drop. Opening early cancels and recentres steering. A second hand, missing/stale capture or blocked input cancels confirmation; reopen before retrying. The central message gives one instruction at a time, the uncropped camera view identifies the controlling hand, and an amber glove ring shows hold progress. Only the current target receives a score tag.
+One open hand steers; a deliberate fist held for 550 ms locks the drop. Opening early cancels and recentres steering. A second hand, missing/stale capture or blocked input cancels confirmation; reopen before retrying. The central message uses white sans-serif lettering on a compact solid dark backing, without the red offset shadow; supporting instructions have the same dark backing for contrast over the cabinet. It gives one instruction at a time, the uncropped camera view identifies the controlling hand, and an amber glove ring shows hold progress. Only the current target receives a score tag.
 
 Fresh detections up to 300 ms apart preserve confirmation between captures; only time between closed detections counts toward the hold. Captures older than 300 ms, out of order or from a stopped/restarted/hidden generation cannot control the game. Owner loss beyond 650 ms requires stable single-hand acquisition again. Late but live replies show Tracking delayed; a worker silent for seven seconds stops the camera.
 

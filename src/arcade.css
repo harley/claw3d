@@ -101,13 +101,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, #scene:focus-vi
 .round-copy, #action-copy { min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 #phase-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .round-copy strong {
-  font: 900 clamp(28px, 3.6vw, 54px)/1.05 ui-monospace, monospace;
-  letter-spacing: -2px; text-transform: uppercase; color: #fff4bd;
-  text-shadow: 3px 3px 0 #891e32, -2px -2px 0 #080e1c, 2px -2px 0 #080e1c, -2px 2px 0 #080e1c;
+  font: 800 clamp(28px, 3.6vw, 54px)/1.12 Arial, Helvetica, sans-serif;
+  letter-spacing: -.025em; text-transform: uppercase; color: #fff;
+  padding: 5px 12px; border-radius: 4px; background: #080e1c;
+  text-shadow: none;
   text-wrap: balance;
 }
 #arcade:is([data-phase="idle"], [data-phase="aim"]) #status { font-size: clamp(28px, 2.8vw, 40px); }
-#hint { font-size: 13px; line-height: 1.4; color: #fff; text-shadow: 0 2px 3px #000, 0 0 5px #000; text-wrap: balance; }
+#hint { font-size: 13px; line-height: 1.4; color: #dce7f8; background: #080e1c; padding: 4px 10px; border-radius: 4px; text-wrap: balance; }
 #hint:empty { display: none; }
 #action-copy.expired { opacity: 0; }
 #action-copy.strike { animation: arcade-strike 160ms ease-out; }

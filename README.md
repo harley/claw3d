@@ -113,6 +113,8 @@ Scores and player progress persist in this browser's local storage. Reloading an
 
 Camera controls are required for play. START CAMERA requests access and shows the readiness panel. Hold one open hand still until “You’re ready” appears, then press Play to enter a name; CAMERA opens a separate setup dialog with device selection and re-centring. The only gesture system is one-hand steering with a fist clench to drop; the unused pinch/palm/clasp profiles were removed from the codebase. A missing or stale hand holds aiming and carousel motion. Once a drop starts, hand loss and settings dialogs do not stop delivery. Only the host's explicit PAUSE GAME stops the animation. Camera code and tracking models load only after explicit activation. Frames remain local and are not recorded. Face identification is not implemented. Camera integration is tested with a synthetic video device and the actual inference model; physical gesture feel still needs a booth rehearsal. Geometry and textures are generated locally. [Arcade asset research and verification](docs/archive/2026-09-11-arcade-presentation.md) records the source/license review and performance comparison.
 
+Player headlines use clean white lettering and a compact dark backing so the headline and supporting instruction remain legible over the cabinet.
+
 ## Implementation
 
 - `src/arcade-mechanics.js`: deterministic state machine, aiming limits, independent finger support and curated assortment.
