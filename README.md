@@ -23,6 +23,8 @@ Camera capture normally streams frames zero-copy to the tracking worker on Chrom
 
 ## Shared staff pilot
 
+Verified September 12: live BUILD `030a7f2` includes all five improvement tracks and expanded arcade sounds. Reload before testing. Real-camera feel, sound and booth-display acceptance remain open; see [release evidence](docs/archive/2026-09-12-five-track-release.md). Automatic deployment still awaits its GitHub production Railway token; this release used the existing authenticated CLI.
+
 Play at **https://claw.coderpush.com** using the existing staff access code. Start the camera, enter an optional nickname, then play exactly three scored turns and receive a server-confirmed total and rank. The first drop counts; there is no practice mode or warm-up. Staff can replay for testing. Use “Something felt wrong” during play or from results to send feedback. Host controls require the separate host code. Event-day one-play/one-gift policy and badge integration remain undecided; see [current product decisions](docs/PRODUCT.md).
 
 The Node service serves the built game, camera models and API from one protected origin. All data routes and assets require a staff session. A separate host code unlocks board rotation and export. Codes live only in server environment variables, never in the bundle or repository. Camera frames and landmarks stay in the browser. Names are display labels. Client-reported catches are trusted for this small pilot; server-calculated totals are not anti-cheat.
