@@ -113,6 +113,19 @@ test('obsolete camera enumeration cannot update camera choices', async () => {
   } finally { if (originalNavigator) Object.defineProperty(globalThis, 'navigator', originalNavigator); else delete globalThis.navigator; }
 });
 
+test('stopping while main-thread vision initializes disposes the late runtime', async () => {
+  const controller = Object.create(HandController.prototype);
+  let resolve, terminated = 0;
+  Object.assign(controller, { generation: 3, worker: null,
+    createMainThreadVision: () => new Promise(done => { resolve = done; }) });
+  const pending = controller.useMainThreadVision(3, '/base');
+  controller.generation = 4;
+  resolve({ delegate: 'CPU', terminate: () => terminated++ });
+  assert.equal(await pending, false);
+  assert.equal(terminated, 1);
+  assert.equal(controller.worker, null);
+});
+
 
 test('continuously late results do not masquerade as a stopped camera or control the game', async () => {
   const f=fixture(), c=f.controller, originalDocument=globalThis.document;

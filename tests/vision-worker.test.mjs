@@ -24,11 +24,22 @@ GestureRecognizer.createFromOptions = async (files, options) => {
 let imports = 0;
 async function boot(scenario) {
   plan = scenario; made = []; posted = [];
+  globalThis.OffscreenCanvas = class {};
   globalThis.self = { postMessage: message => posted.push(message) };
   await import(`../src/vision-worker.js?case=${imports++}`);
   await self.onmessage({ data: { type: 'init', base: '/x' } });
   return { made, posted };
 }
+
+test('a worker without OffscreenCanvas requests the main-thread compatibility runtime', async () => {
+  plan = {}; made = []; posted = [];
+  delete globalThis.OffscreenCanvas;
+  globalThis.self = { postMessage: message => posted.push(message) };
+  await import(`../src/vision-worker.js?case=${imports++}`);
+  await self.onmessage({ data: { type: 'init', base: '/x' } });
+  assert.deepEqual(posted, [{ type: 'main_thread_required' }]);
+  assert.deepEqual(made, [], 'MediaPipe must not initialize in an incompatible worker');
+});
 const frame = () => {
   const image = { closed: 0, close() { this.closed++; } };
   return self.onmessage({ data: { type: 'frame', bitmap: image, now: 123 } }).then(() => image);

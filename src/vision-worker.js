@@ -8,6 +8,14 @@ const create = which => GestureRecognizer.createFromOptions(files, {
 });
 self.onmessage = async ({ data }) => {
   if (data.type === 'init') {
+    // MediaPipe creates its task canvas with OffscreenCanvas in a worker. On
+    // affected WebKit versions that API is unavailable here, and its fallback
+    // references the main-thread-only `document`. Tell the controller to use
+    // its compatible main-thread runtime instead of retrying GPU and CPU here.
+    if (typeof OffscreenCanvas !== 'function') {
+      self.postMessage({ type: 'main_thread_required' });
+      return;
+    }
     try {
       base = data.base;
       // ES module workers need the module-aware WASM loader, not importScripts.

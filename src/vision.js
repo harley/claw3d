@@ -73,16 +73,26 @@ export class HandController {
       failureCode = 'tracking_init_error';
       this.onState({ kind: 'loading', message: 'Waking up hand tracking…' });
       this.worker = new Worker(new URL('./vision-worker.js', import.meta.url), { type: 'module' });
-      await new Promise((resolve, reject) => {
+      const workerResult = await new Promise((resolve, reject) => {
         this.initReject = reject;
         const timeout = setTimeout(() => reject(new Error('Hand tracking took too long to load. Try again.')), 25000);
         this.worker.onmessage = ({ data }) => {
           if (data.type === 'ready') { clearTimeout(timeout); this.initReject = null; this.delegate = data.delegate; resolve(); }
-          else if (data.type === 'error') { clearTimeout(timeout); reject(new Error(data.message)); }
+          else if (data.type === 'main_thread_required') { clearTimeout(timeout); this.initReject = null; resolve(data.type); }
+          // A worker can expose OffscreenCanvas yet still fail while MediaPipe
+          // constructs its internal canvas (observed as `document is not
+          // defined` on affected WebKit). The page runtime is the compatibility
+          // recovery for any completed worker-initialization failure.
+          else if (data.type === 'error') { clearTimeout(timeout); this.initReject = null; resolve('main_thread_required'); }
         };
-        this.worker.onerror = event => { clearTimeout(timeout); reject(new Error(event.message || 'Hand tracking could not start.')); };
+        this.worker.onerror = () => { clearTimeout(timeout); this.initReject = null; resolve('main_thread_required'); };
         this.worker.postMessage({ type: 'init', base: location.origin });
       });
+      if (workerResult === 'main_thread_required') {
+        this.worker.terminate();
+        this.worker = null;
+        if (!await this.useMainThreadVision(generation, location.origin)) return;
+      }
       if (generation !== this.generation) return;
       this.worker.onmessage = ({ data }) => {
         if (generation !== this.generation) return;
@@ -111,13 +121,14 @@ export class HandController {
       this.captureWidth = requested >= 160 && requested <= 1280 ? Math.round(requested) : 0;
       const track = stream.getVideoTracks()[0];
       this.captureDriver = 'timer';
-      // A CPU recognizer was tuned on the resized bitmap path; only the GPU
-      // delegate gets full-resolution zero-copy frames.
-      if (!this.captureWidth && this.delegate !== 'CPU' && typeof MediaStreamTrackProcessor === 'function' && track) {
+      // The WebKit compatibility runtime reads the page's video element and is
+      // deliberately timer-paced. A CPU worker recognizer was tuned on the
+      // resized bitmap path; only the GPU worker gets full-resolution frames.
+      if (!this.worker.local && !this.captureWidth && this.delegate !== 'CPU' && typeof MediaStreamTrackProcessor === 'function' && track) {
         try { this.frameReader = new MediaStreamTrackProcessor({ track }).readable.getReader(); this.captureDriver = 'stream'; }
         catch { this.frameReader = null; }
       }
-      if (this.captureDriver !== 'stream' && typeof this.video.requestVideoFrameCallback === 'function') this.captureDriver = 'rvfc';
+      if (!this.worker.local && this.captureDriver !== 'stream' && typeof this.video.requestVideoFrameCallback === 'function') this.captureDriver = 'rvfc';
       this.onDiagnostic?.({ delegate: this.delegate, driver: this.captureDriver });
       if (this.captureDriver === 'stream') this.readFrames(generation);
       if (this.captureDriver === 'rvfc') this.paceVideoFrames(generation);
@@ -128,6 +139,20 @@ export class HandController {
       if (generation === this.generation) this.fail(error, failureCode);
       else stream?.getTracks().forEach(t => t.stop());
     }
+  }
+
+  async useMainThreadVision(generation, base) {
+    const create = this.createMainThreadVision || (async origin => {
+      const runtime = await import('./vision-main-thread.js');
+      return runtime.createMainThreadVision(origin);
+    });
+    const runtime = await create(base);
+    // Camera stop/switch can win while WebKit is loading the model. Do not
+    // attach or leak the late runtime into the newer camera generation.
+    if (generation !== this.generation) { runtime.terminate(); return false; }
+    this.worker = runtime;
+    this.delegate = runtime.delegate;
+    return true;
   }
 
   fail(error, code = 'camera_unavailable') {
@@ -175,6 +200,10 @@ export class HandController {
     if (this.busy || this.video.readyState < 2 || this.video.currentTime === this.lastFrame) return;
     this.busy = true; this.lastFrame = this.video.currentTime;
     const generation = this.generation;
+    if (this.worker.local) {
+      this.worker.postMessage({ type: 'frame', video: this.video, now });
+      return;
+    }
     const width = this.captureWidth || 640;
     try {
       const bitmap = await createImageBitmap(this.video, { resizeWidth: width, resizeHeight: Math.round(width * this.video.videoHeight / this.video.videoWidth) });

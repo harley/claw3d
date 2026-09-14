@@ -79,4 +79,25 @@ try {
   await dp.locator('#camera-toggle').click(); await dp.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running);
   assert.equal(await dp.locator('#camera-setup').isVisible(), false); assert.equal(await dp.evaluate(() => window.__littleCloud.snapshot().event.run), null);
   console.log('PASS denied camera permission retries successfully without spending a turn'); await denied.close();
+
+  // Affected WebKit versions can fail worker-side MediaPipe canvas setup with
+  // `document is not defined`, even when a capability exists by name. Reproduce
+  // that initialization result while retaining the real model and synthetic
+  // camera for the compatible page-runtime path.
+  const fallback = await browser.newContext({ permissions: ['camera'] }); const fp = await fallback.newPage();
+  await fp.addInitScript(() => {
+    window.Worker = class {
+      postMessage(message) { if (message.type === 'init') queueMicrotask(() => this.onmessage?.({ data: { type: 'error', message: 'document is not defined' } })); }
+      terminate() {}
+    };
+  });
+  await fp.goto('http://127.0.0.1:4196'); await fp.waitForFunction(() => window.__littleCloud);
+  await fp.locator('#play').click();
+  await fp.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running, {}, { timeout: 35000 });
+  const fallbackCamera = (await fp.evaluate(() => window.__littleCloud.snapshot())).event.handCamera;
+  assert.ok(['GPU', 'CPU'].includes(fallbackCamera.diagnostic.delegate));
+  assert.equal(fallbackCamera.diagnostic.driver, 'timer');
+  assert.equal(await fp.locator('#camera-preview').isVisible(), true);
+  console.log(`PASS worker-canvas fallback starts the real model on ${fallbackCamera.diagnostic.delegate} with timer-paced video input`);
+  await fallback.close();
 } finally { await browser.close(); }
