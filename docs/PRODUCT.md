@@ -107,7 +107,7 @@ All five improvement tracks and movement/drop/shelf/completion sounds are deploy
 
 ## Release evidence and documentation ownership
 
-Last verified release, September 14, 2026: `05d1f798005c5e426b2699951e707b1d3dfc757d` on main passed [Check and deploy, attempt 2](https://github.com/harley/claw3d/actions/runs/34696040933), including unit/build, sequential booth-browser, shared-session, production Linux container/backup, deployment and authenticated/rendered BUILD checks. The physical-test page also reported `BUILD 05d1f79 · main`. One staff run completed three turns with a saved score and personal rank; this does not close the five-player acceptance target. [Release and physical-test evidence](archive/2026-09-14-physical-acceptance.md).
+Historical September 14 baseline release: `05d1f798005c5e426b2699951e707b1d3dfc757d` on main passed [Check and deploy, attempt 2](https://github.com/harley/claw3d/actions/runs/34696040933), including unit/build, sequential booth-browser, shared-session, production Linux container/backup, deployment and authenticated/rendered BUILD checks. The physical-test page also reported `BUILD 05d1f79 · main`. One staff run completed three turns with a saved score and personal rank; this does not close the five-player acceptance target. [Release and physical-test evidence](archive/2026-09-14-physical-acceptance.md).
 
 The GitHub production `RAILWAY_TOKEN` is configured and the automated release completed successfully. Production startup verifies a database snapshot before opening the existing database. Recheck live BUILD before reporting a later release; deployment does not establish physical gesture accuracy or first-time-player acceptance.
 
