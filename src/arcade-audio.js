@@ -23,6 +23,10 @@ export function createArcadeAudio({ onChange = () => {} } = {}) {
       oscillator.connect(gain); gain.connect(master); activeNotes.set(oscillator, gain);
       oscillator.onended = () => { activeNotes.delete(oscillator); oscillator.disconnect(); gain.disconnect(); };
       oscillator.start(t); oscillator.stop(t + duration);
+      return () => {
+        if (!activeNotes.delete(oscillator)) return;
+        oscillator.stop(); oscillator.disconnect(); gain.disconnect();
+      };
     } catch { enabled = false; apply(); onChange(); }
   }
   // Original major-key fanfares; every phrase is finite.

@@ -103,7 +103,7 @@ async function scoredAndFeedback() {
   assert.equal(await page.evaluate(() => window.testCamera.clench()), false);
   await page.evaluate(() => { window.testCamera.visible = false; window.testCamera.tick(); });
   await page.locator('#feedback-open').click();
-  await page.waitForFunction(() => document.getElementById('phase-label').textContent === 'TURN 1 COMPLETE', {}, { timeout: 30000 });
+  await page.waitForFunction(() => document.getElementById('phase-label').textContent === 'ROUND 2 OF 3', {}, { timeout: 30000 });
   assert.equal(await page.locator('#turn').textContent(), '1 / 3');
   await page.locator('#feedback-dialog [aria-label="Close feedback"]').click();
   await page.evaluate(() => { window.testCamera.visible = true; window.testCamera.tick(); });

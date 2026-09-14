@@ -51,6 +51,11 @@ function renderBoard() {
   $('storage-status').textContent = shared ? pilot.status : storageError || store.notice || 'Scores saved on this browser.';
 }
 const audio = createArcadeAudio({ onChange: syncSoundUI });
+let movementMusic;
+// Audition only: the production build removes this import and query switch.
+if (import.meta.env.DEV && new URLSearchParams(location.search).get('music') === '1') {
+  import('./movement-music.js').then(({ createMovementMusic }) => { movementMusic = createMovementMusic(audio); });
+}
 const hud = createHud({ audio, phaseSound });
 function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ? 'loading' : 'off' }, modal = Boolean(document.querySelector('dialog[open]'))) {
   hud.update({ game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, sharedStatus: pilot.status, storageError, aligned }, feedback, modal);
@@ -305,6 +310,7 @@ function frame(time) {
   const cameraWaiting = aiming && (!cameraControls?.running || cameraControls.waiting);
   // Only explicit operator pause stops a drop already in flight.
   const blocked = paused || (aiming && (cameraWaiting || modal || document.hidden));
+  movementMusic?.update(aiming && !blocked && !frozen && !document.hidden, dt);
   if (paused || modalBeyondFinal || document.hidden) audio.silence();
   setHidden($('pause-banner'), !paused);
   setText('pause-banner', 'Paused by host');
