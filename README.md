@@ -23,7 +23,7 @@ Camera capture normally streams frames zero-copy to the tracking worker on Chrom
 
 ## Shared staff pilot
 
-Verified September 12: live BUILD `030a7f2` includes all five improvement tracks and expanded arcade sounds. Reload before testing. Real-camera feel, sound and booth-display acceptance remain open; see [release evidence](docs/archive/2026-09-12-five-track-release.md). Automatic deployment still awaits its GitHub production Railway token; this release used the existing authenticated CLI.
+Last verified September 14: BUILD `05d1f79` on main passed the automated release gates and live verification. The GitHub production `RAILWAY_TOKEN` is configured. A physical staff run completed all three turns and saved its result, but reported inaccurate feel and a slow, unclear miss transition. Physical acceptance remains open. Reload and check BUILD before testing; see [release and physical-test evidence](docs/archive/2026-09-14-physical-acceptance.md).
 
 Play at **https://claw.coderpush.com** using the existing staff access code. Start the camera, enter an optional nickname, then play exactly three scored turns and receive a server-confirmed total and rank. The first drop counts; there is no practice mode or warm-up. Staff can replay for testing. Use “Something felt wrong” during play or from results to send feedback. Host controls require the separate host code. Event-day one-play/one-gift policy and badge integration remain undecided; see [current product decisions](docs/PRODUCT.md).
 
