@@ -136,7 +136,9 @@ export function advance(game, dt) {
     const step = Math.min(dt, PHASES[game.phase] - game.elapsed);
     moveCarousel(game, step); game.elapsed += step; dt -= step;
     if (game.elapsed >= PHASES[game.phase] - 1e-10) {
-      const phases = Object.keys(PHASES), next = phases[phases.indexOf(game.phase) + 1] || 'result';
+      const phases = Object.keys(PHASES);
+      // An empty claw returns home but has nothing to release or carry to a shelf.
+      const next = game.phase === 'transfer' && !game.plan.prize ? 'result' : phases[phases.indexOf(game.phase) + 1] || 'result';
       game.elapsed = 0;
       if (next === 'grip' && game.plan.pendingContact) {
         const actual = planGrab(game.position, game.toys), low = game.plan.low, blocked = game.plan.blockedDescent, touched = game.plan.touched;

@@ -19,6 +19,8 @@ Open the operator gear to see the build commit, branch and whether it contains u
 
 For development, run `npm run dev` and open **http://127.0.0.1:4196**.
 
+Rounds two and three show ROUND → START before hand control resumes, without an extra click or using aiming time. After a miss, the empty claw returns home and skips the shelf animation. The next aiming phase begins 5.8 simulation seconds after MISSED; physical timing depends on frame rate and camera readiness.
+
 Camera capture normally streams frames zero-copy to the tracking worker on Chrome. Appending `?capture=640` (any width 160–1280) forces the older main-thread bitmap capture at that width — useful for A/B testing recognition accuracy at 320 vs 640 px at booth distance, or as an escape hatch from the stream path. The DEV-only diagnostic (operator snapshot `handCamera.diagnostic`) reports the active `delegate` (GPU/CPU) and capture `driver` alongside per-result latency.
 
 ## Shared staff pilot

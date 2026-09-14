@@ -24,8 +24,8 @@ async function catchTurn(){
  assert.equal(await page.locator('#status').textContent(), caught ? 'GOT IT!' : 'MISSED');
  if (caught) assert.ok((await snap()).effects.burst > 0, 'catch payoff burst fires at lift');
  if (!caught) {
-  await phase('reveal');
-  assert.equal(await page.locator('#status').textContent(), '', 'return clears the outcome instead of claiming delivery');
+  await phase('transfer');
+  assert.equal(await page.locator('#hint').textContent(), 'Claw returning');
  }
  if (!checkedDelivery) {
   await phase('deliver');
@@ -38,6 +38,13 @@ async function catchTurn(){
   checkedDelivery = true;
   console.log('PASS drop completes through blur, lost hands and camera settings');
  } else await phase('result');
+ if ((await snap()).event.run) {
+  const next = (await snap()).event.turn + 1;
+  assert.equal(await page.locator('#status').textContent(), `ROUND ${next}`);
+  assert.equal(await cameraDrop(page), false, 'round announcement cannot accept another drop');
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'START!');
+  assert.equal((await snap()).phase, 'result', 'start cue precedes active aiming');
+ }
 }
 try {
  await open();await page.screenshot({path:'.screenshots/event-hero.png'});

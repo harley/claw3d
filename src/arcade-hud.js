@@ -26,18 +26,19 @@ function presentMessage(title, hint, key, duration = 0) {
 export function createHud({ audio, phaseSound }) {
   let lastCue = '', lastStatus = '';
   function update(view, feedback, modal) {
-    const { game, run, completedRun, pendingPlayer, turnNumber, remaining, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, sharedStatus, storageError, aligned } = view;
+    const { game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, sharedStatus, storageError, aligned } = view;
   const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
   let title = 'READY PLAYER?', hint = 'Three turns. One high score.', button = 'Play', kicker = 'CLOUD CLAW';
   if (recovering) { title = 'Let’s get you back in'; hint = 'Ask your host to resume.'; button = 'OPERATOR'; }
   else if (phase === 'aim') { kicker = turnNumber === 3 ? 'LAST CLAW!' : `TURN ${turnNumber} OF 3`; title = 'Move your hand'; hint = 'Clench your fist and hold to drop.'; button = '';  }
-  else if (phase === 'result') { const points = run?.turns.at(-1)?.score || 0; kicker = `TURN ${turnNumber} COMPLETE`; title = points ? `+${points}` : 'NEXT TURN'; hint = ''; button = '';  }
+  else if (phase === 'result' && run) { kicker = `ROUND ${turnNumber + 1} OF 3`; title = nextTurnElapsed < 1.3 ? `ROUND ${turnNumber + 1}` : 'START!'; hint = 'Get ready to move your hand'; button = ''; }
   else if (phase in phaseCopy) {
     title = phase === 'lift' && !game.plan?.prize ? 'MISSED' : phaseCopy[phase];
     kicker = `TURN ${turnNumber} OF 3`;
     hint = '';
     button = '';
   }
+  if (phase === 'transfer' && !game.plan?.prize) { title = 'MISSED'; hint = 'Claw returning'; }
   phaseSound(phase, modal);
   // Attract mode: the idle machine gently pulses its invitation until a hand
   // takes control. CSS disables the pulse under reduced motion.
@@ -91,7 +92,7 @@ export function createHud({ audio, phaseSound }) {
     button = cameraLoading ? 'Starting…' : 'Restart camera';
     if (!cameraLoading) hint = 'Restart camera to continue this turn.';
   }
-  const timed = deliveryPhases.has(phase) || phase === 'result';
+  const timed = deliveryPhases.has(phase) && !(phase === 'transfer' && !game.plan?.prize);
   presentMessage(title, hint, `${['anticipate', 'descend'].includes(phase) ? 'drop' : phase}:${turnNumber}:${title}:${hint}`, timed ? 1600 : 0);
   if ($('arcade').dataset.phase !== phase) $('arcade').dataset.phase = phase;
   const signature = [title, hint, button, kicker, total, run?.name, pendingPlayer?.name, completedRun?.id, paused].join('');

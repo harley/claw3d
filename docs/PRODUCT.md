@@ -9,7 +9,7 @@ The wow moment is direct control followed by a believable grab, a tense lift and
 ## Accepted constraints
 
 - Camera-only gameplay: one hand steers; a deliberate fist clench drops. Name entry and host controls may use ordinary form input.
-- Three turns, up to 15 seconds of active aiming each, automatic next turns and one final score/rank.
+- Three turns, up to 15 seconds of active aiming each, automatic next turns with a two-second Round → Start announcement and one final score/rank.
 - Five stationary toys worth 100 points; moving star worth 200. Higher reward requires visibly harder timing. Keep results skill-based and avoid hidden random losses.
 - Dark arcade presentation, clear CoderPush/AWS branding, spacious zoomed-out play area, brief state-dependent instructions.
 - A missed grab should make physical sense. Current contact stops and grounded rocking are constrained approximations, not full rigid-body toppling.
@@ -43,6 +43,8 @@ Production telemetry now measures these targets directly: `time_to_control` reco
 ## Current player journey
 
 Camera ready → optional nickname (blank becomes Player) → server-acknowledged start → exactly three scored turns → server-confirmed total and personal rank. The first drop counts. There is no practice toggle or warm-up. Historical practice scores and telemetry remain stored and excluded from event rankings; they are never imported into the shared board.
+
+After turns one and two, the centre shows ROUND 2 or ROUND 3 for 1.3 seconds, then START! for 0.7 seconds before aiming resumes. This announcement consumes no aiming time and accepts no drop; no click is required. Host pause, an open dialog or a hidden page holds the announcement. Missing hands hold aiming after it. A miss lifts and returns the empty claw home, then scores zero immediately; it skips the empty release, shelf delivery and reveal. From MISSED to the next aiming phase is now 5.8 simulation seconds instead of 11.45, including the announcement. Successful catches retain their delivery sequence.
 
 Failed starts offer retry, sign-in when required or Back, without local scoring fallback. Pending results remain visibly unsaved until acknowledged. Results show their original board and personal rank, including ranks outside the top five. View leaderboard and Your result switch between the board and personal result. Reopening results restores the full score if its animation was interrupted.
 
@@ -87,6 +89,7 @@ Runtime camera failures emit fixed diagnostic codes once per failure. Reports co
 Assess teammate proposals against visitor appeal, first-time clarity, camera reliability, total booth cycle, fair scoring, prize operations and staff conversation. Record adopt/test/defer/reject, rationale and one acceptance check before implementation. Product and prize changes need Harley's decision; teammate messages do not expand implementation scope.
 
 - **Adopted — arcade presentation:** user-directed central timed feedback, less duplicate text and original arcade synthesis. Acceptance: immediate drop/outcome cues, clear claw/targets, persistent recovery and no material measured performance regression. Physical readability and audibility remain to be tested.
+- **Adopted — September 14 transition feedback:** Min requested Round 2/3 → Start, and Harley reported slow, unclear miss recovery. Shorten empty delivery and announce the next round before control resumes. Acceptance: no extra click, no aiming time consumed during the cue, no drops during it, exactly three recorded turns. Min also reported improved hand following and intended drops; that does not resolve Harley's separate inaccurate-feel report.
 - **Adopted:** one scored journey, explicit camera restart, larger countdown, volume/immediate mute and visible-only star prompts. Acceptance: three acknowledged turns, visible personal rank, same-turn camera recovery and clear optional cues. Automated coverage passes; physical first-time-player acceptance remains open.
 - **Test:** intended camera/display with five first-time players; countdown at viewing distance; drop/catch/miss audibility while staff converse. Organizer approval is needed before using an external speaker.
 - **Deferred — scoring/prizes:** [Min's guide](https://docs.google.com/document/d/1PT3R84YRxfrgUT9s4QLaKAiYxcl2ycys49ToLx7kS3k/edit?tab=t.0) proposes 20/30/50 item points and 0–19 pen, 20–49 card holder, 50–79 neck pillow, 80+ rabbit. The earlier overlap at 20 is resolved. These values are not the live game's 100/200 points. Three 30-point catches already exceed the proposed top tier. Acceptance before adoption: Harley approves a coherent score/prize mapping using human score distributions and stock, including how real gifts appear after play.
@@ -97,7 +100,7 @@ Assess teammate proposals against visitor appeal, first-time clarity, camera rel
 
 ## Live playtest
 
-September 14 staff feedback: the three-turn run saved successfully, but Harley reported inaccurate feel and a slow, unclear transition after a miss. Acceptance did not pass. Source inspection shows misses retain the full delivery sequence: 11.45 seconds of simulation time from the MISSED cue to the next aiming phase, while the cue expires after 1.6 seconds. Prioritize this transition for the next focused iteration; perceived gesture accuracy remains undiagnosed. See [physical-test evidence](archive/2026-09-14-physical-acceptance.md). This is a staff test, not a completed five-first-time-player study.
+September 14 staff feedback: the three-turn run saved successfully, but Harley reported inaccurate feel and a slow, unclear transition after a miss. Acceptance did not pass. The transition fix shortens empty delivery and adds a Round → Start cue; it still requires physical replay. Perceived gesture accuracy remains undiagnosed. See [physical-test evidence](archive/2026-09-14-physical-acceptance.md) for the original 11.45-second sequence. This is a staff test, not a completed five-first-time-player study.
 
 All five improvement tracks and movement/drop/shelf/completion sounds are deployed for staff testing. The current release includes camera latency improvements, gesture telemetry, hold-progress feedback, confetti, marquee and idle animations, the glossy candy star and runtime cleanup. Physical-camera responsiveness, speaker quality and first-time-player readability still need testing on the intended booth hardware.
 

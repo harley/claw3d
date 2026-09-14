@@ -5,6 +5,19 @@ import { ASSORTMENT, BED, FIELD, FINGER_ANGLES, OPEN_RADIUS, FINGER_DEPTH, HIGH,
 
 const finish = game => { for (let i = 0; i < 1500 && game.phase !== 'result'; i++) advance(game, 1 / 60); assert.equal(game.phase, 'result'); };
 
+test('a miss returns home without empty delivery, with one drop and no score', () => {
+ const game = createGame({ carousel: true }); begin(game); game.position = { x: -1.18, z: .6 }; drop(game);
+ const phases = new Set(); let elapsed = 0;
+ while (game.phase !== 'result' && elapsed < 15) { phases.add(game.phase); advance(game, .01); elapsed += .01; }
+ assert.equal(game.phase, 'result'); assert.equal(game.plan.prize, null);
+ assert.ok(elapsed < 6, 'miss completes in under six simulation seconds from drop');
+ for (const phase of ['release', 'deliver', 'reveal']) assert.equal(phases.has(phase), false);
+ assert.equal(game.rounds, 1); assert.deepEqual(game.collection, []);
+ game.phase = 'transfer'; game.elapsed = PHASES.transfer;
+ const returning = clawPose(game); game.phase = 'result'; game.elapsed = 0;
+ assert.deepEqual(clawPose(game), returning, 'return-to-result pose stays continuous');
+});
+
 test('every one of eleven distinct toys has a supported centred grip with independent contacts', () => {
   const game = createGame();
   assert.equal(ASSORTMENT.length, 11); assert.equal(new Set(ASSORTMENT.map(t => t.family)).size, 5);
