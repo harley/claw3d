@@ -19,9 +19,9 @@ Open the operator gear to see the build commit, branch and whether it contains u
 
 For development, run `npm run dev` and open **http://127.0.0.1:4196**.
 
-For the local music audition, open **http://127.0.0.1:4196/?music=1**, enable Sound, and play with the camera. A quiet original melody runs only during active hand control and stops during camera waiting, drops, round announcements, dialogs or host pause. Volume and mute apply immediately. This switch is removed from production builds; staff web playback is unchanged until the listening test is accepted.
+When the player enables Sound, a quiet original melody runs only during active hand control. It stops during camera waiting, drops, round announcements, dialogs, host pause or a hidden page. Volume and mute apply immediately; the slider alone cannot turn sound on.
 
-Rounds two and three show ROUND → START before hand control resumes, without an extra click or using aiming time. After a miss, the empty claw returns home and skips the shelf animation. The next aiming phase begins 5.8 simulation seconds after MISSED; physical timing depends on frame rate and camera readiness.
+Rounds two and three show ROUND, then 3, 2, 1, START before hand control resumes, without an extra click or using aiming time. The camera returns to the full machine during this cue. After a miss, the empty claw returns home and skips the shelf animation. The next aiming phase begins 8.5 simulation seconds after MISSED; physical timing depends on frame rate and camera readiness.
 
 Camera capture normally streams frames zero-copy to the tracking worker on Chrome. Appending `?capture=640` (any width 160–1280) forces the older main-thread bitmap capture at that width — useful for A/B testing recognition accuracy at 320 vs 640 px at booth distance, or as an escape hatch from the stream path. The DEV-only diagnostic (operator snapshot `handCamera.diagnostic`) reports the active `delegate` (GPU/CPU) and capture `driver` alongside per-result latency.
 

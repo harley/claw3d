@@ -373,7 +373,7 @@ export class ArcadeScene {
       this.holdMat.color.copy(this.holdWarm).lerp(this.holdGo, holding);
     }
     this.beam.visible = this.target.visible; this.beam.position.set(game.position.x, BED + .02, game.position.z); this.beam.scale.y = HIGH - BED - 1.01; this.beamMat.color.copy(this.targetMat.color);
-    this.deliveryTray.visible = false;
+    this.deliveryTray.visible = false; this.deliveryTray.scale.setScalar(1);
     const hatchOpen = plan?.prize && ['release', 'deliver', 'reveal', 'result'].includes(phase);
     this.hatch.rotation.x = hatchOpen ? (phase === 'release' ? ease(elapsed / .18) : 1) * Math.PI / 2 : phase === 'idle' ? 0 : Math.max(0, this.hatch.rotation.x - dt * 9);
     const delivery = phase === 'deliver' && plan?.prize ? elapsed / PHASES.deliver : -1;
@@ -403,7 +403,11 @@ export class ArcadeScene {
         else {
           const courier = (t - .40) / .60, across = ease(courier / .5), rise = ease((courier - .38) / .35), insert = ease((courier - .70) / .30);
           object.position.set(mix(-1.08, slot.x, across), mix(.50, slot.y, rise) + Math.sin(insert * Math.PI) * .06, mix(1.69, slot.z, insert));
-          this.deliveryTray.visible = true; this.deliveryTray.position.copy(object.position); compression = Math.sin(Math.min(1, courier * 8) * Math.PI) * (toy.family === 'robot' ? .015 : toy.family === 'star' ? .14 : .10);
+          // Reveal the tray after it starts clearing the outlet. A full-size tray
+          // appearing behind the open flap in one frame reads as a flickering ramp.
+          const trayReveal = ease((courier - .04) / .14);
+          this.deliveryTray.visible = trayReveal > 0; this.deliveryTray.scale.setScalar(Math.max(.001, trayReveal)); this.deliveryTray.position.copy(object.position);
+          compression = Math.sin(Math.min(1, courier * 8) * Math.PI) * (toy.family === 'robot' ? .015 : toy.family === 'star' ? .14 : .10);
         }
         object.rotation.y = mix(toy.yaw, .35, ease(t)); wobble = motion * Math.sin(t * 25) * .07 * Math.sin(t * Math.PI);
       }
@@ -442,11 +446,11 @@ export class ArcadeScene {
     else if (this.burst.visible) this.updateBurst(dt);
     this.updateMarquee(phase, plan, time, motion);
     this.courier.visible = this.deliveryTray.visible;
-    if (this.courier.visible) { const p = this.deliveryTray.position; this.courier.position.set(p.x, 0, 1.69); this.courierMast.scale.y = Math.max(.1, p.y - .44); this.courierMast.position.y = .44 + (p.y - .44) / 2; this.courierArm.scale.y = Math.max(.025, 1.69 - p.z); this.courierArm.position.set(0, p.y - .08, -(1.69 - p.z) / 2); }
+    if (this.courier.visible) { const p = this.deliveryTray.position; this.courier.scale.set(this.deliveryTray.scale.x, 1, this.deliveryTray.scale.z); this.courier.position.set(p.x, 0, 1.69); this.courierMast.scale.y = Math.max(.1, p.y - .44); this.courierMast.position.y = .44 + (p.y - .44) / 2; this.courierArm.scale.y = Math.max(.025, 1.69 - p.z); this.courierArm.position.set(0, p.y - .08, -(1.69 - p.z) / 2); }
     let cameraPos = this.home, look = this.look;
     // Aiming never drifts. The viewpoint moves only for the earned reveal and
     // a slight lean-in while the drop plays out (input is frozen there).
-    if (motion && focusToy && ['reveal', 'result'].includes(phase)) { look = focusToy.position.clone().add(v(.2, .40, .1)); cameraPos = look.clone().add(v(1.8, 1.0, 5.0)); }
+    if (motion && focusToy && phase === 'reveal') { look = focusToy.position.clone().add(v(.2, .40, .1)); cameraPos = look.clone().add(v(1.8, 1.0, 5.0)); }
     else if (motion && ['descend', 'grip'].includes(phase)) { cameraPos = (this.pushIn ??= v(0, 0, 0)).copy(this.home).lerp(this.look, .085); }
     if (['aim', 'idle'].includes(phase) || !motion) { this.camera.position.copy(this.home); this.currentLook.copy(this.look); }
     else { const k = 1 - Math.exp(-dt * 3); this.camera.position.lerp(cameraPos, k); this.currentLook.lerp(look, k); }

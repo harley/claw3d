@@ -25,7 +25,7 @@ try {
       }
     };
   });
-  await page.goto('http://127.0.0.1:4196/?music=1');
+  await page.goto('http://127.0.0.1:4196');
   await page.waitForFunction(() => window.__littleCloud);
   await page.locator('#play').click(); await page.waitForFunction(() => window.testCamera?.running);
   await page.locator('#play').click(); await page.locator('#name').press('Enter');
@@ -51,5 +51,5 @@ try {
   await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
   await page.waitForTimeout(300); await page.locator('#sound').click(); await quiet();
   assert.ok(await page.evaluate(() => window.musicNotes.some(n => n.stops === 2)), 'interruptions cancel a sounding melody note');
-  console.log('PASS local music opt-in; aiming playback; quiet during dialogs, lost camera, pause, drops, round cue and mute');
+  console.log('PASS released music opt-in; aiming playback; quiet during dialogs, lost camera, pause, drops, round cue and mute');
 } finally { await browser.close(); }

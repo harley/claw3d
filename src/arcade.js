@@ -2,7 +2,8 @@ import './arcade.css';
 import { createSharedBoard } from './shared-board.js';
 import { createPlaytestClient } from './playtest-client.js';
 import { createArcadeAudio } from './arcade-audio.js';
-import { createHud, $, setText, setHidden } from './arcade-hud.js';
+import { createHud, $, setText, setHidden, NEXT_TURN_SECONDS } from './arcade-hud.js';
+import { createMovementMusic } from './movement-music.js';
 const shared = globalThis.__SHARED_PILOT__ === true;
 import { ArcadeScene } from './arcade-scene.js';
 import { createGame, begin, drop, advance, move, planGrab, clawPose, PHASES, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
@@ -51,11 +52,7 @@ function renderBoard() {
   $('storage-status').textContent = shared ? pilot.status : storageError || store.notice || 'Scores saved on this browser.';
 }
 const audio = createArcadeAudio({ onChange: syncSoundUI });
-let movementMusic;
-// Audition only: the production build removes this import and query switch.
-if (import.meta.env.DEV && new URLSearchParams(location.search).get('music') === '1') {
-  import('./movement-music.js').then(({ createMovementMusic }) => { movementMusic = createMovementMusic(audio); });
-}
+const movementMusic = createMovementMusic(audio);
 const hud = createHud({ audio, phaseSound });
 function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ? 'loading' : 'off' }, modal = Boolean(document.querySelector('dialog[open]'))) {
   hud.update({ game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, sharedStatus: pilot.status, storageError, aligned }, feedback, modal);
@@ -328,7 +325,7 @@ function frame(time) {
     } else {
       input.x = input.z = 0;
       if (game.phase === 'idle') moveCarousel(game, dt);
-      if (game.phase === 'result' && run && !recovering && !modal) { nextTurnElapsed += dt; if (nextTurnElapsed >= 2) beginTurn(); }
+      if (game.phase === 'result' && run && !recovering && !modal) { nextTurnElapsed += dt; if (nextTurnElapsed >= NEXT_TURN_SECONDS) beginTurn(); }
       const before = game.phase; advance(game, dt); if (game.phase === 'result' && before !== 'result') finishTurn();
     }
   } else input.x = input.z = 0;

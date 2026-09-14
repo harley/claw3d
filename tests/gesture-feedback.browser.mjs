@@ -59,6 +59,7 @@ try {
   await page.waitForFunction(() => window.__littleCloud.snapshot().joystick.visible);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.screenshot({ path: '.screenshots/gesture-narrow.png' });
+  const aimingCamera = (await snap()).camera;
   assert.equal(await cameraDrop(page), true);
   assert.equal(await cameraDrop(page), false);
   await feedback({ kind: 'lost' });
@@ -67,6 +68,9 @@ try {
   assert.equal((await snap()).joystick.visible, false);
   assert.equal(await page.locator('#phase-label').textContent(), 'ROUND 2 OF 3');
   assert.equal(await page.locator('#status').textContent(), 'ROUND 2');
+  await page.waitForTimeout(1000);
+  const countdownCamera = (await snap()).camera;
+  assert.ok(countdownCamera.every((value, i) => Math.abs(value - aimingCamera[i]) < .3), 'the countdown returns to the full-machine view');
   await page.screenshot({ path: '.screenshots/round-two-ready.png' });
   await page.locator('#operator-open').click();
   await page.waitForTimeout(2100);
@@ -76,8 +80,10 @@ try {
   assert.equal((await snap()).phase, 'result', 'host pause holds the announcement');
   assert.equal(await cameraDrop(page), false);
   await page.locator('#operator-open').click(); await page.locator('#pause').click();
-  await page.waitForFunction(() => document.getElementById('status').textContent === 'START!');
-  assert.equal(await cameraDrop(page), false, 'START cue still rejects drops');
+  for (const cue of ['3', '2', '1', 'START!']) {
+    await page.waitForFunction(cue => document.getElementById('status').textContent === cue, cue);
+    assert.equal(await cameraDrop(page), false, `${cue} cue rejects drops`);
+  }
   await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
   assert.equal((await snap()).event.turn, 2);
   assert.equal((await snap()).event.remaining, 15, 'missing hands hold the full aiming time after the cue');

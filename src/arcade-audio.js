@@ -1,5 +1,5 @@
-// Original, finite synthesized cues. No audio files, no background loop; the
-// player must explicitly enable sound before anything can play. onChange fires
+// Original, finite synthesized cues. No audio files; the player must explicitly
+// enable sound before cues or the separately scheduled movement melody can play. onChange fires
 // whenever enabled/volume state moves, including async activation failures.
 export function createArcadeAudio({ onChange = () => {} } = {}) {
   let enabled = false, volume = .5, context = null, master = null, activation = 0;

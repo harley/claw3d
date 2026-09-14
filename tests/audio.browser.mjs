@@ -20,7 +20,7 @@ try {
         const ramp = oscillator.frequency.exponentialRampToValueAtTime.bind(oscillator.frequency);
         oscillator.frequency.exponentialRampToValueAtTime = (value, time) => { record.endFrequency = value; return ramp(value, time); };
         oscillator.frequency.setValueAtTime = (value, time) => { record.frequency = value; return frequency(value, time); };
-        oscillator.start = time => { Object.assign(record, { start: time, visible: !document.getElementById('jackpot-signal').hidden, phase: window.__littleCloud?.snapshot().phase, turn: window.__littleCloud?.snapshot().event.turn }); window.audioCheck.notes.push(record); start(time); };
+        oscillator.start = time => { Object.assign(record, { start: time, type: oscillator.type, visible: !document.getElementById('jackpot-signal').hidden, phase: window.__littleCloud?.snapshot().phase, turn: window.__littleCloud?.snapshot().event.turn }); window.audioCheck.notes.push(record); start(time); };
         oscillator.stop = time => { record.stops.push(time ?? this.currentTime); stop(time); };
         return oscillator;
       }
@@ -98,7 +98,7 @@ try {
     document.getElementById('sound').click(); return true;
   }, {}, { timeout: 30000 });
   assert.equal(await page.evaluate(() => window.audioCheck.notes.filter(n => n.frequency === 1047).length), 1);
-  assert.ok(await page.evaluate(() => window.audioCheck.notes.filter(n => [659, 784, 1047].includes(n.frequency) && Math.abs(n.stops[0] - n.start - .18) < .0001).every(n => n.stops.length === 2)), 'mute cancels future catch melody notes');
+  assert.ok(await page.evaluate(() => window.audioCheck.notes.filter(n => n.type === 'square' && [659, 784, 1047].includes(n.frequency) && Math.abs(n.stops[0] - n.start - .18) < .0001).every(n => n.stops.length === 2)), 'mute cancels future catch melody notes');
 
   await page.locator('#sound').click();
   for (const turn of [2, 3]) {

@@ -9,6 +9,14 @@ const setText = (id, value) => { const text = String(value); if ($(id).textConte
 const setHidden = (element, hidden) => { if (element.hidden !== hidden) element.hidden = hidden; };
 
 const deliveryPhases = new Set(['anticipate', 'descend', 'grip', 'lift', 'transfer', 'release', 'deliver', 'reveal']);
+export const NEXT_TURN_SECONDS = 4.7;
+
+export function nextTurnCue(elapsed, round) {
+  if (elapsed < 1) return `ROUND ${round}`;
+  if (elapsed < 4) return String(4 - Math.floor(elapsed));
+  return 'START!';
+}
+
 // One announcement surface; delivery messages expire without changing game timing.
 const phaseCopy = { anticipate: 'DROP!', descend: 'DROP!', grip: '', lift: 'GOT IT!', transfer: '', release: '', deliver: '', reveal: '' };
 let messageKey = '', messageUntil = 0;
@@ -31,7 +39,7 @@ export function createHud({ audio, phaseSound }) {
   let title = 'READY PLAYER?', hint = 'Three turns. One high score.', button = 'Play', kicker = 'CLOUD CLAW';
   if (recovering) { title = 'Let’s get you back in'; hint = 'Ask your host to resume.'; button = 'OPERATOR'; }
   else if (phase === 'aim') { kicker = turnNumber === 3 ? 'LAST CLAW!' : `TURN ${turnNumber} OF 3`; title = 'Move your hand'; hint = 'Clench your fist and hold to drop.'; button = '';  }
-  else if (phase === 'result' && run) { kicker = `ROUND ${turnNumber + 1} OF 3`; title = nextTurnElapsed < 1.3 ? `ROUND ${turnNumber + 1}` : 'START!'; hint = 'Get ready to move your hand'; button = ''; }
+  else if (phase === 'result' && run) { kicker = `ROUND ${turnNumber + 1} OF 3`; title = nextTurnCue(nextTurnElapsed, turnNumber + 1); hint = title === 'START!' ? 'Move your hand' : 'Get ready'; button = ''; }
   else if (phase in phaseCopy) {
     title = phase === 'lift' && !game.plan?.prize ? 'MISSED' : phaseCopy[phase];
     kicker = `TURN ${turnNumber} OF 3`;
