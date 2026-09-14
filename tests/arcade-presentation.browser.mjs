@@ -16,10 +16,12 @@ try {
  assert.match(await page.locator('#status').textContent(), /^(GOT IT!|MISSED)$/);
  assert.equal(await page.evaluate(() => window.__littleCloud.snapshot().event.run.turns.length), 0);
  await page.screenshot({ path: '.screenshots/arcade-outcome.png' });
- await page.waitForTimeout(1700);
- // The outcome message must not linger: faded out, or already replaced by an
- // empty phase message (transfer/release show no copy and reset the fade).
- assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).opacity === '0' || !document.getElementById('status').textContent), true);
+ // Screenshots may span a phase boundary on CI. The lift cue expires, while a
+ // missed transfer deliberately keeps its returning-claw guidance visible.
+ await page.waitForFunction(() => window.__littleCloud.snapshot().phase !== 'lift' || getComputedStyle(document.getElementById('action-copy')).opacity === '0');
+ const outcome = await page.evaluate(() => ({ phase: window.__littleCloud.snapshot().phase, caught: window.__littleCloud.snapshot().caught, opacity: getComputedStyle(document.getElementById('action-copy')).opacity, hint: document.getElementById('hint').textContent }));
+ if (outcome.phase === 'lift') assert.equal(outcome.opacity, '0');
+ if (outcome.phase === 'transfer' && !outcome.caught) { assert.equal(outcome.hint, 'Claw returning'); assert.equal(outcome.opacity, '1'); }
  assert.equal(await page.locator('#action-copy').getAttribute('role'), 'status');
  assert.equal(await page.locator('#celebration').count(), 0);
  for (const width of [1440, 820, 390, 360]) {

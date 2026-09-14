@@ -31,7 +31,7 @@ try {
   await page.locator('#play').click(); await page.locator('#name').press('Enter');
   const count = () => page.evaluate(() => window.musicNotes.length);
   await page.waitForTimeout(350); assert.equal(await count(), 0, 'audition cannot activate Sound');
-  await page.locator('#sound').click(); await page.waitForTimeout(550);
+  await page.locator('#sound').click(); await page.waitForFunction(() => window.musicNotes.length >= 2);
   assert.ok(await count() >= 2, 'active aiming plays the melody');
   const quiet = async () => {
     await page.waitForTimeout(100); const before = await count();
