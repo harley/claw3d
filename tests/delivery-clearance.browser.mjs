@@ -13,6 +13,18 @@ try {
     const { createGame, begin, drop, PHASES } = await import('/src/arcade-mechanics.js');
     const canvas = document.createElement('canvas'); canvas.style.cssText = 'width:960px;height:540px'; document.body.append(canvas);
     const scene = new ArcadeScene(canvas), collisions = []; let samples = 0, oldPlantHits = 0, firstTrayScale = null, fullTraySeen = false;
+    // The wood and red plinth used to share y=.50 here. Render order then
+    // exposed red patches through the outlet floor as the viewpoint moved.
+    scene.scene.updateMatrixWorld(true);
+    const floorGaps = [], ray = new T.Raycaster();
+    for (const x of [-1.4, -1.1, -.8]) for (const z of [.6, .9, 1.2]) {
+      ray.set(new T.Vector3(x, .8, z), new T.Vector3(0, -1, 0));
+      const hits = ray.intersectObjects(scene.scene.children, true);
+      const wood = hits.find(hit => hit.object.material === scene.mats.wood);
+      const red = hits.find(hit => hit.object.material === scene.mats.red);
+      if (!wood || !red) throw Error('Missing outlet floor or supporting plinth');
+      floorGaps.push(wood.point.y - red.point.y);
+    }
     // Geometry updates are unchanged; skip GPU draws for this exhaustive sweep.
     const renderFrame = scene.renderer.render.bind(scene.renderer), outletFrames = [];
     scene.renderer.render = () => {};
@@ -47,8 +59,9 @@ try {
     }
     window.outletFrames = outletFrames;
     scene.observer.disconnect(); scene.renderer.dispose(); canvas.remove();
-    return { samples, oldPlantHits, firstTrayScale, fullTraySeen, collisions };
+    return { samples, oldPlantHits, firstTrayScale, fullTraySeen, floorGaps, collisions };
   });
+  assert.ok(report.floorGaps.every(gap => gap > .01), 'The wooden outlet floor stays above the red plinth without coplanar faces');
   assert.ok(report.oldPlantHits > 0, 'The check reproduces the original plant obstruction');
   assert.ok(report.firstTrayScale > 0 && report.firstTrayScale < .1, 'The tray eases in instead of appearing full-size in one frame');
   assert.equal(report.fullTraySeen, true, 'The tray reaches full size after clearing the outlet');

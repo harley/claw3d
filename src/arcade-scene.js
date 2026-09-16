@@ -86,7 +86,9 @@ export class ArcadeScene {
   buildCabinet() {
     const m = this.mats, cab = group(this.scene);
     // Stacked enamel shell, inset mint panels and champagne reveals.
-    box(cab, m.red, [0, .425, 0], [3.70, .15, 2.70], .07);
+    // Stop below the wooden outlet floor (y=.50). Coplanar top faces made
+    // the red plinth flicker through the wood during delivery camera motion.
+    box(cab, m.red, [0, .415, 0], [3.70, .13, 2.70], .065);
     box(cab, m.ivory, [0, .96, -1.21], [3.55, .96, .15], .065);
     for (const x of [-1.71, 1.71]) box(cab, m.ivory, [x, .96, 0], [.14, .96, 2.55], .055);
     box(cab, m.ivory, [.67, .96, 1.20], [2.08, .96, .16], .075);
