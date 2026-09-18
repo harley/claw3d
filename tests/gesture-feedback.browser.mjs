@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { browserOptions } from '../scripts/browser-options.mjs';
 import { installCameraFixture, cameraDrop } from './camera-fixture.mjs';
+import { checkCameraTiming } from './camera-timing-check.mjs';
 
 const browser = await chromium.launch(browserOptions);
 try {
@@ -90,4 +91,6 @@ try {
   assert.equal(await page.locator('#gesture-meter').isVisible(), false);
   assert.deepEqual(errors, []);
   console.log('PASS visible grip, arming guidance, hold/cancel, stale input, modal suppression, narrow layout and accepted delivery after hand loss');
+  await page.close();
+  await checkCameraTiming(browser, process.env.GESTURE_TEST_ORIGIN || 'http://127.0.0.1:4196');
 } finally { await browser.close(); }

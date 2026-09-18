@@ -272,7 +272,10 @@ export class HandController {
 
   delayTracking() {
     this.fist.reset('stale');
-    this.onInput({ x: 0, z: 0 });
+    // Reacquisition after delayed results must seed a fresh neutral, just like
+    // a missing hand. Otherwise its changed position immediately steers.
+    this.neutral = null; this.input = { x: 0, z: 0 };
+    this.onInput(this.input);
     this.onState({ kind: 'delayed', message: 'Tracking is slow. Keep your hand steady while it catches up.', progress: 0 });
   }
 

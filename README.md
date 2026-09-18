@@ -121,6 +121,8 @@ Player headlines use clean white lettering and a compact dark backing so the hea
 
 The lower prize compartment keeps its wooden floor above the red cabinet base to prevent red surface flicker. The delivery browser check verifies that separation alongside toy and carrier clearance; confirmation on the reporting player's device remains necessary.
 
+After delayed hand tracking, steering resumes centred on the returning hand so the claw stays still until the next deliberate movement. The gesture browser suite exercises the real recognition handler and camera adapter with synthetic timed detections, including hold cancellation and recovery; it does not establish physical recognition accuracy.
+
 ## Implementation
 
 - `src/arcade-mechanics.js`: deterministic state machine, aiming limits, independent finger support and curated assortment.
