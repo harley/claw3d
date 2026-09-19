@@ -123,6 +123,8 @@ The lower prize compartment keeps its wooden floor above the red cabinet base to
 
 After delayed hand tracking, steering resumes centred on the returning hand so the claw stays still until the next deliberate movement. The gesture browser suite exercises the real recognition handler and camera adapter with synthetic timed detections, including hold cancellation and recovery; it does not establish physical recognition accuracy.
 
+The star panel says KEEP HOLDING while fist confirmation progresses, then restores its countdown if the player opens their hand. The carousel browser suite checks this guidance and actual fist-to-contact timing at desktop and phone widths.
+
 ## Implementation
 
 - `src/arcade-mechanics.js`: deterministic state machine, aiming limits, independent finger support and curated assortment.

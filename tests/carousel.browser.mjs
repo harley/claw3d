@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { browserOptions } from '../scripts/browser-options.mjs';
 import { writeFile } from 'node:fs/promises';
+import { checkStarCue } from './star-cue-check.mjs';
 const browser = await chromium.launch(browserOptions);
 try {
   const errors = [];
@@ -68,6 +69,7 @@ try {
   await page.screenshot({ path: '.screenshots/carousel-result.png' });
   console.log('PASS late drop misses, final total 200, no browser errors');
   const video = page.video(); await page.close(); await video.saveAs('.screenshots/carousel-gameplay.webm'); await video.delete();
+  await checkStarCue(browser);
   }
   // Sweep actual rendered star geometry against all stationary toys. No GPU
   // draws are needed to exercise the exact transforms and bounding geometry.

@@ -55,10 +55,14 @@ export function createHud({ audio, phaseSound }) {
   const cueVisible = phase === 'aim' && nearPickup && !paused && !frozen && !document.hidden && !modal && cameraControls?.running && !cameraControls.waiting;
   setHidden($('jackpot-signal'), !cueVisible);
   const cueKey = `${phase}:${cue.lights}:${cue.now}`; if (cueKey !== lastCue) { if (cueVisible && cue.lights) audio.note(cue.now ? 880 : 440 + cue.lights * 110, .09); lastCue = cueKey; }
-  if ($('jackpot-signal').dataset.cue !== cueKey) {
-    $('jackpot-signal').dataset.cue = cueKey;
+  // The countdown invites a new hold. Once confirmation is progressing, its
+  // expired window must not contradict the central instruction to keep holding.
+  const confirming = phase === 'aim' && feedback.controlEnabled && feedback.kind === 'clenching' && feedback.progress > 0;
+  const displayKey = `${cueKey}:${Boolean(confirming)}`;
+  if ($('jackpot-signal').dataset.cue !== displayKey) {
+    $('jackpot-signal').dataset.cue = displayKey;
     $('jackpot-signal').classList.toggle('go', cue.now && phase === 'aim');
-    setText('jackpot-cue', ['idle', 'aim'].includes(phase) ? cue.text : 'Claw in action');
+    setText('jackpot-cue', confirming ? 'KEEP HOLDING' : ['idle', 'aim'].includes(phase) ? cue.text : 'Claw in action');
     [...$('jackpot-lights').children].forEach((light, i) => light.classList.toggle('on', ['idle', 'aim'].includes(phase) && i < cue.lights));
   }
   if (phase === 'aim' && nearPickup) { title = 'Go for the star'; hint = aligned?.id === CAROUSEL.id ? 'Clench your fist and hold.' : 'Gold ring. Wait for green.'; }

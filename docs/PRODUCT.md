@@ -76,6 +76,8 @@ Sound starts off and requires an explicit Sound-button click. The visible slider
 
 The moving star crosses the fixed gold pickup ring at (0.80, 0.22), inside steering bounds, every 5.6 seconds. Its cue includes 550 ms fist hold and 1.05 seconds to contact, but no assumed human reaction delay. The toy moves during descent; the catch resolves from the actual contact pose.
 
+The jackpot countdown invites the player to start a fist hold. While confirmation is progressing, its text says KEEP HOLDING instead of returning to WAIT FOR THE LIGHTS when the start window expires. Opening the hand restores the current countdown. Cue lights, audio and catch timing are unchanged.
+
 Anh's report that it never seemed to enter the aiming circle is unresolved. Current geometry is reachable: the rendered browser suite catches for 200 points and rejects early/late attempts. A deterministic check catches when clenching at the cue centre (4.0 seconds in the orbit), but misses when waiting until the toy is already centred (5.6 seconds). This suggests timing or aiming confusion as a possibility, not a diagnosis. Her exact BUILD, aim position, intended circle and recognition timing are missing. Do not change geometry or difficulty without that evidence.
 
 ## Shared scoring, observations and operations
