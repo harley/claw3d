@@ -9,11 +9,13 @@ const setText = (id, value) => { const text = String(value); if ($(id).textConte
 const setHidden = (element, hidden) => { if (element.hidden !== hidden) element.hidden = hidden; };
 
 const deliveryPhases = new Set(['anticipate', 'descend', 'grip', 'lift', 'transfer', 'release', 'deliver', 'reveal']);
-export const NEXT_TURN_SECONDS = 4.7;
+export const NEXT_TURN_SECONDS = 3.7;
 
 export function nextTurnCue(elapsed, round) {
-  if (elapsed < 1) return `ROUND ${round}`;
-  if (elapsed < 4) return String(4 - Math.floor(elapsed));
+  if (elapsed < .9) return `ROUND ${round}`;
+  if (elapsed < 1.6) return '3';
+  if (elapsed < 2.3) return '2';
+  if (elapsed < 3) return '1';
   return 'START!';
 }
 

@@ -1,9 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { ASSORTMENT, BED, FIELD, FINGER_ANGLES, OPEN_RADIUS, FINGER_DEPTH, HIGH, PHASES, createGame, begin, drop, advance, move, planGrab, clawPose, collectionSlot } from '../src/arcade-mechanics.js';
+import { ASSORTMENT, BED, FIELD, FINGER_ANGLES, OPEN_RADIUS, FINGER_DEPTH, HIGH, PHASES, MAX_FRAME_DELTA, createGame, begin, drop, advance, move, planGrab, clawPose, collectionSlot } from '../src/arcade-mechanics.js';
 
 const finish = game => { for (let i = 0; i < 1500 && game.phase !== 'result'; i++) advance(game, 1 / 60); assert.equal(game.phase, 'result'); };
+
+test('phase pacing stays readable while cutting passive wait, and 10 FPS is real time', () => {
+  const delivery = Object.values(PHASES).reduce((sum, seconds) => sum + seconds, 0);
+  assert.equal(delivery, 8.8);
+  assert.equal(MAX_FRAME_DELTA, .1);
+  const game = createGame(); begin(game); drop(game);
+  for (let i = 0; i < 10; i++) advance(game, MAX_FRAME_DELTA);
+  assert.ok(Math.abs(game.elapsed - .8) < 1e-9);
+  assert.equal(game.phase, 'descend');
+});
 
 test('a miss returns home without empty delivery, with one drop and no score', () => {
  const game = createGame({ carousel: true }); begin(game); game.position = { x: -1.18, z: .6 }; drop(game);

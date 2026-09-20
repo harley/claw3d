@@ -7,7 +7,7 @@ import { createMovementMusic } from './movement-music.js';
 import { PerformanceGovernor, PERFORMANCE_WINDOW_MS } from './performance-governor.js';
 const shared = globalThis.__SHARED_PILOT__ === true;
 import { ArcadeScene } from './arcade-scene.js';
-import { createGame, begin, drop, advance, move, planGrab, clawPose, PHASES, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
+import { createGame, begin, drop, advance, move, planGrab, clawPose, PHASES, MAX_FRAME_DELTA, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
 import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard } from './event-session.js';
 
 $('build-info').textContent = `BUILD ${__BUILD_INFO__.commit}${__BUILD_INFO__.dirty ? ' · uncommitted changes' : ''} · ${__BUILD_INFO__.branch}`;
@@ -310,7 +310,7 @@ window.addEventListener('unhandledrejection', () => track('client_error', { reas
 $('scene').addEventListener('webglcontextlost', event => { event.preventDefault(); fail('The renderer stopped. Reload, then ask your host to resume the interrupted turn.'); });
 function frame(time) {
   if (stopped) return;
-  const raw = previous ? (time - previous) / 1000 : 1 / 60, dt = Math.min(raw, .05); previous = time;
+  const raw = previous ? (time - previous) / 1000 : 1 / 60, dt = Math.min(raw, MAX_FRAME_DELTA); previous = time;
   if (import.meta.env.DEV && !document.hidden) { frames.push(raw * 1000); if (frames.length > 1800) frames.shift(); }
   // One dialog query per frame; every consumer below shares it.
   const openDialogs = document.querySelectorAll('dialog[open]');
