@@ -45,6 +45,10 @@ export async function checkCameraTiming(browser, origin) {
     await page.locator('#name').fill('Synthetic local timing check');
     await page.locator('#name').press('Enter');
     await page.waitForFunction(() => window.__littleCloud.snapshot().event.run);
+    // Let the rendered menu-to-aim transition reset ownership before injecting
+    // a whole acquisition sequence in one synthetic burst. Real camera samples
+    // arrive across frames; CI can observe the run before this first frame.
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     await page.evaluate(() => { for (let i = 0; i < 14; i++) timingSample(); });
     return page;
   }
