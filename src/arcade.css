@@ -293,9 +293,9 @@ button.hand-hover { outline:4px solid #ffca45; outline-offset:6px; box-shadow:0 
 }
 
 /* Local grab/release study: one physical control and a free articulated glove. */
-#joystick-cursor { position: fixed; z-index: 8; width: 100px; height: 118px; transform: translate(-50%, -58%); pointer-events: none; filter: drop-shadow(0 5px 5px #071a2b88); }
-#joystick-cursor svg { width: 100%; height: 100%; overflow: visible; }
-#joystick-cursor[hidden] { display: none; }
+.joystick-cursor { position: fixed; z-index: 8; width: 65px; height: auto; aspect-ratio: 110 / 130; transform: translate(-50%, -58%); pointer-events: none; filter: drop-shadow(0 5px 5px #071a2b88); }
+.joystick-cursor svg { width: 100%; height: 100%; overflow: visible; }
+.joystick-cursor[hidden] { display: none; }
 
 /* The projected hit area belongs to the cabinet button, never a second deck. */
 #machine-drop { position: fixed; z-index: 5; border: 0; padding: 0; border-radius: 50%; background: transparent; box-shadow: none; cursor: pointer; }

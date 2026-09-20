@@ -49,6 +49,18 @@ Missing, stale or sustained ambiguous evidence cancels attachment or a pending p
 
 The star cue leads the 150 ms clench confirmation and says PRESS DROP. Clicks/slams are immediate; at the cue centre, they also fit the existing star contact window. The active aiming clock includes travel between controls. Caught toys stay removed and remaining toy state persists between turns; resuming an interrupted run restores removal from its saved catches. After the star is caught, its timing cue and lights turn off. A new player restocks all toys. Exactly three turns and the scoring formula remain unchanged, with separate browser scores. The shared pilot ignores this option. Acceptance: release without dropping, activate the actual cabinet button deliberately, see it depress, and never catch the same toy twice in one run. This remains local for comparison and physical playtesting.
 
+### Opt-in two-hand cabinet controls
+
+`?controls=dual` assigns the anatomical left hand to the joystick and the right hand to DROP. Each role needs a confidently labelled open hand held steadily for 300 ms. Left-hand clench attaches to the stick after the existing 150 ms confirmation; it steers while clenched and opening only releases. Right-hand gestures arm independently after 200 ms open evidence while the left hand is gripping. A fresh right clench over DROP confirms in 150 ms, or an aligned downward open-hand stroke uses the same slam thresholds as the one-hand experiment. Raising an already closed right hand never arms DROP. Clicking DROP remains available.
+
+Role state, gesture evidence and the steering filter stay in the camera input layer. Right-hand loss cancels its pending press without interrupting left steering. Left-hand loss or uncertain evidence stops aiming and disables gesture DROP; missing ownership requires an open-hand reacquisition and fresh grab. Close overlap, implausible motion and associations closer to the other hand cancel role evidence. A label flip cannot transfer a closed hand into the other role. Stale captures, permission changes and menu transitions discard both roles. Accepted drops lock aim and complete delivery despite later tracking loss.
+
+Capture frames are unmirrored and the cursor alone mirrors x. Anatomical roles therefore invert the model's handedness labels, following the [MediaPipe mirrored-input convention](https://github.com/google-ai-edge/mediapipe/blob/master/docs/solutions/hands.md). Synthetic tests exercise this mapping; confirm actual left/right recognition on the intended camera before physical acceptance.
+
+Free gloves are about 35% smaller on desktop and scale down further on narrow screens. The left glove mirrors its fingers and docks below the joystick ball so some red remains visible; the right pressing glove stays compact. Projected hit areas are unchanged. The actual cabinet panel and raised PLAY/START remain. Star timing, caught-toy persistence, new-player restocking and exactly three scored turns are unchanged. This mode uses a separate local board and is ignored by the shared pilot.
+
+Acceptance: acquire each hand deliberately, add/remove the right hand without disturbing steering, reject closed entry/crossing/stale input, and resolve exactly one drop for a valid right press or slam. Automated tests cover control integration and three turns, not physical recognition, fatigue or first-time clarity. Keep the 4197 baseline and 4198 one-hand build while testing this local variant on 4201.
+
 ## Current milestone: finish a run without coaching
 
 Use the existing prototype. Do not start another rewrite.

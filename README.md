@@ -21,6 +21,9 @@ For development, run `npm run dev` and open **http://127.0.0.1:4196**.
 
 The local experiment `?controls=grab` (preview on port 4198) uses the machine's own joystick and raised DROP button. Clench over the stick to grab, move your fist to steer, and open to let go without dropping. Click DROP, clench over it for 150 ms, or make a deliberate downward open-hand stroke from above onto the button. Tracking loss cancels the gesture. Menus retain held-fist selection and raised PLAY/START buttons. Caught toys stay removed across the three turns; a new player restocks the machine. The default URL retains the old controls; experiment scores remain separate and the shared pilot ignores this option. Physical-camera slam recognition and comfort still need testing.
 
+`?controls=dual` adds independent two-hand control in the local experiment. Show your left palm, clench over the joystick and keep that fist held to steer. Raise your right palm, then clench over DROP or strike downward from above the button. Right-hand loss leaves steering active; left-hand loss stops steering and cancels gesture DROP until you reopen and grab again. Closed entry, ambiguous roles and stale input cannot trigger a drop. Click DROP remains available. Both gloves are smaller; hit areas remain generous. This variant has its own browser score board. Menu gestures are unchanged. Physical handedness, slam recognition and comfort still need validation.
+
+
 Sound defaults on; browsers that block autoplay show TAP FOR SOUND until a trusted click or key unlocks audio. Once active, a quiet original melody runs only during active hand control. It stops during camera waiting, drops, round announcements, dialogs, host pause or a hidden page. Volume and mute apply immediately; the slider alone cannot turn sound on.
 
 Rounds two and three show ROUND, then 3, 2, 1, START before hand control resumes, without an extra click or using aiming time. The complete cue lasts 3.7 seconds, and the local experiment returns from the wide view to close framing before START. After a miss, the empty claw returns home and skips the shelf animation. The next aiming phase begins 8.5 simulation seconds after the missed drop was accepted, or 6.6 seconds after MISSED appears. Sustained 10 FPS still advances at real time; longer frame stalls remain capped so a resumed tab cannot jump through the sequence. Camera readiness can still hold the next aiming phase.
@@ -110,6 +113,16 @@ Keep pilot names/results only until the host ends the pilot. Removal requires st
 ## Local close-view experiment
 
 Branch `experiment/claw-hand-feedback` remains local for review. From this isolated checkout, run `npm run build` then `npx vite preview --host 127.0.0.1 --port 4198 --strictPort`. Keep the baseline at port 4197. Port 4198 opens the near-frontal gameplay view; append `?view=angle` for a mild three-quarter comparison.
+
+For the two-hand comparison, preserve the existing `dist` served on 4198 and build separately:
+
+```sh
+CLAW_BUILD_OUT_DIR=.context/dual-dist npm run check:booth
+CLAW_BUILD_OUT_DIR=.context/dual-dist npx vite preview --host 127.0.0.1 --port 4201 --strictPort
+```
+
+Open `http://127.0.0.1:4201/?controls=dual`. The default URL and `?controls=grab` remain available for comparison. Rebuild after committing and compare the rendered operator BUILD with `.context/dual-dist/build-info.json`.
+
 
 The claw and toys fill a central viewport, with gesture-driven joystick and DROP indicators below it. These indicators do not add pointer controls. The view stays fixed from aiming through the full lift, pulls back for delivery, and returns close before the next aim. Reduced motion uses cuts. The DROP indicator owns hold progress; finger tension remains visible without tremble. Compare alignment, grab readability and the return to aiming on both views. Controls, scoring and physical acceptance are unchanged. See [the product decision](docs/PRODUCT.md#local-experiment-close-gameplay-and-hand-feedback).
 

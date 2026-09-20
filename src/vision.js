@@ -1,6 +1,7 @@
 import { pinchRatio, joystickAxis, matchHand } from './mechanics.js';
 import { clamp } from './arcade-mechanics.js';
 import {FistDrop,fistEvidence} from './fist.js';
+import { DualHandControls } from './dual-hand-controls.js';
 import { GrabRelease } from './grab-release.js';
 import { OneEuroPoint } from './one-euro.js';
 
@@ -33,6 +34,7 @@ export class HandController {
     this.fist?.reset('blocked'); // a discarded mid-hold still reports its cancellation
     this.fist = new FistDrop((name, cause) => this.onGesture?.(name, cause));
     this.grab = new GrabRelease();
+    this.dual = new DualHandControls();
     this.pointer = new OneEuroPoint();
     this.owner = null; this.neutral = null; this.candidate = null;
     this.pinchSince = 0; this.lostSince = 0;
@@ -282,7 +284,7 @@ export class HandController {
       this.lastActivity = receivedAt; this.lastResponseCapture = capturedAt;
     }
     if (reason) {
-      this.fist.reset('stale'); this.grab.reset(); this.onInput({ x: 0, z: 0 });
+      this.fist.reset('stale'); this.grab.reset(); this.dual.reset(); this.onInput({ x: 0, z: 0 });
       if (reason === 'over age') this.delayTracking();
       return false;
     }
@@ -293,7 +295,7 @@ export class HandController {
   }
 
   delayTracking() {
-    this.fist.reset('stale'); this.grab.reset();
+    this.fist.reset('stale'); this.grab.reset(); this.dual.reset();
     // Reacquisition after delayed results must seed a fresh neutral, just like
     // a missing hand. Otherwise its changed position immediately steers.
     this.neutral = null; this.input = { x: 0, z: 0 };
@@ -308,6 +310,10 @@ export class HandController {
       fist: fistEvidence(landmarks,result.gestures[i]?.[0]?.categoryName,result.gestures[i]?.[0]?.score,aspect),
       center: { x: 1 - (landmarks[0].x + landmarks[9].x) / 2, y: (landmarks[0].y + landmarks[9].y) / 2 },
       handedness: result.handedness[i]?.[0]?.categoryName,
+      // MediaPipe handedness assumes mirrored input. Capture is unmirrored;
+      // only presentation mirrors x, so normalize anatomical roles here.
+      physicalHand: result.handedness[i]?.[0]?.categoryName === 'Right' ? 'left' : result.handedness[i]?.[0]?.categoryName === 'Left' ? 'right' : null,
+      handednessScore: result.handedness[i]?.[0]?.score ?? 0,
       ratio: pinchRatio(landmarks, aspect),
     }));
     this.onDiagnostic?.({ count: hands.length, gesture: result.gestures[0]?.[0]?.categoryName || 'No hand', pinch: hands[0]?.ratio ?? null, milliseconds: performance.now() - now });
@@ -317,9 +323,25 @@ export class HandController {
     // Recognition stays visible during setup and delivery. Only game permission
     // enables actions; a held gesture cannot carry across that boundary.
     if (this.acceptedInput !== acceptsInput || this.controlProfile !== profile) {
-      this.fist.reset(); this.grab.reset(); this.controlProfile = profile;
+      this.fist.reset(); this.grab.reset(); this.dual.reset(); this.controlProfile = profile;
       this.neutral = null; this.input = { x: 0, z: 0 };
       this.acceptedInput = acceptsInput;
+    }
+    if (profile === 'dual') {
+      if (!acceptsInput) {
+        this.dual.reset(); this.input = { x: 0, z: 0 }; this.onInput(this.input);
+        this.onState({ kind: 'blocked', profile, controlEnabled: false, hands: {} });
+      } else {
+        const state = this.dual.update(hands, now, point => this.getControlTarget?.(point) || {});
+        this.input = state.input; this.onInput(this.input);
+        if (state.fired) {
+          const accepted = this.onDrop() !== false;
+          state.kind = accepted ? 'accepted' : 'tracking';
+          if (!accepted) this.dual.right.gesture.reset();
+        }
+        this.onState({ ...state, profile, handCount: hands.length, controlEnabled: true });
+      }
+      this.draw(hands, null); return;
     }
     const sendInput = input => this.onInput(acceptsInput ? input : { x: 0, z: 0 });
     const report = state => this.onState({ ...state, profile, handCount: hands.length, controlEnabled: acceptsInput,

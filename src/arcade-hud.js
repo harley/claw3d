@@ -57,7 +57,7 @@ export function createHud({ audio, phaseSound }) {
   const cue = carouselCue(game.carouselTime, grabEnabled ? PRESS_MS / 1000 : undefined), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
   const gripStage = feedback.grab?.stage;
   const starAvailable = game.toys.some(toy => toy.id === CAROUSEL.id && !toy.claimed);
-  const cueVisible = starAvailable && (!grabEnabled || gripStage !== 'gripped') && phase === 'aim' && nearPickup && !paused && !frozen && !document.hidden && !modal && cameraControls?.running && !cameraControls.waiting;
+  const cueVisible = starAvailable && (!grabEnabled || (feedback.profile === 'dual' ? feedback.dropEnabled : gripStage !== 'gripped')) && phase === 'aim' && nearPickup && !paused && !frozen && !document.hidden && !modal && cameraControls?.running && !cameraControls.waiting;
   setHidden($('jackpot-signal'), !cueVisible);
   const cueKey = `${phase}:${cue.lights}:${cue.now}`; if (cueKey !== lastCue) { if (cueVisible && cue.lights) audio.note(cue.now ? 880 : 440 + cue.lights * 110, .09); lastCue = cueKey; }
   // The countdown invites a new hold. Once confirmation is progressing, its
@@ -86,6 +86,9 @@ export function createHud({ audio, phaseSound }) {
   }
   if (grabEnabled && phase === 'aim' && feedback.controlEnabled && ['tracking', 'clenching'].includes(feedback.kind)) {
     title = gripStage === 'gripped' ? 'OPEN TO LET GO' : gripStage === 'pressing' ? 'DROP!'  : gripStage === 'grabbing' ? 'GRABBING' : feedback.closed ? 'OPEN HAND' : feedback.target === 'drop' ? 'PRESS OR SLAM' : 'GRAB JOYSTICK'; hint = '';
+  }
+  if (feedback.profile === 'dual' && phase === 'aim' && !['delayed', 'off', 'error'].includes(feedback.kind)) {
+    title = feedback.message || 'SHOW LEFT HAND OPEN'; hint = '';
   }
   if (startingRun) { title = 'CONNECTING'; hint = ''; }
   const holding = phase === 'aim' && feedback.controlEnabled && feedback.kind === 'clenching';
@@ -128,7 +131,8 @@ export function createHud({ audio, phaseSound }) {
   // after the first drop; recovery and deliberate hold feedback always return.
   const steering = (!grabEnabled || gripStage === 'gripped') && phase === 'aim' && Boolean(run) && !recovering && !startingRun &&
     cameraControls?.running && feedback.controlEnabled && feedback.kind === 'tracking';
-  $('action-copy').classList.toggle('quiet', Boolean(steering && (run.turns.length > 0 || cueVisible)));
+  const rightReady = feedback.profile !== 'dual' || (feedback.hands?.right?.ready && feedback.hands.right.grab?.armed);
+  $('action-copy').classList.toggle('quiet', Boolean(steering && rightReady && (run.turns.length > 0 || cueVisible)));
   $('action-copy').classList.toggle('gesture-guide', Boolean(steering && !nearPickup));
   presentMessage(title, hint, `${['anticipate', 'descend'].includes(phase) ? 'drop' : phase}:${turnNumber}:${title}:${hint}`, timed ? 1600 : 0);
   if ($('arcade').dataset.phase !== phase) $('arcade').dataset.phase = phase;
