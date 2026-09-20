@@ -1,7 +1,7 @@
 // Presentation-only HUD: message surface, jackpot cue, meters, chips and
 // labels. It reads a per-call view of game state and never mutates it; audio
 // and the phase-to-sound mapping are injected.
-import { RELEASE_MS } from './grab-release.js';
+import { PRESS_MS } from './grab-release.js';
 import { CAROUSEL, carouselCue } from './arcade-mechanics.js';
 
 const elements = new Map();
@@ -54,9 +54,10 @@ export function createHud({ audio, phaseSound }) {
   // Attract mode: the idle machine gently pulses its invitation until a hand
   // takes control. CSS disables the pulse under reduced motion.
   $('action-copy').classList.toggle('attract', phase === 'idle' && !paused && !recovering && (!cameraControls?.running || cameraControls.waiting));
-  const cue = carouselCue(game.carouselTime, grabEnabled ? RELEASE_MS / 1000 : undefined), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
+  const cue = carouselCue(game.carouselTime, grabEnabled ? PRESS_MS / 1000 : undefined), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
   const gripStage = feedback.grab?.stage;
-  const cueVisible = (!grabEnabled || ['gripped', 'releasing'].includes(gripStage)) && phase === 'aim' && nearPickup && !paused && !frozen && !document.hidden && !modal && cameraControls?.running && !cameraControls.waiting;
+  const starAvailable = game.toys.some(toy => toy.id === CAROUSEL.id && !toy.claimed);
+  const cueVisible = starAvailable && (!grabEnabled || gripStage !== 'gripped') && phase === 'aim' && nearPickup && !paused && !frozen && !document.hidden && !modal && cameraControls?.running && !cameraControls.waiting;
   setHidden($('jackpot-signal'), !cueVisible);
   const cueKey = `${phase}:${cue.lights}:${cue.now}`; if (cueKey !== lastCue) { if (cueVisible && cue.lights) audio.note(cue.now ? 880 : 440 + cue.lights * 110, .09); lastCue = cueKey; }
   // The countdown invites a new hold. Once confirmation is progressing, its
@@ -66,10 +67,10 @@ export function createHud({ audio, phaseSound }) {
   if ($('jackpot-signal').dataset.cue !== displayKey) {
     $('jackpot-signal').dataset.cue = displayKey;
     $('jackpot-signal').classList.toggle('go', cue.now && phase === 'aim');
-    setText('jackpot-cue', grabEnabled && confirming ? (gripStage === 'releasing' ? 'RELEASE HAND' : 'GRAB JOYSTICK') : confirming ? 'KEEP HOLDING' : ['idle', 'aim'].includes(phase) ? (grabEnabled && cue.now ? 'RELEASE HAND' : cue.text) : 'Claw in action');
+    setText('jackpot-cue', grabEnabled && confirming ? (gripStage === 'pressing' ? 'PRESS DROP' : 'GRAB JOYSTICK') : confirming ? 'KEEP HOLDING' : ['idle', 'aim'].includes(phase) ? (grabEnabled && cue.now ? 'PRESS DROP' : cue.text) : 'Claw in action');
     [...$('jackpot-lights').children].forEach((light, i) => light.classList.toggle('on', ['idle', 'aim'].includes(phase) && i < cue.lights));
   }
-  if (phase === 'aim' && nearPickup) { title = 'STAR 200'; hint = ''; }
+  if (phase === 'aim' && nearPickup && starAvailable) { title = 'STAR 200'; hint = ''; }
   const learning = phase === 'aim' || (!run && !recovering && cameraControls?.running);
   if (learning) {
     if (feedback.kind === 'off') { title = 'CAMERA OFF'; hint = 'Open Camera to continue.'; }
@@ -84,18 +85,18 @@ export function createHud({ audio, phaseSound }) {
     else if (feedback.kind === 'loading') { title = 'STARTING CAMERA'; hint = ''; }
   }
   if (grabEnabled && phase === 'aim' && feedback.controlEnabled && ['tracking', 'clenching'].includes(feedback.kind)) {
-    title = gripStage === 'gripped' || gripStage === 'releasing' ? 'RELEASE TO DROP' : gripStage === 'grabbing' ? 'GRABBING' : feedback.closed ? 'OPEN HAND' : 'GRAB THE JOYSTICK'; hint = '';
+    title = gripStage === 'gripped' ? 'OPEN TO LET GO' : gripStage === 'pressing' ? 'DROP!'  : gripStage === 'grabbing' ? 'GRABBING' : feedback.closed ? 'OPEN HAND' : feedback.target === 'drop' ? 'PRESS OR SLAM' : 'GRAB JOYSTICK'; hint = '';
   }
   if (startingRun) { title = 'CONNECTING'; hint = ''; }
   const holding = phase === 'aim' && feedback.controlEnabled && feedback.kind === 'clenching';
   const progress = holding ? Math.round(Math.max(0, Math.min(1, feedback.progress || 0)) * 100) : 0;
-  $('gesture-meter').setAttribute('aria-label', grabEnabled ? (gripStage === 'releasing' ? 'Release to drop' : 'Grab joystick') : 'Hold to drop');
+  $('gesture-meter').setAttribute('aria-label', grabEnabled ? (gripStage === 'pressing' ? 'Press to drop' : 'Grab joystick') : 'Hold to drop');
   setHidden($('gesture-meter'), !holding);
   if ($('gesture-meter').getAttribute('aria-valuenow') !== String(progress)) {
     $('gesture-meter').setAttribute('aria-valuenow', String(progress));
     $('gesture-progress').style.transform = `scaleX(${progress / 100})`;
   }
-  setHidden($('control-deck'), !run || phase === 'idle' || phase === 'result');
+  setHidden($('control-deck'), grabEnabled || !run || phase === 'idle' || phase === 'result');
   $('control-deck').dataset.profile = grabEnabled ? 'grab-release' : 'hold-drop';
   $('control-deck').querySelector('.deck-steer > span').textContent = grabEnabled ? (gripStage === 'gripped' ? 'MOVE FIST' : gripStage === 'releasing' ? 'RELEASE' : 'CLENCH TO GRAB') : 'MOVE HAND';
   const deckSteering = (!grabEnabled || gripStage === 'gripped') && phase === 'aim' && feedback.controlEnabled && feedback.kind === 'tracking';
@@ -103,7 +104,7 @@ export function createHud({ audio, phaseSound }) {
   $('deck-stick').style.transform = `translate(${(input?.x || 0) * 15}px, ${(input?.z || 0) * 11}px)`;
   $('deck-drop').style.setProperty('--hold', progress / 100);
   $('control-deck').dataset.state = deliveryPhases.has(phase) ? 'accepted' : holding ? 'holding' : deckSteering ? 'tracking' : 'waiting';
-  setText('deck-state', deliveryPhases.has(phase) ? 'DROP ACCEPTED' : grabEnabled ? (gripStage === 'gripped' || gripStage === 'releasing' ? 'RELEASE TO DROP' : gripStage === 'grabbing' ? 'GRABBING' : 'GRAB JOYSTICK') : holding ? 'HOLD' : deckSteering ? 'READY' : 'WAITING');
+  setText('deck-state', deliveryPhases.has(phase) ? 'DROP ACCEPTED' : grabEnabled ? (gripStage === 'gripped' ? 'OPEN TO LET GO' : gripStage === 'pressing' ? 'DROP!'  : gripStage === 'grabbing' ? 'GRABBING' : 'GRAB JOYSTICK') : holding ? 'HOLD' : deckSteering ? 'READY' : 'WAITING');
   const control = deliveryPhases.has(phase) ? 'delivery' : holding ? 'holding' : feedback.controlEnabled && feedback.kind === 'tracking' ? 'tracking' : feedback.kind;
   if ($('arcade').dataset.control !== control) $('arcade').dataset.control = control;
   const cameraLabels = { ready: 'Camera view', calibrating: 'Hand found', tracking: 'Hand found', accepted: 'Drop confirmed', lost: 'Hand out of view', delayed: 'Tracking delayed', clenching: 'Fist found', loading: 'Starting camera', off: 'Camera off', error: 'Check camera' };
@@ -113,7 +114,7 @@ export function createHud({ audio, phaseSound }) {
   setText('timer', String(Math.ceil(remaining)).padStart(2, '0'));
   setText('speed-bonus', `SPEED +${Math.floor((run?.rules.speedBonus ?? 50) * remaining / (run?.rules.seconds || 15))}`);
   $('arcade').classList.toggle('last-claw', Boolean(run && turnNumber === 3)); $('arcade').classList.toggle('urgent', phase === 'aim' && remaining <= 5);
-  setText('mode-label', shared ? sharedStatus : storageError ? 'LOCAL PREVIEW · UNSAVED' : grabEnabled ? 'LOCAL PREVIEW · GRAB & RELEASE' : 'LOCAL PREVIEW');
+  setText('mode-label', shared ? sharedStatus : storageError ? 'LOCAL PREVIEW · UNSAVED' : grabEnabled ? 'ARCADE PREVIEW' : 'LOCAL PREVIEW');
   setHidden($('mode-label'), !$('mode-label').textContent);
   setHidden($('result-open'), !completedRun || startingRun || Boolean(run) || cameraLoading);
   if (!run && !recovering) button = cameraLoading ? 'Starting…' : cameraControls?.running ? 'Play' : 'Start camera';

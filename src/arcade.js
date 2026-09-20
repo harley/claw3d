@@ -1,6 +1,6 @@
 import './arcade.css';
 import { createJoystickCursor } from './joystick-cursor.js';
-import { RELEASE_MS } from './grab-release.js';
+import { PRESS_MS } from './grab-release.js';
 import { createHandMenu, generatedName } from './hand-menu.js';
 const manualSetup = new URLSearchParams(location.search).get('setup') === 'manual';
 import { createSharedBoard } from './shared-board.js';
@@ -11,7 +11,7 @@ import { createMovementMusic } from './movement-music.js';
 import { PerformanceGovernor, PERFORMANCE_WINDOW_MS } from './performance-governor.js';
 const shared = globalThis.__SHARED_PILOT__ === true;
 const grabEnabled = !shared && new URLSearchParams(location.search).get('controls') === 'grab';
-const scoreKey = grabEnabled ? `${STORAGE_KEY}:grab-release` : STORAGE_KEY;
+const scoreKey = grabEnabled ? `${STORAGE_KEY}:cabinet-controls` : STORAGE_KEY;
 import { ArcadeScene } from './arcade-scene.js';
 import { createGame, begin, drop, advance, move, planGrab, clawPose, PHASES, MAX_FRAME_DELTA, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
 import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, scoreTurn } from './event-session.js';
@@ -20,7 +20,8 @@ $('build-info').textContent = `BUILD ${__BUILD_INFO__.commit}${__BUILD_INFO__.di
 let game = createGame({ carousel: true }), scene, previous = 0, stopped = false, frozen = false;
 let cameraControls, cameraLoading = false;
 const handMenu = createHandMenu();
-const glove = createJoystickCursor();
+document.body.classList.toggle('machine-controls', grabEnabled);
+const glove = createJoystickCursor(() => grabEnabled ? scene?.controlTargets() : null, () => { if (grabEnabled) gestureDrop(); });
 let previousMenuMode = '';
 function menuMode() {
   if (startingRun || recovering || paused || frozen || stopped || document.hidden) return '';
@@ -99,7 +100,16 @@ function phaseSound(phase, modal) {
 function freshGame() { cameraControls?.reset(); game = createGame({ carousel: true }); game.position = { x: -1.12, z: .66 }; scene?.groundToys(game); aligned = null; hud.invalidate(); }
 function beginTurn() {
   nextTurnElapsed = 0; dropRemainingMs = 0;
-  freshGame(); turnNumber = run.turns.length + 1; remaining = run.rules.seconds; begin(game); recovering = false;
+  if (grabEnabled && run.turns.length && !recovering && game.phase === 'result') {
+    cameraControls?.reset(); aligned = null; hud.invalidate();
+  } else {
+    freshGame();
+    if (grabEnabled) for (const turn of run.turns) {
+      const toy = game.toys.find(toy => toy.id === turn.prizeId);
+      if (toy && !toy.claimed) { toy.claimed = true; game.collection.push(toy.id); }
+    }
+  }
+  turnNumber = run.turns.length + 1; remaining = run.rules.seconds; begin(game); recovering = false;
   if (turnNumber === 3) { [330, 440, 660].forEach((f, i) => audio.note(f, .16, i * .15)); }
   else { [523, 784].forEach((f, i) => audio.note(f, .12, i * .09)); }
   updateUI();
@@ -281,7 +291,7 @@ async function startCamera() {
       const { createCameraControls } = await import('./camera-controls.js');
       cameraControls = await createCameraControls({ video: $('camera-video'), overlay: $('camera-overlay'), select: $('camera-select'),
         getControlProfile: () => grabEnabled && !menuMode() ? 'grab-release' : 'hold-drop',
-        canGrab: pointer => glove.canGrab(pointer),
+        getControlTarget: pointer => glove.targetAt(pointer),
         canControl: () => Boolean(menuMode() || (!startingRun && run && game.phase === 'aim' && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]'))),
         onDrop: () => menuMode() ? handMenu.confirm(menuMode(), cameraControls.feedback) : gestureDrop(),
         // Bounded so a boundary-trembling hand cannot evict funnel-critical
@@ -402,14 +412,15 @@ function frame(time) {
       }
     }
     if (paused || modal || document.hidden) feedback.kind = 'blocked';
-    glove.update(feedback, grabEnabled && game.phase === 'aim' && !document.querySelector('dialog[open]'), dt);
-    scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, feedback, Boolean(cameraControls?.running || cameraControls?.starting), { preparing: Boolean(run && !recovering), nextTurnElapsed, cueLead: grabEnabled ? RELEASE_MS / 1000 : undefined }); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
+    scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, feedback, Boolean(cameraControls?.running || cameraControls?.starting), { preparing: Boolean(run && !recovering), nextTurnElapsed, machineControls: grabEnabled, cueLead: grabEnabled ? PRESS_MS / 1000 : undefined }); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
+    glove.update(feedback, grabEnabled && game.phase === 'aim' && !paused && !modal && !frozen && !document.hidden, dt);
     const tagged = game.phase === 'aim' && aligned ? game.toys.find(toy => toy.id === aligned.id) : null;
     const target = tagged ? scene.screenPoint(tagged.x, BED + (tagged.elevation || 0) + .08, tagged.z) : null;
+    const tagOrigin = target ? $('prize-tags').getBoundingClientRect() : null;
     for (const { toy, element } of tags) {
       setHidden(element, !target || aligned.id !== toy.id);
       if (element.hidden) continue;
-      element.style.transform = `translate(${Math.round(target.x)}px, ${Math.round(target.y)}px) translate(-50%, -50%)`;
+      element.style.transform = `translate(${Math.round(target.x - tagOrigin.left)}px, ${Math.round(target.y - tagOrigin.top)}px) translate(-50%, -50%)`;
       element.classList.add('targeted');
       element.textContent = scoreTurn(run?.rules || RULES, toy.id, Math.floor(remaining * 1000));
     }
@@ -420,7 +431,7 @@ function frame(time) {
 // Read-only development diagnostics.
 function snapshot(includeBounds = false) {
   const sorted = [...frames].sort((a, b) => a - b), average = frames.reduce((a, b) => a + b, 0) / (frames.length || 1);
-  return { phase: game.phase, elapsed: game.elapsed, position: { ...game.position }, rounds: game.rounds, event: { run, remaining, turn: turnNumber, paused, board: shared ? pilot.board : currentBoard(store), complete: completedRun, storageError, handCamera: { running: cameraControls?.running || false, waiting: cameraControls?.waiting || false, feedback: cameraControls?.feedback, diagnostic: cameraControls?.diagnostic }, carouselTime: game.carouselTime, controlProfile: grabEnabled ? 'grab-release' : 'hold-drop', cue: carouselCue(game.carouselTime, grabEnabled ? RELEASE_MS / 1000 : undefined) }, aligned: aligned?.id || null, caught: game.plan?.prize?.id || null, contacts: game.plan?.contacts || null, claw: clawPose(game), stop: game.plan?.stop || null, collection: [...game.collection], reducedMotion: scene?.reducedMotion, camera: scene?.camera.position.toArray(), cameraLook: scene?.currentLook.toArray(), lowQuality: scene?.lowQuality, joystick: { mode: scene?.joystickHand.mode, visible: scene?.joystickHand.root.visible, progress: scene?.joystickHand.progress }, effects: { clawLean: scene?.claw.rotation.toArray().slice(0, 3), fingerRadius: scene?.fingers[0].pad.position.x + .017, burst: scene?.burst.count ?? 0 }, errors: [...errors], render: { calls: scene?.renderer.info.render.calls, triangles: scene?.renderer.info.render.triangles }, performance: { frames: frames.length, averageFps: +(1000 / average).toFixed(1), p95FrameMs: sorted[Math.floor(sorted.length * .95)], framesOver33ms: frames.filter(t => t > 33.4).length }, toys: game.toys.map(toy => ({ id: toy.id, family: toy.family, claimed: toy.claimed, position: scene?.toys.get(toy.id).position.toArray(), scale: scene?.toys.get(toy.id).scale.toArray(), bounds: includeBounds ? scene?.toyBounds(toy.id) : undefined })) };
+  return { phase: game.phase, elapsed: game.elapsed, position: { ...game.position }, rounds: game.rounds, event: { run, remaining, turn: turnNumber, paused, board: shared ? pilot.board : currentBoard(store), complete: completedRun, storageError, handCamera: { running: cameraControls?.running || false, waiting: cameraControls?.waiting || false, feedback: cameraControls?.feedback, diagnostic: cameraControls?.diagnostic }, carouselTime: game.carouselTime, controlProfile: grabEnabled ? 'grab-release' : 'hold-drop', cue: carouselCue(game.carouselTime, grabEnabled ? PRESS_MS / 1000 : undefined) }, aligned: aligned?.id || null, caught: game.plan?.prize?.id || null, contacts: game.plan?.contacts || null, claw: clawPose(game), stop: game.plan?.stop || null, collection: [...game.collection], reducedMotion: scene?.reducedMotion, camera: scene?.camera.position.toArray(), cameraLook: scene?.currentLook.toArray(), lowQuality: scene?.lowQuality, machineControls: grabEnabled ? scene?.controlTargets() : null, joystick: { mode: scene?.joystickHand.mode, visible: scene?.joystickHand.root.visible, progress: scene?.joystickHand.progress }, effects: { clawLean: scene?.claw.rotation.toArray().slice(0, 3), fingerRadius: scene?.fingers[0].pad.position.x + .017, burst: scene?.burst.count ?? 0 }, errors: [...errors], render: { calls: scene?.renderer.info.render.calls, triangles: scene?.renderer.info.render.triangles }, performance: { frames: frames.length, averageFps: +(1000 / average).toFixed(1), p95FrameMs: sorted[Math.floor(sorted.length * .95)], framesOver33ms: frames.filter(t => t > 33.4).length }, toys: game.toys.map(toy => ({ id: toy.id, family: toy.family, claimed: toy.claimed, position: scene?.toys.get(toy.id).position.toArray(), scale: scene?.toys.get(toy.id).scale.toArray(), bounds: includeBounds ? scene?.toyBounds(toy.id) : undefined })) };
 }
 
 function updateSavedRank(saved) {

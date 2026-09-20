@@ -10,8 +10,8 @@ export const OWNER_LOSS_GRACE = 650;
 const LINKS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 
 export class HandController {
-  constructor({ video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic = () => {}, onGesture, getControlProfile = () => 'hold-drop', canGrab = () => false }) {
-    Object.assign(this, { video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic, onGesture, getControlProfile, canGrab });
+  constructor({ video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic = () => {}, onGesture, getControlProfile = () => 'hold-drop', getControlTarget = () => ({}) }) {
+    Object.assign(this, { video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic, onGesture, getControlProfile, getControlTarget });
     this.running = false;
     this.starting = false;
     this.generation = 0;
@@ -365,8 +365,9 @@ export class HandController {
     this.lostSince = 0;
     this.owner.x = hand.center.x; this.owner.y = hand.center.y;
     if (phase === 'aim' && profile === 'grab-release') {
+      const target = this.getControlTarget?.(hand.center) || {};
       const grip = this.grab.update({ ...hand.fist, visible: hands.length === 1,
-        overTarget: Boolean(this.canGrab?.(hand.center)) }, now);
+        point: hand.center, ...target }, now);
       this.input = { x: 0, z: 0 };
       if (grip.grabbed) { this.pointer.reset(); this.neutral = null; }
       if (grip.steering) {
@@ -375,16 +376,16 @@ export class HandController {
         this.input = { x: joystickAxis(point.x - this.neutral.x), z: joystickAxis(point.y - this.neutral.y) };
       } else this.neutral = null;
       sendInput(this.input);
-      let kind = hands.length !== 1 ? 'lost' : ['grabbing', 'releasing'].includes(grip.stage) ? 'clenching' : 'tracking';
+      let kind = hands.length !== 1 ? 'lost' : ['grabbing', 'pressing'].includes(grip.stage) ? 'clenching' : 'tracking';
       if (grip.fired) {
         const accepted = this.onDrop() !== false;
         if (!accepted) { this.grab.reset(); grip.stage = 'seeking'; grip.armed = false; }
         kind = accepted ? 'accepted' : 'tracking';
       }
       // Pose drives artwork only; it never contributes to gesture timing.
-      report({ kind, progress: grip.progress, grab: grip,
+      report({ kind, progress: grip.progress, grab: grip, target: target.overDrop ? 'drop' : target.overTarget ? 'stick' : '',
         closed: hand.fist.closed, open: hand.fist.open,
-        message: grip.stage === 'gripped' ? 'Move your fist to steer. Open to drop.' : 'Open your hand, reach the joystick and clench to grab.' });
+        message: grip.stage === 'gripped' ? 'Move your fist to steer. Open to let go.' : 'Open your hand, reach the joystick and clench to grab.' });
       this.draw(hands, hand); return;
     }
     if (phase === 'aim') {

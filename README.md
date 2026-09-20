@@ -19,7 +19,7 @@ Open the operator gear to see the build commit, branch and whether it contains u
 
 For development, run `npm run dev` and open **http://127.0.0.1:4196**.
 
-This isolated experiment adds `?controls=grab` for local comparison (preview on port 4198). Reach the bottom joystick with an open hand, clench for 150 ms to grab, move the fist to steer, then open for 150 ms to drop. The glove animates its fingers and attaches to the joystick. Tracking loss cancels the grip; reopen and grab again. Menus still use a held fist. The default URL keeps hold-to-drop controls; the grab variant uses separate browser scores and is disabled for the shared pilot. Physical-camera feel remains unverified.
+The local experiment `?controls=grab` (preview on port 4198) uses the machine's own joystick and raised DROP button. Clench over the stick to grab, move your fist to steer, and open to let go without dropping. Click DROP, clench over it for 150 ms, or make a deliberate downward open-hand stroke from above onto the button. Tracking loss cancels the gesture. Menus retain held-fist selection and raised PLAY/START buttons. Caught toys stay removed across the three turns; a new player restocks the machine. The default URL retains the old controls; experiment scores remain separate and the shared pilot ignores this option. Physical-camera slam recognition and comfort still need testing.
 
 Sound defaults on; browsers that block autoplay show TAP FOR SOUND until a trusted click or key unlocks audio. Once active, a quiet original melody runs only during active hand control. It stops during camera waiting, drops, round announcements, dialogs, host pause or a hidden page. Volume and mute apply immediately; the slider alone cannot turn sound on.
 

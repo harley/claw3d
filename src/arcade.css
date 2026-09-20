@@ -293,9 +293,17 @@ button.hand-hover { outline:4px solid #ffca45; outline-offset:6px; box-shadow:0 
 }
 
 /* Local grab/release study: one physical control and a free articulated glove. */
-#control-deck[data-profile="grab-release"] .deck-drop { display: none; }
-#control-deck[data-profile="grab-release"] .stick-base { width: 100px; height: 70px; }
-#control-deck[data-profile="grab-release"] { justify-content: center; gap: 30px; }
 #joystick-cursor { position: fixed; z-index: 8; width: 100px; height: 118px; transform: translate(-50%, -58%); pointer-events: none; filter: drop-shadow(0 5px 5px #071a2b88); }
 #joystick-cursor svg { width: 100%; height: 100%; overflow: visible; }
 #joystick-cursor[hidden] { display: none; }
+
+/* The projected hit area belongs to the cabinet button, never a second deck. */
+#machine-drop { position: fixed; z-index: 5; border: 0; padding: 0; border-radius: 50%; background: transparent; box-shadow: none; cursor: pointer; }
+#machine-drop:hover, #machine-drop:focus-visible { outline: 3px solid #ffdf77; outline-offset: 3px; filter: drop-shadow(0 0 9px #ffc34c); }
+#machine-drop[hidden] { display: none; }
+.machine-controls #scene { height: calc(100% - 210px); }
+.play-button { border-radius: 18px; border: 3px solid #ff9294; background: linear-gradient(#ff6574 0%, #ed304b 45%, #c71938 100%); box-shadow: inset 0 3px 2px #fff7, inset 0 -3px 4px #8d102b, 0 9px 0 #77152b, 0 13px 0 #18202f, 0 16px 22px #0008; text-shadow: 0 2px 1px #7c1326; transition: transform 90ms, box-shadow 90ms; }
+.play-button:active, .play-button.hand-hover { transform: translateY(6px); box-shadow: inset 0 2px 3px #fff4, 0 3px 0 #77152b, 0 6px 0 #18202f, 0 8px 12px #0008; }
+@media (prefers-reduced-motion: reduce) { .play-button { transition: none; } }
+
+@media (max-width: 650px) { .machine-controls #scene { height: calc(100% - 335px); } }
