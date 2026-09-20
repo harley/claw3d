@@ -19,6 +19,8 @@ export class ArcadeScene {
     this.environment = pmrem.fromScene(room, .04); this.scene.environment = this.environment.texture; this.scene.environmentIntensity = .48; room.dispose(); pmrem.dispose();
     this.camera = new T.PerspectiveCamera(35, 1, .1, 70);
     this.home = v(7.25, 6.15, 11.6); this.look = v(-.4, 2.25, 0); this.camera.position.copy(this.home); this.currentLook = this.look.clone();
+    this.playLook = v(0, 2.95, 0); this.playCamera = v(0, 0, 0);
+    this.angledView = new URLSearchParams(location.search).get('view') === 'angle';
     this.scene.add(new T.HemisphereLight('#fff5e2', '#93a895', 1.15));
     const key = new T.DirectionalLight('#fff0d7', 2.35); key.position.set(-3.5, 8, 5); key.castShadow = true;
     Object.assign(key.shadow.camera, { left: -6, right: 6, top: 7, bottom: -5, near: .1, far: 22 }); key.shadow.mapSize.set(2048, 2048); key.shadow.normalBias = .022; key.shadow.bias = -.00015; key.shadow.radius = 3; this.scene.add(key);
@@ -37,7 +39,7 @@ export class ArcadeScene {
   }
 
   buildWorld() {
-    const m = this.mats, world = group(this.scene);
+    const m = this.mats, world = this.surroundings = group(this.scene);
     const ground = mesh(this.scene, new T.PlaneGeometry(200, 200), new T.MeshBasicMaterial({ color: '#080e1c', toneMapped: false })); ground.rotation.x = -Math.PI / 2; ground.position.y = -.055; ground.castShadow = false;
     const shadow = mesh(this.scene, new T.PlaneGeometry(200, 200), new T.ShadowMaterial({ opacity: .16 })); shadow.rotation.x = -Math.PI / 2; shadow.position.y = -.05; shadow.castShadow = false;
     box(world, material('#142c50', .88), [-.55, .12, .12], [7.75, .33, 4.7], .23);
@@ -243,13 +245,6 @@ export class ArcadeScene {
     for (let i = 0; i < 4; i++) { const tick = box(this.target, this.targetMat, [Math.cos(i * Math.PI / 2) * .227, 0, Math.sin(i * Math.PI / 2) * .227], [.09, .008, .016], .005); tick.rotation.y = -i * Math.PI / 2; }
     batch(this.target);
     this.target.traverse(m => { if (m.isMesh) m.castShadow = m.receiveShadow = false; });
-    // One hold cue beside the claw, above toys that can obscure the floor target.
-    // Billboard the existing arc; reveal triangles without allocating geometry.
-    this.holdMat = new T.MeshBasicMaterial({ color: '#ffc14d', transparent: true, opacity: .92, depthWrite: false, side: T.DoubleSide, toneMapped: false });
-    this.holdArc = mesh(this.scene, new T.RingGeometry(.43, .48, 64, Math.PI / 2), this.holdMat);
-    this.holdArc.castShadow = this.holdArc.receiveShadow = false;
-    this.holdArc.visible = false;
-    this.holdWarm = new T.Color('#ffc14d'); this.holdGo = new T.Color('#66ffb3');
     this.beamMat = new T.LineBasicMaterial({ color: '#698d79', transparent: true, opacity: .34, depthWrite: false });
     this.beam = new T.Line(new T.BufferGeometry().setFromPoints([v(0, 0, 0), v(0, 1, 0)]), this.beamMat); this.scene.add(this.beam);
   }
@@ -330,11 +325,13 @@ export class ArcadeScene {
     this.viewport = { width, height };
     this.renderer.setSize(width, height, false); this.camera.aspect = width / height; this.camera.updateProjectionMatrix();
     const extra = Math.max(1, 1.45 / this.camera.aspect); this.home.set(7.25 * extra, 2.25 + 3.90 * extra, 11.6 * extra);
+    const playScale = Math.max(1, 1.05 / this.camera.aspect);
+    this.playCamera.set((this.angledView ? 1.8 : .45) * playScale, 2.95 + 1.85 * playScale, 6.4 * playScale);
   }
 
   setQuality(low) { this.lowQuality = low; this.renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, 1.5)); this.renderer.shadowMap.enabled = !low; this.resize(); }
 
-  screenPoint(x, y, z) { const p = v(x, y, z).project(this.camera); return { x: (p.x + 1) / 2 * this.viewport.width, y: (1 - p.y) / 2 * this.viewport.height }; }
+  screenPoint(x, y, z) { const p = v(x, y, z).project(this.camera); return { x: this.canvas.offsetLeft + (p.x + 1) / 2 * this.viewport.width, y: this.canvas.offsetTop + (1 - p.y) / 2 * this.viewport.height }; }
 
   groundToys(game) { for (const toy of game.toys) toy.groundOffset = this.toys.get(toy.id).userData.groundOffset; }
   toyBounds(id) { const bounds = new T.Box3().setFromObject(this.toys.get(id), true); return { min: bounds.min.toArray(), max: bounds.max.toArray() }; }
@@ -368,7 +365,7 @@ export class ArcadeScene {
     this.previousAim = steering ? { x: pose.x, z: pose.z } : null;
   }
 
-  update(game, dt, time, input, aligned, feedback = {}, cameraActive = false) {
+  update(game, dt, time, input, aligned, feedback = {}, cameraActive = false, presentation = {}) {
     const phase = game.phase, elapsed = game.elapsed, plan = game.plan, motion = this.reducedMotion ? 0 : 1;
     this.carousel.visible = Boolean(game.carousel);
     if (game.carousel) {
@@ -380,23 +377,16 @@ export class ArcadeScene {
     const pose = clawPose(game);
     this.stick.rotation.set(input.z * .24, 0, -input.x * .24); this.button.position.y = phase === 'anticipate' ? 1.688 : 1.72;
     this.joystickHand.update(phase, elapsed, dt, feedback, this.reducedMotion);
+    this.stick.visible = this.button.visible = ['idle', 'result'].includes(phase);
     this.target.visible = ['idle', 'aim'].includes(phase); this.target.position.set(game.position.x, BED + (game.carousel && Math.hypot(game.position.x - CAROUSEL.x, game.position.z - CAROUSEL.z) < .55 ? CAROUSEL.height : 0) + .014, game.position.z); this.targetMat.color.set(aligned ? '#547e69' : '#bb5b49');
     // Fist-hold confirmation fills the ring the player is already watching.
     const holding = phase === 'aim' && feedback.controlEnabled && feedback.kind === 'clenching' ? clamp(feedback.progress, 0, 1) : 0;
-    this.holdArc.visible = holding > 0 && this.target.visible;
-    if (this.holdArc.visible) {
-      this.holdArc.position.set(pose.x, pose.y - .52, pose.z);
-      this.holdArc.quaternion.copy(this.camera.quaternion);
-      this.holdArc.geometry.setDrawRange(0, Math.floor(64 * holding) * 6);
-      this.holdMat.color.copy(this.holdWarm).lerp(this.holdGo, holding);
-    }
     this.beam.visible = this.target.visible; this.beam.position.set(game.position.x, BED + .02, game.position.z); this.beam.scale.y = HIGH - BED - 1.01; this.beamMat.color.copy(this.targetMat.color);
     this.deliveryTray.visible = false; this.deliveryTray.scale.setScalar(1);
     const hatchOpen = plan?.prize && ['release', 'deliver', 'reveal', 'result'].includes(phase);
     this.hatch.rotation.x = hatchOpen ? (phase === 'release' ? ease(elapsed / .18) : 1) * Math.PI / 2 : phase === 'idle' ? 0 : Math.max(0, this.hatch.rotation.x - dt * 9);
     const delivery = phase === 'deliver' && plan?.prize ? elapsed / PHASES.deliver : -1;
     this.outletFlap.rotation.x = delivery >= 0 ? -Math.PI / 2 * ease(delivery / .22) * (1 - ease((delivery - .65) / .22)) : 0;
-    let focusToy = null;
     for (const toy of game.toys) {
       const object = this.toys.get(toy.id), { body, articulation, blink, wave, waveTime, face } = object.userData;
       object.position.set(toy.x, BED + (toy.elevation || 0), toy.z); object.rotation.set(0, toy.yaw, 0); object.scale.setScalar(toy.scale); body.scale.set(1, 1, 1); body.rotation.set(0, 0, 0);
@@ -430,7 +420,7 @@ export class ArcadeScene {
         object.rotation.y = mix(toy.yaw, .35, ease(t)); wobble = motion * Math.sin(t * 25) * .07 * Math.sin(t * Math.PI);
       }
       if (held && ['reveal', 'result'].includes(phase)) {
-        focusToy = object; wobble = motion * (phase === 'reveal' ? Math.sin(elapsed * 12) * Math.exp(-elapsed * 3) * (toy.family === 'star' ? .13 : .07) : 0);
+        wobble = motion * (phase === 'reveal' ? Math.sin(elapsed * 12) * Math.exp(-elapsed * 3) * (toy.family === 'star' ? .13 : .07) : 0);
         if (phase === 'reveal') { const t = elapsed / PHASES.reveal, slot = collectionSlot(toy.id); this.deliveryTray.visible = t < .97; this.deliveryTray.position.set(mix(slot.x, -1.08, ease((t - .45) / .55)), mix(slot.y, .50, ease((t - .22) / .60)), mix(slot.z, 1.69, ease(t / .30))); }
       }
       body.scale.set(1 + compression * .65, 1 - compression, 1 + compression * .45); body.rotation.z = wobble;
@@ -460,15 +450,26 @@ export class ArcadeScene {
     this.updateMarquee(phase, plan, time, motion);
     this.courier.visible = this.deliveryTray.visible;
     if (this.courier.visible) { const p = this.deliveryTray.position; this.courier.scale.set(this.deliveryTray.scale.x, 1, this.deliveryTray.scale.z); this.courier.position.set(p.x, 0, 1.69); this.courierMast.scale.y = Math.max(.1, p.y - .44); this.courierMast.position.y = .44 + (p.y - .44) / 2; this.courierArm.scale.y = Math.max(.025, 1.69 - p.z); this.courierArm.position.set(0, p.y - .08, -(1.69 - p.z) / 2); }
-    let cameraPos = this.home, look = this.look;
-    // Aiming never drifts. The viewpoint moves only for the earned reveal and
-    // a slight lean-in while the drop plays out (input is frozen there).
-    if (motion && focusToy && phase === 'reveal') { look = focusToy.position.clone().add(v(.2, .40, .1)); cameraPos = look.clone().add(v(1.8, 1.0, 5.0)); }
-    else if (motion && ['descend', 'grip'].includes(phase)) { cameraPos = (this.pushIn ??= v(0, 0, 0)).copy(this.home).lerp(this.look, .085); }
-    if (['aim', 'idle'].includes(phase) || !motion) { this.camera.position.copy(this.home); this.currentLook.copy(this.look); }
-    else { const k = 1 - Math.exp(-dt * 3); this.camera.position.lerp(cameraPos, k); this.currentLook.lerp(look, k); }
-    this.camera.lookAt(this.currentLook);
+    this.updateCamera(game, presentation);
     this.draw(time, cameraActive);
+  }
+
+  updateCamera(game, { preparing = false, nextTurnElapsed = 0 } = {}) {
+    // Stay on the contact through the entire lift. Transfer is the first point
+    // where the outcome is known and the whole machine becomes useful again.
+    let wide = ['idle', 'release', 'deliver', 'reveal', 'result'].includes(game.phase) ? 1 : 0;
+    if (game.phase === 'transfer') wide = this.reducedMotion ? 1 : ease(game.elapsed / .65);
+    if (game.phase === 'result' && preparing) {
+      wide = this.reducedMotion ? Number(nextTurnElapsed < 3) : 1 - ease((nextTurnElapsed - 2.4) / .6);
+    }
+    this.surroundings.visible = wide > 0;
+    for (const id of game.collection || []) {
+      const object = this.toys.get(id);
+      if (object) object.visible = wide > 0 && game.toys.some(toy => toy.id === id);
+    }
+    this.camera.position.copy(this.playCamera).lerp(this.home, wide);
+    this.currentLook.copy(this.playLook).lerp(this.look, wide);
+    this.camera.lookAt(this.currentLook);
   }
 
   draw(time, cameraActive) {

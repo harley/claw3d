@@ -89,6 +89,13 @@ export function createHud({ audio, phaseSound }) {
     $('gesture-meter').setAttribute('aria-valuenow', String(progress));
     $('gesture-progress').style.transform = `scaleX(${progress / 100})`;
   }
+  setHidden($('control-deck'), !run || phase === 'idle' || phase === 'result');
+  const deckSteering = phase === 'aim' && feedback.controlEnabled && feedback.kind === 'tracking';
+  const input = deckSteering ? cameraControls?.input : null;
+  $('deck-stick').style.transform = `translate(${(input?.x || 0) * 15}px, ${(input?.z || 0) * 11}px)`;
+  $('deck-drop').style.setProperty('--hold', progress / 100);
+  $('control-deck').dataset.state = deliveryPhases.has(phase) ? 'accepted' : holding ? 'holding' : deckSteering ? 'tracking' : 'waiting';
+  setText('deck-state', deliveryPhases.has(phase) ? 'DROP ACCEPTED' : holding ? 'HOLD' : deckSteering ? 'READY' : 'WAITING');
   const control = deliveryPhases.has(phase) ? 'delivery' : holding ? 'holding' : feedback.controlEnabled && feedback.kind === 'tracking' ? 'tracking' : feedback.kind;
   if ($('arcade').dataset.control !== control) $('arcade').dataset.control = control;
   const cameraLabels = { ready: 'Camera view', calibrating: 'Hand found', tracking: 'Hand found', accepted: 'Drop confirmed', lost: 'Hand out of view', delayed: 'Tracking delayed', clenching: 'Fist found', loading: 'Starting camera', off: 'Camera off', error: 'Check camera' };

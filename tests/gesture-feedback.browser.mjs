@@ -38,14 +38,14 @@ try {
   const meterBox = await page.locator('#gesture-meter').boundingBox();
   assert.equal(meterBox.width, 1, 'remote progress remains accessible without a competing visible meter');
   assert.equal(await page.locator('#status').textContent(), 'Hold to drop');
-  // The claw arc mirrors the hold even under reduced motion: it is
-  // progress feedback, not decorative animation.
-  await page.waitForFunction(() => window.__littleCloud.snapshot().effects.holdArc === true);
+  // The bottom DROP ring owns progress, including reduced motion.
+  assert.equal(await page.locator('#deck-drop').evaluate(el => el.style.getPropertyValue('--hold')), '0.5');
+  assert.equal(await page.locator('#control-deck').getAttribute('data-state'), 'holding');
   await page.screenshot({ path: '.screenshots/gesture-hold.png' });
   await feedback({ kind: 'tracking', progress: 0 });
   await page.waitForFunction(() => document.getElementById('gesture-meter').hidden);
   assert.equal((await snap()).joystick.progress, 0, 'cancelled hold clears the scene ring');
-  await page.waitForFunction(() => window.__littleCloud.snapshot().effects.holdArc === false);
+  assert.equal(await page.locator('#deck-drop').evaluate(el => el.style.getPropertyValue('--hold')), '0');
 
   // Silence must expire both the input and its visible control claim.
   await page.evaluate(() => clearInterval(window.testCamera.timer));
@@ -76,7 +76,7 @@ try {
   assert.equal(await page.locator('#status').textContent(), 'ROUND 2');
   await page.waitForTimeout(1000);
   const countdownCamera = (await snap()).camera;
-  assert.ok(countdownCamera.every((value, i) => Math.abs(value - aimingCamera[i]) < .3), 'the countdown returns to the full-machine view');
+  assert.ok(countdownCamera.some((value, i) => Math.abs(value - aimingCamera[i]) > 1), 'the early countdown shows the full machine');
   await page.screenshot({ path: '.screenshots/round-two-ready.png' });
   await page.locator('#operator-open').click();
   await page.waitForTimeout(2100);
@@ -89,6 +89,7 @@ try {
   for (const cue of ['3', '2', '1', 'START!']) {
     await page.waitForFunction(cue => document.getElementById('status').textContent === cue, cue);
     assert.equal(await cameraDrop(page), false, `${cue} cue rejects drops`);
+    if (cue === 'START!') assert.deepEqual((await snap()).camera, aimingCamera, 'close view is ready before aiming resumes');
   }
   await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
   assert.equal((await snap()).event.turn, 2);
