@@ -105,6 +105,10 @@ Rollback uses a verified compatible prior application deployment with the same m
 
 Keep pilot names/results only until the host ends the pilot. Removal requires stopping the service, deleting the pilot database/volume and any Railway snapshots, and deleting private downloaded exports/backups. Host board rotation preserves history and is not deletion. Rotate both secrets if access should be revoked; existing sessions last up to 12 hours unless their session rows are cleared by the operator while preserving scores.
 
+## Local claw-feedback experiment
+
+Branch `experiment/claw-hand-feedback` is a local review experiment. From its isolated checkout, run `npm run build` then `npx vite preview --host 127.0.0.1 --port 4198 --strictPort`. Keep the baseline at port 4197. The experiment puts one hold ring around the claw, makes its fingers close more visibly, removes decorative tremble and adds a small directional lean only during actual travel. Reduced motion keeps hold progress without lean. Control, collision and scoring rules stay unchanged. Compare open hand → move → rest → clench → open to cancel on both previews; physical feel remains unverified. See [the decision and acceptance criterion](docs/PRODUCT.md#local-experiment-your-hand-is-the-claw).
+
 ## Event play (standalone local mode)
 
 Standalone mode uses the same optional-nickname, three-scored-turn journey and is labeled Local preview. Scores and ranks stay in this browser; there is no practice toggle or warm-up.

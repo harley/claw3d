@@ -243,12 +243,10 @@ export class ArcadeScene {
     for (let i = 0; i < 4; i++) { const tick = box(this.target, this.targetMat, [Math.cos(i * Math.PI / 2) * .227, 0, Math.sin(i * Math.PI / 2) * .227], [.09, .008, .016], .005); tick.rotation.y = -i * Math.PI / 2; }
     batch(this.target);
     this.target.traverse(m => { if (m.isMesh) m.castShadow = m.receiveShadow = false; });
-    // Hold-progress arc inside the ring: the confirmation lives where the
-    // player is already looking. Added after the batch so its draw range and
-    // colour stay addressable; progress reveals existing triangles only.
+    // One hold cue beside the claw, above toys that can obscure the floor target.
+    // Billboard the existing arc; reveal triangles without allocating geometry.
     this.holdMat = new T.MeshBasicMaterial({ color: '#ffc14d', transparent: true, opacity: .92, depthWrite: false, side: T.DoubleSide, toneMapped: false });
-    this.holdArc = mesh(this.target, new T.RingGeometry(.115, .152, 64), this.holdMat);
-    this.holdArc.rotation.x = -Math.PI / 2; this.holdArc.rotation.z = Math.PI / 2;
+    this.holdArc = mesh(this.scene, new T.RingGeometry(.43, .48, 64, Math.PI / 2), this.holdMat);
     this.holdArc.castShadow = this.holdArc.receiveShadow = false;
     this.holdArc.visible = false;
     this.holdWarm = new T.Color('#ffc14d'); this.holdGo = new T.Color('#66ffb3');
@@ -354,6 +352,22 @@ export class ArcadeScene {
     });
   }
 
+  updateClawFeedback(pose, phase, dt, feedback, holding) {
+    // Rendering only: contacts have already resolved from the unmodified pose.
+    this.applyClawPose(holding ? { ...pose, radii: pose.radii.map(r => Math.max(.06, r - .22 * ease(holding))) } : pose);
+    const steering = phase === 'aim' && feedback.controlEnabled && feedback.kind === 'tracking';
+    const previous = this.previousAim;
+    const lean = delta => Math.abs(delta) < .08 ? 0 : clamp(delta * .035, -.035, .035);
+    this.claw.rotation.set(0, 0, 0);
+    if (steering && previous && dt > 0 && !this.reducedMotion) {
+      this.claw.rotation.x = lean((pose.z - previous.z) / dt);
+      this.claw.rotation.z = -lean((pose.x - previous.x) / dt);
+    }
+    // Actual travel, not raw hand jitter. No accumulated sway or trailing spring;
+    // stopping, hitting a limit, clenching or losing control returns to neutral.
+    this.previousAim = steering ? { x: pose.x, z: pose.z } : null;
+  }
+
   update(game, dt, time, input, aligned, feedback = {}, cameraActive = false) {
     const phase = game.phase, elapsed = game.elapsed, plan = game.plan, motion = this.reducedMotion ? 0 : 1;
     this.carousel.visible = Boolean(game.carousel);
@@ -368,9 +382,11 @@ export class ArcadeScene {
     this.joystickHand.update(phase, elapsed, dt, feedback, this.reducedMotion);
     this.target.visible = ['idle', 'aim'].includes(phase); this.target.position.set(game.position.x, BED + (game.carousel && Math.hypot(game.position.x - CAROUSEL.x, game.position.z - CAROUSEL.z) < .55 ? CAROUSEL.height : 0) + .014, game.position.z); this.targetMat.color.set(aligned ? '#547e69' : '#bb5b49');
     // Fist-hold confirmation fills the ring the player is already watching.
-    const holding = phase === 'aim' && feedback.kind === 'clenching' ? clamp(feedback.progress, 0, 1) : 0;
+    const holding = phase === 'aim' && feedback.controlEnabled && feedback.kind === 'clenching' ? clamp(feedback.progress, 0, 1) : 0;
     this.holdArc.visible = holding > 0 && this.target.visible;
     if (this.holdArc.visible) {
+      this.holdArc.position.set(pose.x, pose.y - .52, pose.z);
+      this.holdArc.quaternion.copy(this.camera.quaternion);
       this.holdArc.geometry.setDrawRange(0, Math.floor(64 * holding) * 6);
       this.holdMat.color.copy(this.holdWarm).lerp(this.holdGo, holding);
     }
@@ -432,12 +448,7 @@ export class ArcadeScene {
     }
     for (const toy of game.toys) if (toy.impact && !toy.claimed && game.plan?.prize?.id !== toy.id) this.contacts.rock(game, toy, this.toys.get(toy.id), dt);
     this.contacts.resolve(game, pose);
-    // Pre-tension: the claw visibly readies itself as the hold fills. Contacts
-    // above resolved against the untensioned pose, so gameplay is untouched.
-    if (holding) {
-      const tremble = motion * Math.sin(time * 34) * .006 * holding;
-      this.applyClawPose({ ...pose, radii: pose.radii.map(r => Math.max(.06, r - .055 * ease(holding) + tremble)) });
-    } else this.applyClawPose(pose);
+    this.updateClawFeedback(pose, phase, dt, feedback, holding);
     if (phase !== this.lastPhase) {
       if (motion && phase === 'lift' && plan?.prize) this.spawnBurst(v(pose.x, pose.y - .45, pose.z), plan.prize.family === 'star');
       this.lastPhase = phase;

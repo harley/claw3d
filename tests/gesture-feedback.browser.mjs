@@ -32,8 +32,13 @@ try {
   await feedback({ kind: 'clenching', progress: .5, message: 'Hold your fist to drop. Open to cancel.' });
   await page.waitForFunction(() => document.getElementById('gesture-meter').getAttribute('aria-valuenow') === '50');
   assert.equal((await snap()).joystick.progress, .5);
+  const held = await snap();
+  assert.ok(held.effects.fingerRadius < held.claw.radii[0] - .1);
+  assert.deepEqual(held.effects.clawLean, [0, 0, 0]);
+  const meterBox = await page.locator('#gesture-meter').boundingBox();
+  assert.equal(meterBox.width, 1, 'remote progress remains accessible without a competing visible meter');
   assert.equal(await page.locator('#status').textContent(), 'Hold to drop');
-  // The target-ring arc mirrors the hold even under reduced motion: it is
+  // The claw arc mirrors the hold even under reduced motion: it is
   // progress feedback, not decorative animation.
   await page.waitForFunction(() => window.__littleCloud.snapshot().effects.holdArc === true);
   await page.screenshot({ path: '.screenshots/gesture-hold.png' });

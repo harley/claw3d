@@ -39,11 +39,8 @@ export class JoystickHand {
     batch(this.glove);
     sphere.dispose();
 
-    this.haloMaterial = new T.MeshBasicMaterial({ color: '#48e5da', toneMapped: false });
-    this.halo = mesh(this.root, new T.TorusGeometry(.19, .009, 5, 48), this.haloMaterial, 0, .022, 0);
-    this.halo.rotation.x = -Math.PI / 2;
-    this.halo.castShadow = this.halo.receiveShadow = false;
-    this.haloCount = this.halo.geometry.index.count;
+    // Keep the cabinet's glove secondary; hold progress belongs at the claw.
+    this.glove.scale.setScalar(.65);
     this.grip = 0;
     this.mode = 'off';
     this.progress = 0;
@@ -59,12 +56,7 @@ export class JoystickHand {
     this.root.visible = active || accepted;
     if (!this.root.visible) { this.grip = 0; return; }
 
-    const target = accepted ? 1 - clamp(elapsed / .2) : 1;
-    this.grip = reducedMotion ? 1 : T.MathUtils.damp(this.grip, target, 18, Math.max(0, dt));
-    this.glove.position.set(.025 * (1 - this.grip), .14 * (1 - this.grip), .16 * (1 - this.grip));
-    this.haloMaterial.color.set(this.mode === 'clenching' ? '#ffc14d' : '#48e5da');
-    const fraction = this.mode === 'clenching' ? this.progress : 1;
-    // Reveal existing triangles rather than allocate geometry during a hold.
-    this.halo.geometry.setDrawRange(0, Math.floor(this.haloCount * fraction / 6) * 6);
+    this.grip = 1;
+    this.glove.visible = this.mode === 'tracking';
   }
 }
