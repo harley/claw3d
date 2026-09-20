@@ -133,3 +133,5 @@ Historical September 14 baseline release: `05d1f798005c5e426b2699951e707b1d3dfc7
 The GitHub production `RAILWAY_TOKEN` is configured and the automated release completed successfully. Production startup verifies a database snapshot before opening the existing database. Recheck live BUILD before reporting a later release; deployment does not establish physical gesture accuracy or first-time-player acceptance.
 
 README owns setup and the current operator instructions; this file owns current product decisions and acceptance; `docs/archive` owns superseded behavior and historical evidence. Update current instructions when behavior changes, correct resolved assumptions, and move obsolete release narration out of the active guide. Refresh the live source and coordinating task before claiming work is shipped or still waiting. Routine code delivery does not silently approve prize, identity or live-data changes.
+
+Host controls require a separate operator code of at least 8 characters after staff sign-in. The staff access secret retains its 16-character minimum; host login remains rate-limited. Codes are configured on the server and never stored in source.

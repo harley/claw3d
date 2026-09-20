@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { createPilotServer } from '../server/index.js';
 import { openDatabase } from '../server/database.js';
 
-const staffCode = 'test-staff-code-with-entropy', hostCode = 'test-host-code-with-entropy';
+const staffCode = 'test-staff-code-with-entropy', hostCode = 'hosttest';
 test('protected shared runs: ownership, ordered idempotency, ties, rotation, reauthentication and restart', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cloud-claw-server-'));
   await mkdir(join(dir, 'dist')); await writeFile(join(dir, 'dist/index.html'), '<head></head><body>Arcade</body>');
@@ -60,7 +60,8 @@ test('protected shared runs: ownership, ordered idempotency, ties, rotation, rea
     assert.ok(duplicates.every(result => json(result).turns.length === 1));
     assert.equal((await send(a, ra, 1, 'butter')).status, 409);
     await send(b, rb, 1, 'sprout');
-    await a.request('/api/host/login', { code: hostCode });
+    assert.equal((await a.request('/api/host/login', { code: 'wrong' })).status, 403);
+    assert.equal((await a.request('/api/host/login', { code: hostCode })).status, 200);
     const rotated = json(await a.request('/api/host/boards', { name: 'Afternoon' }));
     assert.notEqual(rotated.id, ra.boardId);
     for (const turn of [2, 3]) await Promise.all([send(a, ra, turn, 'butter'), send(b, rb, turn, 'butter')]);
@@ -194,4 +195,11 @@ test('speed score survives old-table migration, duplicate retry and restart', as
     assert.equal(database.getRun(fresh.id, 'speed-owner').turns[0].remainingMs, 7500);
     assert.equal(database.exportData().boards.length, 2);
   } finally { database.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test('server rejects short or shared staff and host codes', async () => {
+  const base = { filename: ':memory:', origin: 'http://localhost', staffCode, hostCode };
+  for (const overrides of [{ hostCode: 'short' }, { staffCode: 'short' }, { hostCode: staffCode }]) {
+    await assert.rejects(createPilotServer({ ...base, ...overrides }), /distinct host code of at least 8/);
+  }
 });

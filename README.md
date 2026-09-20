@@ -44,7 +44,8 @@ Run the shared service locally with Node 22.13+ (deployment uses Node 24):
 ```sh
 npm ci
 npm run build
-# Set STAFF_CODE and HOST_CODE to distinct random secrets of at least 16 characters.
+# Set STAFF_CODE to a secret of at least 16 characters.
+# Set HOST_CODE to a distinct operator code of at least 8 characters.
 # Keep them in a private shell/environment file outside this repository.
 PUBLIC_ORIGIN=http://127.0.0.1:4200 DATA_DIR=.local-data npm start
 ```
