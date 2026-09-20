@@ -30,6 +30,7 @@ async function open(context) {
         async start() { if(this.failNextStart) { this.failNextStart=false; this.fail('camera_busy'); return; } this.running=true; this.tick(); this.timer=setInterval(()=>this.tick(),30); }
         tick() { this.onInput(this.visible ? this.input : {x:0,z:0}); this.onState({kind:this.visible ? 'tracking' : 'lost',message:'Camera fixture'}); }
         stop() { clearInterval(this.timer); this.running=false; }
+        setPerformanceMode() { return false; }
         fail(code='worker_timeout') { this.stop(); this.onState({kind:'error',code,message:'Synthetic camera failure. Restart camera.'}); }
         clench() { return this.onDrop(); }
       } export { HandController as ${alias} };` });
@@ -51,7 +52,7 @@ async function openOperator(page) {
 }
 async function openRegistration(page) {
   if (!await page.evaluate(() => window.testCamera?.running)) {
-    await page.locator('#play').click(); await page.waitForFunction(() => window.testCamera?.running);
+    await page.locator('#play').click(); await page.waitForFunction(() => window.testCamera?.running && !document.getElementById('camera-setup').open);
   }
   await page.locator('#play').click(); await page.locator('#registration').waitFor();
 }
