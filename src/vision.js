@@ -1,6 +1,7 @@
 import { pinchRatio, joystickAxis, matchHand } from './mechanics.js';
 import { clamp } from './arcade-mechanics.js';
 import {FistDrop,fistEvidence} from './fist.js';
+import { GrabRelease } from './grab-release.js';
 import { OneEuroPoint } from './one-euro.js';
 
 export const CAPTURE_MAX_AGE = 300;
@@ -9,8 +10,8 @@ export const OWNER_LOSS_GRACE = 650;
 const LINKS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 
 export class HandController {
-  constructor({ video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic = () => {}, onGesture }) {
-    Object.assign(this, { video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic, onGesture });
+  constructor({ video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic = () => {}, onGesture, getControlProfile = () => 'hold-drop', canGrab = () => false }) {
+    Object.assign(this, { video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic, onGesture, getControlProfile, canGrab });
     this.running = false;
     this.starting = false;
     this.generation = 0;
@@ -31,6 +32,7 @@ export class HandController {
   resetOwner() {
     this.fist?.reset('blocked'); // a discarded mid-hold still reports its cancellation
     this.fist = new FistDrop((name, cause) => this.onGesture?.(name, cause));
+    this.grab = new GrabRelease();
     this.pointer = new OneEuroPoint();
     this.owner = null; this.neutral = null; this.candidate = null;
     this.pinchSince = 0; this.lostSince = 0;
@@ -280,7 +282,7 @@ export class HandController {
       this.lastActivity = receivedAt; this.lastResponseCapture = capturedAt;
     }
     if (reason) {
-      this.fist.reset('stale'); this.onInput({ x: 0, z: 0 });
+      this.fist.reset('stale'); this.grab.reset(); this.onInput({ x: 0, z: 0 });
       if (reason === 'over age') this.delayTracking();
       return false;
     }
@@ -291,7 +293,7 @@ export class HandController {
   }
 
   delayTracking() {
-    this.fist.reset('stale');
+    this.fist.reset('stale'); this.grab.reset();
     // Reacquisition after delayed results must seed a fresh neutral, just like
     // a missing hand. Otherwise its changed position immediately steers.
     this.neutral = null; this.input = { x: 0, z: 0 };
@@ -299,7 +301,7 @@ export class HandController {
     this.onState({ kind: 'delayed', message: 'Tracking is slow. Keep your hand steady while it catches up.', progress: 0 });
   }
 
-  // The one gesture profile: an open hand steers, a held fist drops.
+  // Menus retain hold-to-select. Gameplay may opt into the local grab profile.
   handle(result, now) {
     const aspect = this.video?.videoWidth && this.video?.videoHeight ? this.video.videoWidth / this.video.videoHeight : 1;
     const hands = result.landmarks.map((landmarks, i) => ({ landmarks,
@@ -310,16 +312,17 @@ export class HandController {
     }));
     this.onDiagnostic?.({ count: hands.length, gesture: result.gestures[0]?.[0]?.categoryName || 'No hand', pinch: hands[0]?.ratio ?? null, milliseconds: performance.now() - now });
     const phase = this.getPhase();
+    const profile = this.getControlProfile?.() || 'hold-drop';
     const acceptsInput = ['idle', 'aim', 'result'].includes(phase);
     // Recognition stays visible during setup and delivery. Only game permission
     // enables actions; a held gesture cannot carry across that boundary.
-    if (this.acceptedInput !== acceptsInput) {
-      this.fist.reset();
+    if (this.acceptedInput !== acceptsInput || this.controlProfile !== profile) {
+      this.fist.reset(); this.grab.reset(); this.controlProfile = profile;
       this.neutral = null; this.input = { x: 0, z: 0 };
       this.acceptedInput = acceptsInput;
     }
     const sendInput = input => this.onInput(acceptsInput ? input : { x: 0, z: 0 });
-    const report = state => this.onState({ ...state, handCount: hands.length, controlEnabled: acceptsInput,
+    const report = state => this.onState({ ...state, profile, handCount: hands.length, controlEnabled: acceptsInput,
       pointer: hands.length === 1 && hand && this.owner && ['tracking', 'clenching'].includes(state.kind) ? { ...hand.center } : null });
     let hand;
     if (!this.owner) {
@@ -353,7 +356,7 @@ export class HandController {
     // continuation is still the same spatial track; an extra hand never is.
     if (!hand && hands.length === 1 && Math.hypot(hands[0].center.x-this.owner.x,hands[0].center.y-this.owner.y) < .08) hand = hands[0];
     if (!hand) {
-      this.lostSince ||= now; this.neutral = null; this.fist.reset('hand_lost');
+      this.lostSince ||= now; this.neutral = null; this.fist.reset('hand_lost'); this.grab.reset();
       sendInput({ x: 0, z: 0 });
       report({ kind: 'lost', message: 'Bring one hand back to the same area.' });
       this.draw(hands, null); return;
@@ -361,6 +364,29 @@ export class HandController {
     if (this.lostSince) this.neutral = null;
     this.lostSince = 0;
     this.owner.x = hand.center.x; this.owner.y = hand.center.y;
+    if (phase === 'aim' && profile === 'grab-release') {
+      const grip = this.grab.update({ ...hand.fist, visible: hands.length === 1,
+        overTarget: Boolean(this.canGrab?.(hand.center)) }, now);
+      this.input = { x: 0, z: 0 };
+      if (grip.grabbed) { this.pointer.reset(); this.neutral = null; }
+      if (grip.steering) {
+        const point = this.pointer.filter(hand.center, now);
+        this.neutral ||= { ...point };
+        this.input = { x: joystickAxis(point.x - this.neutral.x), z: joystickAxis(point.y - this.neutral.y) };
+      } else this.neutral = null;
+      sendInput(this.input);
+      let kind = hands.length !== 1 ? 'lost' : ['grabbing', 'releasing'].includes(grip.stage) ? 'clenching' : 'tracking';
+      if (grip.fired) {
+        const accepted = this.onDrop() !== false;
+        if (!accepted) { this.grab.reset(); grip.stage = 'seeking'; grip.armed = false; }
+        kind = accepted ? 'accepted' : 'tracking';
+      }
+      // Pose drives artwork only; it never contributes to gesture timing.
+      report({ kind, progress: grip.progress, grab: grip,
+        closed: hand.fist.closed, open: hand.fist.open,
+        message: grip.stage === 'gripped' ? 'Move your fist to steer. Open to drop.' : 'Open your hand, reach the joystick and clench to grab.' });
+      this.draw(hands, hand); return;
+    }
     if (phase === 'aim') {
       const fist=this.fist.update({...hand.fist,visible:hands.length===1},now);
       if(fist.active){

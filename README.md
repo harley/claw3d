@@ -19,6 +19,8 @@ Open the operator gear to see the build commit, branch and whether it contains u
 
 For development, run `npm run dev` and open **http://127.0.0.1:4196**.
 
+This isolated experiment adds `?controls=grab` for local comparison (preview on port 4198). Reach the bottom joystick with an open hand, clench for 150 ms to grab, move the fist to steer, then open for 150 ms to drop. The glove animates its fingers and attaches to the joystick. Tracking loss cancels the grip; reopen and grab again. Menus still use a held fist. The default URL keeps hold-to-drop controls; the grab variant uses separate browser scores and is disabled for the shared pilot. Physical-camera feel remains unverified.
+
 Sound defaults on; browsers that block autoplay show TAP FOR SOUND until a trusted click or key unlocks audio. Once active, a quiet original melody runs only during active hand control. It stops during camera waiting, drops, round announcements, dialogs, host pause or a hidden page. Volume and mute apply immediately; the slider alone cannot turn sound on.
 
 Rounds two and three show ROUND, then 3, 2, 1, START before hand control resumes, without an extra click or using aiming time. The complete cue lasts 3.7 seconds, and the local experiment returns from the wide view to close framing before START. After a miss, the empty claw returns home and skips the shelf animation. The next aiming phase begins 8.5 simulation seconds after the missed drop was accepted, or 6.6 seconds after MISSED appears. Sustained 10 FPS still advances at real time; longer frame stalls remain capped so a resumed tab cannot jump through the sequence. Camera readiness can still hold the next aiming phase.

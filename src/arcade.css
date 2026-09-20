@@ -291,3 +291,11 @@ button.hand-hover { outline:4px solid #ffca45; outline-offset:6px; box-shadow:0 
   #camera-preview { position: absolute; top: calc(max(740px, 100svh) - 340px); left: -4px; width: 90px; }
   .controls button { top: calc(max(740px, 100svh) - 458px); left: 105px; }
 }
+
+/* Local grab/release study: one physical control and a free articulated glove. */
+#control-deck[data-profile="grab-release"] .deck-drop { display: none; }
+#control-deck[data-profile="grab-release"] .stick-base { width: 100px; height: 70px; }
+#control-deck[data-profile="grab-release"] { justify-content: center; gap: 30px; }
+#joystick-cursor { position: fixed; z-index: 8; width: 100px; height: 118px; transform: translate(-50%, -58%); pointer-events: none; filter: drop-shadow(0 5px 5px #071a2b88); }
+#joystick-cursor svg { width: 100%; height: 100%; overflow: visible; }
+#joystick-cursor[hidden] { display: none; }

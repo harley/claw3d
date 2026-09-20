@@ -370,7 +370,7 @@ export class ArcadeScene {
     this.carousel.visible = Boolean(game.carousel);
     if (game.carousel) {
       this.carouselDeck.rotation.y = -game.carouselTime / CAROUSEL.period * Math.PI * 2;
-      const cue = carouselCue(game.carouselTime);
+      const cue = carouselCue(game.carouselTime, presentation.cueLead);
       this.carouselLights.forEach((light, i) => { const on = ['idle', 'aim'].includes(game.phase) && i < cue.lights; light.material.color.set(on ? cue.now ? '#66ffb3' : '#ffc14d' : '#3e3426'); light.material.emissive.set(cue.now ? '#33ff99' : '#ffb52b'); light.material.emissiveIntensity = on ? 2 : 0; });
     }
     for (const [id, object] of this.toys) object.visible = game.toys.some(toy => toy.id === id);
@@ -380,7 +380,7 @@ export class ArcadeScene {
     this.stick.visible = this.button.visible = ['idle', 'result'].includes(phase);
     this.target.visible = ['idle', 'aim'].includes(phase); this.target.position.set(game.position.x, BED + (game.carousel && Math.hypot(game.position.x - CAROUSEL.x, game.position.z - CAROUSEL.z) < .55 ? CAROUSEL.height : 0) + .014, game.position.z); this.targetMat.color.set(aligned ? '#547e69' : '#bb5b49');
     // Fist-hold confirmation fills the ring the player is already watching.
-    const holding = phase === 'aim' && feedback.controlEnabled && feedback.kind === 'clenching' ? clamp(feedback.progress, 0, 1) : 0;
+    const holding = feedback.profile !== 'grab-release' && phase === 'aim' && feedback.controlEnabled && feedback.kind === 'clenching' ? clamp(feedback.progress, 0, 1) : 0;
     this.beam.visible = this.target.visible; this.beam.position.set(game.position.x, BED + .02, game.position.z); this.beam.scale.y = HIGH - BED - 1.01; this.beamMat.color.copy(this.targetMat.color);
     this.deliveryTray.visible = false; this.deliveryTray.scale.setScalar(1);
     const hatchOpen = plan?.prize && ['release', 'deliver', 'reveal', 'result'].includes(phase);

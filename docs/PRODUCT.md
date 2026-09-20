@@ -8,7 +8,7 @@ The wow moment is direct control followed by a believable grab, a tense lift and
 
 ## Accepted constraints
 
-- Camera-only gameplay: one hand steers; a deliberate fist clench drops. Player menus use a mirrored hand cursor and a held fist to select. Names are generated and editable; host controls use ordinary input.
+- Default camera-only gameplay: one hand steers; a deliberate fist clench drops. The local grab/release experiment below is an opt-in alternative. Player menus use a mirrored hand cursor and a held fist to select. Names are generated and editable; host controls use ordinary input.
 - Three turns, up to 15 seconds of active aiming each, automatic next turns with a Round → 3 → 2 → 1 → Start announcement and one final score/rank.
 - Five stationary toys worth 100 base points; moving star worth 200. Successful catches add 0–50 speed points based on aiming time remaining when the drop is accepted. Higher reward requires visibly harder timing. Keep results skill-based and avoid hidden random losses.
 - Dark arcade presentation, clear CoderPush/AWS branding, an unobstructed close gameplay view and wide delivery view in the local experiment, brief state-dependent instructions.
@@ -35,9 +35,17 @@ The first local slice (`17bae66`) made finger tension more visible and removed t
 
 Aiming, confirmation, descent, grip and the full lift share one fixed, slightly elevated near-frontal camera. This makes toys and contact easier to inspect without a moving viewpoint. A 650 ms pullback starts during transfer, after the outcome is visible. Delivery and the early round announcement show the wider machine. The camera returns close during the last countdown second and is settled for START, before aiming time resumes. Reduced motion uses cuts at these boundaries. No phase or aiming duration changes. `?view=angle` provides a mild three-quarter alternative for local comparison.
 
-The scene has a clear central viewport. The joystick and DROP indicator sit below it and reflect camera gestures; they are not mouse, touch or keyboard controls. DROP owns the single visible hold-progress ring. The accessible progressbar is preserved. Cabinet controls, surroundings and previously collected shelf toys are hidden in the close view to keep attention on the current attempt. Stronger finger tension, immediate neutral at rest and bounded steering lean remain; reduced motion disables lean.
+The default local view has a clear central viewport. The joystick and DROP indicator sit below it and reflect camera gestures; they are not mouse, touch or keyboard controls. DROP owns the single visible hold-progress ring. The accessible progressbar is preserved. Cabinet controls, surroundings and previously collected shelf toys are hidden in the close view to keep attention on the current attempt. Stronger finger tension, immediate neutral at rest and bounded steering lean remain; reduced motion disables lean.
 
-The claw pivot and floor target remain exact; contact uses the original mechanical pose. Recognition, 550 ms hold, physics, timing, scoring, audio and three-turn rules are unchanged. Acceptance: distinguish front/back alignment and see the grab without leaning toward the display; keep controls below the chamber; hold the view steady through lift and settle it before the next aim. Automated checks cannot establish physical readability or fun. This experiment remains local, awaiting Harley's comparison against port 4197.
+The claw pivot and floor target remain exact; contact uses the original mechanical pose. The default profile retains its 550 ms hold. Physics, phase timing, scoring, audio and three-turn rules are unchanged. Acceptance: distinguish front/back alignment and see the grab without leaning toward the display; keep controls below the chamber; hold the view steady through lift and settle it before the next aim. Automated checks cannot establish physical readability or fun. This experiment remains local, awaiting Harley's comparison against port 4197.
+
+### Opt-in grab and release controls
+
+Harley approved the tradeoffs of `?controls=grab` for local comparison. An open hand moves freely using the same mirrored screen mapping as the menus. A 150 ms clench inside the generous joystick target attaches an articulated glove and seeds steering at that position without jumping. Moving the clenched hand steers. Opening stops movement immediately; 150 ms of confirmed open evidence accepts one drop. The glove's fingers curl and unfold, and the separate DROP indicator is removed.
+
+Missing, stale or sustained ambiguous evidence cancels attachment without dropping. A brief ambiguous observation freezes motion; recovery reseeds steering. An extra hand cancels the grip. Reopen and grab again after cancellation. A fist formed away from the joystick cannot sweep onto it. Menus retain the 550 ms hold selection and reset input at the gameplay boundary. Host pause remains separate from tracking loss; an accepted drop finishes without a visible hand.
+
+The star cue uses the 150 ms release lead and says RELEASE HAND while attached. The 15-second active aiming clock includes reaching for the joystick. Exactly three turns and the existing scoring formula remain. Browser scores use a separate storage key; this profile is disabled in the shared pilot. The default URL retains the previous controls for comparison. This is local work only; automated synthetic evidence does not establish physical recognition, comfort or first-time-player acceptance.
 
 ## Current milestone: finish a run without coaching
 
