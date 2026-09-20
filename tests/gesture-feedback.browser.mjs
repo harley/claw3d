@@ -22,7 +22,7 @@ try {
   await page.locator('#name').fill('Gesture check');
   await page.locator('#name').press('Enter');
   await page.waitForFunction(() => window.__littleCloud.snapshot().joystick.mode === 'tracking');
-  assert.equal(await page.locator('#status').textContent(), 'Move your hand');
+  assert.equal(await page.locator('#status').textContent(), 'Clench & hold to drop');
   await page.screenshot({ path: '.screenshots/gesture-tracking.png' });
 
   // A closed hand must first open to arm a new drop.

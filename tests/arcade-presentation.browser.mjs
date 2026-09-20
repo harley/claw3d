@@ -9,6 +9,11 @@ try {
  await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud);
  await page.locator('#play').click(); await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running && !document.getElementById('camera-setup').open);
  await page.locator('#play').click(); await page.locator('#name').press('Enter');
+ await page.waitForFunction(() => document.getElementById('status').textContent === 'Clench & hold to drop');
+ assert.equal(await page.locator('#status').textContent(), 'Clench & hold to drop');
+ assert.equal(await page.locator('#hint').isVisible(), false, 'first turn teaches one gesture without a subtitle');
+ assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).opacity), '1');
+ await page.screenshot({ path: '.screenshots/quiet-first-turn.png' });
  await page.evaluate(() => window.testCamera.clench());
  assert.equal(await page.locator('#status').textContent(), 'DROP!');
  await page.screenshot({ path: '.screenshots/arcade-drop.png' });
@@ -17,13 +22,26 @@ try {
  assert.equal(await page.evaluate(() => window.__littleCloud.snapshot().event.run.turns.length), 0);
  await page.screenshot({ path: '.screenshots/arcade-outcome.png' });
  // Screenshots may span a phase boundary on CI. The lift cue expires, while a
- // missed transfer deliberately keeps its returning-claw guidance visible.
+ // missed transfer deliberately keeps its outcome visible without narration.
  await page.waitForFunction(() => window.__littleCloud.snapshot().phase !== 'lift' || getComputedStyle(document.getElementById('action-copy')).opacity === '0');
  const outcome = await page.evaluate(() => ({ phase: window.__littleCloud.snapshot().phase, caught: window.__littleCloud.snapshot().caught, opacity: getComputedStyle(document.getElementById('action-copy')).opacity, hint: document.getElementById('hint').textContent }));
  if (outcome.phase === 'lift') assert.equal(outcome.opacity, '0');
- if (outcome.phase === 'transfer' && !outcome.caught) { assert.equal(outcome.hint, 'Claw returning'); assert.equal(outcome.opacity, '1'); }
+ if (outcome.phase === 'transfer' && !outcome.caught) { assert.equal(outcome.hint, ''); assert.equal(outcome.opacity, '1'); }
  assert.equal(await page.locator('#action-copy').getAttribute('role'), 'status');
  assert.equal(await page.locator('#celebration').count(), 0);
+ await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim' && window.__littleCloud.snapshot().event.turn === 2 && getComputedStyle(document.getElementById('action-copy')).opacity === '0');
+ assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).opacity), '0', 'later turns leave tracked aiming clear');
+ await page.screenshot({ path: '.screenshots/quiet-second-turn.png' });
+ await page.evaluate(() => { window.testCamera.visible = false; window.testCamera.tick(); });
+ await page.waitForFunction(() => document.getElementById('status').textContent === 'Bring your hand back');
+ assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).opacity), '1', 'quiet aiming never hides recovery');
+ await page.evaluate(() => { window.testCamera.visible = true; window.testCamera.tick(); });
+ await page.waitForFunction(() => getComputedStyle(document.getElementById('action-copy')).opacity === '0');
+ await page.evaluate(() => { window.testCamera.feedback = { kind: 'clenching', progress: .5 }; window.testCamera.tick(); });
+ await page.waitForFunction(() => document.getElementById('status').textContent === 'Hold to drop');
+ assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).opacity), '1', 'hold confirmation returns after teaching is complete');
+ assert.equal(await page.locator('#hint').isVisible(), false);
+ await page.evaluate(() => { window.testCamera.feedback = {}; window.testCamera.tick(); });
  for (const width of [1440, 820, 390, 360]) {
   await page.setViewportSize({ width, height: 900 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -34,6 +52,8 @@ try {
  await page.locator('#operator-open').click(); await page.locator('#reset').click();
  await page.locator('#play').click(); await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running && !document.getElementById('camera-setup').open);
  await page.locator('#play').click(); await page.locator('#name').press('Enter');
+ await page.waitForFunction(() => document.getElementById('status').textContent === 'Clench & hold to drop');
+ assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).opacity), '1', 'a new run teaches the gesture again');
  await page.evaluate(() => { window.testCamera.visible = false; window.testCamera.tick(); });
  await page.waitForTimeout(1800);
  assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).opacity), '1', 'recovery guidance never expires');

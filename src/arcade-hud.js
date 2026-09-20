@@ -38,17 +38,17 @@ export function createHud({ audio, phaseSound }) {
   function update(view, feedback, modal) {
     const { game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, sharedStatus, storageError, aligned } = view;
   const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
-  let title = 'READY PLAYER?', hint = 'Three turns. One high score.', button = 'Play', kicker = 'CLOUD CLAW';
+  let title = 'READY PLAYER?', hint = '', button = 'Play', kicker = 'CLOUD CLAW';
   if (recovering) { title = 'Let’s get you back in'; hint = 'Ask your host to resume.'; button = 'OPERATOR'; }
-  else if (phase === 'aim') { kicker = turnNumber === 3 ? 'LAST CLAW!' : `TURN ${turnNumber} OF 3`; title = 'Move your hand'; hint = 'Clench your fist and hold to drop.'; button = '';  }
-  else if (phase === 'result' && run) { kicker = `ROUND ${turnNumber + 1} OF 3`; title = nextTurnCue(nextTurnElapsed, turnNumber + 1); hint = title === 'START!' ? 'Move your hand' : 'Get ready'; button = ''; }
+  else if (phase === 'aim') { kicker = turnNumber === 3 ? 'LAST CLAW!' : `TURN ${turnNumber} OF 3`; title = 'Clench & hold to drop'; hint = ''; button = '';  }
+  else if (phase === 'result' && run) { kicker = `ROUND ${turnNumber + 1} OF 3`; title = nextTurnCue(nextTurnElapsed, turnNumber + 1); hint = ''; button = ''; }
   else if (phase in phaseCopy) {
     title = phase === 'lift' && !game.plan?.prize ? 'MISSED' : phaseCopy[phase];
     kicker = `TURN ${turnNumber} OF 3`;
     hint = '';
     button = '';
   }
-  if (phase === 'transfer' && !game.plan?.prize) { title = 'MISSED'; hint = 'Claw returning'; }
+  if (phase === 'transfer' && !game.plan?.prize) { title = 'MISSED'; hint = ''; }
   phaseSound(phase, modal);
   // Attract mode: the idle machine gently pulses its invitation until a hand
   // takes control. CSS disables the pulse under reduced motion.
@@ -74,10 +74,10 @@ export function createHud({ audio, phaseSound }) {
     else if (['ready', 'lost'].includes(feedback.kind)) { title = feedback.kind === 'lost' ? 'Bring your hand back' : 'Show one open hand'; hint = feedback.handCount > 1 ? 'Lower one hand to begin.' : 'Hold it still in the camera.'; }
     else if (feedback.kind === 'delayed') { title = 'Hold steady'; hint = 'Tracking delayed.'; }
     else if (feedback.kind === 'calibrating') { title = 'Hand found'; hint = 'Hold still for a moment.'; }
-    else if (feedback.kind === 'clenching' && feedback.controlEnabled) { title = feedback.progress > 0 ? 'Hold to drop' : 'Ready for a drop?'; hint = feedback.message || 'Clench your fist. Open to cancel.'; }
+    else if (feedback.kind === 'clenching' && feedback.controlEnabled) { title = feedback.progress > 0 ? 'Hold to drop' : 'Ready for a drop?'; hint = feedback.progress > 0 ? '' : feedback.message || 'Open your hand first.'; }
     else if (feedback.kind === 'tracking') {
       if (phase === 'idle') { title = 'You’re ready'; hint = ''; }
-      else if (!nearPickup) { title = 'Move your hand'; hint = 'Clench your fist and hold to drop.'; }
+      else if (!nearPickup) { title = 'Clench & hold to drop'; hint = ''; }
     } else if (feedback.kind === 'error') { title = 'Let’s check the camera'; hint = 'Open Camera to try again.'; }
     else if (feedback.kind === 'loading') { title = 'Waking up the camera…'; hint = 'Allow camera access to play.'; }
   }
@@ -107,6 +107,12 @@ export function createHud({ audio, phaseSound }) {
     if (!cameraLoading) hint = 'Restart camera to continue this turn.';
   }
   const timed = deliveryPhases.has(phase) && !(phase === 'transfer' && !game.plan?.prize);
+  // Teach once per run. Keep the live-region text, but let the machine lead
+  // after the first drop; recovery and deliberate hold feedback always return.
+  const steering = phase === 'aim' && Boolean(run) && !recovering && !startingRun &&
+    cameraControls?.running && feedback.controlEnabled && feedback.kind === 'tracking';
+  $('action-copy').classList.toggle('quiet', Boolean(steering && (run.turns.length > 0 || cueVisible)));
+  $('action-copy').classList.toggle('gesture-guide', Boolean(steering && !nearPickup));
   presentMessage(title, hint, `${['anticipate', 'descend'].includes(phase) ? 'drop' : phase}:${turnNumber}:${title}:${hint}`, timed ? 1600 : 0);
   if ($('arcade').dataset.phase !== phase) $('arcade').dataset.phase = phase;
   const signature = [title, hint, button, kicker, total, run?.name, pendingPlayer?.name, completedRun?.id, paused].join('');

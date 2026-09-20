@@ -110,7 +110,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, #scene:focus-vi
 #arcade:is([data-phase="idle"], [data-phase="aim"]) #status { font-size: clamp(28px, 2.8vw, 40px); }
 #hint { font-size: 13px; line-height: 1.4; color: #dce7f8; background: #080e1c; padding: 4px 10px; border-radius: 4px; text-wrap: balance; }
 #hint:empty { display: none; }
-#action-copy.expired { opacity: 0; }
+#action-copy.expired, #action-copy.quiet { opacity: 0; }
+#arcade[data-phase="aim"] #action-copy.gesture-guide #status { font-size: clamp(20px, 2vw, 28px); }
 #action-copy.strike { animation: arcade-strike 160ms ease-out; }
 @keyframes arcade-strike { from { transform: scale(.9); } to { transform: scale(1); } }
 @media (prefers-reduced-motion: no-preference) {

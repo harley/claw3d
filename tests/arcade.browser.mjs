@@ -25,7 +25,7 @@ async function catchTurn(){
  if (caught) assert.ok((await snap()).effects.burst > 0, 'catch payoff burst fires at lift');
  if (!caught) {
   await phase('transfer');
-  assert.equal(await page.locator('#hint').textContent(), 'Claw returning');
+  assert.equal(await page.locator('#hint').textContent(), '');
  }
  if (!checkedDelivery) {
   await phase('deliver');
