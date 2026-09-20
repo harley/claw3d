@@ -8,6 +8,7 @@ export async function installCameraFixture(page) {
       async start() { this.running = true; this.tick(); this.timer = setInterval(() => this.tick(), 30); }
       tick() { this.onInput(this.visible ? this.input : {x:0,z:0}); this.onState({kind: this.visible ? 'tracking' : 'lost', message: this.visible ? 'One hand to steer · clench to drop' : 'Show one hand to continue', ...this.feedback}); }
       stop() { clearInterval(this.timer); this.running = false; this.onState({kind:'off',message:'Start the camera to play'}); }
+      setPerformanceMode() { return false; }
       clench() { return this.onDrop(); }
     }
   ` }));

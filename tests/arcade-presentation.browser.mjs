@@ -7,7 +7,7 @@ try {
  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
  await installCameraFixture(page);
  await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud);
- await page.locator('#play').click(); await page.waitForFunction(() => window.testCamera?.running);
+ await page.locator('#play').click(); await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running && !document.getElementById('camera-setup').open);
  await page.locator('#play').click(); await page.locator('#name').press('Enter');
  await page.evaluate(() => window.testCamera.clench());
  assert.equal(await page.locator('#status').textContent(), 'DROP!');
@@ -32,7 +32,7 @@ try {
  await page.emulateMedia({ reducedMotion: 'reduce' });
  await page.reload(); await page.waitForFunction(() => window.__littleCloud);
  await page.locator('#operator-open').click(); await page.locator('#reset').click();
- await page.locator('#play').click(); await page.waitForFunction(() => window.testCamera?.running);
+ await page.locator('#play').click(); await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running && !document.getElementById('camera-setup').open);
  await page.locator('#play').click(); await page.locator('#name').press('Enter');
  await page.evaluate(() => { window.testCamera.visible = false; window.testCamera.tick(); });
  await page.waitForTimeout(1800);

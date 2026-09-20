@@ -4,6 +4,7 @@ import { createPlaytestClient } from './playtest-client.js';
 import { createArcadeAudio } from './arcade-audio.js';
 import { createHud, $, setText, setHidden, NEXT_TURN_SECONDS } from './arcade-hud.js';
 import { createMovementMusic } from './movement-music.js';
+import { PerformanceGovernor, PERFORMANCE_WINDOW_MS } from './performance-governor.js';
 const shared = globalThis.__SHARED_PILOT__ === true;
 import { ArcadeScene } from './arcade-scene.js';
 import { createGame, begin, drop, advance, move, planGrab, clawPose, PHASES, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
@@ -27,8 +28,14 @@ const track = (type, data = {}, subject = run || pendingPlayer || completedRun) 
 track('page_open');
 let observedControl = '', observedPhase = '', observedSaveError = false, cameraFailureReported = false;
 let performanceFrames = [], performanceVisibleMs = 0, cameraReadyAt = null;
+let adaptationFrames = [], adaptationVisibleMs = 0;
 let holdSignalTurn = -1, holdSignalCount = 0;
 let nextTurnElapsed = 0;
+const performanceGovernor = new PerformanceGovernor({ onChange: (mode, source) => {
+  scene?.setQuality(mode === 'simple');
+  cameraControls?.setPerformanceMode(mode);
+  if (scene) $('quality').textContent = `QUALITY: ${mode === 'simple' ? 'SIMPLE' : 'FULL'}${source === 'auto' ? ' · AUTO' : ''}`;
+} });
 const tags = game.toys.map(toy => {
   const element = document.createElement('span'); element.className = 'prize-tag'; element.dataset.points = RULES.points[toy.id]; element.textContent = RULES.points[toy.id]; $('prize-tags').append(element); return { toy, element };
 });
@@ -202,7 +209,7 @@ $('new-board').addEventListener('click', async () => {
   catch (error) { $('operator-message').textContent = error.message; }
 });
 $('export').addEventListener('click', () => { if (shared) { window.location.assign('/api/host/export'); return; } let data = JSON.stringify(store, null, 2); if (storageBlocked) { try { data = localStorage.getItem(STORAGE_KEY) || data; } catch { /* In-memory export remains available. */ } } const url = URL.createObjectURL(new Blob([data], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = `cloud-claw-sessions-${new Date().toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
-$('quality').addEventListener('click', () => { if (!scene) return; scene.setQuality(!scene.lowQuality); $('quality').textContent = `QUALITY: ${scene.lowQuality ? 'SIMPLE' : 'FULL'}`; });
+$('quality').addEventListener('click', () => { if (!scene) return; performanceGovernor.setMode(scene.lowQuality ? 'full' : 'simple', 'operator'); });
 $('sound').addEventListener('click', () => audio.toggle());
 $('sound-volume').addEventListener('input', () => {
   audio.setVolume(Number($('sound-volume').value) / 100);
@@ -279,9 +286,14 @@ async function startCamera() {
     }
     await cameraControls.start();
     if (cameraControls.running) {
+      cameraControls.adaptationStats();
+      // Camera start rebuilds its capture driver, so reapply the current mode
+      // after every first start, restart, or device switch.
+      cameraControls.setPerformanceMode(performanceGovernor.mode);
       track('camera_ready'); cameraReadyAt = performance.now(); $('camera-setup').close();
       // Restart the rollup window so pre-camera time never dilutes vision rates.
       performanceFrames = []; performanceVisibleMs = 0;
+      adaptationFrames = []; adaptationVisibleMs = 0;
     }
     else { reportCameraFailure('camera_unavailable'); $('camera-setup').showModal(); }
   } catch (error) { reportCameraFailure('camera_unavailable'); $('camera-status').textContent = `Camera unavailable: ${error.message}`; $('camera-setup').showModal(); }
@@ -337,16 +349,28 @@ function frame(time) {
     if (game.phase !== observedPhase) { observedPhase = game.phase; track('phase_change', { phase: game.phase }); }
     if (!document.hidden) {
       performanceFrames.push(raw * 1000); if (performanceFrames.length > 1800) performanceFrames.shift();
+      adaptationFrames.push(raw * 1000); if (adaptationFrames.length > 600) adaptationFrames.shift();
       // Rates divide by visible time only; hidden spans neither accrue (frame()
       // resets `previous` on visibilitychange) nor dilute the result rate.
       performanceVisibleMs += raw * 1000;
+      adaptationVisibleMs += raw * 1000;
+      if (adaptationVisibleMs >= PERFORMANCE_WINDOW_MS) {
+        const sorted = [...adaptationFrames].sort((a, b) => a - b);
+        const vision = cameraControls?.adaptationStats();
+        const rejected = vision ? Object.values(vision.rejected).reduce((sum, count) => sum + count, 0) : 0;
+        const averageFps = 1000 / (sorted.reduce((a, b) => a + b, 0) / sorted.length);
+        if (cameraControls?.running) performanceGovernor.observe({ averageFps, resultHz: vision.results / (adaptationVisibleMs / 1000), results: vision.results, rejected });
+        adaptationFrames = []; adaptationVisibleMs = 0;
+      }
       if (performanceVisibleMs >= 30000) {
         const sorted = [...performanceFrames].sort((a, b) => a - b);
         const vision = cameraControls?.visionStats();
         const rejected = vision ? Object.values(vision.rejected).reduce((sum, count) => sum + count, 0) : 0;
-        track('performance', { frames: sorted.length, averageFps: Math.min(1000, 1000 / (sorted.reduce((a, b) => a + b, 0) / sorted.length)), p95FrameMs: Math.min(60000, sorted[Math.floor(sorted.length * .95)]), framesOver33ms: sorted.filter(ms => ms > 33.4).length,
+        const averageFps = Math.min(1000, 1000 / (sorted.reduce((a, b) => a + b, 0) / sorted.length));
+        const resultHz = vision ? Math.min(240, +(vision.results / (performanceVisibleMs / 1000)).toFixed(2)) : 0;
+        track('performance', { frames: sorted.length, averageFps, p95FrameMs: Math.min(60000, sorted[Math.floor(sorted.length * .95)]), framesOver33ms: sorted.filter(ms => ms > 33.4).length,
           ...(vision?.results || rejected ? {
-            resultHz: Math.min(240, +(vision.results / (performanceVisibleMs / 1000)).toFixed(2)),
+            resultHz,
             ...(vision.latencyP50Ms !== null ? { visionP50Ms: vision.latencyP50Ms, visionP95Ms: vision.latencyP95Ms } : {}),
             rejectOverAge: vision.rejected['over age'] || 0, rejectOutOfOrder: vision.rejected['out of order'] || 0,
             rejectHidden: vision.rejected['hidden capture'] || 0, rejectInvalid: vision.rejected['invalid capture'] || 0,

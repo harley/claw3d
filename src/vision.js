@@ -118,20 +118,13 @@ export class HandController {
       // transfer when available, then requestVideoFrameCallback pacing, then a
       // plain timer. The timer always runs as the staleness/liveness watchdog.
       const requested = Number(new URLSearchParams(location.search).get('capture'));
-      this.captureWidth = requested >= 160 && requested <= 1280 ? Math.round(requested) : 0;
-      const track = stream.getVideoTracks()[0];
+      this.captureLocked = requested >= 160 && requested <= 1280;
+      this.captureWidth = this.captureLocked ? Math.round(requested) : 0;
       this.captureDriver = 'timer';
       // The WebKit compatibility runtime reads the page's video element and is
       // deliberately timer-paced. A CPU worker recognizer was tuned on the
       // resized bitmap path; only the GPU worker gets full-resolution frames.
-      if (!this.worker.local && !this.captureWidth && this.delegate !== 'CPU' && typeof MediaStreamTrackProcessor === 'function' && track) {
-        try { this.frameReader = new MediaStreamTrackProcessor({ track }).readable.getReader(); this.captureDriver = 'stream'; }
-        catch { this.frameReader = null; }
-      }
-      if (!this.worker.local && this.captureDriver !== 'stream' && typeof this.video.requestVideoFrameCallback === 'function') this.captureDriver = 'rvfc';
-      this.onDiagnostic?.({ delegate: this.delegate, driver: this.captureDriver });
-      if (this.captureDriver === 'stream') this.readFrames(generation);
-      if (this.captureDriver === 'rvfc') this.paceVideoFrames(generation);
+      this.configureCapture(generation);
       // The timer is the always-on staleness/liveness watchdog; with a
       // dedicated capture driver active its ticks supervise without capturing.
       this.timer = setInterval(() => this.frame(), 65);
@@ -213,11 +206,41 @@ export class HandController {
   }
 
   paceVideoFrames(generation) {
+    const token = this.paceToken;
     this.video.requestVideoFrameCallback(() => {
-      if (!this.running || generation !== this.generation) return;
+      if (!this.running || generation !== this.generation || this.captureDriver !== 'rvfc' || token !== this.paceToken) return;
       this.frame(performance.now(), true);
       this.paceVideoFrames(generation);
     });
+  }
+
+  configureCapture(generation = this.generation) {
+    if (!this.running) return;
+    this.frameReader?.cancel().catch(() => {}); this.frameReader = null;
+    this.paceToken = {};
+    this.captureDriver = 'timer';
+    if (!this.worker || this.worker.local) {
+      this.onDiagnostic?.({ delegate: this.delegate, driver: this.captureDriver, captureWidth: this.captureWidth || 640 });
+      return;
+    }
+    const track = this.stream?.getVideoTracks()[0];
+    if (!this.captureWidth && this.delegate !== 'CPU' && typeof MediaStreamTrackProcessor === 'function' && track) {
+      try { this.frameReader = new MediaStreamTrackProcessor({ track }).readable.getReader(); this.captureDriver = 'stream'; }
+      catch { this.frameReader = null; }
+    }
+    if (this.captureDriver !== 'stream' && typeof this.video.requestVideoFrameCallback === 'function') this.captureDriver = 'rvfc';
+    this.onDiagnostic?.({ delegate: this.delegate, driver: this.captureDriver, captureWidth: this.captureWidth || (this.captureDriver === 'stream' ? 0 : 640) });
+    if (this.captureDriver === 'stream') this.readFrames(generation);
+    if (this.captureDriver === 'rvfc') this.paceVideoFrames(generation);
+  }
+
+  setPerformanceMode(mode) {
+    if (this.captureLocked) return false;
+    const width = mode === 'simple' ? 320 : 0;
+    if (width === this.captureWidth) return false;
+    this.captureWidth = width;
+    this.configureCapture();
+    return true;
   }
 
   // The worker abandoned the GPU mid-session: record the flip and stop feeding
@@ -226,10 +249,7 @@ export class HandController {
     this.delegate = delegate;
     this.onDiagnostic?.({ delegate });
     if (delegate !== 'CPU' || this.captureDriver !== 'stream') return;
-    this.frameReader?.cancel().catch(() => {}); this.frameReader = null;
-    this.captureDriver = typeof this.video.requestVideoFrameCallback === 'function' ? 'rvfc' : 'timer';
-    this.onDiagnostic?.({ driver: this.captureDriver });
-    if (this.captureDriver === 'rvfc') this.paceVideoFrames(generation);
+    this.configureCapture(generation);
   }
 
   // Chrome path: VideoFrames stream straight from the camera track and transfer
@@ -237,7 +257,7 @@ export class HandController {
   // queue so inference always sees the freshest frame.
   async readFrames(generation) {
     const reader = this.frameReader;
-    while (this.running && generation === this.generation) {
+    while (this.running && generation === this.generation && reader === this.frameReader) {
       let frame = null;
       try { ({ value: frame } = await reader.read()); } catch { /* cancelled or track ended */ }
       if (!frame) return;

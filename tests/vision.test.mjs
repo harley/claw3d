@@ -209,6 +209,45 @@ test('a mid-session CPU fallback stops the zero-copy stream and reports the flip
   assert.ok(diagnostics.some(d => d.driver === 'timer'));
 });
 
+test('simple performance mode replaces the stream with resized paced capture and can recover', () => {
+  const f = fixture(), c = f.controller, originalProcessor = globalThis.MediaStreamTrackProcessor;
+  let cancelled = 0, readers = 0;
+  globalThis.MediaStreamTrackProcessor = class { constructor() { this.readable = { getReader: () => ({ read: () => new Promise(() => {}), cancel: () => { cancelled++; return Promise.resolve(); } }) }; } };
+  Object.assign(c, { running: true, generation: 4, captureDriver: 'stream', captureWidth: 0, delegate: 'GPU', worker: {},
+    stream: { getVideoTracks: () => [{}] }, frameReader: { cancel: () => { cancelled++; return Promise.resolve(); } },
+    video: { requestVideoFrameCallback: () => {} }, readFrames: () => { readers++; } });
+  try {
+    assert.equal(c.setPerformanceMode('simple'), true);
+    assert.equal(c.captureWidth, 320); assert.equal(c.captureDriver, 'rvfc'); assert.equal(cancelled, 1);
+    assert.equal(c.setPerformanceMode('full'), true);
+    assert.equal(c.captureWidth, 0); assert.equal(c.captureDriver, 'stream'); assert.equal(readers, 1);
+  } finally { globalThis.MediaStreamTrackProcessor = originalProcessor; }
+});
+
+test('an explicit capture-width diagnostic override is never replaced automatically', () => {
+  const f = fixture(), c = f.controller;
+  Object.assign(c, { captureLocked: true, captureWidth: 480 });
+  assert.equal(c.setPerformanceMode('simple'), false);
+  assert.equal(c.captureWidth, 480);
+});
+
+test('reconfiguring an rvfc capture path retires the previous pacing loop', () => {
+  const f = fixture(), c = f.controller, callbacks = [];
+  let frames = 0;
+  Object.assign(c, { running: true, generation: 4, captureWidth: 640, delegate: 'GPU', worker: {},
+    stream: { getVideoTracks: () => [{}] }, video: { requestVideoFrameCallback: callback => callbacks.push(callback) },
+    frame: () => { frames++; } });
+  c.configureCapture();
+  c.captureWidth = 320; c.configureCapture();
+  assert.equal(callbacks.length, 2);
+  callbacks[0]();
+  assert.equal(frames, 0);
+  assert.equal(callbacks.length, 2, 'the retired loop must not schedule another callback');
+  callbacks[1]();
+  assert.equal(frames, 1);
+  assert.equal(callbacks.length, 3);
+});
+
 test('a dedicated capture driver keeps the watchdog timer from double-capturing', async () => {
   const f = fixture(), c = f.controller, originalDocument = globalThis.document;
   globalThis.document = { hidden: false };
