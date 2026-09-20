@@ -12,7 +12,8 @@ try {
     window.audioCheck = { contexts: 0, notes: [], gains: [], rejectResume: false };
     window.AudioContext = class extends NativeAudio {
       constructor() { super(); window.audioCheck.contexts++; window.audioCheck.context = this; }
-      resume() { return window.audioCheck.rejectResume ? Promise.reject(new Error('Audio blocked')) : super.resume(); }
+      get state() { return this.blocked || window.audioCheck.rejectResume ? 'suspended' : super.state; }
+      resume() { this.blocked = window.audioCheck.rejectResume; return this.blocked ? Promise.reject(new Error('Audio blocked')) : super.resume(); }
       createGain() { const gain = super.createGain(), set = gain.gain.setValueAtTime.bind(gain.gain); gain.gain.setValueAtTime = (value, time) => { gain.scheduledLevel = value; return set(value, time); }; window.audioCheck.gains.push(gain); return gain; }
       createOscillator() {
         const oscillator = super.createOscillator(), record = { stops: [] };
@@ -26,7 +27,7 @@ try {
       }
     };
   });
-  const open = async () => { await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud); };
+  const open = async () => { await page.goto('http://127.0.0.1:4196/?setup=manual'); await page.waitForFunction(() => window.__littleCloud); };
   const volume = value => page.locator('#sound-volume').evaluate((input, value) => { input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); }, value);
   const start = async () => {
     await page.locator('#play').click(); await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running);
@@ -114,9 +115,14 @@ try {
   await page.waitForTimeout(50);
   assert.ok(await page.evaluate(() => window.audioCheck.notes.filter(n => n.phase === 'result' && n.turn === 3 && n.frequency >= 587 && n.start > window.finalePauseAt).every(n => n.stops.length === 2)), 'feedback over results cancels the finale');
 
-  // Browser refusal must restore the off state without an unhandled rejection.
+  // Browser refusal keeps the preference enabled and exposes activation without rejection.
   await open(); await page.evaluate(() => { window.audioCheck.rejectResume = true; }); await page.locator('#sound').click();
-  await page.waitForFunction(() => document.getElementById('sound').getAttribute('aria-pressed') === 'false');
+  await page.waitForFunction(() => document.getElementById('sound').textContent === 'TAP FOR SOUND');
+  await page.locator('#sound').focus();
+  await page.keyboard.down('Space');
+  await page.evaluate(() => { window.audioCheck.rejectResume = false; });
+  await page.keyboard.up('Space');
+  await page.waitForFunction(() => document.getElementById('sound').textContent === 'SOUND ON');
   assert.deepEqual(errors, []);
   await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: '.screenshots/audio-mobile.png' });
   console.log('PASS explicit activation, volume, queued-note mute, visible star cues, dialog/pause/hand-loss silence and audio refusal');

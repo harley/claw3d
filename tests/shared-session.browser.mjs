@@ -35,7 +35,7 @@ async function open(context) {
         clench() { return this.onDrop(); }
       } export { HandController as ${alias} };` });
   });
-  await page.goto(origin);
+  await page.goto(`${origin}/?setup=manual`);
   if (await page.locator('#code').count()) {
     await page.locator('#code').fill(staffCode); await page.locator('#login button').click();
   }
@@ -54,7 +54,8 @@ async function openRegistration(page) {
   if (!await page.evaluate(() => window.testCamera?.running)) {
     await page.locator('#play').click(); await page.waitForFunction(() => window.testCamera?.running && !document.getElementById('camera-setup').open);
   }
-  await page.locator('#play').click(); await page.locator('#registration').waitFor();
+  if (!await page.locator('#registration').isVisible()) await page.locator('#play').click();
+  await page.locator('#registration').waitFor();
 }
 async function register(page, name) {
   await openRegistration(page);
@@ -97,6 +98,7 @@ async function scoredAndFeedback() {
   assert.equal(await page.locator('#practice, #shared-practice, #rehearsal-exit').count(), 0);
   await openRegistration(page);
   assert.equal(await page.locator('#name').getAttribute('required'), null);
+  await page.locator('#name').fill('Player');
   await page.locator('#name').press('Enter');
   await page.waitForFunction(() => document.getElementById('turn').textContent === '1 / 3');
   assert.equal(await page.locator('#player-name').textContent(), 'Player');
@@ -203,7 +205,7 @@ async function scoredAndFeedback() {
   await page.locator('#registration').waitFor();
   assert.equal(await page.evaluate(() => window.testCamera.running), true);
   assert.equal(await page.locator('#name').inputValue(), 'Player');
-  assert.equal(await page.locator('#name').evaluate(el => el.selectionEnd - el.selectionStart), 6);
+  assert.equal(await page.locator('#register-play').evaluate(el => el === document.activeElement), true, 'replay is ready to start without name editing');
   assert.equal(starts, 1, 'opening replay does not create a run');
   let releaseReplay, replayRequest;
   const replayStarted = new Promise(resolve => { replayRequest = resolve; });
@@ -275,7 +277,7 @@ try {
   assert.ok(cookies.find(cookie => cookie.name === 'cc_owner').httpOnly);
   await page.screenshot({ path: '.screenshots/shared-pending.png' });
   await page.reload(); await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
-  assert.equal(await page.locator('#player-name').textContent(), 'Your turn?');
+  assert.equal(await page.locator('#player-name').textContent(), 'PLAYER');
   hold = false;
   await page.waitForFunction(() => document.querySelector('#leaders')?.textContent.includes('Browser A'), {}, { timeout: 15000 });
   assert.equal(app.database.board().runs.length, 1); assert.equal(app.database.board().runs[0].turns.length, 3);
@@ -286,7 +288,7 @@ try {
   assert.match(await page.locator('#final-rank').textContent(), /RANK #1/);
   await page.screenshot({ path: '.screenshots/shared-saved.png' });
   await page.locator('#next-player').click();
-  assert.equal(await page.locator('#name').inputValue(), '');
+  assert.match(await page.locator('#name').inputValue(), /^[A-Z]+-\d{3}$/);
   await page.locator('#register-cancel').click();
   await page.close();
   page = await open(a); assert.equal(await page.locator('#leaders li').count(), 2);

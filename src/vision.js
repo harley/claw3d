@@ -319,7 +319,8 @@ export class HandController {
       this.acceptedInput = acceptsInput;
     }
     const sendInput = input => this.onInput(acceptsInput ? input : { x: 0, z: 0 });
-    const report = state => this.onState({ ...state, handCount: hands.length, controlEnabled: acceptsInput });
+    const report = state => this.onState({ ...state, handCount: hands.length, controlEnabled: acceptsInput,
+      pointer: hands.length === 1 && hand && this.owner && ['tracking', 'clenching'].includes(state.kind) ? { ...hand.center } : null });
     let hand;
     if (!this.owner) {
       // Only a single hand in the central play zone can claim the machine.

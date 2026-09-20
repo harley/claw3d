@@ -11,7 +11,7 @@ const page = await context.newPage(), errors=[]; page.on('pageerror', e=>errors.
 await installCameraFixture(page);
 const snap=()=>page.evaluate(()=>window.__littleCloud.snapshot());
 const phase=state=>page.waitForFunction(state=>window.__littleCloud.snapshot().phase===state,state,{timeout:30000});
-const open=async()=>{await page.goto('http://127.0.0.1:4196');await page.waitForFunction(()=>window.__littleCloud);};
+const open=async()=>{await page.goto('http://127.0.0.1:4196/?setup=manual');await page.waitForFunction(()=>window.__littleCloud);};
 const register=async name=>{if(!(await snap()).event.handCamera.running){await page.locator('#play').click();await page.waitForFunction(()=>window.__littleCloud.snapshot().event.handCamera.running);}await page.locator('#play').click();assert.equal(await page.locator('#name').getAttribute('required'),null);await page.locator('#name').fill(name);await page.locator('#name').press('Enter');await assertScoredStart(page);await phase('aim');};
 async function aimButter(){ for(const axis of ['x','z']) for(let i=0;i<6;i++){const delta=({x:-.38,z:.72})[axis]-(await snap()).position[axis];if(Math.abs(delta)<.025)break;const speed=Math.abs(delta)<.14?.25:1;await cameraInput(page,{x:0,z:0,[axis]:Math.sign(delta)*speed});await page.waitForTimeout(Math.abs(delta)/(.85*speed)*1000);await cameraInput(page,{x:0,z:0});} assert.equal((await snap()).aligned,'butter');}
 let checkedDelivery = false;
@@ -60,7 +60,7 @@ try {
  assert.equal(await page.locator('#practice').count(),0);
  await register('Linh r h'); assert.equal((await snap()).event.run.name,'Linh r h');
  const camera=(await snap()).camera; await page.waitForTimeout(100); assert.deepEqual((await snap()).camera,camera);
- await aimButter();await catchTurn();assert.equal((await snap()).event.run.turns.length,1);assert.equal((await snap()).event.run.turns[0].score,100);
+ await aimButter();await catchTurn();assert.equal((await snap()).event.run.turns.length,1);assert.ok((await snap()).event.run.turns[0].score>100);
  await phase('aim');
  assert.ok((await snap()).toys.every(t=>!t.claimed));
  // A clear miss at the far left: no consolation or hidden points.
@@ -68,17 +68,17 @@ try {
  assert.equal((await snap()).event.run.turns[1].score,0);
  await phase('aim');assert.equal((await snap()).event.turn,3);
  await aimButter();await page.screenshot({path:'.screenshots/event-last-claw.png'});await catchTurn();await page.locator('#final').waitFor();
- assert.equal((await snap()).event.complete.total,200);assert.equal((await snap()).event.board.runs.length,1);
+ assert.ok((await snap()).event.complete.total>200 && (await snap()).event.complete.total<=300);assert.equal((await snap()).event.board.runs.length,1);
  await page.locator('#final-leaderboard').click(); await page.locator('#result-open').click();
- assert.equal(await page.locator('#final-score').textContent(),'200','reopening restores the full score after interrupted count-up');
+ assert.equal(await page.locator('#final-score').textContent(),String((await snap()).event.complete.total),'reopening restores the full score after interrupted count-up');
  await page.screenshot({path:'.screenshots/event-result.png'});
  await page.reload();await page.waitForFunction(()=>window.__littleCloud);assert.equal((await snap()).event.board.runs.length,1);
- console.log('PASS official: catch + miss + catch, restock, exactly three turns, persisted total 200');
+ console.log('PASS official: catch + miss + catch, restock, exactly three turns, persisted speed-score total');
  await register('');
  await page.locator('#operator-open').click();const before=(await snap()).event.remaining;await page.waitForTimeout(350);assert.equal((await snap()).event.remaining,before);await page.locator('#operator .panel-head button').click();await page.locator('#scene').focus();
  await catchTurn();await phase('aim');await catchTurn();await phase('aim');
  // Final turn runs out naturally and commits one drop.
- await phase('result');await page.locator('#final').waitFor();assert.equal((await snap()).event.complete.name,'Player');assert.equal((await snap()).event.board.runs.length,2);assert.equal(await page.locator('#leaders li').count(),2);
+ await phase('result');await page.locator('#final').waitFor();assert.match((await snap()).event.complete.name,/^[A-Z]+-\d{3}$/);assert.equal((await snap()).event.board.runs.length,2);assert.equal(await page.locator('#leaders li').count(),2);
  console.log('PASS blank nickname scored, modal pause, timeout commits once');
  await page.locator('#next-player').click();await page.locator('#name').fill('Recover');await page.locator('#name').press('Enter');await assertScoredStart(page);await page.reload();await page.waitForFunction(()=>window.__littleCloud);
  assert.equal((await snap()).event.run.name,'Recover');assert.equal((await snap()).phase,'idle');await page.locator('#operator-open').click();await page.locator('#pause').click();await phase('aim');
@@ -108,6 +108,6 @@ try {
  assert.equal((await snap()).event.board.runs[0].turns.length,3);
  console.log('PASS legacy unfinished practice remains preserved and excluded without a fabricated rank');
  assert.deepEqual(await page.evaluate(()=>window.mediaCalls),[]);assert.deepEqual(errors,[]);
- await writeFile('.screenshots/event-verification.json',JSON.stringify({checks:['official three-turn run: 200 points','catch/miss and repeated drop','restock each turn','blank nickname scored','legacy practice preserved and excluded','timer auto-drop','modal pause','reload persistence and recovery','session history','export','820px viewport','no camera access'],errors},null,2));
+ await writeFile('.screenshots/event-verification.json',JSON.stringify({checks:['official three-turn run with speed bonus','catch/miss and repeated drop','restock each turn','blank nickname scored','legacy practice preserved and excluded','timer auto-drop','modal pause','reload persistence and recovery','session history','export','820px viewport','no camera access'],errors},null,2));
  console.log('ALL EVENT BROWSER CHECKS PASSED');
 } finally {await browser.close();}

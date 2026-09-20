@@ -40,7 +40,7 @@ export async function checkStarCue(browser) {
           cueFrame(cueTime);
         };
       ` }));
-      await page.goto('http://127.0.0.1:4196');
+      await page.goto('http://127.0.0.1:4196/?setup=manual');
       await page.waitForFunction(() => window.cueFrame);
       await page.locator('#play').click();
       await page.waitForFunction(() => window.cueController);

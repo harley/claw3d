@@ -4,7 +4,7 @@ import { browserOptions } from '../scripts/browser-options.mjs';
 const browser = await chromium.launch(browserOptions);
 try {
  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
- await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud);
+ await page.goto('http://127.0.0.1:4196/?setup=manual'); await page.waitForFunction(() => window.__littleCloud);
  const report = await page.evaluate(async () => {
   const { ArcadeScene } = await import('/src/arcade-scene.js');
   const { createGame, begin, drop, advance, moveCarousel, CAROUSEL, CONTACT_DELAY, BED } = await import('/src/arcade-mechanics.js');

@@ -1,8 +1,7 @@
-// Original, finite synthesized cues. No audio files; the player must explicitly
-// enable sound before cues or the separately scheduled movement melody can play. onChange fires
-// whenever enabled/volume state moves, including async activation failures.
-export function createArcadeAudio({ onChange = () => {} } = {}) {
-  let enabled = false, volume = .5, context = null, master = null, activation = 0;
+// Original finite synthesized cues. Sound preference and browser activation are separate.
+// A suspended context never accumulates notes for a later burst.
+export function createArcadeAudio({ onChange = () => {}, enabledByDefault = false } = {}) {
+  let enabled = enabledByDefault, volume = .5, context = null, master = null, activation = 0;
   const activeNotes = new Map();
   function silence() {
     for (const [oscillator, gain] of activeNotes) { oscillator.stop(); oscillator.disconnect(); gain.disconnect(); }
@@ -13,7 +12,7 @@ export function createArcadeAudio({ onChange = () => {} } = {}) {
     if (!enabled || !volume) silence();
   }
   function note(frequency, duration = .12, delay = 0, type = 'square', endFrequency = frequency, level = .025) {
-    if (!enabled || !volume || !master) return;
+    if (!enabled || !volume || !master || context.state !== 'running') return;
     try {
       const t = context.currentTime + delay, oscillator = context.createOscillator(), gain = context.createGain();
       oscillator.type = type; oscillator.frequency.setValueAtTime(frequency, t);
@@ -43,19 +42,23 @@ export function createArcadeAudio({ onChange = () => {} } = {}) {
       if (i % 2 === 0) note(i % 4 ? 220 : 147, beat * 1.6, i * beat, 'triangle', i % 4 ? 220 : 147, .007);
     });
   }
+  function unlock() {
+    if (!enabled) return;
+    const current = ++activation;
+    try {
+      context ??= new AudioContext();
+      if (!master) { master = context.createGain(); master.connect(context.destination); }
+      context.onstatechange = () => onChange();
+      context.resume().then(() => { if (current === activation) onChange(); }).catch(() => onChange());
+    } catch { enabled = false; }
+    apply(); onChange();
+  }
   function toggle() {
     enabled = !enabled;
-    const current = ++activation;
-    if (enabled) {
-      try {
-        context ??= new AudioContext();
-        if (!master) { master = context.createGain(); master.connect(context.destination); }
-        context.resume().catch(() => { if (current === activation) { enabled = false; apply(); onChange(); } });
-      } catch { enabled = false; }
-    }
-    apply(); onChange();
+    if (enabled) unlock();
+    else { ++activation; apply(); onChange(); }
     note(523);
   }
   function setVolume(value) { volume = value; apply(); onChange(); }
-  return { note, fanfare, silence, toggle, setVolume, get enabled() { return enabled; }, get volume() { return volume; } };
+  return { note, fanfare, silence, toggle, unlock, setVolume, get ready() { return Boolean(context && context.state === 'running'); }, get enabled() { return enabled; }, get volume() { return volume; } };
 }

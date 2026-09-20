@@ -245,3 +245,17 @@ dialog .play-button { width: 100%; margin-top: 24px; }
 .sound-controls label { display: flex; justify-content: space-between; font-size: 9px; color: #acc2df; }
 .sound-controls input { width: 100%; height: 12px; margin: 0; accent-color: #ffc14d; }
 @media (max-width: 650px) { .sound-controls { width: 59px; } .sound-controls label { font-size: 8px; } }
+
+/* Hand-operated arcade menus: the same deliberate fist hold as gameplay. */
+#hand-cursor { position:fixed; width:64px; height:64px; transform:translate(-50%,-50%); pointer-events:none; z-index:10000; filter:drop-shadow(0 2px 8px #000); }
+#hand-cursor svg { width:100%; height:100%; overflow:visible; }
+.cursor-hand { fill:#fff; stroke:#0b1526; stroke-width:2; transform:translate(-3px,-1px) scale(.92); transform-origin:center; }
+.cursor-track,.cursor-progress { fill:none; stroke:#fff5; stroke-width:4; }
+.cursor-progress { stroke:#ffca45; stroke-dasharray:182.22; stroke-dashoffset:calc(182.22 * (1 - var(--hold,0))); transform:rotate(-90deg); transform-origin:center; }
+#hand-cursor.targeting .cursor-track { stroke:#ffca45; }
+button.hand-hover { outline:4px solid #ffca45; outline-offset:6px; box-shadow:0 0 28px #ffca4570; }
+#registration h1 { font-size:clamp(28px,5vw,44px); }
+#registration #name { text-align:center; font-weight:900; font-size:28px; letter-spacing:.08em; }
+#registration #register-play { display:block; width:100%; min-height:76px; margin-top:24px; }
+#registration #register-cancel, #final .text-button { min-height:48px; }
+#registration .playtest-notice { font-size:11px; opacity:.6; }

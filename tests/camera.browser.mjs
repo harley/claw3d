@@ -8,7 +8,7 @@ try {
   const page = await context.newPage(), errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(() => { window.mediaCalls = 0; const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); navigator.mediaDevices.getUserMedia = options => { window.mediaCalls++; return original(options); }; });
-  await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud);
+  await page.goto('http://127.0.0.1:4196/?setup=manual'); await page.waitForFunction(() => window.__littleCloud);
   await page.evaluate(async () => {
     const { ArcadeScene } = await import('/src/arcade-scene.js');
     const draw = ArcadeScene.prototype.draw;
@@ -28,8 +28,8 @@ try {
   assert.equal(await page.locator('#registration').isVisible(), false);
   assert.equal(await page.locator('#camera-preview').isVisible(), true);
   assert.equal(await page.evaluate(() => document.getElementById('camera-video').videoWidth > 0), true);
-  await page.waitForFunction(() => document.getElementById('status').textContent === 'Show one open hand');
-  assert.equal(await page.locator('#hint').isVisible(), true);
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'SHOW ONE HAND');
+  assert.equal(await page.locator('#hint').isVisible(), false, 'camera recovery uses one clear status line');
   assert.equal(await page.locator('#camera-recognition').textContent(), 'Camera view');
   const geometry = await page.evaluate(() => {
     const video = document.getElementById('camera-video'), overlay = document.getElementById('camera-overlay');
@@ -47,13 +47,13 @@ try {
   }
   await page.screenshot({ path: '.screenshots/camera-ready-wide.png' });
   await page.setViewportSize({ width: 820, height: 900 });
-  assert.equal(await page.locator('#hint').isVisible(), true);
+  assert.equal(await page.locator('#hint').isVisible(), false, 'camera recovery uses one clear status line');
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.screenshot({ path: '.screenshots/camera-ready-narrow.png' });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.locator('#play').click(); await page.locator('#name').fill('   '); await page.locator('#name').press('Enter');
   assert.equal(await page.locator('#registration').isVisible(), false);
-  assert.equal((await snap()).event.run.name, 'Player'); assert.equal((await snap()).event.turn, 1);
+  assert.match((await snap()).event.run.name, /^[A-Z]+-\d{3}$/); assert.equal((await snap()).event.turn, 1);
   await page.waitForTimeout(300); const before = (await snap()).event.remaining;
   await page.waitForTimeout(700); assert.equal((await snap()).event.remaining, before); assert.equal((await snap()).event.handCamera.waiting, true);
   const position = (await snap()).position;
@@ -71,7 +71,7 @@ try {
   await context.close();
   const denied = await browser.newContext(); const dp = await denied.newPage();
   await dp.addInitScript(() => { const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); let first = true; navigator.mediaDevices.getUserMedia = async options => { if (first) { first = false; throw new DOMException('Denied', 'NotAllowedError'); } return original(options); }; });
-  await dp.goto('http://127.0.0.1:4196'); await dp.waitForFunction(() => window.__littleCloud); await dp.locator('#camera-open').click(); await dp.locator('#camera-toggle').click();
+  await dp.goto('http://127.0.0.1:4196/?setup=manual'); await dp.waitForFunction(() => window.__littleCloud); await dp.locator('#camera-open').click(); await dp.locator('#camera-toggle').click();
   await dp.waitForFunction(() => document.getElementById('camera-status').textContent.includes('permission'));
   assert.equal(await dp.evaluate(() => window.__littleCloud.snapshot().event.handCamera.running), false);
   assert.equal(await dp.locator('#camera-setup').isVisible(), true);
@@ -91,7 +91,7 @@ try {
       terminate() {}
     };
   });
-  await fp.goto('http://127.0.0.1:4196'); await fp.waitForFunction(() => window.__littleCloud);
+  await fp.goto('http://127.0.0.1:4196/?setup=manual'); await fp.waitForFunction(() => window.__littleCloud);
   await fp.locator('#play').click();
   await fp.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running, {}, { timeout: 35000 });
   const fallbackCamera = (await fp.evaluate(() => window.__littleCloud.snapshot())).event.handCamera;

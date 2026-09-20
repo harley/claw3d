@@ -119,7 +119,7 @@ test('large boards preserve competition ties with a constant number of result qu
   for (let i = 0; i < 300; i++) {
     const total = i < 2 ? 600 : 300;
     insert.run(String(i), String(i), board.id, 'Test', JSON.stringify(board.rules), total, 'start', String(i));
-    for (const turn of [1, 2, 3]) db.prepare('INSERT INTO turns VALUES (?,?,?,?)').run(String(i), turn, i < 2 ? 'sprout' : 'butter', total / 3);
+    for (const turn of [1, 2, 3]) db.prepare('INSERT INTO turns (run_id,turn,prize_id,score) VALUES (?,?,?,?)').run(String(i), turn, i < 2 ? 'sprout' : 'butter', total / 3);
   }
   db.exec('COMMIT');
   const original = db.prepare.bind(db); let queries = 0;
@@ -160,6 +160,38 @@ test('fist control upgrade starts one fresh board and preserves old scores and p
     assert.equal(database.exportData().boards.find(b => b.id === oldBoard.id).runs.length, 2);
     database.close(); database = openDatabase(filename);
     assert.equal(database.board().id, current.id);
+    assert.equal(database.exportData().boards.length, 2);
+  } finally { database.close(); await rm(dir, { recursive: true, force: true }); }
+});
+
+test('speed score survives old-table migration, duplicate retry and restart', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cloud-claw-speed-'));
+  const filename = join(dir, 'pilot.sqlite');
+  let database = openDatabase(filename);
+  try {
+    database.db.prepare('INSERT INTO owners VALUES (?)').run('speed-owner');
+    const oldBoard = database.board();
+    const { CAROUSEL_RULES } = await import('../src/event-session.js');
+    const oldRules = { ...CAROUSEL_RULES, controlVersion: 'camera-fist-hold-550-v2' };
+    database.db.prepare('UPDATE boards SET rules=? WHERE id=?').run(JSON.stringify(oldRules), oldBoard.id);
+    const old = database.createRun('speed-owner', { name: 'Old', requestKey: randomUUID() });
+    database.record(old.id, 'speed-owner', { turn: 1, prizeId: 'butter' });
+    database.db.exec('ALTER TABLE turns DROP COLUMN remaining_ms');
+    database.close(); database = openDatabase(filename);
+    assert.notEqual(database.board().id, oldBoard.id);
+    assert.equal(database.getRun(old.id, 'speed-owner').turns[0].score, 100);
+    database.record(old.id, 'speed-owner', { turn: 1, prizeId: 'butter' });
+    const fresh = database.createRun('speed-owner', { name: 'Fast', requestKey: randomUUID() });
+    const input = { turn: 1, prizeId: 'butter', remainingMs: 7500 };
+    assert.equal(database.record(fresh.id, 'speed-owner', input).turns[0].score, 125);
+    assert.equal(database.record(fresh.id, 'speed-owner', input).turns.length, 1);
+    assert.throws(() => database.record(fresh.id, 'speed-owner', { ...input, remainingMs: 7400 }), error => error.status === 409);
+    assert.throws(() => database.record(fresh.id, 'speed-owner', { turn: 2, prizeId: 'sprout', remainingMs: 15001 }), error => error.status === 400);
+    database.record(fresh.id, 'speed-owner', { turn: 2, prizeId: null, remainingMs: 15000 });
+    database.record(fresh.id, 'speed-owner', { turn: 3, prizeId: 'sprout', remainingMs: 15000 });
+    database.close(); database = openDatabase(filename);
+    assert.equal(database.getRun(fresh.id, 'speed-owner').total, 375);
+    assert.equal(database.getRun(fresh.id, 'speed-owner').turns[0].remainingMs, 7500);
     assert.equal(database.exportData().boards.length, 2);
   } finally { database.close(); await rm(dir, { recursive: true, force: true }); }
 });

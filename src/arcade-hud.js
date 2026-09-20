@@ -38,8 +38,8 @@ export function createHud({ audio, phaseSound }) {
   function update(view, feedback, modal) {
     const { game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, sharedStatus, storageError, aligned } = view;
   const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
-  let title = 'READY PLAYER?', hint = '', button = 'Play', kicker = 'CLOUD CLAW';
-  if (recovering) { title = 'Let’s get you back in'; hint = 'Ask your host to resume.'; button = 'OPERATOR'; }
+  let title = 'READY', hint = '', button = 'Play', kicker = 'CLOUD CLAW';
+  if (recovering) { title = 'RUN INTERRUPTED'; hint = 'Ask your host to resume.'; button = 'OPERATOR'; }
   else if (phase === 'aim') { kicker = turnNumber === 3 ? 'LAST CLAW!' : `TURN ${turnNumber} OF 3`; title = 'Clench & hold to drop'; hint = ''; button = '';  }
   else if (phase === 'result' && run) { kicker = `ROUND ${turnNumber + 1} OF 3`; title = nextTurnCue(nextTurnElapsed, turnNumber + 1); hint = ''; button = ''; }
   else if (phase in phaseCopy) {
@@ -67,21 +67,21 @@ export function createHud({ audio, phaseSound }) {
     setText('jackpot-cue', confirming ? 'KEEP HOLDING' : ['idle', 'aim'].includes(phase) ? cue.text : 'Claw in action');
     [...$('jackpot-lights').children].forEach((light, i) => light.classList.toggle('on', ['idle', 'aim'].includes(phase) && i < cue.lights));
   }
-  if (phase === 'aim' && nearPickup) { title = 'Go for the star'; hint = aligned?.id === CAROUSEL.id ? 'Clench your fist and hold.' : 'Gold ring. Wait for green.'; }
+  if (phase === 'aim' && nearPickup) { title = 'STAR 200'; hint = ''; }
   const learning = phase === 'aim' || (!run && !recovering && cameraControls?.running);
   if (learning) {
-    if (feedback.kind === 'off') { title = 'Let’s see your hand'; hint = 'Open Camera to continue.'; }
-    else if (['ready', 'lost'].includes(feedback.kind)) { title = feedback.kind === 'lost' ? 'Bring your hand back' : 'Show one open hand'; hint = feedback.handCount > 1 ? 'Lower one hand to begin.' : 'Hold it still in the camera.'; }
-    else if (feedback.kind === 'delayed') { title = 'Hold steady'; hint = 'Tracking delayed.'; }
-    else if (feedback.kind === 'calibrating') { title = 'Hand found'; hint = 'Hold still for a moment.'; }
-    else if (feedback.kind === 'clenching' && feedback.controlEnabled) { title = feedback.progress > 0 ? 'Hold to drop' : 'Ready for a drop?'; hint = feedback.progress > 0 ? '' : feedback.message || 'Open your hand first.'; }
+    if (feedback.kind === 'off') { title = 'CAMERA OFF'; hint = 'Open Camera to continue.'; }
+    else if (['ready', 'lost'].includes(feedback.kind)) { title = feedback.kind === 'lost' ? 'SHOW ONE HAND' : 'SHOW ONE HAND'; hint = ''; if (feedback.handCount > 1) title = 'ONE HAND ONLY'; }
+    else if (feedback.kind === 'delayed') { title = 'TRACKING DELAYED'; hint = ''; }
+    else if (feedback.kind === 'calibrating') { title = 'HOLD STILL'; hint = ''; }
+    else if (feedback.kind === 'clenching' && feedback.controlEnabled) { title = feedback.progress > 0 ? (phase === 'aim' ? 'Hold to drop' : 'HOLD TO SELECT') : 'OPEN HAND'; hint = feedback.progress > 0 ? '' : feedback.message || 'Open your hand first.'; }
     else if (feedback.kind === 'tracking') {
-      if (phase === 'idle') { title = 'You’re ready'; hint = ''; }
+      if (phase === 'idle') { title = 'AIM AT PLAY · CLENCH'; hint = ''; }
       else if (!nearPickup) { title = 'Clench & hold to drop'; hint = ''; }
-    } else if (feedback.kind === 'error') { title = 'Let’s check the camera'; hint = 'Open Camera to try again.'; }
-    else if (feedback.kind === 'loading') { title = 'Waking up the camera…'; hint = 'Allow camera access to play.'; }
+    } else if (feedback.kind === 'error') { title = 'CAMERA ERROR'; hint = ''; }
+    else if (feedback.kind === 'loading') { title = 'STARTING CAMERA'; hint = ''; }
   }
-  if (startingRun) { title = 'Getting your run ready'; hint = 'Connecting to the leaderboard…'; }
+  if (startingRun) { title = 'CONNECTING'; hint = ''; }
   const holding = phase === 'aim' && feedback.controlEnabled && feedback.kind === 'clenching';
   const progress = holding ? Math.round(Math.max(0, Math.min(1, feedback.progress || 0)) * 100) : 0;
   setHidden($('gesture-meter'), !holding);
@@ -96,6 +96,7 @@ export function createHud({ audio, phaseSound }) {
   if ($('camera-preview').dataset.state !== feedback.kind) $('camera-preview').dataset.state = feedback.kind;
   $('reset').disabled = startingRun;
   setText('timer', String(Math.ceil(remaining)).padStart(2, '0'));
+  setText('speed-bonus', `SPEED +${Math.floor((run?.rules.speedBonus ?? 50) * remaining / (run?.rules.seconds || 15))}`);
   $('arcade').classList.toggle('last-claw', Boolean(run && turnNumber === 3)); $('arcade').classList.toggle('urgent', phase === 'aim' && remaining <= 5);
   setText('mode-label', shared ? sharedStatus : storageError ? 'LOCAL PREVIEW · UNSAVED' : 'LOCAL PREVIEW');
   setHidden($('mode-label'), !$('mode-label').textContent);
@@ -117,7 +118,7 @@ export function createHud({ audio, phaseSound }) {
   if ($('arcade').dataset.phase !== phase) $('arcade').dataset.phase = phase;
   const signature = [title, hint, button, kicker, total, run?.name, pendingPlayer?.name, completedRun?.id, paused].join('');
   if (signature === lastStatus) return; lastStatus = signature;
-  $('player-name').textContent = run?.name || pendingPlayer?.name || completedRun?.name || 'Your turn?'; $('score').textContent = String(total).padStart(3, '0'); $('turn').textContent = run ? `${turnNumber} / 3` : '— / 3';
+  $('player-name').textContent = run?.name || pendingPlayer?.name || completedRun?.name || 'PLAYER'; $('score').textContent = String(total).padStart(3, '0'); $('turn').textContent = run ? `${turnNumber} / 3` : '— / 3';
   $('phase-label').textContent = kicker; $('button-text').textContent = button;
   $('play').hidden = Boolean(startingRun || (run && !recovering && !cameraRecovery));
   $('play').disabled = paused || cameraLoading;

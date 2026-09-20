@@ -23,7 +23,7 @@ test('outbox retries response loss, preserves ownership on reauth, and drains co
   let api = createSessionApi({ storage: local, tabStorage: tab, fetcher, onChange: notice => notices.push(notice) });
   await api.initialize(); // An empty first poll must not latch the flush lock forever.
   const run = await api.start('Lan', crypto.randomUUID());
-  lose = true; run.turns.push({ turn: 1, prizeId: 'butter', score: 100 }); api.queue(run); await api.flush();
+  lose = true; run.turns.push({ turn: 1, prizeId: 'butter', score: 125, remainingMs: 7500 }); api.queue(run); await api.flush();
   assert.equal(api.state().pending, 1); assert.equal(received.size, 1);
   unauthorized = true;
   run.turns.push({ turn: 2, prizeId: 'butter', score: 100 }, { turn: 3, prizeId: 'butter', score: 100 }); api.queue(run); await api.flush();
@@ -31,7 +31,7 @@ test('outbox retries response loss, preserves ownership on reauth, and drains co
   unauthorized = false;
   api = createSessionApi({ storage: local, tabStorage: tab, fetcher, onChange: notice => notices.push(notice) });
   await api.initialize();
-  assert.equal(received.size, 3); assert.equal(local.length, 0); assert.equal(tab.length, 0);
+  assert.equal(received.size, 3); assert.equal(received.get(1).remainingMs, 7500); assert.equal(local.length, 0); assert.equal(tab.length, 0);
   assert.equal(notices.find(notice => notice.saved)?.saved.rank, 1);
 });
 test('reload submits completed turns before abandonment; another tab cannot abandon the live run', async () => {

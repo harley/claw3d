@@ -1,4 +1,6 @@
 import './arcade.css';
+import { createHandMenu, generatedName } from './hand-menu.js';
+const manualSetup = new URLSearchParams(location.search).get('setup') === 'manual';
 import { createSharedBoard } from './shared-board.js';
 import { createPlaytestClient } from './playtest-client.js';
 import { createArcadeAudio } from './arcade-audio.js';
@@ -8,11 +10,19 @@ import { PerformanceGovernor, PERFORMANCE_WINDOW_MS } from './performance-govern
 const shared = globalThis.__SHARED_PILOT__ === true;
 import { ArcadeScene } from './arcade-scene.js';
 import { createGame, begin, drop, advance, move, planGrab, clawPose, PHASES, MAX_FRAME_DELTA, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
-import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard } from './event-session.js';
+import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, scoreTurn } from './event-session.js';
 
 $('build-info').textContent = `BUILD ${__BUILD_INFO__.commit}${__BUILD_INFO__.dirty ? ' · uncommitted changes' : ''} · ${__BUILD_INFO__.branch}`;
 let game = createGame({ carousel: true }), scene, previous = 0, stopped = false, frozen = false;
 let cameraControls, cameraLoading = false;
+const handMenu = createHandMenu();
+let previousMenuMode = '';
+function menuMode() {
+  if (startingRun || recovering || paused || frozen || stopped || document.hidden) return '';
+  const dialogs = [...document.querySelectorAll('dialog[open]')];
+  if (dialogs.length) return dialogs.length === 1 && ['registration', 'final'].includes(dialogs[0].id) ? dialogs[0].id : '';
+  return !run && cameraControls?.running ? 'idle' : '';
+}
 let pendingPlayer = null, startingRun = false;
 let scoreAnimation;
 let lastSoundPhase = '', lastMovementSound = -Infinity;
@@ -30,7 +40,7 @@ let observedControl = '', observedPhase = '', observedSaveError = false, cameraF
 let performanceFrames = [], performanceVisibleMs = 0, cameraReadyAt = null;
 let adaptationFrames = [], adaptationVisibleMs = 0;
 let holdSignalTurn = -1, holdSignalCount = 0;
-let nextTurnElapsed = 0;
+let nextTurnElapsed = 0, dropRemainingMs = 0;
 const performanceGovernor = new PerformanceGovernor({ onChange: (mode, source) => {
   scene?.setQuality(mode === 'simple');
   cameraControls?.setPerformanceMode(mode);
@@ -58,14 +68,14 @@ function renderBoard() {
   $('operator-stats').textContent = `${official.length} completed · ${turns.length ? Math.round(turns.filter(t => t.score).length / turns.length * 100) : 0}% catch rate${shared ? '' : ` · ${store.boards.length} sessions stored`}`;
   $('storage-status').textContent = shared ? pilot.status : storageError || store.notice || 'Scores saved on this browser.';
 }
-const audio = createArcadeAudio({ onChange: syncSoundUI });
+const audio = createArcadeAudio({ onChange: syncSoundUI, enabledByDefault: !manualSetup });
 const movementMusic = createMovementMusic(audio);
 const hud = createHud({ audio, phaseSound });
 function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ? 'loading' : 'off' }, modal = Boolean(document.querySelector('dialog[open]'))) {
   hud.update({ game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, sharedStatus: pilot.status, storageError, aligned }, feedback, modal);
 }
 function syncSoundUI() {
-  $('sound').textContent = !audio.enabled ? 'SOUND OFF' : audio.volume ? 'SOUND ON' : 'MUTED';
+  $('sound').textContent = !audio.enabled ? 'SOUND OFF' : !audio.volume ? 'MUTED' : audio.ready ? 'SOUND ON' : 'TAP FOR SOUND';
   $('sound').setAttribute('aria-pressed', String(audio.enabled));
 }
 function phaseSound(phase, modal) {
@@ -83,7 +93,7 @@ function phaseSound(phase, modal) {
 }
 function freshGame() { cameraControls?.reset(); game = createGame({ carousel: true }); game.position = { x: -1.12, z: .66 }; scene?.groundToys(game); aligned = null; hud.invalidate(); }
 function beginTurn() {
-  nextTurnElapsed = 0;
+  nextTurnElapsed = 0; dropRemainingMs = 0;
   freshGame(); turnNumber = run.turns.length + 1; remaining = run.rules.seconds; begin(game); recovering = false;
   if (turnNumber === 3) { [330, 440, 660].forEach((f, i) => audio.note(f, .16, i * .15)); }
   else { [523, 784].forEach((f, i) => audio.note(f, .12, i * .09)); }
@@ -91,12 +101,12 @@ function beginTurn() {
 }
 function openRegistration(name = $('name').value) {
   if (stopped || !scene || startingRun) return;
-  $('name').setCustomValidity(''); $('name').value = name;
-  $('registration').showModal(); $('name').focus(); $('name').select();
+  $('name').setCustomValidity(''); $('name').value = name.trim() || generatedName();
+  $('registration').showModal(); $('register-play').focus();
 }
 function finishTurn() {
   if (!run) return;
-  const outcome = recordTurn(store, turnNumber, game.plan?.prize?.id || null); if (!outcome) return;
+  const outcome = recordTurn(store, turnNumber, game.plan?.prize?.id || null, dropRemainingMs); if (!outcome) return;
   persist();
   track('turn_complete', { turn: turnNumber, score: outcome.run.turns.at(-1).score, prizeId: outcome.run.turns.at(-1).prizeId }, outcome.run);
   if (shared) pilot.queue(outcome.run);
@@ -112,7 +122,7 @@ function finishTurn() {
     $('final-rank').textContent = shared ? 'Score waiting to sync' : rank ? `LOCAL PREVIEW · RANK #${rank}` : 'LOCAL PREVIEW';
     setText('final-board', `Board: ${completedRun.boardName || store.boards.find(board => board.id === completedRun.boardId)?.name || completedRun.boardId}`);
     $('final-turns').replaceChildren();
-    for (const turn of completedRun.turns) { const chip = document.createElement('span'); chip.className = 'turn-chip scored'; chip.textContent = `+${turn.score}`; const name = document.createElement('small'); name.textContent = game.toys.find(t => t.id === turn.prizeId)?.name || 'Miss'; chip.append(name); $('final-turns').append(chip); }
+    for (const turn of completedRun.turns) { const chip = document.createElement('span'); chip.className = 'turn-chip scored'; chip.textContent = `+${turn.score}`; const name = document.createElement('small'); name.textContent = turn.prizeId ? `${completedRun.rules.points[turn.prizeId]} + ${turn.score - completedRun.rules.points[turn.prizeId]} SPEED` : 'MISS'; chip.append(name); $('final-turns').append(chip); }
     setText('final-sync', shared ? pilot.state().error : storageError);
     $('final').showModal(); $('play-again').focus();
     if (!scene.reducedMotion) { const total = completedRun.total, start = performance.now(); const count = time => { if (!$('final').open) return; const progress = Math.min(1, (time - start) / 850); $('final-score').textContent = String(Math.round(total * (1 - (1 - progress) ** 3))).padStart(3, '0'); if (progress < 1) scoreAnimation = requestAnimationFrame(count); }; scoreAnimation = requestAnimationFrame(count); }
@@ -153,6 +163,7 @@ async function startScoredRun() {
 function gestureDrop() {
   if (!run || game.phase !== 'aim' || startingRun || paused || frozen || stopped || document.hidden || document.querySelector('dialog[open]')) return false;
   if (!drop(game)) return false;
+  dropRemainingMs = Math.floor(remaining * 1000);
   track('drop', { trigger: 'gesture', phase: game.phase, turn: turnNumber });
   updateUI();
   return true;
@@ -162,7 +173,7 @@ function openOperator() { if (shared && pilot.role !== 'host') { $('host-access'
 document.addEventListener('visibilitychange', () => { previous = 0; if (document.hidden) audio.silence(); });
 $('player-form').addEventListener('submit', event => { event.preventDefault(); if (!scene || stopped || !cameraControls?.running) return;
   if (startingRun || run) return;
-  const name = $('name').value.trim() || 'Player';
+  const name = $('name').value.trim() || generatedName();
   if (name.length > 24) { $('name').setCustomValidity('Use at most 24 characters.'); $('name').reportValidity(); return; }
   pendingPlayer = { name };
   $('registration').close(); $('scene').focus();
@@ -210,7 +221,9 @@ $('new-board').addEventListener('click', async () => {
 });
 $('export').addEventListener('click', () => { if (shared) { window.location.assign('/api/host/export'); return; } let data = JSON.stringify(store, null, 2); if (storageBlocked) { try { data = localStorage.getItem(STORAGE_KEY) || data; } catch { /* In-memory export remains available. */ } } const url = URL.createObjectURL(new Blob([data], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = `cloud-claw-sessions-${new Date().toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
 $('quality').addEventListener('click', () => { if (!scene) return; performanceGovernor.setMode(scene.lowQuality ? 'full' : 'simple', 'operator'); });
-$('sound').addEventListener('click', () => audio.toggle());
+$('sound').addEventListener('click', () => { if (audio.enabled && !audio.ready) audio.unlock(); else audio.toggle(); });
+document.addEventListener('pointerdown', event => { if (event.target.closest('#sound')) return; audio.unlock(); });
+document.addEventListener('keydown', event => { if (!event.target.closest('#sound')) audio.unlock(); });
 $('sound-volume').addEventListener('input', () => {
   audio.setVolume(Number($('sound-volume').value) / 100);
   $('sound-level').textContent = `${Math.round(audio.volume * 100)}%`;
@@ -262,8 +275,8 @@ async function startCamera() {
     if (!cameraControls) {
       const { createCameraControls } = await import('./camera-controls.js');
       cameraControls = await createCameraControls({ video: $('camera-video'), overlay: $('camera-overlay'), select: $('camera-select'),
-        canControl: () => Boolean(!startingRun && run && game.phase === 'aim' && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]')),
-        onDrop: gestureDrop,
+        canControl: () => Boolean(menuMode() || (!startingRun && run && game.phase === 'aim' && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]'))),
+        onDrop: () => menuMode() ? handMenu.confirm(menuMode(), cameraControls.feedback) : gestureDrop(),
         // Bounded so a boundary-trembling hand cannot evict funnel-critical
         // events (drop, turn_complete) from the retry queue.
         onGesture: (name, cause) => {
@@ -313,6 +326,9 @@ function frame(time) {
   const raw = previous ? (time - previous) / 1000 : 1 / 60, dt = Math.min(raw, MAX_FRAME_DELTA); previous = time;
   if (import.meta.env.DEV && !document.hidden) { frames.push(raw * 1000); if (frames.length > 1800) frames.shift(); }
   // One dialog query per frame; every consumer below shares it.
+  const nextMenuMode = menuMode();
+  if (nextMenuMode !== previousMenuMode) { cameraControls?.reset(); handMenu.clear(); previousMenuMode = nextMenuMode; }
+  handMenu.update(nextMenuMode, cameraControls?.feedback || {});
   const openDialogs = document.querySelectorAll('dialog[open]');
   const aiming = game.phase === 'aim', modal = openDialogs.length > 0;
   const modalBeyondFinal = modal && [...openDialogs].some(dialog => dialog.id !== 'final');
@@ -333,7 +349,7 @@ function frame(time) {
         lastMovementSound = time;
         audio.note(130, .065, 0, 'triangle', 95, .008);
       }
-      const before = Math.ceil(remaining); remaining = Math.max(0, remaining - dt); if (Math.ceil(remaining) < before && remaining <= 5) audio.note(remaining < 1 ? 220 : 440, .08); if (!remaining && drop(game)) track('drop', { trigger: 'timeout', phase: game.phase, turn: turnNumber });
+      const before = Math.ceil(remaining); remaining = Math.max(0, remaining - dt); if (Math.ceil(remaining) < before && remaining <= 5) audio.note(remaining < 1 ? 220 : 440, .08); if (!remaining && drop(game)) { dropRemainingMs = 0; track('drop', { trigger: 'timeout', phase: game.phase, turn: turnNumber }); }
     } else {
       input.x = input.z = 0;
       if (game.phase === 'idle') moveCarousel(game, dt);
@@ -387,6 +403,7 @@ function frame(time) {
       if (element.hidden) continue;
       element.style.transform = `translate(${Math.round(target.x)}px, ${Math.round(target.y)}px) translate(-50%, -50%)`;
       element.classList.add('targeted');
+      element.textContent = scoreTurn(run?.rules || RULES, toy.id, Math.floor(remaining * 1000));
     }
   } catch (error) { fail('The game stopped unexpectedly. Reload to recover this player.', error); return; }
   requestAnimationFrame(frame);
@@ -456,4 +473,6 @@ try {
     if (toy) { begin(game); game.position = { x: toy.x, z: toy.z }; drop(game); advance(game, PHASES.anticipate + PHASES.descend); game.phase = params.get('phase') || 'grip'; if (!(game.phase in PHASES)) game.phase = 'grip'; game.elapsed = PHASES[game.phase] * .96; frozen = true; }
   }
   requestAnimationFrame(frame);
+  syncSoundUI();
+  if (!manualSetup && !frozen) { audio.unlock(); void startCamera(); }
 } catch (error) { clearTimeout(loadingTimeout); fail('The 3D renderer could not start. Try reloading in Chrome or Edge with WebGL enabled. All artwork is generated locally; no additional model downloads are required.', error); }

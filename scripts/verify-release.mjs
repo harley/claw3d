@@ -58,7 +58,7 @@ try {
   });
   const page = await context.newPage(), errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto(origin);
+  await page.goto(`${origin}/?setup=manual`);
   await page.waitForFunction(() => document.documentElement?.dataset.arcadeReady === 'true');
   await page.locator('#operator-open').click();
   await page.locator('#host-code').fill(credentials.HOST_CODE);

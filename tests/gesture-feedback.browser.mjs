@@ -11,12 +11,12 @@ try {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await installCameraFixture(page);
-  await page.goto(process.env.GESTURE_TEST_ORIGIN || 'http://127.0.0.1:4196');
+  await page.goto(process.env.GESTURE_TEST_ORIGIN || 'http://127.0.0.1:4196/?setup=manual');
   await page.waitForFunction(() => window.__littleCloud);
   const snap = () => page.evaluate(() => window.__littleCloud.snapshot());
   const feedback = state => page.evaluate(state => { window.testCamera.feedback = state; window.testCamera.tick(); }, state);
   await page.locator('#play').click();
-  await page.waitForFunction(() => document.getElementById('status').textContent === 'You’re ready');
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'AIM AT PLAY · CLENCH');
   assert.equal((await snap()).joystick.visible, false, 'setup is not acquired gameplay control');
   await page.locator('#play').click();
   await page.locator('#name').fill('Gesture check');
@@ -46,7 +46,7 @@ try {
   await page.evaluate(() => clearInterval(window.testCamera.timer));
   await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.feedback.kind === 'delayed');
   await page.waitForFunction(() => !window.__littleCloud.snapshot().joystick.visible);
-  assert.equal(await page.locator('#status').textContent(), 'Hold steady');
+  assert.equal(await page.locator('#status').textContent(), 'TRACKING DELAYED');
   const heldRemaining = (await snap()).event.remaining;
   await page.waitForTimeout(300); assert.equal((await snap()).event.remaining, heldRemaining);
   await page.screenshot({ path: '.screenshots/gesture-lost.png' });
@@ -92,5 +92,5 @@ try {
   assert.deepEqual(errors, []);
   console.log('PASS visible grip, arming guidance, hold/cancel, stale input, modal suppression, narrow layout and accepted delivery after hand loss');
   await page.close();
-  await checkCameraTiming(browser, process.env.GESTURE_TEST_ORIGIN || 'http://127.0.0.1:4196');
+  await checkCameraTiming(browser, process.env.GESTURE_TEST_ORIGIN || 'http://127.0.0.1:4196/?setup=manual');
 } finally { await browser.close(); }

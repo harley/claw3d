@@ -25,7 +25,7 @@ try {
       }
     };
   });
-  await page.goto('http://127.0.0.1:4196');
+  await page.goto('http://127.0.0.1:4196/?setup=manual');
   await page.waitForFunction(() => window.__littleCloud);
   await page.locator('#play').click(); await page.waitForFunction(() => window.testCamera?.running);
   await page.locator('#play').click(); await page.locator('#name').press('Enter');

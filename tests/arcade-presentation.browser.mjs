@@ -6,7 +6,7 @@ const browser = await chromium.launch(browserOptions);
 try {
  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
  await installCameraFixture(page);
- await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud);
+ await page.goto('http://127.0.0.1:4196/?setup=manual'); await page.waitForFunction(() => window.__littleCloud);
  await page.locator('#play').click(); await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running && !document.getElementById('camera-setup').open);
  await page.locator('#play').click(); await page.locator('#name').press('Enter');
  await page.waitForFunction(() => document.getElementById('status').textContent === 'Clench & hold to drop');
@@ -33,7 +33,7 @@ try {
  assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).opacity), '0', 'later turns leave tracked aiming clear');
  await page.screenshot({ path: '.screenshots/quiet-second-turn.png' });
  await page.evaluate(() => { window.testCamera.visible = false; window.testCamera.tick(); });
- await page.waitForFunction(() => document.getElementById('status').textContent === 'Bring your hand back');
+ await page.waitForFunction(() => document.getElementById('status').textContent === 'SHOW ONE HAND');
  assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).opacity), '1', 'quiet aiming never hides recovery');
  await page.evaluate(() => { window.testCamera.visible = true; window.testCamera.tick(); });
  await page.waitForFunction(() => getComputedStyle(document.getElementById('action-copy')).opacity === '0');

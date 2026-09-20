@@ -11,7 +11,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce', recordVideo: { dir: '.screenshots/', size: { width: 1440, height: 900 } } });
   await installCameraFixture(page);
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto('http://127.0.0.1:4196'); await page.waitForFunction(() => window.__littleCloud);
+  await page.goto('http://127.0.0.1:4196/?setup=manual'); await page.waitForFunction(() => window.__littleCloud);
   await page.evaluate(async () => {
     const T = await import('/node_modules/three/build/three.module.js');
     window.checkStarTag = state => {
@@ -56,24 +56,24 @@ try {
   await page.waitForTimeout(250); const during = (await snap()).toys.find(t => t.id === 'sprout').position;
   assert.ok(Math.hypot(before[0] - during[0], before[2] - during[2]) > .03);
   await phase('grip'); assert.equal((await snap()).caught, 'sprout'); await page.screenshot({ path: '.screenshots/carousel-grip.png' });
-  await phase('result'); assert.equal((await snap()).event.run.turns[0].score, 200);
-  console.log('PASS camera cue + simulated 550ms hold + moving descent + actual star catch: 200');
+  await phase('result'); const starScore = (await snap()).event.run.turns[0].score; assert.ok(starScore > 200 && starScore <= 250);
+  console.log('PASS camera cue + simulated 550ms hold + moving descent + actual star catch with speed bonus');
   await phase('aim'); await aim();
   await page.waitForFunction(() => { const t = window.__littleCloud.snapshot().event.carouselTime % 5.6; return t >= 3.5 && t < 3.7; });
   await cameraDrop(page); await phase('result'); assert.equal((await snap()).event.run.turns[1].score, 0);
   console.log('PASS early drop misses');
   await phase('aim'); await aim();
   await page.waitForFunction(() => { const t = window.__littleCloud.snapshot().event.carouselTime % 5.6; return t >= 5.4 && t < 5.55; });
-  await cameraDrop(page); await phase('result'); assert.equal((await snap()).event.complete.total, 200);
+  await cameraDrop(page); await phase('result'); assert.equal((await snap()).event.complete.total, starScore);
   assert.equal((await snap()).event.complete.turns[2].score, 0); assert.deepEqual(errors, []);
   await page.screenshot({ path: '.screenshots/carousel-result.png' });
-  console.log('PASS late drop misses, final total 200, no browser errors');
+  console.log('PASS late drop misses, correct speed-score total, no browser errors');
   const video = page.video(); await page.close(); await video.saveAs('.screenshots/carousel-gameplay.webm'); await video.delete();
   await checkStarCue(browser);
   }
   // Sweep actual rendered star geometry against all stationary toys. No GPU
   // draws are needed to exercise the exact transforms and bounding geometry.
-  const sweep = await browser.newPage(); await sweep.goto('http://127.0.0.1:4196'); await sweep.waitForFunction(() => window.__littleCloud);
+  const sweep = await browser.newPage(); await sweep.goto('http://127.0.0.1:4196/?setup=manual'); await sweep.waitForFunction(() => window.__littleCloud);
   const clearance = await sweep.evaluate(async () => {
     const T = await import('/node_modules/three/build/three.module.js');
     const { ArcadeScene } = await import('/src/arcade-scene.js');
@@ -89,5 +89,5 @@ try {
   });
   assert.deepEqual(clearance.collisions, []); assert.ok(clearance.minGap > -.015);
   console.log('PASS full orbit mesh clearance', JSON.stringify(clearance));
-  await writeFile(process.argv.includes('--clearance-only') ? '.screenshots/carousel-clearance.json' : '.screenshots/carousel-verification.json', JSON.stringify({ keyboard: process.argv.includes('--clearance-only') ? [] : ['timed 200-point catch', 'early miss', 'late miss', 'movement during descent', 'correct final total'], clearance, errors }, null, 2));
+  await writeFile(process.argv.includes('--clearance-only') ? '.screenshots/carousel-clearance.json' : '.screenshots/carousel-verification.json', JSON.stringify({ keyboard: process.argv.includes('--clearance-only') ? [] : ['timed star catch with speed bonus', 'early miss', 'late miss', 'movement during descent', 'correct final total'], clearance, errors }, null, 2));
 } finally { await browser.close(); }

@@ -49,3 +49,21 @@ test('old scores and unfinished runs survive a rules upgrade on a separate board
   assert.equal(leaderboard(currentBoard(upgraded)).length, 0);
   assert.equal(loadStore({ getItem: () => JSON.stringify(upgraded) }).boards.length, 2);
 });
+
+test('speed score rewards active aiming time, never a miss; exact scores survive reload', async () => {
+  const { scoreTurn, CAROUSEL_RULES } = await import('../src/event-session.js');
+  assert.equal(scoreTurn(RULES, 'butter', 15000), 150);
+  assert.equal(scoreTurn(RULES, 'butter', 7500), 125);
+  assert.equal(scoreTurn(RULES, 'sprout', 14999), 249);
+  assert.equal(scoreTurn(RULES, null, 15000), 0);
+  assert.equal(scoreTurn(CAROUSEL_RULES, 'butter', 15000), 100);
+  for (const invalid of [-1, 15001, NaN, '1000', .1]) assert.throws(() => scoreTurn(RULES, 'butter', invalid));
+  const store = newStore(); startRun(store, 'ACE-001'); recordTurn(store, 1, 'butter', 7500);
+  const restored = loadStore({ getItem: () => JSON.stringify(store) });
+  assert.equal(restored.active.turns[0].score, 125);
+  assert.equal(restored.active.turns[0].remainingMs, 7500);
+  currentBoard(store).rules = CAROUSEL_RULES; store.active.rules = CAROUSEL_RULES; store.active.turns[0].score = 100;
+  const upgraded = loadStore({ getItem: () => JSON.stringify(store) });
+  assert.equal(upgraded.boards[0].interruptedRuns[0].turns[0].score, 100);
+  assert.equal(upgraded.boards.length, 2);
+});

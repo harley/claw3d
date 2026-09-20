@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
-import { RULES } from '../src/event-session.js';
+import { RULES, scoreTurn } from '../src/event-session.js';
 
 export class ApiError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -30,6 +30,7 @@ export function openDatabase(filename) {
       prize_id TEXT, score INTEGER NOT NULL, PRIMARY KEY(run_id, turn));
     CREATE INDEX IF NOT EXISTS runs_board ON runs(board_id, status);
     CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expires);`);
+  if (!db.prepare('PRAGMA table_info(turns)').all().some(column => column.name === 'remaining_ms')) db.exec('ALTER TABLE turns ADD COLUMN remaining_ms INTEGER NOT NULL DEFAULT 0');
   const transaction = fn => {
     db.exec('BEGIN IMMEDIATE');
     try { const result = fn(); db.exec('COMMIT'); return result; }
@@ -47,7 +48,7 @@ export function openDatabase(filename) {
   function runData(row, turns) {
     return { id: row.id, name: row.name, boardId: row.board_id, rules: JSON.parse(row.rules), status: row.status,
       practice: false, startedAt: row.started_at, completedAt: row.completed_at, total: row.total,
-      turns: turns ?? db.prepare('SELECT turn, prize_id AS prizeId, score FROM turns WHERE run_id=? ORDER BY turn').all(row.id) };
+      turns: turns ?? db.prepare('SELECT turn, prize_id AS prizeId, score, remaining_ms AS remainingMs FROM turns WHERE run_id=? ORDER BY turn').all(row.id) };
   }
   function boardMetadata(id = currentId()) {
     const row = db.prepare('SELECT * FROM boards WHERE id=?').get(id);
@@ -56,7 +57,7 @@ export function openDatabase(filename) {
   }
   function board(id = currentId()) {
     const metadata = boardMetadata(id), turnsByRun = new Map();
-    for (const { runId, ...turn } of db.prepare("SELECT t.run_id AS runId, t.turn, t.prize_id AS prizeId, t.score FROM turns t JOIN runs r ON r.id=t.run_id WHERE r.board_id=? AND r.status='complete' ORDER BY t.turn").all(id)) {
+    for (const { runId, ...turn } of db.prepare("SELECT t.run_id AS runId, t.turn, t.prize_id AS prizeId, t.score, t.remaining_ms AS remainingMs FROM turns t JOIN runs r ON r.id=t.run_id WHERE r.board_id=? AND r.status='complete' ORDER BY t.turn").all(id)) {
       if (!turnsByRun.has(runId)) turnsByRun.set(runId, []);
       turnsByRun.get(runId).push(turn);
     }
@@ -92,15 +93,17 @@ export function openDatabase(filename) {
     return transaction(() => {
       const row = owned(id, owner), run = runData(row), { turn, prizeId } = input;
       if (!Number.isInteger(turn) || turn < 1 || turn > 3 || (prizeId !== null && (typeof prizeId !== 'string' || !Object.hasOwn(run.rules.points, prizeId)))) throw new ApiError(400, 'Invalid turn or prize.');
+      const remainingMs = input.remainingMs ?? 0;
+      let score;
+      try { score = scoreTurn(run.rules, prizeId, remainingMs); } catch { throw new ApiError(400, 'Invalid aiming time.'); }
       const previous = run.turns.find(item => item.turn === turn);
       if (previous) {
-        if (previous.prizeId !== prizeId) throw new ApiError(409, 'This turn already has a different result.');
+        if (previous.prizeId !== prizeId || previous.remainingMs !== remainingMs) throw new ApiError(409, 'This turn already has a different result.');
         return getRun(id, owner);
       }
       // Abandonment stops new gameplay; already completed client turns can still drain from its outbox.
       if (turn !== run.turns.length + 1) throw new ApiError(409, 'Save the earlier turn first.');
-      const score = prizeId === null ? 0 : run.rules.points[prizeId];
-      db.prepare('INSERT INTO turns VALUES (?,?,?,?)').run(id, turn, prizeId, score);
+      db.prepare('INSERT INTO turns (run_id,turn,prize_id,score,remaining_ms) VALUES (?,?,?,?,?)').run(id, turn, prizeId, score, remainingMs);
       if (turn === 3) db.prepare("UPDATE runs SET status='complete', total=(SELECT SUM(score) FROM turns WHERE run_id=?), completed_at=? WHERE id=?").run(id, now(), id);
       return getRun(id, owner);
     });

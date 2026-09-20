@@ -60,7 +60,7 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
             const turn = read(id, `turn:${n}`);
             if (!turn) break;
             if (!read(id, `ack:${n}`)) {
-              const saved = await request(`/runs/${id}/turns`, { turn: n, prizeId: turn.prizeId });
+              const saved = await request(`/runs/${id}/turns`, { turn: n, prizeId: turn.prizeId, ...(turn.remainingMs !== undefined ? { remainingMs: turn.remainingMs } : {}) });
               // Each turn and acknowledgement has its own key: no tab rewrites another tab's turn list.
               if (read(id, 'run')) write(id, `ack:${n}`, saved);
             }
