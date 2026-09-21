@@ -39,14 +39,15 @@ try {
   const meterBox = await page.locator('#gesture-meter').boundingBox();
   assert.equal(meterBox.width, 1, 'remote progress remains accessible without a competing visible meter');
   assert.equal(await page.locator('#status').textContent(), 'Hold to drop');
-  // The bottom DROP ring owns progress, including reduced motion.
-  assert.equal(await page.locator('#deck-drop').evaluate(el => el.style.getPropertyValue('--hold')), '0.5');
-  assert.equal(await page.locator('#control-deck').getAttribute('data-state'), 'holding');
+  // The cabinet DROP ring owns progress, including reduced motion.
+  assert.equal(await page.locator('#machine-drop').evaluate(el => el.style.getPropertyValue('--hold')), '0.5');
+  assert.equal(await page.locator('#control-deck').isVisible(),false);
+  assert.equal(await page.locator('#machine-drop').getAttribute('data-ready'),'true');
   await page.screenshot({ path: '.screenshots/gesture-hold.png' });
   await feedback({ kind: 'tracking', progress: 0 });
   await page.waitForFunction(() => document.getElementById('gesture-meter').hidden);
   assert.equal((await snap()).joystick.progress, 0, 'cancelled hold clears the scene ring');
-  assert.equal(await page.locator('#deck-drop').evaluate(el => el.style.getPropertyValue('--hold')), '0');
+  assert.equal(await page.locator('#machine-drop').evaluate(el => el.style.getPropertyValue('--hold')), '0');
 
   // Silence must expire both the input and its visible control claim.
   await page.evaluate(() => clearInterval(window.testCamera.timer));

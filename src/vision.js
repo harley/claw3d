@@ -462,6 +462,10 @@ export class HandController {
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(active.center.x * 640, active.center.y * height); ctx.stroke();
     }
     for (const hand of hands) {
+      if (this.controlProfile === 'dual' && hand.physicalHand && hand.handednessScore >= .75) {
+        ctx.fillStyle = hand.physicalHand === 'left' ? '#59e5f2' : '#ffcf65'; ctx.font = 'bold 24px sans-serif';
+        ctx.fillText(hand.physicalHand === 'left' ? 'L' : 'R', hand.center.x * 640 + 14, hand.center.y * height);
+      }
       if (hand === active) { ctx.fillStyle = '#66ffb3'; ctx.font = 'bold 18px sans-serif'; ctx.fillText('YOU', hand.center.x * 640 + 14, hand.center.y * height); }
       ctx.strokeStyle = hand === active ? '#d0ed92' : '#faf4dc'; ctx.fillStyle = '#ec805c'; ctx.lineWidth = 2;
       for (const [a,b] of LINKS) {

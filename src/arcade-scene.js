@@ -133,7 +133,7 @@ export class ArcadeScene {
     this.stick = group(this.scene, stickX, 1.70, 1.44); cylinder(this.stick, m.chrome, [0, .092, 0], .023, .18); ball(this.stick, m.red, [0, .205, 0], [.10, .10, .10]);
     this.stick.scale.setScalar(1.4);
     this.joystickHand = new JoystickHand(this.stick);
-    cylinder(cab, m.brass, [dropX, 1.675, 1.44], .19, .036); this.button = cylinder(this.scene, m.red, [dropX, 1.72, 1.44], .21, .10, 48);
+    cylinder(cab, m.brass, [dropX, 1.675, 1.44], .19, .036); this.button = cylinder(this.scene, m.red.clone(), [dropX, 1.72, 1.44], .21, .10, 48);
     const capLabel = label(this.button, 'DROP', .28, .10, [0, .054, 0], { color: '#fff4dd', font: 'Arial', weight: 'bold', size: 155 }); capLabel.rotation.x = -Math.PI / 2;
     const aimLabel = label(cab, 'MOVE', .28, .075, [stickX + .33, 1.66, 1.47], { color: '#716b57', font: 'Arial', size: 30 }); aimLabel.rotation.x = -Math.PI / 2;
     const dropLabel = label(cab, 'DROP', .28, .075, [dropX + (this.wideControls ? -.33 : .33), 1.66, 1.47], { color: '#a04540', font: 'Arial', size: 30 }); dropLabel.rotation.x = -Math.PI / 2;
@@ -332,7 +332,7 @@ export class ArcadeScene {
     const radius = Math.abs(this.screenPoint(dropX + .25, 1.77, 1.44).x - this.screenPoint(dropX, 1.77, 1.44).x);
     const { left, right, top, bottom } = this.canvas.getBoundingClientRect();
     return { bounds: { left, right, top, bottom }, stick: { ...this.screenPoint(stick.x, stick.y, stick.z), radius: Math.max(32, radius * 1.3) },
-      drop: { ...this.screenPoint(dropX, this.button.position.y + .05, 1.44), radius: Math.max(26, radius) } };
+      drop: { ...this.screenPoint(dropX, this.button.position.y + .05, 1.44), radius: Math.max(26, radius), ready: Boolean(this.dropReady) } };
   }
 
   screenPoint(x, y, z) { const p = v(x, y, z).project(this.camera), rect = this.canvas.getBoundingClientRect(); return { x: rect.left + (p.x + 1) / 2 * rect.width, y: rect.top + (1 - p.y) / 2 * rect.height }; }
@@ -383,8 +383,14 @@ export class ArcadeScene {
     this.stick.rotation.set(input.z * .24, 0, -input.x * .24); this.button.position.y = 1.72 - .05 * (phase === 'anticipate' ? 1 : phase === 'descend' ? Math.max(0, 1 - elapsed / .18) : 0);
     this.joystickHand.update(phase, elapsed, dt, feedback, this.reducedMotion);
     this.stick.visible = this.button.visible = presentation.machineControls || ['idle', 'result'].includes(phase);
-    if (presentation.machineControls) this.joystickHand.root.visible = false;
+    if (presentation.machineControls && ['dual', 'grab-release'].includes(feedback.profile)) this.joystickHand.root.visible = false;
     if (presentation.machineControls && phase === 'aim' && feedback.grab?.stage === 'pressing') this.button.position.y -= .04 * feedback.progress;
+    const activeControl = phase === 'aim' && feedback.controlEnabled && ['tracking', 'clenching'].includes(feedback.kind);
+    this.dropReady = Boolean(activeControl && (feedback.profile === 'dual'
+      ? feedback.dropEnabled && feedback.hands?.right?.ready && feedback.hands.right.grab?.armed
+      : feedback.profile === 'grab-release' ? feedback.grab?.armed && feedback.target === 'drop' : feedback.kind === 'clenching'));
+    this.button.material.emissive.set('#ffb52b'); this.button.material.emissiveIntensity = this.dropReady ? .55 : 0;
+    if (presentation.machineControls && activeControl && !['dual', 'grab-release'].includes(feedback.profile)) this.button.position.y -= .04 * (feedback.progress || 0);
     this.target.visible = ['idle', 'aim'].includes(phase); this.target.position.set(game.position.x, BED + (game.carousel && Math.hypot(game.position.x - CAROUSEL.x, game.position.z - CAROUSEL.z) < .55 ? CAROUSEL.height : 0) + .014, game.position.z); this.targetMat.color.set(aligned ? '#547e69' : '#bb5b49');
     // Fist-hold confirmation fills the ring the player is already watching.
     const holding = !['grab-release', 'dual'].includes(feedback.profile) && phase === 'aim' && feedback.controlEnabled && feedback.kind === 'clenching' ? clamp(feedback.progress, 0, 1) : 0;

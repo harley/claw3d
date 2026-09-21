@@ -59,6 +59,9 @@ export function createJoystickCursor(getTargets = () => null, onDrop = () => {})
       button.hidden = !visible || !targets;
       if (targets) {
         const d = targets.drop;
+        button.dataset.ready = String(Boolean(d.ready));
+        const pressing = ['dual', 'grab-release'].includes(feedback.profile) ? feedback.grab?.stage === 'pressing' : feedback.kind === 'clenching';
+        button.style.setProperty('--hold', pressing ? feedback.progress || 0 : 0);
         Object.assign(button.style, { left: `${d.x - d.radius}px`, top: `${d.y - d.radius}px`, width: `${d.radius * 2}px`, height: `${d.radius * 2}px` });
       }
       const dual = feedback.profile === 'dual';

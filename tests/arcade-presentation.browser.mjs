@@ -17,9 +17,10 @@ try {
  const aimCamera = await page.evaluate(() => window.__littleCloud.snapshot().camera);
  const layout = await page.evaluate(() => {
    const rect = id => document.getElementById(id).getBoundingClientRect().toJSON();
-   return { scene: rect('scene'), deck: rect('control-deck') };
+   return { scene: rect('scene'), drop: rect('machine-drop') };
  });
- assert.ok(layout.deck.top >= layout.scene.bottom, 'control deck stays below the prize chamber');
+ assert.ok(layout.drop.top >= layout.scene.top && layout.drop.bottom <= layout.scene.bottom, 'DROP stays on the cabinet');
+ assert.equal(await page.locator('#control-deck').isVisible(),false,'no duplicate control panel');
  assert.equal(await page.locator('#control-deck button, #control-deck input').count(), 0, 'deck does not add another input system');
  await page.evaluate(() => { window.testCamera.input = {x:.5,z:0}; window.testCamera.tick(); });
  await page.waitForFunction(() => document.getElementById('deck-stick').style.transform.includes('7.5px'));
@@ -75,7 +76,7 @@ try {
  const preview = await page.locator('#camera-preview').boundingBox();
  assert.ok(preview && preview.height > 0, 'camera preview is visible before measuring');
  assert.ok(preview.y >= (await page.locator('#scene').boundingBox()).y + (await page.locator('#scene').boundingBox()).height, 'short-screen preview stays below the scene');
- assert.ok(preview.y + preview.height <= (await page.locator('#control-deck').boundingBox()).y, 'preview stays above the control deck');
+ assert.equal(await page.locator('#control-deck').isVisible(),false);
  assert.ok(preview.y + preview.height < 710, 'uncropped preview and recognition fit above the short-screen footer');
  await page.evaluate(() => window.testCamera.stop());
  await page.waitForFunction(() => document.getElementById('button-text').textContent === 'Restart camera');

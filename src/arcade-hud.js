@@ -37,7 +37,7 @@ function presentMessage(title, hint, key, duration = 0) {
 export function createHud({ audio, phaseSound }) {
   let lastCue = '', lastStatus = '';
   function update(view, feedback, modal) {
-    const { game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, grabEnabled, sharedStatus, storageError, aligned } = view;
+    const { game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, grabEnabled, dualEnabled, cabinetEnabled, sharedStatus, storageError, aligned } = view;
   const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
   let title = 'READY', hint = '', button = 'Play', kicker = 'CLAW';
   if (recovering) { title = `TURN ${turnNumber} OF 3`; button = cameraLoading ? 'Starting…' : 'CONTINUE'; }
@@ -99,7 +99,7 @@ export function createHud({ audio, phaseSound }) {
     $('gesture-meter').setAttribute('aria-valuenow', String(progress));
     $('gesture-progress').style.transform = `scaleX(${progress / 100})`;
   }
-  setHidden($('control-deck'), grabEnabled || !run || phase === 'idle' || phase === 'result');
+  setHidden($('control-deck'), cabinetEnabled || !run || phase === 'idle' || phase === 'result');
   $('control-deck').dataset.profile = grabEnabled ? 'grab-release' : 'hold-drop';
   $('control-deck').querySelector('.deck-steer > span').textContent = grabEnabled ? (gripStage === 'gripped' ? 'MOVE FIST' : gripStage === 'releasing' ? 'RELEASE' : 'CLENCH TO GRAB') : 'MOVE HAND';
   const deckSteering = (!grabEnabled || gripStage === 'gripped') && phase === 'aim' && feedback.controlEnabled && feedback.kind === 'tracking';
@@ -117,10 +117,15 @@ export function createHud({ audio, phaseSound }) {
   setText('timer', String(Math.ceil(remaining)).padStart(2, '0'));
   setText('speed-bonus', `SPEED +${Math.floor((run?.rules.speedBonus ?? 50) * remaining / (run?.rules.seconds || 15))}`);
   $('arcade').classList.toggle('last-claw', Boolean(run && turnNumber === 3)); $('arcade').classList.toggle('urgent', phase === 'aim' && remaining <= 5);
-  setText('mode-label', shared ? sharedStatus : storageError ? 'LOCAL PREVIEW · UNSAVED' : grabEnabled ? 'ARCADE PREVIEW' : 'LOCAL PREVIEW');
+  setText('mode-label', shared ? sharedStatus : storageError ? 'LOCAL PREVIEW · UNSAVED' : `LOCAL · ${dualEnabled ? '2 HANDS' : '1 HAND'}`);
   setHidden($('mode-label'), !$('mode-label').textContent);
   setHidden($('result-open'), !completedRun || startingRun || Boolean(run) || cameraLoading);
-  if (!run && !recovering) button = cameraLoading ? 'Starting…' : cameraControls?.running ? 'Play' : 'Start camera';
+  if (!run && !recovering) button = cameraLoading ? 'Starting…' : !shared ? (dualEnabled ? 'PLAY · 2 HANDS' : 'PLAY · 1 HAND') : cameraControls?.running ? 'Play' : 'Start camera';
+  const alternate = $('play-alternate');
+  setHidden(alternate, Boolean(shared || run || recovering || startingRun || paused));
+  alternate.disabled = cameraLoading;
+  setText('play-alternate', dualEnabled ? 'PLAY · 1 HAND' : 'PLAY · 2 HANDS');
+  alternate.style.order = dualEnabled ? '0' : '1';
   const cameraRecovery = Boolean(run && !recovering && phase === 'aim' && !cameraControls?.running);
   if (cameraRecovery) {
     button = cameraLoading ? 'Starting…' : 'Restart camera';

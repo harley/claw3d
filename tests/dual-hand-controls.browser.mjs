@@ -44,7 +44,11 @@ try {
     await burst([left]);left.kind='closed';assert.equal((await burst([left],5)).left.stage,'gripped');
     await burst([left,right]);
   };
-  await acquire();
+  await acquire();await frame();
+  assert.equal(await page.locator('#machine-drop').getAttribute('data-ready'),'true');
+  await burst([left]);await frame();
+  assert.equal(await page.locator('#machine-drop').getAttribute('data-ready'),'false','missing right hand clears button highlight');
+  await burst([left,right]);
   assert.equal(await page.locator('#control-deck').isVisible(),false);
   // Entering closed cannot arm, and independent loss must not stop steering.
   await burst([left]);right.kind='closed';

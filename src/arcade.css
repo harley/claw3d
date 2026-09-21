@@ -306,3 +306,15 @@ button.hand-hover { outline:4px solid #ffca45; outline-offset:6px; box-shadow:0 
   .dual-controls #scene { height: calc(100% - 425px); }
   .dual-controls #camera-preview { top: calc(max(740px, 100svh) - 240px); }
 }
+
+/* One visible choice before a run; the active run keeps its original controls. */
+#play-options { position:absolute; top:calc(100svh - 240px); display:flex; gap:20px; justify-content:center; }
+#play-options button { position:static; white-space:nowrap; }
+#play-alternate { background:linear-gradient(#4196c6,#16628d); border-color:#84cbed; box-shadow:inset 0 3px 2px #fff7,0 9px 0 #123c59,0 13px 0 #18202f; }
+#machine-drop[data-ready="true"] { outline:3px solid #ffdf77; outline-offset:3px; filter:drop-shadow(0 0 9px #ffc34c); }
+@media(max-width:650px) {
+  #play-options { top:calc(max(740px,100svh) - 458px); left:0; right:0; gap:12px; }
+  #play-options button { padding:16px 12px; font-size:12px; }
+}
+
+#machine-drop::after { content:""; position:absolute; inset:-8px; border-radius:50%; background:conic-gradient(#66ffb3 calc(var(--hold,0) * 360deg),transparent 0); mask:radial-gradient(farthest-side,transparent calc(100% - 4px),#000 0); pointer-events:none; }
