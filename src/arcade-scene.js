@@ -56,10 +56,8 @@ export class ArcadeScene {
     box(shelf, material('#aa9478'), [0, 2.56, -.29], [2.08, 4.00, .07], .025);
     for (const level of SHELF_LEVELS) { box(shelf, m.wood, [0, level - .05, .28], [2.18, .10, .86], .025); box(shelf, m.brass, [0, level, .65], [2.12, .025, .025], .008); }
     box(shelf, m.ivory, [0, 4.65, .06], [2.18, .24, .64], .055);
-    label(shelf, 'PRIZE GALLERY', 1.95, .15, [0, 4.66, .388], { color: '#625d4d', font: 'Arial', size: 29, tracking: 2.5 });
-    for (const toy of ASSORTMENT) { const slot = collectionSlot(toy.id); label(world, toy.name.toUpperCase(), .42, .065, [slot.x, slot.y - .051, .555], { color: '#eddebf', font: 'Arial', size: 27 }); }
+    label(shelf, 'PRIZES', 1.95, .15, [0, 4.66, .388], { color: '#625d4d', font: 'Arial', size: 29, tracking: 2.5 });
     box(shelf, m.ivory, [.67, 2.64, .30], [.40, .29, .07], .025);
-    label(shelf, 'a keeper.', .33, .12, [.67, 2.64, .341], { color: '#ad4d47', size: 43 });
     // A little lamp and its pool of light.
     const lamp = group(world, 2.28, .35, -.42);
     cylinder(lamp, m.brass, [0, .06, 0], .34, .12); cylinder(lamp, m.brass, [0, 1.57, 0], .037, 3.03);
@@ -76,7 +74,6 @@ export class ArcadeScene {
     for (let i = 0; i < 7; i++) { const token = cylinder(dish, m.brass, [Math.sin(i * 5) * .11, .10 + i * .009, Math.cos(i * 5) * .1], .073, .015); token.rotation.z = Math.sin(i) * .13; }
     // A small illustrated postcard, original cloud mark and a potted sprig.
     const card = group(world, 2.68, 1.13, 1.10); box(card, m.ivory, [0, 0, 0], [.29, .40, .025], .012); card.rotation.y = -.15; card.rotation.x = -.15;
-    label(card, 'GOOD', .22, .09, [0, .095, .018], { color: '#b44942', font: 'Arial', size: 38, weight: 'bold' }); label(card, 'LUCK', .22, .09, [0, -.005, .018], { color: '#b44942', font: 'Arial', size: 38, weight: 'bold' });
     // Keep decoration outside the courier lane along the front of the gallery.
     const pot = group(world, 2.95, .35, -.95); mesh(pot, new T.CylinderGeometry(.17, .13, .23, 24), m.red, 0, .115, 0); cylinder(pot, material('#614d3d'), [0, .235, 0], .145, .01);
     const leafMat = material('#6a8d69', .84);
@@ -107,7 +104,6 @@ export class ArcadeScene {
       const x = -1.36 + col * .385 + (row % 2) * .06, y = 2.17 + row * .44;
       const star = mesh(cab, new T.CircleGeometry(.022, 4), mural, x, y, -1.13); star.rotation.z = .0;
     }
-    label(cab, 'AWS CLOUD & AI DAY', 2.40, .21, [0, 3.57, -1.12], { color: '#2266a3', font: 'Arial', weight: 'bold', size: 38 });
     for (const x of [-1.73, 1.73]) for (const z of [-1.25, 1.25]) {
       box(cab, m.ivory, [x, 3.045, z], [.16, 3.02, .17], .047);
       box(cab, m.brass, [x, 3.00, z + (z > 0 ? .087 : -.087)], [.035, 2.80, .025], .01);
@@ -126,11 +122,9 @@ export class ArcadeScene {
     box(cab, m.red, [-1.07, 1.535, 1.28], [1.24, .072, .12], .025);
     box(cab, m.rubber, [-1.07, .92, .15], [1.07, .84, .025], .04);
     box(cab, m.wood, [-1.07, .47, 1.11], [1.10, .06, 1.49], .025);
-    label(cab, 'SPECIAL DELIVERY', .98, .075, [-1.07, .414, 1.374], { color: '#f3dfb7', size: 24, font: 'Arial', tracking: 2 });
     box(cab, m.mint, [.79, .92, 1.275], [1.08, .57, .028], .035);
     for (let i = 0; i < 6; i++) box(cab, m.darkMetal, [.79, .82 + i * .042, 1.293], [.54, .009, .009], .004);
     ball(cab, m.brass, [1.18, 1.09, 1.30], [.025, .025, .010]);
-    label(cab, 'crafted by coderpush', .84, .083, [.79, .63, 1.287], { color: '#746b55', font: 'Arial', size: 29 });
     // Control deck: ivory over red, a ball-topped stick, one big enamel button.
     const stickX = this.wideControls ? -1.28 : -.28, dropX = this.wideControls ? 1.28 : .87;
     box(cab, m.red, [this.wideControls ? 0 : .55, 1.525, 1.44], [this.wideControls ? 3.5 : 2.08, .18, .53], .065);
@@ -148,8 +142,7 @@ export class ArcadeScene {
     box(cab, m.red, [0, 4.94, .00], [3.83, .57, 2.73], .15);
     box(cab, m.brass, [0, 4.946, 1.373], [3.39, .433, .022], .09);
     box(cab, m.ivory, [0, 4.946, 1.394], [3.32, .367, .018], .08);
-    label(cab, 'CLOUD CLAW', 2.62, .29, [0, 4.965, 1.408], { color: '#e52948', font: 'Arial', weight: 'bold', size: 59 });
-    label(cab, 'C O D E R P U S H', 1.60, .07, [0, 4.766, 1.413], { color: '#f5dfb9', font: 'Arial', size: 22 });
+    label(cab, 'CLAW', 2.62, .29, [0, 4.965, 1.408], { color: '#e52948', font: 'Arial', weight: 'bold', size: 59 });
     for (const x of [-1.54, 1.54]) ball(cab, m.glow, [x, 4.957, 1.413], [.035, .035, .019]);
     // Original cloud finial; silhouette stays readable at a distance.
     for (const [x, y, r] of [[-.29, 5.337, .15], [-.08, 5.397, .22], [.17, 5.364, .18], [.33, 5.315, .11]]) ball(cab, m.ivory, [x, y, .03], [r, r, .12]);
@@ -176,7 +169,6 @@ export class ArcadeScene {
     const flap = mesh(this.outletFlap, new T.PlaneGeometry(1.03, .95), flapGlass, 0, -.475, 0); flap.castShadow = false;
     line(this.outletFlap, m.brass, [[-.515, 0, 0], [-.515, -.95, 0], [.515, -.95, 0], [.515, 0, 0]], .009);
     for (const x of [-.38, .38]) { const hinge = cylinder(this.outletFlap, m.brass, [x, 0, 0], .024, .16, 16); hinge.rotation.z = Math.PI / 2; }
-    label(this.outletFlap, 'a little joy.', .72, .16, [0, -.49, .005], { color: '#6b7b64', size: 45 });
     // Side glazing and fine front reflections: transparent, never a milky wall.
     const glazing = group(this.scene);
     for (const x of [-1.722, 1.722]) { const panel = mesh(glazing, new T.PlaneGeometry(2.40, 2.80), m.glass, x, 3.03, 0); panel.rotation.y = Math.PI / 2; panel.castShadow = false; }

@@ -1,6 +1,7 @@
 // Only player-facing actions participate. Operator controls never accept gestures.
 const actions = {
   idle: ['play', 'result-open'],
+  resume: ['play'],
   registration: ['register-play', 'register-cancel'],
   final: ['play-again', 'next-player', 'final-leaderboard'],
 };

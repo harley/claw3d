@@ -26,9 +26,11 @@ document.body.classList.toggle('dual-controls', dualEnabled);
 const glove = createJoystickCursor(() => grabEnabled ? scene?.controlTargets() : null, () => { if (grabEnabled) gestureDrop(); });
 let previousMenuMode = '';
 function menuMode() {
-  if (startingRun || recovering || paused || frozen || stopped || document.hidden) return '';
+  if (startingRun || frozen || stopped || document.hidden) return '';
+  if ((recovering || paused) && shared) return '';
   const dialogs = [...document.querySelectorAll('dialog[open]')];
   if (dialogs.length) return dialogs.length === 1 && ['registration', 'final'].includes(dialogs[0].id) ? dialogs[0].id : '';
+  if ((recovering || paused) && cameraControls?.running) return 'resume';
   return !run && cameraControls?.running ? 'idle' : '';
 }
 let pendingPlayer = null, startingRun = false;
@@ -145,9 +147,17 @@ function finishTurn() {
     if (!scene.reducedMotion) { const total = completedRun.total, start = performance.now(); const count = time => { if (!$('final').open) return; const progress = Math.min(1, (time - start) / 850); $('final-score').textContent = String(Math.round(total * (1 - (1 - progress) ** 3))).padStart(3, '0'); if (progress < 1) scoreAnimation = requestAnimationFrame(count); }; scoreAnimation = requestAnimationFrame(count); }
   }
 }
-function play() {
-  if (!scene || stopped || frozen || paused || document.querySelector('dialog[open]')) return;
-  if (recovering) return openOperator();
+async function play() {
+  if (!scene || stopped || frozen || cameraLoading || document.querySelector('dialog[open]')) return;
+  if (recovering || paused) {
+    if (shared) return openOperator();
+    const currentRun = run;
+    if (recovering && !cameraControls?.running) await startCamera();
+    if ((recovering && !cameraControls?.running) || run !== currentRun || stopped || document.querySelector('dialog[open]')) return;
+    cameraControls?.reset(); paused = false;
+    if (recovering) beginTurn();
+    updateUI(); return;
+  }
   if (!run) { if (!cameraControls?.running) return startCamera(); return openRegistration(); }
   if (game.phase === 'aim' && !cameraControls?.running) return startCamera();
   updateUI();
@@ -241,10 +251,6 @@ $('quality').addEventListener('click', () => { if (!scene) return; performanceGo
 $('sound').addEventListener('click', () => { if (audio.enabled && !audio.ready) audio.unlock(); else audio.toggle(); });
 document.addEventListener('pointerdown', event => { if (event.target.closest('#sound')) return; audio.unlock(); });
 document.addEventListener('keydown', event => { if (!event.target.closest('#sound')) audio.unlock(); });
-$('sound-volume').addEventListener('input', () => {
-  audio.setVolume(Number($('sound-volume').value) / 100);
-  $('sound-level').textContent = `${Math.round(audio.volume * 100)}%`;
-});
 let feedbackSubmission = null, feedbackContext = null;
 function openFeedback() {
   feedbackContext = { phase: game.phase, turn: Math.min(3, turnNumber) };
@@ -275,7 +281,7 @@ $('feedback-form').addEventListener('submit', async event => {
   setText('feedback-status', result.sent ? 'Thanks. Your feedback is saved.' : 'Feedback was not saved. Please try again.');
   if (result.sent) $('feedback-comment').value = '';
 });
-$('fullscreen').addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { $('hint').textContent = 'Use your browser’s fullscreen command.'; } });
+$('fullscreen').addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { $('status').textContent = 'FULLSCREEN UNAVAILABLE'; } });
 $('camera-open').addEventListener('click', () => $('camera-setup').showModal());
 function reportCameraFailure(code) {
   if (cameraFailureReported) return;
@@ -339,7 +345,7 @@ $('camera-recenter').addEventListener('click', () => { cameraControls?.reset(); 
 window.addEventListener('pagehide', () => { cameraControls?.stop(); void playtest.flush(); });
 window.addEventListener('error', () => track('client_error', { reason: 'runtime' }));
 window.addEventListener('unhandledrejection', () => track('client_error', { reason: 'unhandled' }));
-$('scene').addEventListener('webglcontextlost', event => { event.preventDefault(); fail('The renderer stopped. Reload, then ask your host to resume the interrupted turn.'); });
+$('scene').addEventListener('webglcontextlost', event => { event.preventDefault(); fail('The renderer stopped. Reload to continue.'); });
 function frame(time) {
   if (stopped) return;
   const raw = previous ? (time - previous) / 1000 : 1 / 60, dt = Math.min(raw, MAX_FRAME_DELTA); previous = time;
@@ -356,8 +362,6 @@ function frame(time) {
   const blocked = paused || (aiming && (cameraWaiting || modal || document.hidden));
   movementMusic?.update(aiming && !blocked && !frozen && !document.hidden, dt);
   if (paused || modalBeyondFinal || document.hidden) audio.silence();
-  setHidden($('pause-banner'), !paused);
-  setText('pause-banner', 'Paused by host');
   const input = { ...cameraControls?.input || { x: 0, z: 0 } };
   if (!frozen && !blocked && !document.hidden) {
     if (aiming) {
@@ -413,8 +417,8 @@ function frame(time) {
         performanceFrames = []; performanceVisibleMs = 0;
       }
     }
-    if (paused || modal || document.hidden) feedback.kind = 'blocked';
-    scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, feedback, Boolean(cameraControls?.running || cameraControls?.starting), { preparing: Boolean(run && !recovering), nextTurnElapsed, machineControls: grabEnabled, cueLead: grabEnabled ? PRESS_MS / 1000 : undefined }); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
+    const sceneFeedback = paused || modal || document.hidden ? { ...feedback, kind: 'blocked' } : feedback;
+    scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, sceneFeedback, Boolean(cameraControls?.running || cameraControls?.starting), { preparing: Boolean(run && !recovering), nextTurnElapsed, machineControls: grabEnabled, cueLead: grabEnabled ? PRESS_MS / 1000 : undefined }); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
     glove.update(feedback, grabEnabled && game.phase === 'aim' && !paused && !modal && !frozen && !document.hidden, dt);
     const tagged = game.phase === 'aim' && aligned ? game.toys.find(toy => toy.id === aligned.id) : null;
     const target = tagged ? scene.screenPoint(tagged.x, BED + (tagged.elevation || 0) + .08, tagged.z) : null;

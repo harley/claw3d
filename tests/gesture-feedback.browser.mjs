@@ -27,7 +27,8 @@ try {
 
   // A closed hand must first open to arm a new drop.
   await feedback({ kind: 'clenching', progress: 0, message: 'Open your hand first, then clench to drop.' });
-  await page.waitForFunction(() => document.getElementById('hint').textContent.includes('Open your hand first'));
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'OPEN HAND');
+  assert.equal(await page.locator('#hint').isVisible(), false);
   assert.equal((await snap()).phase, 'aim');
   await feedback({ kind: 'clenching', progress: .5, message: 'Hold your fist to drop. Open to cancel.' });
   await page.waitForFunction(() => document.getElementById('gesture-meter').getAttribute('aria-valuenow') === '50');

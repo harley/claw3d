@@ -29,11 +29,20 @@ async function catchTurn(){
  }
  if (!checkedDelivery) {
   await phase('deliver');
+  await page.locator('#operator-open').click();await page.locator('#pause').click();
+  await page.waitForFunction(()=>window.__littleCloud.snapshot().event.paused);
+  await page.evaluate(()=>window.testCamera.stop());
+  const pausedDelivery=(await snap()).elapsed;await page.waitForTimeout(150);
+  assert.equal((await snap()).elapsed,pausedDelivery);
+  await page.locator('#play').click();
+  await page.waitForFunction(()=>!window.__littleCloud.snapshot().event.paused);
+  assert.equal((await snap()).event.handCamera.running,false,'resuming an accepted drop does not require a camera');
   await page.evaluate(() => { window.dispatchEvent(new Event('blur')); window.testCamera.visible = false; window.testCamera.tick(); });
   await page.locator('#camera-open').click();
   assert.equal(await page.locator('#operator').isVisible(), false);
   await phase('result'); assert.equal((await snap()).event.paused, false);
-  await page.locator('#camera-setup .panel-head button').click();
+  await page.locator('#camera-toggle').click();
+  await page.locator('#camera-setup').waitFor({state:'hidden'});
   await page.evaluate(() => { window.testCamera.visible = true; window.testCamera.tick(); });
   checkedDelivery = true;
   console.log('PASS drop completes through blur, lost hands and camera settings');
@@ -59,6 +68,7 @@ try {
  assert.equal(idleWrites, 0, 'idle presentation must not rewrite unchanged visibility every frame');
  assert.equal(await page.locator('#practice').count(),0);
  await register('Linh r h'); assert.equal((await snap()).event.run.name,'Linh r h');
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
  const camera=(await snap()).camera; await page.waitForTimeout(100); assert.deepEqual((await snap()).camera,camera);
  await aimButter();await catchTurn();assert.equal((await snap()).event.run.turns.length,1);assert.ok((await snap()).event.run.turns[0].score>100);
  await phase('aim');
@@ -81,7 +91,19 @@ try {
  await phase('result');await page.locator('#final').waitFor();assert.match((await snap()).event.complete.name,/^[A-Z]+-\d{3}$/);assert.equal((await snap()).event.board.runs.length,2);assert.equal(await page.locator('#leaders li').count(),2);
  console.log('PASS blank nickname scored, modal pause, timeout commits once');
  await page.locator('#next-player').click();await page.locator('#name').fill('Recover');await page.locator('#name').press('Enter');await assertScoredStart(page);await page.reload();await page.waitForFunction(()=>window.__littleCloud);
- assert.equal((await snap()).event.run.name,'Recover');assert.equal((await snap()).phase,'idle');await page.locator('#operator-open').click();await page.locator('#pause').click();await phase('aim');
+ assert.equal((await snap()).event.run.name,'Recover');assert.equal((await snap()).phase,'idle');
+ const recoveredId=(await snap()).event.run.id;
+ assert.equal(await page.locator('#button-text').textContent(),'CONTINUE');
+ assert.equal(await page.locator('#hint').isVisible(),false);
+ await page.locator('#play').click();await phase('aim');
+ assert.equal((await snap()).event.run.id,recoveredId);assert.equal((await snap()).event.run.turns.length,0);
+ assert.equal(await page.locator('#operator').isVisible(),false);
+ await page.locator('#operator-open').click();await page.locator('#pause').click();
+ await page.waitForFunction(()=>document.getElementById('status').textContent==='PAUSED');
+ const heldTime=(await snap()).event.remaining;await page.waitForTimeout(200);
+ assert.equal((await snap()).event.remaining,heldTime);assert.equal(await page.locator('#button-text').textContent(),'RESUME');
+ await page.locator('#play').click();await page.waitForFunction(()=>!window.__littleCloud.snapshot().event.paused);
+ assert.equal((await snap()).event.run.id,recoveredId);
  await page.locator('#operator-open').click();await page.locator('#new-board').click();assert.match(await page.locator('#operator-message').textContent(),/Finish or reset/);await page.locator('#reset').click();
  await page.locator('#operator-open').click();await page.locator('#session-name').fill('Afternoon');await page.locator('#new-board').click();assert.equal((await snap()).event.board.name,'Afternoon');assert.equal(await page.locator('#leaders li').count(),0);
  const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('coderpush:event:v1')));assert.equal(saved.boards[0].runs.length,2);
@@ -99,7 +121,8 @@ try {
  await page.reload(); await page.waitForFunction(()=>window.__littleCloud);
  await page.locator('#camera-open').click(); await page.locator('#camera-toggle').click();
  await page.locator('#camera-setup').waitFor({state:'hidden'});
- await page.locator('#operator-open').click(); await page.locator('#pause').click(); await phase('aim');
+ await page.locator('#play').click(); await phase('aim');
+ assert.equal((await snap()).event.run.turns.length,2);assert.equal((await snap()).event.turn,3);
  await page.waitForFunction(()=>!window.__littleCloud.snapshot().event.handCamera.waiting);
  await cameraDrop(page); await page.locator('#final').waitFor({timeout:30000});
  assert.equal(await page.locator('#final-rank').textContent(),'LOCAL PREVIEW');

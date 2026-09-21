@@ -39,8 +39,8 @@ export function createHud({ audio, phaseSound }) {
   function update(view, feedback, modal) {
     const { game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, grabEnabled, sharedStatus, storageError, aligned } = view;
   const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
-  let title = 'READY', hint = '', button = 'Play', kicker = 'CLOUD CLAW';
-  if (recovering) { title = 'RUN INTERRUPTED'; hint = 'Ask your host to resume.'; button = 'OPERATOR'; }
+  let title = 'READY', hint = '', button = 'Play', kicker = 'CLAW';
+  if (recovering) { title = `TURN ${turnNumber} OF 3`; button = cameraLoading ? 'Starting…' : 'CONTINUE'; }
   else if (phase === 'aim') { kicker = turnNumber === 3 ? 'LAST CLAW!' : `TURN ${turnNumber} OF 3`; title = 'Clench & hold to drop'; hint = ''; button = '';  }
   else if (phase === 'result' && run) { kicker = `ROUND ${turnNumber + 1} OF 3`; title = nextTurnCue(nextTurnElapsed, turnNumber + 1); hint = ''; button = ''; }
   else if (phase in phaseCopy) {
@@ -73,11 +73,11 @@ export function createHud({ audio, phaseSound }) {
   if (phase === 'aim' && nearPickup && starAvailable) { title = 'STAR 200'; hint = ''; }
   const learning = phase === 'aim' || (!run && !recovering && cameraControls?.running);
   if (learning) {
-    if (feedback.kind === 'off') { title = 'CAMERA OFF'; hint = 'Open Camera to continue.'; }
+    if (feedback.kind === 'off') { title = 'CAMERA OFF'; hint = ''; }
     else if (['ready', 'lost'].includes(feedback.kind)) { title = feedback.kind === 'lost' ? 'SHOW ONE HAND' : 'SHOW ONE HAND'; hint = ''; if (feedback.handCount > 1) title = 'ONE HAND ONLY'; }
     else if (feedback.kind === 'delayed') { title = 'TRACKING DELAYED'; hint = ''; }
     else if (feedback.kind === 'calibrating') { title = 'HOLD STILL'; hint = ''; }
-    else if (feedback.kind === 'clenching' && feedback.controlEnabled) { title = feedback.progress > 0 ? (phase === 'aim' ? 'Hold to drop' : 'HOLD TO SELECT') : 'OPEN HAND'; hint = feedback.progress > 0 ? '' : feedback.message || 'Open your hand first.'; }
+    else if (feedback.kind === 'clenching' && feedback.controlEnabled) { title = feedback.progress > 0 ? (phase === 'aim' ? 'Hold to drop' : 'HOLD TO SELECT') : 'OPEN HAND'; hint = ''; }
     else if (feedback.kind === 'tracking') {
       if (phase === 'idle') { title = 'AIM AT PLAY · CLENCH'; hint = ''; }
       else if (!nearPickup) { title = 'Clench & hold to drop'; hint = ''; }
@@ -124,15 +124,15 @@ export function createHud({ audio, phaseSound }) {
   const cameraRecovery = Boolean(run && !recovering && phase === 'aim' && !cameraControls?.running);
   if (cameraRecovery) {
     button = cameraLoading ? 'Starting…' : 'Restart camera';
-    if (!cameraLoading) hint = 'Restart camera to continue this turn.';
   }
-  const timed = deliveryPhases.has(phase) && !(phase === 'transfer' && !game.plan?.prize);
+  if (paused) { title = 'PAUSED'; hint = ''; button = shared ? 'HOST CONTROLS' : cameraLoading ? 'Starting…' : 'RESUME'; }
+  const timed = !paused && deliveryPhases.has(phase) && !(phase === 'transfer' && !game.plan?.prize);
   // Teach once per run. Keep the live-region text, but let the machine lead
   // after the first drop; recovery and deliberate hold feedback always return.
   const steering = (!grabEnabled || gripStage === 'gripped') && phase === 'aim' && Boolean(run) && !recovering && !startingRun &&
     cameraControls?.running && feedback.controlEnabled && feedback.kind === 'tracking';
   const rightReady = feedback.profile !== 'dual' || (feedback.hands?.right?.ready && feedback.hands.right.grab?.armed);
-  $('action-copy').classList.toggle('quiet', Boolean(steering && rightReady && (run.turns.length > 0 || cueVisible)));
+  $('action-copy').classList.toggle('quiet', Boolean(!paused && steering && rightReady && (run.turns.length > 0 || cueVisible)));
   $('action-copy').classList.toggle('gesture-guide', Boolean(steering && !nearPickup));
   presentMessage(title, hint, `${['anticipate', 'descend'].includes(phase) ? 'drop' : phase}:${turnNumber}:${title}:${hint}`, timed ? 1600 : 0);
   if ($('arcade').dataset.phase !== phase) $('arcade').dataset.phase = phase;
@@ -140,8 +140,8 @@ export function createHud({ audio, phaseSound }) {
   if (signature === lastStatus) return; lastStatus = signature;
   $('player-name').textContent = run?.name || pendingPlayer?.name || completedRun?.name || 'PLAYER'; $('score').textContent = String(total).padStart(3, '0'); $('turn').textContent = run ? `${turnNumber} / 3` : '— / 3';
   $('phase-label').textContent = kicker; $('button-text').textContent = button;
-  $('play').hidden = Boolean(startingRun || (run && !recovering && !cameraRecovery));
-  $('play').disabled = paused || cameraLoading;
+  $('play').hidden = Boolean(startingRun || (run && !recovering && !cameraRecovery && !paused));
+  $('play').disabled = cameraLoading;
   $('turn-chips').replaceChildren();
   for (let i = 0; i < 3; i++) { const turn = run?.turns[i] || completedRun?.turns[i]; const chip = document.createElement('span'); chip.className = `turn-chip ${turn?.score ? 'scored' : ''}`; chip.textContent = turn ? turn.score ? `+${turn.score}` : 'MISS' : '—'; $('turn-chips').append(chip); }
   }
