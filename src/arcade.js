@@ -1,4 +1,4 @@
-import { HAND_ACQUIRE_MS, RIGHT_HOLD_MS, RIGHT_SLAM_MS } from './dual-hand-controls.js';
+import { HAND_ACQUIRE_MS, RIGHT_SLAM_MS } from './dual-hand-controls.js';
 import './arcade.css';
 import { createJoystickCursor } from './joystick-cursor.js';
 import { PRESS_MS } from './grab-release.js';
@@ -54,7 +54,7 @@ let performanceFrames = [], performanceVisibleMs = 0, cameraReadyAt = null;
 let adaptationFrames = [], adaptationVisibleMs = 0;
 let holdSignalTurn = -1, holdSignalCount = 0;
 let nextTurnElapsed = 0, dropRemainingMs = 0, pendingSlam = null, contactFeedback = null;
-const cueLead = dualEnabled ? (HAND_ACQUIRE_MS + RIGHT_HOLD_MS + RIGHT_SLAM_MS) / 1000 : grabEnabled ? PRESS_MS / 1000 : undefined;
+let cueLead = dualEnabled ? (HAND_ACQUIRE_MS + RIGHT_SLAM_MS) / 1000 : grabEnabled ? PRESS_MS / 1000 : undefined;
 const performanceGovernor = new PerformanceGovernor({ onChange: (mode, source) => {
   scene?.setQuality(mode === 'simple');
   cameraControls?.setPerformanceMode(mode);
@@ -410,6 +410,7 @@ function frame(time) {
   } else input.x = input.z = 0;
   try {
     const feedback = pendingSlam ? { ...pendingSlam.feedback, profile: 'dual', kind: 'slamming', slamProgress: pendingSlam.elapsed / (RIGHT_SLAM_MS / 1000), progress: 1, controlEnabled: false } : dualEnabled && contactFeedback && game.phase === 'anticipate' ? { ...contactFeedback, profile: 'dual', kind: 'slamming', slamProgress: 1, progress: 1, controlEnabled: false } : cameraControls?.feedback || { kind: 'off', progress: 0, controlEnabled: false };
+    if (dualEnabled) cueLead = ((feedback.hands?.right?.ready ? 0 : HAND_ACQUIRE_MS) + RIGHT_SLAM_MS) / 1000;
     updateUI(feedback, modal);
     if (feedback.kind !== observedControl) { observedControl = feedback.kind; track('control_state', { state: feedback.kind, phase: game.phase }); }
     if (cameraReadyAt !== null && feedback.kind === 'tracking') { track('time_to_control', { acquisitionMs: Math.min(604800000, performance.now() - cameraReadyAt) }); cameraReadyAt = null; }

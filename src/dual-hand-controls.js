@@ -4,23 +4,21 @@ import { OneEuroPoint } from './one-euro.js';
 import { joystickAxis } from './mechanics.js';
 
 export const HAND_ACQUIRE_MS = 300;
-export const RIGHT_HOLD_MS = 3000;
+export const RIGHT_RAISE_DISTANCE = .06;
 export const RIGHT_SLAM_MS = 360;
-// A continuous open hand is the entire right-hand gesture. No physical impact
-// or fist transition participates in this profile.
-class RightHold {
+// Enter the right workspace open, or raise an already acquired open hand.
+// Recognition commits once; the virtual hand supplies the physical strike.
+class RightRaise {
   constructor() { this.reset(); }
-  reset() { this.stage = 'seeking'; this.armed = false; this.started = null; this.progress = 0; }
+  reset() { this.stage = 'seeking'; this.armed = false; this.progress = 0; this.baseline = null; }
   read() { return { stage: this.stage, armed: this.armed, progress: this.progress, fired: false }; }
-  update(valid, now) {
+  update(valid, { acquired, y }) {
     if (this.stage === 'fired') return this.read();
-    if (!valid) { this.reset(); return this.read(); }
-    this.started ??= now;
-    this.armed = true; this.stage = 'charging';
-    this.progress = Math.min(1, (now - this.started) / RIGHT_HOLD_MS);
-    const fired = this.progress === 1;
-    if (fired) this.stage = 'fired';
-    return { ...this.read(), fired };
+    if (!valid) { this.reset(); this.baseline = y ?? null; return this.read(); }
+    this.baseline = Math.max(this.baseline ?? y, y);
+    const raised = Boolean(acquired || this.baseline - y >= RIGHT_RAISE_DISTANCE);
+    this.armed = true; this.stage = raised ? 'fired' : 'armed';
+    return { ...this.read(), fired: raised };
   }
 }
 
@@ -34,7 +32,7 @@ const clear = state => { state.owner = state.origin = state.observed = state.can
 // the other role's closed hand or confirmation time.
 export class DualHandControls {
   constructor() { this.reset(); }
-  reset() { this.left = role(); this.right = role(); this.right.gesture = new RightHold(); this.last = null; }
+  reset() { this.left = role(); this.right = role(); this.right.gesture = new RightRaise(); this.last = null; }
 
   track(state, name, hands, now) {
     const candidates = hands.filter(hand => hand.physicalHand === name && hand.handednessScore >= .75);
@@ -61,7 +59,7 @@ export class DualHandControls {
     if (!state.candidate || distance(hand.center, state.candidate.center) > .08) state.candidate = { center: { ...hand.center }, at: now };
     if (now - state.candidate.at >= HAND_ACQUIRE_MS) {
       state.owner = { ...hand.center }; state.origin = { ...hand.center }; state.candidate = null;
-      return { hand, ready: true };
+      return { hand, ready: true, acquired: true };
     }
     return { hand, ready: false };
   }
@@ -89,7 +87,7 @@ export class DualHandControls {
     const dropEnabled = Boolean(leftClear && grip.steering);
     const rightTarget = right.ready ? getTarget(right.hand.center, 'right', this.right.origin) : {};
     const rightClear = right.ready && right.hand.fist.open && !right.hand.fist.closed;
-    const press = this.right.gesture.update(dropEnabled && rightClear, now);
+    const press = this.right.gesture.update(dropEnabled && rightClear, { acquired: right.acquired, y: right.ready ? right.hand.center.y : undefined });
     let input = { x: 0, z: 0 };
     if (grip.grabbed) { this.left.neutral = null; this.left.filter.reset(); }
     if (grip.steering && leftClear && !press.fired) {
@@ -100,7 +98,7 @@ export class DualHandControls {
     const view = (observation, gesture, target, state) => ({
       workspace: observation.hand ? handOffset(observation.hand.center, state.origin) : null,
       outside: Boolean(observation.outside),
-      kind: observation.ready ? ['grabbing', 'charging'].includes(gesture.stage) ? 'clenching' : 'tracking' : 'calibrating',
+      kind: observation.ready ? gesture.stage === 'grabbing' ? 'clenching' : 'tracking' : 'calibrating',
       pointer: observation.hand ? { ...observation.hand.center } : null,
       ready: observation.ready, closed: Boolean(observation.hand?.fist.closed),
       grab: gesture, progress: gesture.progress,
@@ -108,12 +106,12 @@ export class DualHandControls {
     });
     const leftView = view(left, grip, leftTarget, this.left), rightView = view(right, press, rightTarget, this.right);
     const kind = left.outside ? 'lost' : !left.ready ? left.hand ? 'calibrating' : 'lost' : !leftClear ? 'lost' :
-      press.stage === 'charging' || grip.stage === 'grabbing' ? 'clenching' : 'tracking';
+      grip.stage === 'grabbing' ? 'clenching' : 'tracking';
     return { kind, input, hands: { left: leftView, right: rightView }, fired: press.fired, dropEnabled,
       // Aggregate fields preserve the existing HUD/scene feedback contract.
-      grab: press.stage === 'charging' ? press : grip,
-      progress: press.stage === 'charging' ? press.progress : grip.progress,
+      grab: grip,
+      progress: grip.progress,
       pointer: leftView.pointer, target: rightView.target, closed: leftView.closed,
-      message: left.outside ? 'RETURN LEFT HAND TO ITS AREA' : !leftClear ? 'SHOW LEFT HAND OPEN' : !grip.steering ? 'LEFT HAND · GRAB JOYSTICK' : right.outside ? 'RETURN RIGHT HAND TO ITS AREA' : !right.ready || !press.armed ? 'RAISE RIGHT HAND OPEN' : 'HOLD RIGHT HAND · 3 SECONDS' };
+      message: left.outside ? 'RETURN LEFT HAND TO ITS AREA' : !leftClear ? 'SHOW LEFT HAND OPEN' : !grip.steering ? 'LEFT HAND · GRAB JOYSTICK' : right.outside ? 'RETURN RIGHT HAND TO ITS AREA' : 'RAISE RIGHT HAND OPEN' };
   }
 }

@@ -14,7 +14,7 @@ test('missing roles invite open hands without claiming active control', () => {
   }
 });
 test('right readiness requires both acquired right and held left evidence', () => {
-  assert.equal(handCameraGuide('right', feedback).label, 'READY');
+  assert.equal(handCameraGuide('right', feedback).label, 'RAISE');
   assert.equal(handCameraGuide('right', { ...feedback, dropEnabled: false }).state, 'inactive');
   assert.equal(handCameraGuide('right', { ...feedback, hands: {} }).state, 'open');
   assert.equal(handCameraGuide('right', { ...feedback, hands: { right: { ready: true, grab: { armed: false } } } }).icon, 'palm');

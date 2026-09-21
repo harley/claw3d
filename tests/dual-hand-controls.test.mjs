@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DualHandControls, HAND_ACQUIRE_MS, RIGHT_HOLD_MS, RIGHT_SLAM_MS } from '../src/dual-hand-controls.js';
+import { DualHandControls, HAND_ACQUIRE_MS, RIGHT_RAISE_DISTANCE, RIGHT_SLAM_MS } from '../src/dual-hand-controls.js';
 import { HandController } from '../src/vision.js';
 
 const hand = (physicalHand, kind = 'open', x = physicalHand === 'left' ? .35 : .65, y = .6) => ({
@@ -13,7 +13,7 @@ function fixture() {
   const repeat = (hands, n = 10) => { let result; for (let i = 0; i < n; i++) result = step(hands); return result; };
   const left = hand('left', 'closed');
   const grip = () => { repeat([hand('left')]); assert.equal(repeat([left], 5).hands.left.grab.stage, 'gripped'); };
-  const arm = () => { grip(); repeat([left, hand('right')]); };
+  const arm = () => { repeat([hand('left'), hand('right')]); repeat([left, hand('right')], 5); };
   return { controls, step, repeat, left, grip, arm };
 }
 test('right enters closed without interrupting left steering or dropping', () => {
@@ -21,24 +21,41 @@ test('right enters closed without interrupting left steering or dropping', () =>
   const s = f.repeat([hand('left', 'closed', .30), hand('right', 'closed')]);
   assert.ok(s.input.x < 0); assert.equal(s.fired, false); assert.equal(s.hands.right.ready, false);
 });
-test('three seconds of open right evidence fires once and locks input', () => {
-  const f = fixture(); f.arm(); const hands = [f.left, hand('right')];
-  const started = f.controls.right.gesture.started;
-  while (f.controls.last + 65 - started < 3000) assert.equal(f.step(hands).fired, false);
+test('raising an acquired right hand fires on that sample, once, and locks input', () => {
+  const f = fixture(); f.arm();
+  assert.equal(f.repeat([f.left, hand('right')], 60).fired, false, 'a stationary visible hand is not a raise');
+  const hands = [f.left, hand('right', 'open', .65, .6-RIGHT_RAISE_DISTANCE-.001)];
   const s = f.step(hands); assert.equal(s.fired, true); assert.deepEqual(s.input, {x:0,z:0});
   assert.equal(f.repeat(hands).fired, false);
 });
-for (const loss of ['missing', 'uncertain', 'closed', 'low-confidence', 'outside', 'stale', 'left']) test(`${loss} cancels incomplete right hold`, () => {
-  const f = fixture(); f.arm(); f.repeat([f.left, hand('right')], 20);
+test('a newly raised open right hand fires at acquisition without an extra hold', () => {
+  const f = fixture(); f.grip();
+  for (let i=0;i<5;i++) assert.equal(f.step([f.left,hand('right')]).fired,false);
+  assert.equal(f.step([f.left,hand('right')]).fired,true);
+});
+
+test('raising before left grip cannot be banked into an automatic drop', () => {
+  const f=fixture();f.repeat([hand('left'),hand('right')]);
+  f.repeat([hand('left'),hand('right','open',.65,.50)]);
+  for(let i=0;i<10;i++)assert.equal(f.step([f.left,hand('right','open',.65,.50)]).fired,false);
+  assert.equal(f.step([f.left,hand('right','open',.65,.43)]).fired,true);
+});
+test('lowering an acquired right hand establishes the next upward stroke without a hold', () => {
+  const f=fixture();f.arm();assert.equal(f.step([f.left,hand('right','open',.65,.72)]).fired,false);
+  assert.equal(f.step([f.left,hand('right','open',.65,.65)]).fired,true);
+});
+for (const loss of ['missing', 'uncertain', 'closed', 'low-confidence', 'outside', 'stale', 'left']) test(`${loss} cancels incomplete right acquisition`, () => {
+  const f = fixture(); f.grip(); f.repeat([f.left, hand('right')], 3);
   const right = loss === 'missing' ? [] : [{...hand('right', ['uncertain','closed'].includes(loss) ? loss : 'open', loss === 'outside' ? .49 : .65), handednessScore: loss === 'low-confidence' ? .4 : .99}];
   const s = f.step([...(loss === 'left' ? [] : [f.left]), ...right], loss === 'stale' ? 350 : 65);
   assert.equal(s.fired, false); assert.equal(s.hands.right.grab.progress, 0);
-  assert.equal(f.repeat([f.left, hand('right')], 20).fired, false);
+  for(let i=0;i<5;i++) assert.equal(f.step([f.left,hand('right')]).fired,false);
 });
 test('clenching and physical downward strokes never trigger dual DROP', () => {
   const f=fixture();f.arm();assert.equal(f.repeat([f.left,hand('right','closed')],60).fired,false);
-  f.repeat([f.left,hand('right')]);f.step([f.left,hand('right','open',.65,.50)]);
-  assert.equal(f.step([f.left,hand('right','open',.65,.62)]).fired,false);
+  f.repeat([f.left,hand('right')]);
+  assert.equal(f.step([f.left,hand('right','open',.65,.72)]).fired,false);
+  assert.equal(f.step([f.left,hand('right','open',.65,.75)]).fired,false);
 });
 for (const ambiguity of ['labels','crossing','duplicate','third']) test(`${ambiguity} cannot transfer roles or drop`,()=>{
   const f=fixture();f.arm();
@@ -63,17 +80,18 @@ function cameraFixture() {
     c.handle(result,time+=65); return c.state;
   };
   const repeat=(hands,n=10)=>{let s;for(let i=0;i<n;i++)s=sample(hands);return s;};
-  const arm=()=>{repeat([hand('left')]);repeat([hand('left','closed')],5);repeat([hand('left','closed'),hand('right')]);};
+  const arm=()=>{repeat([hand('left'),hand('right')]);repeat([hand('left','closed'),hand('right')],5);};
   return {c,sample,repeat,arm,drops:()=>drops,phase:v=>phase=v,profile:v=>profile=v};
 }
-test('real camera controller normalizes roles and accepts an independent three-second open hold once',()=>{
+test('real camera controller normalizes roles and accepts an upward right-hand gesture immediately once',()=>{
   const f=cameraFixture();f.arm();
   assert.equal(f.c.state.hands.left.grab.stage,'gripped');assert.equal(f.c.state.hands.right.ready,true);
-  f.repeat([hand('left','closed'),hand('right')],60);assert.equal(f.drops(),1);
+  f.sample([hand('left','closed'),hand('right','open',.65,.50)]);assert.equal(f.drops(),1);
+  f.repeat([hand('left','closed'),hand('right','open',.65,.50)],60);assert.equal(f.drops(),1);
 });
-for(const boundary of ['pause','profile','delay'])test(`${boundary} clears real two-hand hold evidence`,()=>{
+for(const boundary of ['pause','profile','delay'])test(`${boundary} clears real two-hand raise evidence`,()=>{
   const f=cameraFixture();f.arm();const hands=[hand('left','closed'),hand('right')];f.sample(hands);
-  assert.ok(f.c.state.hands.right.grab.progress>0);
+  assert.equal(f.c.state.hands.right.grab.armed,true);assert.equal(f.drops(),0);
   if(boundary==='pause'){f.phase('blocked');f.sample(hands);f.phase('aim');}
   if(boundary==='profile'){f.profile('hold-drop');f.sample(hands);f.profile('dual');}
   if(boundary==='delay')f.c.delayTracking();
@@ -141,19 +159,19 @@ test('sticky left grip still releases when crossing into the right half',()=>{
   const s=f.step([hand('left','closed',.55)]);
   assert.equal(s.hands.left.outside,true);assert.deepEqual(s.input,{x:0,z:0});assert.equal(s.dropEnabled,false);
 });
-test('right hold works throughout the valid workspace without a button hit',()=>{
+test('right raise works throughout the valid workspace without a button hit',()=>{
   const f=fixture();f.arm(); let fired=0;
-  for(let i=0;i<60;i++) fired+=Number(f.step([f.left,hand('right','open',.70,.55)]).fired);
+  for(let i=0;i<60;i++) fired+=Number(f.step([f.left,hand('right','open',.70,.50)]).fired);
   assert.equal(fired,1);
 });
-test('reset requires a fresh left acquisition and grip before another held right hand can charge',()=>{
+test('reset requires a fresh left acquisition and grip before another raised right hand can fire',()=>{
   const f=fixture();f.arm();f.repeat([f.left,hand('right')],60);f.controls.reset();
   const s=f.repeat([f.left,hand('right')],60);assert.equal(s.fired,false);assert.equal(s.hands.right.grab.progress,0);
 });
 
 import { createGame, begin, drop, advance, moveCarousel, carouselCue, CAROUSEL, CONTACT_DELAY } from '../src/arcade-mechanics.js';
-test('fresh right-hand star cue accounts for acquisition, full hold and animated contact', () => {
-  const lead = (HAND_ACQUIRE_MS + RIGHT_HOLD_MS + RIGHT_SLAM_MS) / 1000;
+for (const acquired of [false, true]) test(`${acquired ? 'acquired' : 'fresh'} right-hand star cue accounts for remaining recognition and contact`, () => {
+  const lead = ((acquired ? 0 : HAND_ACQUIRE_MS) + RIGHT_SLAM_MS) / 1000;
   const game = createGame({ carousel: true }); begin(game); game.position = { x: .80, z: .22 };
   moveCarousel(game, CAROUSEL.period - CONTACT_DELAY - lead);
   assert.equal(carouselCue(game.carouselTime, lead).now, true);
