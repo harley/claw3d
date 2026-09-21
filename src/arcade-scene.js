@@ -133,10 +133,20 @@ export class ArcadeScene {
     this.stick = group(this.scene, stickX, 1.70, 1.44); cylinder(this.stick, m.chrome, [0, .092, 0], .023, .18); ball(this.stick, m.red, [0, .205, 0], [.10, .10, .10]);
     this.stick.scale.setScalar(1.4);
     this.joystickHand = new JoystickHand(this.stick);
-    cylinder(cab, m.brass, [dropX, 1.675, 1.44], .19, .036); this.button = cylinder(this.scene, m.red.clone(), [dropX, 1.72, 1.44], .21, .10, 48);
-    const capLabel = label(this.button, 'DROP', .28, .10, [0, .054, 0], { color: '#fff4dd', font: 'Arial', weight: 'bold', size: 155 }); capLabel.rotation.x = -Math.PI / 2;
+    cylinder(cab, m.brass, [dropX, 1.675, 1.44], this.wideControls ? .235 : .19, .036);
+    if (this.wideControls) cylinder(cab, m.rubber, [dropX, 1.705, 1.44], .218, .024);
+    this.button = this.wideControls
+      ? mesh(this.scene, new T.SphereGeometry(1, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2), m.red.clone(), dropX, 1.72, 1.44)
+      : cylinder(this.scene, m.red.clone(), [dropX, 1.72, 1.44], .21, .10, 48);
+    if (this.wideControls) {
+      this.button.scale.set(.21, .135, .21);
+      this.button.material.roughness = .22;
+      const capLabel = label(cab, 'DROP', .28, .085, [dropX, 1.665, 1.77], { color: '#716b57', font: 'Arial', weight: 'bold', size: 155 }); capLabel.rotation.x = -Math.PI / 2;
+    } else {
+      const capLabel = label(this.button, 'DROP', .28, .10, [0, .054, 0], { color: '#fff4dd', font: 'Arial', weight: 'bold', size: 155 }); capLabel.rotation.x = -Math.PI / 2;
+    }
     const aimLabel = label(cab, 'MOVE', .28, .075, [stickX + .33, 1.66, 1.47], { color: '#716b57', font: 'Arial', size: 30 }); aimLabel.rotation.x = -Math.PI / 2;
-    const dropLabel = label(cab, 'DROP', .28, .075, [dropX + (this.wideControls ? -.33 : .33), 1.66, 1.47], { color: '#a04540', font: 'Arial', size: 30 }); dropLabel.rotation.x = -Math.PI / 2;
+    if (!this.wideControls) { const dropLabel = label(cab, 'DROP', .28, .075, [dropX + (this.wideControls ? -.33 : .33), 1.66, 1.47], { color: '#a04540', font: 'Arial', size: 30 }); dropLabel.rotation.x = -Math.PI / 2; }
     // Lantern-like marquee and tiny edge bulbs.
     box(cab, m.ivory, [0, 4.61, 0], [3.78, .24, 2.75], .12);
     box(cab, m.red, [0, 4.94, .00], [3.83, .57, 2.73], .15);
@@ -331,8 +341,8 @@ export class ArcadeScene {
     const dropX = this.button.position.x;
     const radius = Math.abs(this.screenPoint(dropX + .25, 1.77, 1.44).x - this.screenPoint(dropX, 1.77, 1.44).x);
     const { left, right, top, bottom } = this.canvas.getBoundingClientRect();
-    return { bounds: { left, right, top, bottom }, stick: { ...this.screenPoint(stick.x, stick.y, stick.z), radius: Math.max(32, radius * 1.3) },
-      drop: { ...this.screenPoint(dropX, this.button.position.y + .05, 1.44), radius: Math.max(26, radius), ready: Boolean(this.dropReady) } };
+    return { bounds: { left, right, top, bottom }, stick: { ...this.screenPoint(stick.x, stick.y, stick.z), radius: Math.max(32, radius * 1.3), ballRadius: Math.abs(this.screenPoint(stick.x + .14, stick.y, stick.z).x - this.screenPoint(stick.x, stick.y, stick.z).x) },
+      drop: { ...this.screenPoint(dropX, this.button.position.y + (this.wideControls ? .115 : .05), 1.44), radius: Math.max(26, radius), ready: Boolean(this.dropReady) } };
   }
 
   screenPoint(x, y, z) { const p = v(x, y, z).project(this.camera), rect = this.canvas.getBoundingClientRect(); return { x: rect.left + (p.x + 1) / 2 * rect.width, y: rect.top + (1 - p.y) / 2 * rect.height }; }
