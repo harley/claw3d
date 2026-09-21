@@ -1,5 +1,6 @@
 import * as T from 'three';
 import { ToyContacts } from './arcade-contact.js';
+import { CabinetHands } from './cabinet-hands.js';
 import { JoystickHand } from './joystick-hand.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ASSORTMENT, CAROUSEL, carouselCue, BED, HIGH, FINGER_ANGLES, PHASES, SHELF_LEVELS, collectionSlot, clawPose, mix, ease, clamp } from './arcade-mechanics.js';
@@ -30,6 +31,7 @@ export class ArcadeScene {
     this.mats = createArtMaterials(); this.toys = new Map(); this.buildWorld(); this.buildCabinet(); this.buildClaw();
     for (const toy of ASSORTMENT) { const object = createToy(toy, this.mats); object.position.set(toy.x, BED, toy.z); this.scene.add(object); this.toys.set(toy.id, object); }
     this.contacts = new ToyContacts(this.toys);
+    if (wideControls) this.cabinetHands = new CabinetHands(this.scene);
     this.buildCarousel();
     this.createTarget();
     this.buildEffects();
@@ -128,9 +130,9 @@ export class ArcadeScene {
     // Control deck: ivory over red, a ball-topped stick, one big enamel button.
     const stickX = this.wideControls ? -1.28 : -.28, dropX = this.wideControls ? 1.28 : .87;
     box(cab, m.red, [this.wideControls ? 0 : .55, 1.525, 1.44], [this.wideControls ? 3.5 : 2.08, .18, .53], .065);
-    box(cab, m.ivory, [this.wideControls ? 0 : .55, 1.633, 1.44], [this.wideControls ? 3.43 : 2.01, .045, .49], .045);
+    box(cab, this.wideControls ? material('#203346', .32, .3) : m.ivory, [this.wideControls ? 0 : .55, 1.633, 1.44], [this.wideControls ? 3.43 : 2.01, .045, .49], .045);
     cylinder(cab, m.brass, [stickX, 1.68, 1.44], .155, .023); cylinder(cab, m.rubber, [stickX, 1.70, 1.44], .09, .018);
-    this.stick = group(this.scene, stickX, 1.70, 1.44); cylinder(this.stick, m.chrome, [0, .092, 0], .023, .18); ball(this.stick, m.red, [0, .205, 0], [.10, .10, .10]);
+    this.stick = group(this.scene, stickX, 1.70, 1.44); cylinder(this.stick, m.chrome, [0, .092, 0], .023, .18); ball(this.stick, this.wideControls ? new T.MeshPhysicalMaterial({color:'#147c91',roughness:.18,metalness:.12,clearcoat:1,clearcoatRoughness:.12}) : m.red, [0, .205, 0], [.10, .10, .10]);
     this.stick.scale.setScalar(1.4);
     this.joystickHand = new JoystickHand(this.stick);
     cylinder(cab, m.brass, [dropX, 1.675, 1.44], this.wideControls ? .235 : .19, .036);
@@ -140,12 +142,13 @@ export class ArcadeScene {
       : cylinder(this.scene, m.red.clone(), [dropX, 1.72, 1.44], .21, .10, 48);
     if (this.wideControls) {
       this.button.scale.set(.21, .135, .21);
-      this.button.material.roughness = .22;
-      const capLabel = label(cab, 'DROP', .28, .085, [dropX, 1.665, 1.77], { color: '#716b57', font: 'Arial', weight: 'bold', size: 155 }); capLabel.rotation.x = -Math.PI / 2;
+      this.button.material.dispose();
+      this.button.material = new T.MeshPhysicalMaterial({ color:'#ed941d',roughness:.18,metalness:.12,clearcoat:1,clearcoatRoughness:.1 });
+      const capLabel = label(cab, 'DROP', .28, .085, [dropX, 1.665, 1.77], { color: '#e1d6ba', font: 'Arial', weight: 'bold', size: 155 }); capLabel.rotation.x = -Math.PI / 2;
     } else {
       const capLabel = label(this.button, 'DROP', .28, .10, [0, .054, 0], { color: '#fff4dd', font: 'Arial', weight: 'bold', size: 155 }); capLabel.rotation.x = -Math.PI / 2;
     }
-    const aimLabel = label(cab, 'MOVE', .28, .075, [stickX + .33, 1.66, 1.47], { color: '#716b57', font: 'Arial', size: 30 }); aimLabel.rotation.x = -Math.PI / 2;
+    const aimLabel = label(cab, 'MOVE', .28, .075, [stickX + .33, 1.66, 1.47], { color: this.wideControls ? '#e1d6ba' : '#716b57', font: 'Arial', size: 30 }); aimLabel.rotation.x = -Math.PI / 2;
     if (!this.wideControls) { const dropLabel = label(cab, 'DROP', .28, .075, [dropX + (this.wideControls ? -.33 : .33), 1.66, 1.47], { color: '#a04540', font: 'Arial', size: 30 }); dropLabel.rotation.x = -Math.PI / 2; }
     // Lantern-like marquee and tiny edge bulbs.
     box(cab, m.ivory, [0, 4.61, 0], [3.78, .24, 2.75], .12);
@@ -401,6 +404,7 @@ export class ArcadeScene {
       : feedback.profile === 'grab-release' ? feedback.grab?.armed && feedback.target === 'drop' : feedback.kind === 'clenching'));
     this.button.material.emissive.set('#ffb52b'); this.button.material.emissiveIntensity = this.dropReady ? .55 : 0;
     if (presentation.machineControls && activeControl && !['dual', 'grab-release'].includes(feedback.profile)) this.button.position.y -= .04 * (feedback.progress || 0);
+    this.cabinetHands?.update(phase, elapsed, dt, feedback, presentation.machineControls, this.stick, this.button, this.reducedMotion);
     this.target.visible = ['idle', 'aim'].includes(phase); this.target.position.set(game.position.x, BED + (game.carousel && Math.hypot(game.position.x - CAROUSEL.x, game.position.z - CAROUSEL.z) < .55 ? CAROUSEL.height : 0) + .014, game.position.z); this.targetMat.color.set(aligned ? '#547e69' : '#bb5b49');
     // Fist-hold confirmation fills the ring the player is already watching.
     const holding = !['grab-release', 'dual'].includes(feedback.profile) && phase === 'aim' && feedback.controlEnabled && feedback.kind === 'clenching' ? clamp(feedback.progress, 0, 1) : 0;

@@ -25,7 +25,7 @@ try {
       return {...controller.input,left:controller.dual.left.gesture.read(),right:controller.dual.right.gesture.read()};
     };` }));
   await page.route('**/src/arcade.js*',async route=>{
-    const response=await route.fetch();await route.fulfill({response,body:(await response.text())+'\nwindow.testDropShape=()=>({type:scene.button.geometry.type,thetaLength:scene.button.geometry.parameters.thetaLength,scale:scene.button.scale.toArray(),y:scene.button.position.y});window.testAim=(x,z,orbit)=>{game.position={x,z};if(orbit!==undefined)moveCarousel(game,orbit-game.carouselTime);};'});
+    const response=await route.fetch();await route.fulfill({response,body:(await response.text())+'\nwindow.testHands=()=>({error:scene.cabinetHands.error,visible:scene.cabinetHands.root.visible,hands:Object.fromEntries(Object.entries(scene.cabinetHands.hands).map(([role,h])=>[role,{visible:h.pivot.visible,curl:h.curl,position:h.pivot.position.toArray(),skinned:h.pivot.getObjectByProperty("type","SkinnedMesh")?.skeleton.bones.length,shadows:h.pivot.getObjectByProperty("type","SkinnedMesh")?.castShadow}]))});window.testDropShape=()=>({type:scene.button.geometry.type,thetaLength:scene.button.geometry.parameters.thetaLength,scale:scene.button.scale.toArray(),y:scene.button.position.y});window.testAim=(x,z,orbit)=>{game.position={x,z};if(orbit!==undefined)moveCarousel(game,orbit-game.carouselTime);};'});
   });
   await page.goto('http://127.0.0.1:4196/?setup=manual&controls=dual');
   await page.waitForFunction(()=>window.__littleCloud);
@@ -74,8 +74,13 @@ try {
   assert.equal((await page.evaluate(()=>window.__littleCloud.snapshot())).phase,'aim');
   await burst([left]);assert.equal((await burst([left,right])).right.stage,'seeking');
   right.kind='open';await burst([left,right]);await frame();
-  for(const selector of ['#joystick-cursor','#right-hand-cursor'])assert.equal(await page.locator(selector).isVisible(),true);
-  assert.ok((await page.locator('#right-hand-cursor').boundingBox()).width<=112);
+  await page.waitForFunction(()=>Object.keys(testHands().hands).length===2);
+  const rendered=await page.evaluate(()=>testHands());
+  assert.equal(rendered.error,null);assert.equal(rendered.visible,true);
+  for(const hand of Object.values(rendered.hands)) {
+    assert.equal(hand.visible,true);assert.ok(hand.skinned>=25);assert.equal(hand.shadows,true);
+  }
+  assert.equal(await page.locator('#joystick-cursor').isVisible(),false,'dual hands belong to the 3D scene');
   await page.emulateMedia({reducedMotion:'no-preference'});
   assert.equal(await page.locator('#machine-drop').evaluate(el=>getComputedStyle(el,'::before').animationName),'right-hold-spin');
   await page.screenshot({path:'.screenshots/dual-controls.png'});
@@ -84,15 +89,9 @@ try {
     await page.setViewportSize(size);await frame();
     const controls=await page.evaluate(()=>window.__littleCloud.snapshot().machineControls);
     assert.ok(controls.drop.x-controls.stick.x>(controls.bounds.right-controls.bounds.left)*.40,'actual controls sit well apart');
-    for(const [selector,control] of [['#joystick-cursor',controls.stick],['#right-hand-cursor',controls.drop]]){
-      const glove=await page.locator(selector).boundingBox();
-      const offset=selector==='#right-hand-cursor'?control.radius*.6:0;
-      assert.ok(Math.abs(glove.x+glove.width/2-control.x-offset)<3,'hands stay docked beside their controls after resize');
-    }
-    const leftHand=await page.locator('#joystick-cursor').boundingBox();
-    assert.ok(leftHand.width * .6 > controls.stick.ballRadius * 2,'palm is larger than the physical joystick ball');
-    const rightHand=await page.locator('#right-hand-cursor').boundingBox();
-    assert.ok(Math.abs(rightHand.y+rightHand.height*.58-controls.drop.y)<=15,'right palm rests close to DROP');
+    const hands=await page.evaluate(()=>testHands().hands);
+    assert.ok(hands.left.position[0]<0 && hands.right.position[0]>0,'3D hands stay on their physical control sides');
+    assert.equal(hands.left.visible,true);assert.equal(hands.right.visible,true);
     const box=await page.locator('#machine-drop').boundingBox();
     assert.ok(box&&box.x>=0&&box.y>=0&&box.x+box.width<=size.width&&box.y+box.height<=size.height);
     if(size.width===390){
@@ -105,10 +104,10 @@ try {
   }
   await burst([left]);
   await burst([left,right]);
-  const dock=await page.locator('#right-hand-cursor').evaluate(el=>({x:parseFloat(el.style.left),y:parseFloat(el.style.top)}));
+  const dock=await page.evaluate(()=>testHands().hands.right.position);
   await burst([left,{...right,x:right.x+.10,y:right.y-.08}],1);await frame();
-  const driftDock=await page.locator('#right-hand-cursor').evaluate(el=>({x:parseFloat(el.style.left),y:parseFloat(el.style.top)}));
-  assert.ok(Math.abs(dock.x-driftDock.x)<1&&Math.abs(dock.y-driftDock.y)<1,'physical right-hand drift cannot move docked visual');
+  const driftDock=await page.evaluate(()=>testHands().hands.right.position);
+  assert.deepEqual(dock,driftDock,'physical right-hand drift cannot move docked 3D hand');
   // Cross the physical centre: the affected hand must release, never clamp into a press.
   await burst([left,{...right,x:.60}],1);
   await burst([left,{...right,x:.49,kind:'closed'}],1);await frame();
@@ -133,9 +132,7 @@ try {
     assert.equal(held.left.stage,'gripped');assert.equal(held.right.armed,true);assert.ok(held.z>0&&held.z<=1);
   }
   await frame();
-  const stick=await page.evaluate(()=>window.__littleCloud.snapshot().machineControls.stick);
-  const glove=await page.locator('#joystick-cursor').boundingBox();
-  assert.ok(Math.abs(glove.x+glove.width/2-stick.x)<3,'gripped glove stays docked during overshoot');
+  assert.equal((await page.evaluate(()=>testHands().hands.left)).curl,1,'3D grip survives steering overshoot');
   // Uncertain evidence resets the hold. A fist and physical stroke cannot fire.
   assert.equal((await burst([left,{...right,kind:'uncertain'}],1)).right.progress,0);
   assert.equal((await burst([left,{...right,kind:'closed'}],10)).right.stage,'seeking');
@@ -143,7 +140,7 @@ try {
   await burst([left,right],25);await frame();
   assert.equal(await page.locator('#machine-drop').getAttribute('data-charging'),'true');
   assert.equal(await page.locator('#machine-drop').evaluate(el=>getComputedStyle(el,'::before').animationName),'none');
-  assert.notEqual(await page.locator('#joystick-cursor .curved-arm').evaluate(el=>getComputedStyle(el).display),'none');
+  assert.equal((await page.evaluate(()=>testHands().hands.left)).visible,true);
   const before=await page.evaluate(()=>window.__littleCloud.snapshot());
   assert.equal(before.phase,'aim');assert.equal(before.event.pendingSlam,null);
   await page.emulateMedia({reducedMotion:'no-preference'});
@@ -152,13 +149,17 @@ try {
   const locked=await page.evaluate(()=>window.__littleCloud.snapshot());
   assert.ok(locked.event.pendingSlam,'completed hold starts the virtual slam before mechanics accepts DROP');
   await burst([]);await frame();
-  assert.equal(await page.locator('#right-hand-cursor').getAttribute('data-stage'),'slamming');
+  assert.equal((await page.evaluate(()=>testHands().hands.right)).visible,true,'committed 3D strike survives tracking loss');
   assert.equal(await page.locator('#machine-drop').getAttribute('data-charging'),'false','accepted slam stops charging feedback');
   const during=await page.evaluate(()=>window.__littleCloud.snapshot());
   assert.deepEqual(during.position,locked.position);assert.equal(during.event.remaining,locked.event.remaining);
   await page.screenshot({path:'.screenshots/dual-slam-windup.png'});
   await page.waitForFunction(()=>{if(window.__littleCloud.snapshot().phase!=='anticipate')return false;window.contactShape=testDropShape();return true;});
   assert.ok(Math.abs((await page.evaluate(()=>contactShape.y))-(dome.y-.05))<.001,'dome depresses at virtual hand contact');
+  const contactHand=await page.evaluate(()=>testHands().hands.right);
+  assert.equal(contactHand.visible,true);
+  assert.ok(Math.abs(contactHand.position[0]-1.28)<.001,'palm arrives at actual button x');
+  assert.ok(Math.abs(contactHand.position[1]-(dome.y-.05+.185))<.001,'palm follows depressed cap at contact');
   await page.screenshot({path:'.screenshots/dual-slam-contact.png'});
   await burst([]);
   await page.waitForFunction(()=>window.__littleCloud.snapshot().phase==='result',{},{timeout:30000});
