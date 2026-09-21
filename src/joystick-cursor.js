@@ -3,19 +3,22 @@ import { handOffset, projectHandWorkspace } from './hand-workspace.js';
 function createGlove(id, screen) {
   const root = document.createElement('div');
   root.id = id; root.className = 'joystick-cursor'; root.hidden = true; root.setAttribute('aria-hidden', 'true');
-  root.innerHTML = `<svg viewBox="0 0 110 130"><g stroke="#183247" stroke-width="3" stroke-linejoin="round"><path fill="#59e5f2" d="M32 103h48v21H32z"/><path fill="#edfaff" d="M29 58Q20 84 36 105h40q18-13 12-44z"/><g class="glove-fingers" fill="none" stroke="#183247" stroke-width="19" stroke-linecap="round"></g><g class="glove-skin" fill="none" stroke="#edfaff" stroke-width="13" stroke-linecap="round"></g><path class="glove-thumb" fill="none" stroke="#183247" stroke-width="22" stroke-linecap="round"/><path class="glove-thumb-skin" fill="none" stroke="#edfaff" stroke-width="16" stroke-linecap="round"/><path fill="none" stroke="#b7d4e0" d="M43 85l3 10m12-12v12m13-14l-2 12"/></g></svg>`;
+  root.innerHTML = `<svg viewBox="0 0 110 130"><g stroke="#183247" stroke-width="3" stroke-linejoin="round"><path class="glove-forearm" fill="#2385aa" d="M34 108L8 310Q55 327 104 310L78 108Z"/><path fill="#59e5f2" d="M32 103h48v21H32z"/><path fill="#edfaff" d="M29 58Q20 84 36 105h40q18-13 12-44z"/><g class="glove-fingers" fill="none" stroke="#183247" stroke-width="19" stroke-linecap="round"></g><g class="glove-skin" fill="none" stroke="#edfaff" stroke-width="13" stroke-linecap="round"></g><path class="glove-thumb" fill="none" stroke="#183247" stroke-width="22" stroke-linecap="round"/><path class="glove-thumb-skin" fill="none" stroke="#edfaff" stroke-width="16" stroke-linecap="round"/><path fill="none" stroke="#b7d4e0" d="M43 85l3 10m12-12v12m13-14l-2 12"/></g></svg>`;
   document.body.append(root);
   const outlines = root.querySelector('.glove-fingers'), skin = root.querySelector('.glove-skin');
   for (let i = 0; i < 4; i++) { outlines.insertAdjacentHTML('beforeend', '<path/>'); skin.insertAdjacentHTML('beforeend', '<path/>'); }
   let curl = 0;
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const motionPreference = matchMedia('(prefers-reduced-motion: reduce)');
   return { update(feedback, visible, dt, targets, left = false) {
+      const reduced = motionPreference.matches;
+      root.classList.toggle('has-forearm', left);
       root.querySelector('svg').style.transform = left ? 'scaleX(-1)' : '';
-      root.hidden = !visible || !feedback.pointer || !['tracking', 'clenching', 'calibrating'].includes(feedback.kind);
+      root.hidden = !visible || !feedback.pointer || !['tracking', 'clenching', 'calibrating', 'slamming'].includes(feedback.kind);
       if (root.hidden) { curl = 0; return; }
       const stage = feedback.grab?.stage;
+      const slamming = stage === 'slamming', charging = stage === 'charging';
       const attached = stage === 'gripped';
-      const target = stage === 'grabbing' ? feedback.progress : stage === 'gripped' ? 1 : stage === 'pressing' ? feedback.progress : feedback.closed ? .85 : 0;
+      const target = slamming || charging ? 0 : stage === 'grabbing' ? feedback.progress : stage === 'gripped' ? 1 : stage === 'pressing' ? feedback.progress : feedback.closed ? .85 : 0;
       curl += (target - curl) * (reduced ? 1 : Math.min(1, dt * 22));
       root.style.width = `${attached ? Math.max(44, Math.min(65, targets.stick.radius * 1.35)) : Math.min(stage === 'pressing' ? 55 : 65, Math.max(44, targets.drop.radius * 1.6))}px`;
       root.style.height = 'auto';
@@ -23,7 +26,8 @@ function createGlove(id, screen) {
       const p = feedback.workspace ? projectHandWorkspace(feedback.workspace, left ? 'left' : 'right', targets) : screen(feedback.pointer), anchor = stage === 'pressing' ? targets.drop : targets.stick;
       const dock = attached ? 1 : ['grabbing', 'pressing'].includes(stage) ? feedback.progress : 0;
       root.style.left = `${p.x + (anchor.x - p.x) * dock}px`;
-      root.style.top = `${p.y + (anchor.y + (attached ? 10 : 0) - p.y) * dock}px`;
+      root.style.top = `${slamming ? targets.drop.y - (reduced ? 0 : (feedback.slamProgress < .35 ? 30 + 55 * Math.sin(feedback.slamProgress / .35 * Math.PI / 2) : 85 * (1 - ((feedback.slamProgress - .35) / .65) ** 2)) * Math.min(1, innerHeight / 800)) : charging ? targets.drop.y - 30 : p.y + (anchor.y + (attached ? 10 : 0) - p.y) * dock}px`;
+      if (slamming || charging) root.style.left = `${targets.drop.x}px`;
       root.dataset.stage = stage || 'seeking';
       for (let i = 0; i < 4; i++) {
         const x = 33 + i * 15, top = [27, 15, 20, 35][i];
@@ -60,14 +64,15 @@ export function createJoystickCursor(getTargets = () => null, onDrop = () => {})
       if (targets) {
         const d = targets.drop;
         button.dataset.ready = String(Boolean(d.ready));
-        const pressing = ['dual', 'grab-release'].includes(feedback.profile) ? feedback.grab?.stage === 'pressing' : feedback.kind === 'clenching';
+        const pressing = feedback.profile === 'dual' ? feedback.controlEnabled && feedback.kind === 'clenching' && feedback.grab?.stage === 'charging' : feedback.profile === 'grab-release' ? feedback.grab?.stage === 'pressing' : feedback.kind === 'clenching';
+        button.dataset.charging = String(feedback.profile === 'dual' && pressing);
         button.style.setProperty('--hold', pressing ? feedback.progress || 0 : 0);
         Object.assign(button.style, { left: `${d.x - d.radius}px`, top: `${d.y - d.radius}px`, width: `${d.radius * 2}px`, height: `${d.radius * 2}px` });
       }
       const dual = feedback.profile === 'dual';
       const fresh = !['delayed', 'off', 'error', 'blocked', 'accepted'].includes(feedback.kind);
       left.update(dual ? feedback.hands?.left || {} : feedback, visible && fresh && !!targets, dt, targets, dual);
-      right.update(feedback.hands?.right || {}, visible && fresh && dual && !!targets, dt, targets);
+      right.update(feedback.kind === 'slamming' ? { ...feedback.hands?.right, pointer: feedback.hands?.right?.pointer || { x: .75, y: .5 }, kind: 'slamming', grab: { stage: 'slamming' }, slamProgress: feedback.slamProgress } : feedback.hands?.right || {}, visible && fresh && dual && !!targets, dt, targets);
     }
   };
 }

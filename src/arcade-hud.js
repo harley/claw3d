@@ -1,3 +1,4 @@
+import { HAND_ACQUIRE_MS, RIGHT_HOLD_MS, RIGHT_SLAM_MS } from './dual-hand-controls.js';
 // Presentation-only HUD: message surface, jackpot cue, meters, chips and
 // labels. It reads a per-call view of game state and never mutates it; audio
 // and the phase-to-sound mapping are injected.
@@ -54,7 +55,7 @@ export function createHud({ audio, phaseSound }) {
   // Attract mode: the idle machine gently pulses its invitation until a hand
   // takes control. CSS disables the pulse under reduced motion.
   $('action-copy').classList.toggle('attract', phase === 'idle' && !paused && !recovering && (!cameraControls?.running || cameraControls.waiting));
-  const cue = carouselCue(game.carouselTime, grabEnabled ? PRESS_MS / 1000 : undefined), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
+  const cue = carouselCue(game.carouselTime, dualEnabled ? (HAND_ACQUIRE_MS + RIGHT_HOLD_MS + RIGHT_SLAM_MS) / 1000 : grabEnabled ? PRESS_MS / 1000 : undefined), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
   const gripStage = feedback.grab?.stage;
   const starAvailable = game.toys.some(toy => toy.id === CAROUSEL.id && !toy.claimed);
   const cueVisible = starAvailable && (!grabEnabled || (feedback.profile === 'dual' ? feedback.dropEnabled : gripStage !== 'gripped')) && phase === 'aim' && nearPickup && !paused && !frozen && !document.hidden && !modal && cameraControls?.running && !cameraControls.waiting;
@@ -67,7 +68,7 @@ export function createHud({ audio, phaseSound }) {
   if ($('jackpot-signal').dataset.cue !== displayKey) {
     $('jackpot-signal').dataset.cue = displayKey;
     $('jackpot-signal').classList.toggle('go', cue.now && phase === 'aim');
-    setText('jackpot-cue', grabEnabled && confirming ? (gripStage === 'pressing' ? 'PRESS DROP' : 'GRAB JOYSTICK') : confirming ? 'KEEP HOLDING' : ['idle', 'aim'].includes(phase) ? (grabEnabled && cue.now ? 'PRESS DROP' : cue.text) : 'Claw in action');
+    setText('jackpot-cue', dualEnabled && confirming ? 'KEEP HOLDING' : dualEnabled && cue.now ? 'RAISE RIGHT HAND' : grabEnabled && confirming ? (gripStage === 'pressing' ? 'PRESS DROP' : 'GRAB JOYSTICK') : confirming ? 'KEEP HOLDING' : ['idle', 'aim'].includes(phase) ? (grabEnabled && cue.now ? 'PRESS DROP' : cue.text) : 'Claw in action');
     [...$('jackpot-lights').children].forEach((light, i) => light.classList.toggle('on', ['idle', 'aim'].includes(phase) && i < cue.lights));
   }
   if (phase === 'aim' && nearPickup && starAvailable) { title = 'STAR 200'; hint = ''; }
@@ -93,7 +94,7 @@ export function createHud({ audio, phaseSound }) {
   if (startingRun) { title = 'CONNECTING'; hint = ''; }
   const holding = phase === 'aim' && feedback.controlEnabled && feedback.kind === 'clenching';
   const progress = holding ? Math.round(Math.max(0, Math.min(1, feedback.progress || 0)) * 100) : 0;
-  $('gesture-meter').setAttribute('aria-label', grabEnabled ? (gripStage === 'pressing' ? 'Press to drop' : 'Grab joystick') : 'Hold to drop');
+  $('gesture-meter').setAttribute('aria-label', dualEnabled && gripStage === 'charging' ? 'Hold right hand for three seconds' : grabEnabled ? (gripStage === 'pressing' ? 'Press to drop' : 'Grab joystick') : 'Hold to drop');
   setHidden($('gesture-meter'), !holding);
   if ($('gesture-meter').getAttribute('aria-valuenow') !== String(progress)) {
     $('gesture-meter').setAttribute('aria-valuenow', String(progress));

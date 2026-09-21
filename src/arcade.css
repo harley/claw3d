@@ -341,3 +341,10 @@ button.hand-hover { outline:4px solid #ffca45; outline-offset:6px; box-shadow:0 
   .trophy-score { font-size:9px; }
   .trophy-name { display:none; }
 }
+
+/* The forearm continues toward the player below the existing glove anchor. */
+.glove-forearm { display: none; }
+.has-forearm .glove-forearm { display: block; }
+#machine-drop[data-charging="true"]::before { content: ""; position: absolute; inset: -15px; border: 3px solid transparent; border-top-color: #fff1ae; border-right-color: #66ffb3; border-radius: 50%; animation: right-hold-spin .8s linear infinite; }
+@keyframes right-hold-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { #machine-drop[data-charging="true"]::before { animation: none; } }

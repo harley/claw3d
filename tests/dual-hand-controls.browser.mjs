@@ -73,7 +73,10 @@ try {
   right.kind='open';await burst([left,right]);await frame();
   for(const selector of ['#joystick-cursor','#right-hand-cursor'])assert.equal(await page.locator(selector).isVisible(),true);
   assert.ok((await page.locator('#right-hand-cursor').boundingBox()).width<=66);
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  assert.equal(await page.locator('#machine-drop').evaluate(el=>getComputedStyle(el,'::before').animationName),'right-hold-spin');
   await page.screenshot({path:'.screenshots/dual-controls.png'});
+  await page.emulateMedia({reducedMotion:'reduce'});
   for(const size of [{width:820,height:900},{width:390,height:844},{width:390,height:700},{width:1440,height:900}]){
     await page.setViewportSize(size);await frame();
     const controls=await page.evaluate(()=>window.__littleCloud.snapshot().machineControls);
@@ -92,6 +95,8 @@ try {
     }
     if(size.width===390&&size.height===844)await page.screenshot({path:'.screenshots/dual-mobile.png'});
   }
+  await burst([left]);
+  await burst([left,right]);
   // Cross the physical centre: the affected hand must release, never clamp into a press.
   await burst([left,{...right,x:.60}],1);
   await burst([left,{...right,x:.49,kind:'closed'}],1);await frame();
@@ -103,6 +108,8 @@ try {
   await burst([left,right]);
   // Stale capture invalidates both roles, even if it contains a fist over DROP.
   await burst([left,{...right,kind:'closed'}],1,350);
+  await frame();
+  assert.equal(await page.locator('#machine-drop').getAttribute('data-charging'),'false','stale input clears spinner');
   assert.equal(await page.locator('#camera-overlay').getAttribute('data-left'),'inactive');
   assert.equal(await page.locator('#camera-overlay').getAttribute('data-right'),'inactive');
   assert.equal((await burst([left,{...right,kind:'closed'}])).right.stage,'seeking');
@@ -117,15 +124,25 @@ try {
   const stick=await page.evaluate(()=>window.__littleCloud.snapshot().machineControls.stick);
   const glove=await page.locator('#joystick-cursor').boundingBox();
   assert.ok(Math.abs(glove.x+glove.width/2-stick.x)<3,'gripped glove stays docked during overshoot');
-  // Real adapter handles a transitional model label; a started press captures
-  // small fist-centre movement just outside the visible button's target.
-  assert.equal((await burst([left,{...right,kind:'uncertain'}],1)).right.armed,true);
-  const drift={...right,x:right.x+.10,kind:'closed'};
-  const hit=await page.evaluate(p=>controller.getControlTarget(p,'right',controller.dual.right.origin),drift);
-  assert.equal(hit.overDrop,false);assert.equal(hit.nearDrop,true);
+  // Uncertain evidence resets the hold. A fist and physical stroke cannot fire.
+  assert.equal((await burst([left,{...right,kind:'uncertain'}],1)).right.progress,0);
+  assert.equal((await burst([left,{...right,kind:'closed'}],10)).right.stage,'seeking');
   await page.evaluate(()=>testAim(.80,.22,4.55));
-  assert.equal((await burst([left,{...right,kind:'closed'}],1)).right.stage,'pressing');
-  assert.equal((await burst([left,drift],3)).right.stage,'fired');
+  await burst([left,right],25);await frame();
+  assert.equal(await page.locator('#machine-drop').getAttribute('data-charging'),'true');
+  assert.equal(await page.locator('#machine-drop').evaluate(el=>getComputedStyle(el,'::before').animationName),'none');
+  assert.equal(await page.locator('#joystick-cursor .glove-forearm').evaluate(el=>getComputedStyle(el).display),'block');
+  const before=await page.evaluate(()=>window.__littleCloud.snapshot());
+  assert.equal(before.phase,'aim');assert.equal(before.event.pendingSlam,null);
+  await page.evaluate(()=>testAim(.80,.22,4.55-.36));
+  await burst([left,right],24);
+  const locked=await page.evaluate(()=>window.__littleCloud.snapshot());
+  assert.ok(locked.event.pendingSlam,'completed hold starts the virtual slam before mechanics accepts DROP');
+  await burst([]);await frame();
+  assert.equal(await page.locator('#right-hand-cursor').getAttribute('data-stage'),'slamming');
+  assert.equal(await page.locator('#machine-drop').getAttribute('data-charging'),'false','accepted slam stops charging feedback');
+  const during=await page.evaluate(()=>window.__littleCloud.snapshot());
+  assert.deepEqual(during.position,locked.position);assert.equal(during.event.remaining,locked.event.remaining);
   await burst([]);
   await page.waitForFunction(()=>window.__littleCloud.snapshot().phase==='result',{},{timeout:30000});
   assert.equal((await page.evaluate(()=>window.__littleCloud.snapshot())).event.run.turns[0].prizeId,'sprout');
@@ -140,7 +157,14 @@ try {
     await page.waitForFunction(()=>document.getElementById('jackpot-signal').hidden);
     if(turn===2){
       await burst([left,{...right,y:right.y-.10}],1);
-      assert.equal((await burst([left,right],1)).right.stage,'fired');
+      assert.notEqual((await burst([left,right],1)).right.stage,'fired');
+      await page.evaluate(hands=>{for(let i=0;i<50;i++)sample(hands);document.getElementById('pause').click();},[left,right]);
+      await frame();
+      const pausedSlam=await page.evaluate(()=>window.__littleCloud.snapshot());
+      assert.ok(pausedSlam.event.pendingSlam);assert.equal(pausedSlam.event.paused,true);
+      await page.waitForTimeout(420);
+      assert.deepEqual((await page.evaluate(()=>window.__littleCloud.snapshot())).event.pendingSlam,pausedSlam.event.pendingSlam,'host pause suspends committed slam');
+      await page.evaluate(()=>document.getElementById('pause').click());
     }else{
       await burst([]);await page.locator('#machine-drop').click();
     }
@@ -151,6 +175,14 @@ try {
   assert.equal(complete.turns.length,3);assert.equal(complete.turns.filter(t=>t.prizeId==='sprout').length,1);
   await page.locator('#next-player').click();await page.locator('#register-play').click();await aim();
   assert.ok((await page.evaluate(()=>window.__littleCloud.snapshot().toys)).every(t=>!t.claimed));
+  await acquire();await burst([left,right],15);
+  await page.evaluate(()=>document.getElementById('operator-open').click());await burst([left,right],1);
+  assert.equal((await burst([left,right],60)).right.progress,0,'menu cancels unfinished charge');
+  await page.evaluate(()=>document.getElementById('operator').close());await acquire();
+  await page.evaluate(hands=>{for(let i=0;i<50;i++)sample(hands);document.getElementById('reset').click();},[left,right]);
+  await frame();
+  const reset=await page.evaluate(()=>window.__littleCloud.snapshot());
+  assert.equal(reset.event.pendingSlam,null);assert.equal(reset.event.run,null);assert.equal(reset.phase,'idle');
   assert.deepEqual(errors,[]);
-  console.log('PASS sticky grip, transitional fist evidence, captured press drift, dual roles, closed entry, independent loss, stale captures, smaller gloves, clench/slam/click, persistent toys and three turns');
+  console.log('PASS sticky grip, three-second open hold, virtual contact, locked aim and score time, dual roles, closed entry, independent loss, stale captures, forearm, hold/slam/click, persistent toys and three turns');
 }finally{await browser.close();}

@@ -23,7 +23,7 @@ export function handCameraGuide(role, feedback, origin) {
     else if (stage === 'grabbing' || hand.grab?.armed) { state = 'grip'; label = 'GRIP'; icon = 'fist'; }
   } else if (!feedback.dropEnabled) { state = 'inactive'; label = 'WAIT'; icon = ''; }
   else if (hand.grab?.armed) {
-    state = 'active'; label = stage === 'pressing' ? 'PRESS' : 'READY'; icon = 'fist';
+    state = 'active'; label = stage === 'charging' ? `HOLD ${Math.max(1, Math.ceil(3 * (1 - hand.grab.progress)))}s` : 'READY'; icon = 'palm';
   }
   const color = state === 'inactive' ? '#718096' : state === 'active' ? '#66ffb3' : role === 'left' ? '#59e5f2' : '#ffcf65';
   return { role, zone, state, label, icon, color };

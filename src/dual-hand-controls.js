@@ -3,7 +3,28 @@ import { GrabRelease } from './grab-release.js';
 import { OneEuroPoint } from './one-euro.js';
 import { joystickAxis } from './mechanics.js';
 
-const ACQUIRE_MS = 300, MAX_STEP = .18, SEPARATION = .065;
+export const HAND_ACQUIRE_MS = 300;
+export const RIGHT_HOLD_MS = 3000;
+export const RIGHT_SLAM_MS = 360;
+// A continuous open hand is the entire right-hand gesture. No physical impact
+// or fist transition participates in this profile.
+class RightHold {
+  constructor() { this.reset(); }
+  reset() { this.stage = 'seeking'; this.armed = false; this.started = null; this.progress = 0; }
+  read() { return { stage: this.stage, armed: this.armed, progress: this.progress, fired: false }; }
+  update(valid, now) {
+    if (this.stage === 'fired') return this.read();
+    if (!valid) { this.reset(); return this.read(); }
+    this.started ??= now;
+    this.armed = true; this.stage = 'charging';
+    this.progress = Math.min(1, (now - this.started) / RIGHT_HOLD_MS);
+    const fired = this.progress === 1;
+    if (fired) this.stage = 'fired';
+    return { ...this.read(), fired };
+  }
+}
+
+const MAX_STEP = .18, SEPARATION = .065;
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const role = () => ({ owner: null, origin: null, observed: null, candidate: null, gesture: new GrabRelease(), filter: new OneEuroPoint(), neutral: null });
 const clear = state => { state.owner = state.origin = state.observed = state.candidate = state.neutral = null; state.gesture.reset(); state.filter.reset(); };
@@ -13,7 +34,7 @@ const clear = state => { state.owner = state.origin = state.observed = state.can
 // the other role's closed hand or confirmation time.
 export class DualHandControls {
   constructor() { this.reset(); }
-  reset() { this.left = role(); this.right = role(); this.last = null; }
+  reset() { this.left = role(); this.right = role(); this.right.gesture = new RightHold(); this.last = null; }
 
   track(state, name, hands, now) {
     const candidates = hands.filter(hand => hand.physicalHand === name && hand.handednessScore >= .75);
@@ -38,7 +59,7 @@ export class DualHandControls {
       state.candidate = null; return { hand, ready: false };
     }
     if (!state.candidate || distance(hand.center, state.candidate.center) > .08) state.candidate = { center: { ...hand.center }, at: now };
-    if (now - state.candidate.at >= ACQUIRE_MS) {
+    if (now - state.candidate.at >= HAND_ACQUIRE_MS) {
       state.owner = { ...hand.center }; state.origin = { ...hand.center }; state.candidate = null;
       return { hand, ready: true };
     }
@@ -67,19 +88,8 @@ export class DualHandControls {
     const leftClear = left.ready && left.hand.fist.open !== left.hand.fist.closed;
     const dropEnabled = Boolean(leftClear && grip.steering);
     const rightTarget = right.ready ? getTarget(right.hand.center, 'right', this.right.origin) : {};
-    const rightClear = right.ready && right.hand.fist.open !== right.hand.fist.closed;
-    // A real open-to-fist transition can briefly have neither gesture label.
-    // Preserve ready evidence through that transition (GrabRelease bounds it
-    // to 130 ms), but uncertainty during a pending press still cancels it.
-    const formingFist = right.ready && this.right.gesture.armed && this.right.gesture.stage === 'seeking' &&
-      !right.hand.fist.open && !right.hand.fist.closed;
-    const rightVisible = rightClear || formingFist;
-    if (!dropEnabled || !rightVisible) this.right.gesture.reset();
-    // Contact must begin on the button. After that, a small capture margin
-    // absorbs the palm-centre shift as fingers curl without allowing a sweep.
-    const overDrop = Boolean(rightTarget.overDrop || (this.right.gesture.stage === 'pressing' && rightTarget.nearDrop));
-    const press = this.right.gesture.update({ ...(right.hand?.fist || {}), visible: rightVisible && dropEnabled,
-      overDrop, aboveDrop: Boolean(rightTarget.aboveDrop), point: right.hand?.center }, now);
+    const rightClear = right.ready && right.hand.fist.open && !right.hand.fist.closed;
+    const press = this.right.gesture.update(dropEnabled && rightClear, now);
     let input = { x: 0, z: 0 };
     if (grip.grabbed) { this.left.neutral = null; this.left.filter.reset(); }
     if (grip.steering && leftClear && !press.fired) {
@@ -90,20 +100,20 @@ export class DualHandControls {
     const view = (observation, gesture, target, state) => ({
       workspace: observation.hand ? handOffset(observation.hand.center, state.origin) : null,
       outside: Boolean(observation.outside),
-      kind: observation.ready ? ['grabbing', 'pressing'].includes(gesture.stage) ? 'clenching' : 'tracking' : 'calibrating',
+      kind: observation.ready ? ['grabbing', 'charging'].includes(gesture.stage) ? 'clenching' : 'tracking' : 'calibrating',
       pointer: observation.hand ? { ...observation.hand.center } : null,
       ready: observation.ready, closed: Boolean(observation.hand?.fist.closed),
       grab: gesture, progress: gesture.progress,
       target: target.overDrop ? 'drop' : target.overTarget ? 'stick' : '',
     });
-    const leftView = view(left, grip, leftTarget, this.left), rightView = view(right, press, { ...rightTarget, overDrop }, this.right);
+    const leftView = view(left, grip, leftTarget, this.left), rightView = view(right, press, rightTarget, this.right);
     const kind = left.outside ? 'lost' : !left.ready ? left.hand ? 'calibrating' : 'lost' : !leftClear ? 'lost' :
-      press.stage === 'pressing' || grip.stage === 'grabbing' ? 'clenching' : 'tracking';
+      press.stage === 'charging' || grip.stage === 'grabbing' ? 'clenching' : 'tracking';
     return { kind, input, hands: { left: leftView, right: rightView }, fired: press.fired, dropEnabled,
       // Aggregate fields preserve the existing HUD/scene feedback contract.
-      grab: press.stage === 'pressing' ? press : grip,
-      progress: press.stage === 'pressing' ? press.progress : grip.progress,
+      grab: press.stage === 'charging' ? press : grip,
+      progress: press.stage === 'charging' ? press.progress : grip.progress,
       pointer: leftView.pointer, target: rightView.target, closed: leftView.closed,
-      message: left.outside ? 'RETURN LEFT HAND TO ITS AREA' : !leftClear ? 'SHOW LEFT HAND OPEN' : !grip.steering ? 'LEFT HAND · GRAB JOYSTICK' : right.outside ? 'RETURN RIGHT HAND TO ITS AREA' : !right.ready || !press.armed ? 'RAISE RIGHT HAND OPEN' : 'RIGHT HAND · PRESS DROP' };
+      message: left.outside ? 'RETURN LEFT HAND TO ITS AREA' : !leftClear ? 'SHOW LEFT HAND OPEN' : !grip.steering ? 'LEFT HAND · GRAB JOYSTICK' : right.outside ? 'RETURN RIGHT HAND TO ITS AREA' : !right.ready || !press.armed ? 'RAISE RIGHT HAND OPEN' : 'HOLD RIGHT HAND · 3 SECONDS' };
   }
 }
