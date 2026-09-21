@@ -66,7 +66,7 @@ function cameraFixture() {
       const {x,y}=h.center,points=Array.from({length:21},()=>({x:1-x,y,z:0}));
       points[0].y+=.06;points[9].y-=.06;points[5].x-=.06;points[17].x+=.06;
       result.landmarks.push(points);
-      result.handedness.push([{categoryName:h.physicalHand==='left'?'Right':'Left',score:h.handednessScore}]);
+      result.handedness.push([{categoryName:h.physicalHand==='left'?'Left':'Right',score:h.handednessScore}]);
       result.gestures.push([{categoryName:h.fist.open?'Open_Palm':h.fist.closed?'Closed_Fist':'None',score:.99}]);
     }
     c.handle(result,time+=65); return c.state;
@@ -100,4 +100,20 @@ test('one uncertain right sample cancels confirmation until a fresh open-to-clos
   assert.equal(f.repeat(hands,4).fired,false);
   assert.equal(f.controls.right.gesture.stage,'seeking');
   f.repeat([f.left,hand('right')]);assert.equal(f.repeat(hands,4).fired,true);
+});
+
+// Recorded from the installed model on a public, visibly right-handed image
+// and its horizontal flip through both actual runtimes. Unlike the synthetic
+// fixture above, these labels are independent of our role mapping assumption.
+import { readFileSync } from 'node:fs';
+const knownHands = JSON.parse(readFileSync(new URL('./fixtures/handedness-model-results.json', import.meta.url), 'utf8'));
+for (const { physicalHand, result } of knownHands.cases) test(`real model ${physicalHand} output acquires the same anatomical role`, () => {
+  const f = cameraFixture();
+  for (let i = 0; i < 12; i++) f.c.handle(result, 3000 + i * 65);
+  const other = physicalHand === 'left' ? 'right' : 'left';
+  assert.equal(f.c.state.hands[physicalHand].ready, true);
+  assert.equal(f.c.state.hands[other].pointer, null);
+  const landmarks = result.landmarks[0];
+  assert.equal(f.c.state.hands[physicalHand].pointer.x, 1 - (landmarks[0].x + landmarks[9].x) / 2, 'only cursor x is mirrored');
+  assert.equal(f.drops(), 0);
 });

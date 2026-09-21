@@ -18,7 +18,7 @@ try {
       for(const {role,kind='open',x,y} of hands){
         const points=Array.from({length:21},()=>({x:1-x,y,z:0}));
         points[0].y+=.06;points[9].y-=.06;points[5].x-=.06;points[17].x+=.06;
-        result.landmarks.push(points);result.handedness.push([{categoryName:role==='left'?'Right':'Left',score:.99}]);
+        result.landmarks.push(points);result.handedness.push([{categoryName:role==='left'?'Left':'Right',score:.99}]);
         result.gestures.push([{categoryName:kind==='open'?'Open_Palm':'Closed_Fist',score:.99}]);
       }
       controller.acceptResult(result,capture,controller.generation,capture+age);

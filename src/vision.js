@@ -310,9 +310,9 @@ export class HandController {
       fist: fistEvidence(landmarks,result.gestures[i]?.[0]?.categoryName,result.gestures[i]?.[0]?.score,aspect),
       center: { x: 1 - (landmarks[0].x + landmarks[9].x) / 2, y: (landmarks[0].y + landmarks[9].y) / 2 },
       handedness: result.handedness[i]?.[0]?.categoryName,
-      // MediaPipe handedness assumes mirrored input. Capture is unmirrored;
-      // only presentation mirrors x, so normalize anatomical roles here.
-      physicalHand: result.handedness[i]?.[0]?.categoryName === 'Right' ? 'left' : result.handedness[i]?.[0]?.categoryName === 'Left' ? 'right' : null,
+      // Tasks GestureRecognizer labels the anatomical hand on raw frames.
+      // Mirror cursor x above, not identity; the legacy Hands API differed.
+      physicalHand: result.handedness[i]?.[0]?.categoryName === 'Left' ? 'left' : result.handedness[i]?.[0]?.categoryName === 'Right' ? 'right' : null,
       handednessScore: result.handedness[i]?.[0]?.score ?? 0,
       ratio: pinchRatio(landmarks, aspect),
     }));
