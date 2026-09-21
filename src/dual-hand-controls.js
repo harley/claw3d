@@ -1,4 +1,4 @@
-import { handInZone, handOffset, inHandRange } from './hand-workspace.js';
+import { HAND_ZONES, handInZone, handOffset, inHandRange } from './hand-workspace.js';
 import { GrabRelease } from './grab-release.js';
 import { OneEuroPoint } from './one-euro.js';
 import { joystickAxis } from './mechanics.js';
@@ -22,7 +22,12 @@ export class DualHandControls {
       clear(state); return { hand: null, ready: false };
     }
     const offset = handOffset(hand.center, state.origin);
-    if (!handInZone(hand.center, name) || !inHandRange(offset)) {
+    // Once held, the stick is mechanically attached. The local range controls
+    // steering sensitivity, not ownership. Keep the centre gap and camera edge
+    // guards, but allow comfortable overshoot without dropping the grip.
+    const stickyGrip = name === 'left' && state.owner && state.gesture.stage === 'gripped' &&
+      hand.center.x >= .02 && hand.center.x <= HAND_ZONES.left.maxX && hand.center.y >= .02 && hand.center.y <= .98;
+    if (!stickyGrip && (!handInZone(hand.center, name) || !inHandRange(offset))) {
       const origin = state.origin;
       clear(state); state.origin = origin;
       return { hand, ready: false, outside: true };
@@ -63,9 +68,18 @@ export class DualHandControls {
     const dropEnabled = Boolean(leftClear && grip.steering);
     const rightTarget = right.ready ? getTarget(right.hand.center, 'right', this.right.origin) : {};
     const rightClear = right.ready && right.hand.fist.open !== right.hand.fist.closed;
-    if (!dropEnabled || !rightClear) this.right.gesture.reset();
-    const press = this.right.gesture.update({ ...(right.hand?.fist || {}), visible: rightClear && dropEnabled,
-      overDrop: Boolean(rightTarget.overDrop), aboveDrop: Boolean(rightTarget.aboveDrop), point: right.hand?.center }, now);
+    // A real open-to-fist transition can briefly have neither gesture label.
+    // Preserve ready evidence through that transition (GrabRelease bounds it
+    // to 130 ms), but uncertainty during a pending press still cancels it.
+    const formingFist = right.ready && this.right.gesture.armed && this.right.gesture.stage === 'seeking' &&
+      !right.hand.fist.open && !right.hand.fist.closed;
+    const rightVisible = rightClear || formingFist;
+    if (!dropEnabled || !rightVisible) this.right.gesture.reset();
+    // Contact must begin on the button. After that, a small capture margin
+    // absorbs the palm-centre shift as fingers curl without allowing a sweep.
+    const overDrop = Boolean(rightTarget.overDrop || (this.right.gesture.stage === 'pressing' && rightTarget.nearDrop));
+    const press = this.right.gesture.update({ ...(right.hand?.fist || {}), visible: rightVisible && dropEnabled,
+      overDrop, aboveDrop: Boolean(rightTarget.aboveDrop), point: right.hand?.center }, now);
     let input = { x: 0, z: 0 };
     if (grip.grabbed) { this.left.neutral = null; this.left.filter.reset(); }
     if (grip.steering && leftClear && !press.fired) {
@@ -82,7 +96,7 @@ export class DualHandControls {
       grab: gesture, progress: gesture.progress,
       target: target.overDrop ? 'drop' : target.overTarget ? 'stick' : '',
     });
-    const leftView = view(left, grip, leftTarget, this.left), rightView = view(right, press, rightTarget, this.right);
+    const leftView = view(left, grip, leftTarget, this.left), rightView = view(right, press, { ...rightTarget, overDrop }, this.right);
     const kind = left.outside ? 'lost' : !left.ready ? left.hand ? 'calibrating' : 'lost' : !leftClear ? 'lost' :
       press.stage === 'pressing' || grip.stage === 'grabbing' ? 'clenching' : 'tracking';
     return { kind, input, hands: { left: leftView, right: rightView }, fired: press.fired, dropEnabled,

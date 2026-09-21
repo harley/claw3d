@@ -51,7 +51,8 @@ export function createJoystickCursor(getTargets = () => null, onDrop = () => {})
       const overTarget = Math.hypot(p.x - stick.x, p.y - stick.y) < stick.radius;
       const overDrop = Math.hypot((p.x - drop.x) / drop.radius, (p.y - drop.y) / drop.radius) < 1;
       const aboveDrop = Math.abs(p.x - drop.x) < drop.radius && p.y < drop.y - drop.radius && p.y > drop.y - drop.radius - innerHeight * .20;
-      return { overTarget, overDrop, aboveDrop };
+      const nearDrop = role === 'right' && Math.hypot(p.x - drop.x, p.y - drop.y) < drop.radius * 1.5;
+      return { overTarget, overDrop, aboveDrop, nearDrop };
     },
     update(feedback, visible, dt) {
       const targets = getTargets();

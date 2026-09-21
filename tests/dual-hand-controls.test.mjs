@@ -139,3 +139,49 @@ test('right local range exit leaves left steering active, even while still on th
   const s=f.step([hand('left','closed',.30),hand('right','open',.65,.82)]);
   assert.ok(s.input.x<0);assert.equal(s.hands.right.outside,true);assert.equal(s.fired,false);
 });
+
+
+test('gripped joystick stays attached beyond its soft movement range and clamps steering',()=>{
+  const f=fixture();f.arm();
+  for(const [x,y] of [[.25,.70],[.12,.80],[.04,.90],[.16,.80],[.30,.80],[.44,.80],[.47,.90]]){
+    const s=f.repeat([hand('left','closed',x,y),hand('right')],3);
+    assert.equal(s.hands.left.grab.stage,'gripped');assert.equal(s.hands.left.outside,false);
+    assert.equal(s.dropEnabled,true);assert.ok(s.input.z>0 && s.input.z<=1);assert.ok(Math.abs(s.input.x)<=1);
+  }
+  const release=f.step([hand('left','open',.47,.90),hand('right','closed')]);
+  assert.deepEqual(release.input,{x:0,z:0});assert.equal(release.fired,false);
+  assert.equal(f.repeat([hand('left','closed',.47,.90),hand('right','closed')]).dropEnabled,false);
+});
+test('sticky left grip still releases when crossing into the right half',()=>{
+  const f=fixture();f.arm();f.step([hand('left','closed',.48)]);
+  const s=f.step([hand('left','closed',.55)]);
+  assert.equal(s.hands.left.outside,true);assert.deepEqual(s.input,{x:0,z:0});assert.equal(s.dropEnabled,false);
+});
+test('armed right hand can pass through brief uncertain evidence while forming its fist',()=>{
+  const f=fixture();f.arm();
+  assert.equal(f.step([f.left,hand('right','uncertain')]).fired,false);
+  assert.equal(f.repeat([f.left,hand('right','closed')],4).fired,true);
+});
+test('prolonged uncertain right evidence discards arming and cannot resume closed',()=>{
+  const f=fixture();f.arm();f.repeat([f.left,hand('right','uncertain')],4);
+  assert.equal(f.repeat([f.left,hand('right','closed')]).fired,false);
+  assert.equal(f.controls.right.gesture.stage,'seeking');
+});
+test('a deliberate right press tolerates small drift but cannot start outside DROP',()=>{
+  for(const startOnButton of [false,true]){
+    const controls=new DualHandControls();let now=0;
+    const target=()=>({overTarget:true,overDrop:onButton,nearDrop:true});let onButton=true;
+    const step=(right)=>controls.update([hand('left','closed'),right],now+=65,target);
+    for(let i=0;i<10;i++)controls.update([hand('left')],now+=65,target);
+    for(let i=0;i<10;i++)step(hand('right'));
+    onButton=startOnButton;step(hand('right','closed'));onButton=false;
+    step(hand('right','closed'));step(hand('right','closed'));
+    assert.equal(step(hand('right','closed')).fired,startOnButton);
+  }
+});
+test('a right press moving beyond the capture margin cancels until reopened',()=>{
+  const f=fixture();f.arm();let now=f.controls.last;
+  const update=target=>f.controls.update([f.left,hand('right','closed')],now+=65,(_,role)=>role==='left'?{overTarget:true}:target);
+  update({overDrop:true,nearDrop:true});update({overDrop:false,nearDrop:false});
+  for(let i=0;i<5;i++)assert.equal(update({overDrop:true,nearDrop:true}).fired,false);
+});

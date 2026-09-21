@@ -19,7 +19,7 @@ try {
         const points=Array.from({length:21},()=>({x:1-x,y,z:0}));
         points[0].y+=.06;points[9].y-=.06;points[5].x-=.06;points[17].x+=.06;
         result.landmarks.push(points);result.handedness.push([{categoryName:role==='left'?'Left':'Right',score:.99}]);
-        result.gestures.push([{categoryName:kind==='open'?'Open_Palm':'Closed_Fist',score:.99}]);
+        result.gestures.push([{categoryName:kind==='open'?'Open_Palm':kind==='closed'?'Closed_Fist':'None',score:.99}]);
       }
       controller.acceptResult(result,capture,controller.generation,capture+age);
       return {...controller.input,left:controller.dual.left.gesture.read(),right:controller.dual.right.gesture.read()};
@@ -82,8 +82,26 @@ try {
   // Stale capture invalidates both roles, even if it contains a fist over DROP.
   await burst([left,{...right,kind:'closed'}],1,350);
   assert.equal((await burst([left,{...right,kind:'closed'}])).right.stage,'seeking');
-  await acquire();await page.evaluate(()=>testAim(.80,.22,4.55));
-  assert.equal((await burst([left,{...right,kind:'closed'}],4)).right.stage,'fired');
+  await acquire();
+  // Overshooting the stick's soft range must not detach the glove or disarm DROP.
+  for(const y of [.62,.76,.90]){
+    left={...left,y};
+    const held=await burst([left,right],2);
+    assert.equal(held.left.stage,'gripped');assert.equal(held.right.armed,true);assert.ok(held.z>0&&held.z<=1);
+  }
+  await frame();
+  const stick=await page.evaluate(()=>window.__littleCloud.snapshot().machineControls.stick);
+  const glove=await page.locator('#joystick-cursor').boundingBox();
+  assert.ok(Math.abs(glove.x+glove.width/2-stick.x)<3,'gripped glove stays docked during overshoot');
+  // Real adapter handles a transitional model label; a started press captures
+  // small fist-centre movement just outside the visible button's target.
+  assert.equal((await burst([left,{...right,kind:'uncertain'}],1)).right.armed,true);
+  const drift={...right,x:right.x+.10,kind:'closed'};
+  const hit=await page.evaluate(p=>controller.getControlTarget(p,'right',controller.dual.right.origin),drift);
+  assert.equal(hit.overDrop,false);assert.equal(hit.nearDrop,true);
+  await page.evaluate(()=>testAim(.80,.22,4.55));
+  assert.equal((await burst([left,{...right,kind:'closed'}],1)).right.stage,'pressing');
+  assert.equal((await burst([left,drift],3)).right.stage,'fired');
   await burst([]);
   await page.waitForFunction(()=>window.__littleCloud.snapshot().phase==='result',{},{timeout:30000});
   assert.equal((await page.evaluate(()=>window.__littleCloud.snapshot())).event.run.turns[0].prizeId,'sprout');
@@ -109,5 +127,5 @@ try {
   await page.locator('#next-player').click();await page.locator('#register-play').click();await aim();
   assert.ok((await page.evaluate(()=>window.__littleCloud.snapshot().toys)).every(t=>!t.claimed));
   assert.deepEqual(errors,[]);
-  console.log('PASS dual roles, closed entry, independent loss, stale captures, smaller gloves, clench/slam/click, persistent toys and three turns');
+  console.log('PASS sticky grip, transitional fist evidence, captured press drift, dual roles, closed entry, independent loss, stale captures, smaller gloves, clench/slam/click, persistent toys and three turns');
 }finally{await browser.close();}
