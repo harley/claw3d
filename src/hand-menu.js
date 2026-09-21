@@ -47,7 +47,17 @@ export function createHandMenu() {
   };
 }
 export function generatedName() {
-  const words = ['ACE', 'NOVA', 'BOLT', 'JET', 'NEON', 'FLUX', 'ORBIT', 'PIXEL'];
+  const animals = [
+    ['🦀', ['Coral', 'Pebble', 'Cove']],
+    ['🦊', ['Ember', 'Rusty', 'Maple']],
+    ['🐻', ['Kuma', 'Chestnut', 'Cocoa']],
+    ['🐱', ['Miso', 'Sesame', 'Socks']],
+    ['🐰', ['Mochi', 'Clover', 'Taro']],
+    ['🦦', ['Ripple', 'River', 'Nori']],
+    ['🐧', ['Pip', 'Waddle', 'Pogo']],
+    ['🐉', ['Jade', 'Flint', 'Ash']],
+  ];
   const values = crypto.getRandomValues(new Uint32Array(2));
-  return `${words[values[0] % words.length]}-${String(values[1] % 1000).padStart(3, '0')}`;
+  const [emoji, names] = animals[values[0] % animals.length];
+  return `${emoji} ${names[values[1] % names.length]}`;
 }

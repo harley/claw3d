@@ -22,7 +22,7 @@ try {
   assert.equal(await fire(), false, 'pointing without a hold cannot select');
   await point('play'); await hold(); assert.equal(await fire(), true);
   await page.locator('#registration').waitFor();
-  assert.match(await page.locator('#name').inputValue(), /^[A-Z]+-\d{3}$/);
+  assert.match(await page.locator('#name').inputValue(), /^(?:🦀|🦊|🐻|🐱|🐰|🦦|🐧|🐉) [A-Z][a-z]+$/u);
   // Wait for ownership reset; cursor belongs to the modal top layer.
   await page.waitForTimeout(80); await point('register-play');
   assert.equal(await page.locator('#registration #hand-cursor').count(), 1);

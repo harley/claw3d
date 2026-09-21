@@ -288,7 +288,7 @@ try {
   assert.match(await page.locator('#final-rank').textContent(), /RANK #1/);
   await page.screenshot({ path: '.screenshots/shared-saved.png' });
   await page.locator('#next-player').click();
-  assert.match(await page.locator('#name').inputValue(), /^[A-Z]+-\d{3}$/);
+  assert.match(await page.locator('#name').inputValue(), /^(?:🦀|🦊|🐻|🐱|🐰|🦦|🐧|🐉) [A-Z][a-z]+$/u);
   await page.locator('#register-cancel').click();
   await page.close();
   page = await open(a); assert.equal(await page.locator('#leaders li').count(), 2);
