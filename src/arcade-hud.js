@@ -110,8 +110,10 @@ export function createHud({ audio, phaseSound }) {
   setText('deck-state', deliveryPhases.has(phase) ? 'DROP ACCEPTED' : grabEnabled ? (gripStage === 'gripped' ? 'OPEN TO LET GO' : gripStage === 'pressing' ? 'DROP!'  : gripStage === 'grabbing' ? 'GRABBING' : 'GRAB JOYSTICK') : holding ? 'HOLD' : deckSteering ? 'READY' : 'WAITING');
   const control = deliveryPhases.has(phase) ? 'delivery' : holding ? 'holding' : feedback.controlEnabled && feedback.kind === 'tracking' ? 'tracking' : feedback.kind;
   if ($('arcade').dataset.control !== control) $('arcade').dataset.control = control;
+  const cameraGuide = feedback.profile === 'dual' && phase === 'aim' && cameraControls?.running && !recovering && !startingRun &&
+    !['delayed', 'off', 'error', 'loading'].includes(feedback.kind);
   const cameraLabels = { ready: 'Camera view', calibrating: 'Hand found', tracking: 'Hand found', accepted: 'Drop confirmed', lost: 'Hand out of view', delayed: 'Tracking delayed', clenching: 'Fist found', loading: 'Starting camera', off: 'Camera off', error: 'Check camera' };
-  setText('camera-recognition', cameraLabels[feedback.kind] || 'Camera view');
+  setText('camera-recognition', cameraGuide ? 'LEFT · MOVE     RIGHT · DROP' : cameraLabels[feedback.kind] || 'Camera view');
   if ($('camera-preview').dataset.state !== feedback.kind) $('camera-preview').dataset.state = feedback.kind;
   $('reset').disabled = startingRun;
   setText('timer', String(Math.ceil(remaining)).padStart(2, '0'));
@@ -137,7 +139,9 @@ export function createHud({ audio, phaseSound }) {
   const steering = (!grabEnabled || gripStage === 'gripped') && phase === 'aim' && Boolean(run) && !recovering && !startingRun &&
     cameraControls?.running && feedback.controlEnabled && feedback.kind === 'tracking';
   const rightReady = feedback.profile !== 'dual' || (feedback.hands?.right?.ready && feedback.hands.right.grab?.armed);
-  $('action-copy').classList.toggle('quiet', Boolean(!paused && steering && rightReady && (run.turns.length > 0 || cueVisible)));
+  // Two-hand acquisition belongs in the webcam windows. Keep its full live
+  // instruction for assistive tech; camera failures and pause stay visible.
+  $('action-copy').classList.toggle('quiet', Boolean(!paused && (cameraGuide || (steering && rightReady && (run.turns.length > 0 || cueVisible)))));
   $('action-copy').classList.toggle('gesture-guide', Boolean(steering && !nearPickup));
   presentMessage(title, hint, `${['anticipate', 'descend'].includes(phase) ? 'drop' : phase}:${turnNumber}:${title}:${hint}`, timed ? 1600 : 0);
   if ($('arcade').dataset.phase !== phase) $('arcade').dataset.phase = phase;

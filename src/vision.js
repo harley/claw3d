@@ -1,4 +1,4 @@
-import { HAND_ZONES } from './hand-workspace.js';
+import { handCameraGuide, drawHandCameraGuide } from './hand-camera-guide.js';
 import { pinchRatio, joystickAxis, matchHand } from './mechanics.js';
 import { clamp } from './arcade-mechanics.js';
 import {FistDrop,fistEvidence} from './fist.js';
@@ -41,6 +41,8 @@ export class HandController {
     this.pinchSince = 0; this.lostSince = 0;
     this.input = { x: 0, z: 0 };
     this.onInput?.(this.input);
+    this.dualFeedback = null;
+    if (this.controlProfile === 'dual' && this.overlay) this.draw([], null);
   }
 
   async listCameras(selected) {
@@ -286,6 +288,8 @@ export class HandController {
     }
     if (reason) {
       this.fist.reset('stale'); this.grab.reset(); this.dual.reset(); this.onInput({ x: 0, z: 0 });
+      this.dualFeedback = null;
+      if (this.controlProfile === 'dual') this.draw([], null);
       if (reason === 'over age') this.delayTracking();
       return false;
     }
@@ -301,6 +305,8 @@ export class HandController {
     // a missing hand. Otherwise its changed position immediately steers.
     this.neutral = null; this.input = { x: 0, z: 0 };
     this.onInput(this.input);
+    this.dualFeedback = null;
+    if (this.controlProfile === 'dual') this.draw([], null);
     this.onState({ kind: 'delayed', message: 'Tracking is slow. Keep your hand steady while it catches up.', progress: 0 });
   }
 
@@ -331,7 +337,7 @@ export class HandController {
     if (profile === 'dual') {
       if (!acceptsInput) {
         this.dual.reset(); this.input = { x: 0, z: 0 }; this.onInput(this.input);
-        this.onState({ kind: 'blocked', profile, controlEnabled: false, hands: {} });
+        this.dualFeedback = { kind: 'blocked', profile, controlEnabled: false, hands: {} };
       } else {
         const state = this.dual.update(hands, now, (point, role, origin) => this.getControlTarget?.(point, role, origin) || {});
         this.input = state.input; this.onInput(this.input);
@@ -340,8 +346,9 @@ export class HandController {
           state.kind = accepted ? 'accepted' : 'tracking';
           if (!accepted) this.dual.right.gesture.reset();
         }
-        this.onState({ ...state, profile, handCount: hands.length, controlEnabled: true });
+        this.dualFeedback = { ...state, profile, handCount: hands.length, controlEnabled: true };
       }
+      this.onState(this.dualFeedback);
       this.draw(hands, null); return;
     }
     const sendInput = input => this.onInput(acceptsInput ? input : { x: 0, z: 0 });
@@ -447,14 +454,12 @@ export class HandController {
     if (this.overlay.width !== 640 || this.overlay.height !== height) { this.overlay.width = 640; this.overlay.height = height; }
     else ctx.clearRect(0, 0, 640, height);
     if (this.controlProfile === 'dual') {
-      for (const [role, zone] of Object.entries(HAND_ZONES)) {
-        ctx.strokeStyle = ctx.fillStyle = role === 'left' ? '#59e5f2' : '#ffcf65';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(zone.minX * 640, .12 * height, (zone.maxX - zone.minX) * 640, .76 * height);
-        ctx.font = 'bold 24px sans-serif';
-        ctx.fillText(role === 'left' ? 'L' : 'R', zone.minX * 640 + 10, .12 * height + 29);
+      const guides = ['left', 'right'].map(role => handCameraGuide(role, this.dualFeedback, this.dual[role].origin));
+      drawHandCameraGuide(ctx, 640, height, guides);
+      for (const guide of guides) {
+        this.overlay.dataset[guide.role] = guide.state;
       }
-    }
+    } else { delete this.overlay.dataset.left; delete this.overlay.dataset.right; }
     if (this.neutral && active) {
       ctx.strokeStyle = '#abd3ff'; ctx.lineWidth = 2;
       const x = this.neutral.x * 640, y = this.neutral.y * height;
@@ -462,17 +467,23 @@ export class HandController {
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(active.center.x * 640, active.center.y * height); ctx.stroke();
     }
     for (const hand of hands) {
+      const roleView = this.dualFeedback?.hands?.[hand.physicalHand];
+      const roleGuide = this.controlProfile === 'dual' && handCameraGuide(hand.physicalHand === 'left' ? 'left' : 'right', this.dualFeedback);
+      const recognized = roleGuide && roleView?.ready && !roleView.outside && roleGuide.state !== 'inactive' &&
+        hand.handednessScore >= .75 && Math.hypot(hand.center.x - roleView.pointer.x, hand.center.y - roleView.pointer.y) < .001;
+      ctx.globalAlpha = this.controlProfile === 'dual' && !recognized ? .28 : 1;
       if (this.controlProfile === 'dual' && hand.physicalHand && hand.handednessScore >= .75) {
-        ctx.fillStyle = hand.physicalHand === 'left' ? '#59e5f2' : '#ffcf65'; ctx.font = 'bold 24px sans-serif';
+        ctx.fillStyle = recognized ? roleGuide.color : '#a2aab6'; ctx.font = 'bold 24px sans-serif';
         ctx.fillText(hand.physicalHand === 'left' ? 'L' : 'R', hand.center.x * 640 + 14, hand.center.y * height);
       }
       if (hand === active) { ctx.fillStyle = '#66ffb3'; ctx.font = 'bold 18px sans-serif'; ctx.fillText('YOU', hand.center.x * 640 + 14, hand.center.y * height); }
-      ctx.strokeStyle = hand === active ? '#d0ed92' : '#faf4dc'; ctx.fillStyle = '#ec805c'; ctx.lineWidth = 2;
+      ctx.strokeStyle = recognized ? roleGuide.color : hand === active ? '#d0ed92' : '#faf4dc'; ctx.fillStyle = recognized ? roleGuide.color : '#ec805c'; ctx.lineWidth = 2;
       for (const [a,b] of LINKS) {
         ctx.beginPath(); ctx.moveTo((1-hand.landmarks[a].x)*640,hand.landmarks[a].y*height);
         ctx.lineTo((1-hand.landmarks[b].x)*640,hand.landmarks[b].y*height); ctx.stroke();
       }
       for (const p of hand.landmarks) { ctx.beginPath(); ctx.arc((1-p.x)*640,p.y*height,3,0,Math.PI*2); ctx.fill(); }
     }
+    ctx.globalAlpha = 1;
   }
 }

@@ -37,6 +37,7 @@ try {
  await page.waitForFunction(()=>window.__littleCloud.snapshot().phase==='aim');
  assert.equal(await page.evaluate(()=>window.__littleCloud.snapshot().event.controlProfile),'hold-drop');
  assert.equal(await page.locator('#control-deck').isVisible(),false);
+ await page.locator('#machine-drop').waitFor({state:'visible',timeout:5000});
  assert.equal(await page.locator('#machine-drop').isVisible(),true);
  assert.deepEqual(errors,[]);
  console.log('PASS both mode choices, responsive layout, one-shot selection, recovery isolation and cabinet controls');

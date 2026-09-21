@@ -318,3 +318,13 @@ button.hand-hover { outline:4px solid #ffca45; outline-offset:6px; box-shadow:0 
 }
 
 #machine-drop::after { content:""; position:absolute; inset:-8px; border-radius:50%; background:conic-gradient(#66ffb3 calc(var(--hold,0) * 360deg),transparent 0); mask:radial-gradient(farthest-side,transparent calc(100% - 4px),#000 0); pointer-events:none; }
+
+/* Two readable hand windows below the cabinet, rather than a tiny thumbnail. */
+@media (max-width:650px) {
+  .two-hand-mode #scene { height:calc(100% - 480px); }
+  .two-hand-mode #camera-preview { width:210px; top:calc(max(740px,100svh) - 295px); left:calc(50vw - 22px); transform:translateX(-50%); }
+  .two-hand-mode .camera-image { aspect-ratio:16 / 9; }
+}
+@media (max-width:374px) {
+  .two-hand-mode #camera-preview { left:calc(50vw - 14px); }
+}

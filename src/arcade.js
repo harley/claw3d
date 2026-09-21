@@ -24,6 +24,7 @@ let cameraControls, cameraLoading = false;
 const handMenu = createHandMenu();
 document.body.classList.toggle('machine-controls', cabinetEnabled);
 document.body.classList.toggle('dual-controls', cabinetEnabled);
+document.body.classList.toggle('two-hand-mode', dualEnabled);
 const glove = createJoystickCursor(() => cabinetEnabled ? scene?.controlTargets() : null, () => { if (cabinetEnabled) gestureDrop(); });
 let previousMenuMode = '';
 function menuMode() {

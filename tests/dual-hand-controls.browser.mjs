@@ -39,14 +39,28 @@ try {
   const targets=async()=>({stick:{x:.25,y:.48},drop:{x:.75,y:.48}});
   const burst=(hands,n=10,age=20)=>page.evaluate(({hands,n,age})=>{let s;for(let i=0;i<n;i++)s=sample(hands,age);return s;},{hands,n,age});
   let t=await targets(),left={role:'left',...t.stick},right={role:'right',...t.drop};
+  await burst([]);await frame();
+  assert.equal(await page.locator('#camera-overlay').getAttribute('data-left'),'open');
+  assert.equal(await page.locator('#action-copy').evaluate(el=>getComputedStyle(el).opacity),'0','webcam guides replace central hand instructions');
+  const alpha=await page.evaluate(()=>{
+    const c=document.getElementById('camera-overlay'),ctx=c.getContext('2d');
+    const at=(x,y)=>ctx.getImageData(Math.round(x*c.width),Math.round(y*c.height),1,1).data[3];
+    return {outside:at(.02,.5),gap:at(.5,.5),inside:at(.1,.4)};
+  });
+  assert.ok(alpha.outside>180&&alpha.gap>180&&alpha.inside<30,'outside and centre gap dim while hand windows stay clear');
+  await page.screenshot({path:'.screenshots/dual-camera-waiting.png'});
   const acquire=async()=>{
     t=await targets();left={role:'left',...t.stick};right={role:'right',...t.drop};
     await burst([left]);left.kind='closed';assert.equal((await burst([left],5)).left.stage,'gripped');
     await burst([left,right]);
   };
   await acquire();await frame();
+  assert.equal(await page.locator('#camera-overlay').getAttribute('data-left'),'active');
+  assert.equal(await page.locator('#camera-overlay').getAttribute('data-right'),'active');
   assert.equal(await page.locator('#machine-drop').getAttribute('data-ready'),'true');
   await burst([left]);await frame();
+  assert.equal(await page.locator('#camera-overlay').getAttribute('data-left'),'active');
+  assert.equal(await page.locator('#camera-overlay').getAttribute('data-right'),'open');
   assert.equal(await page.locator('#machine-drop').getAttribute('data-ready'),'false','missing right hand clears button highlight');
   await burst([left,right]);
   assert.equal(await page.locator('#control-deck').isVisible(),false);
@@ -73,6 +87,8 @@ try {
     if(size.width===390){
       const camera=await page.locator('#camera-preview').boundingBox();
       assert.ok(camera.y>=controls.bounds.bottom,'camera preview sits below the play area');
+      assert.ok(camera.width>=210,'two hand windows stay readable on phones');
+      assert.ok(camera.y+camera.height<Math.max(740,size.height)-40,'camera fits above the footer');
     }
     if(size.width===390&&size.height===844)await page.screenshot({path:'.screenshots/dual-mobile.png'});
   }
@@ -81,10 +97,14 @@ try {
   await burst([left,{...right,x:.49,kind:'closed'}],1);await frame();
   assert.equal((await page.evaluate(()=>window.__littleCloud.snapshot())).phase,'aim');
   assert.equal(await page.locator('#status').textContent(),'RETURN RIGHT HAND TO ITS AREA');
+  assert.equal(await page.locator('#camera-overlay').getAttribute('data-right'),'return');
+  assert.equal(await page.locator('#action-copy').evaluate(el=>getComputedStyle(el).opacity),'0');
   assert.equal((await burst([left,{...right,kind:'closed'}])).right.stage,'seeking');
   await burst([left,right]);
   // Stale capture invalidates both roles, even if it contains a fist over DROP.
   await burst([left,{...right,kind:'closed'}],1,350);
+  assert.equal(await page.locator('#camera-overlay').getAttribute('data-left'),'inactive');
+  assert.equal(await page.locator('#camera-overlay').getAttribute('data-right'),'inactive');
   assert.equal((await burst([left,{...right,kind:'closed'}])).right.stage,'seeking');
   await acquire();
   // Overshooting the stick's soft range must not detach the glove or disarm DROP.
@@ -114,7 +134,8 @@ try {
     await acquire();await page.evaluate(()=>testAim(.80,.22));
     await burst([left]);await frame();
     assert.equal(await page.locator('#status').textContent(),'RAISE RIGHT HAND OPEN');
-    assert.equal(await page.locator('#action-copy').evaluate(el=>el.classList.contains('quiet')),false);
+    assert.equal(await page.locator('#action-copy').evaluate(el=>el.classList.contains('quiet')),true);
+    assert.equal(await page.locator('#camera-overlay').getAttribute('data-right'),'open');
     await burst([left,right]);
     await page.waitForFunction(()=>document.getElementById('jackpot-signal').hidden);
     if(turn===2){
