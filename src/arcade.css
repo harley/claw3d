@@ -328,3 +328,16 @@ button.hand-hover { outline:4px solid #ffca45; outline-offset:6px; box-shadow:0 
 @media (max-width:374px) {
   .two-hand-mode #camera-preview { left:calc(50vw - 14px); }
 }
+
+/* Captures remain visible even while the close camera hides the prize shelf. */
+.machine-controls .turn-chip { height:66px; flex-direction:column; gap:2px; border-radius:6px; }
+.trophy-icon { font-size:22px; line-height:1; }
+.trophy-name { font:700 10px Arial,sans-serif; }
+.trophy-score { font-size:12px; }
+@media (max-width:650px) {
+  .machine-controls #turn-chips { display:flex; margin-top:8px; gap:4px; }
+  .machine-controls .turn-chip { width:56px; height:26px; flex-direction:row; gap:3px; font-size:9px; }
+  .trophy-icon { font-size:16px; }
+  .trophy-score { font-size:9px; }
+  .trophy-name { display:none; }
+}

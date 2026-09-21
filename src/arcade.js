@@ -104,16 +104,20 @@ function phaseSound(phase, modal) {
   else if (phase === 'release' && game.plan?.prize) { audio.note(740, .1, 0, 'sine'); audio.note(980, .14, .1, 'sine'); }
 }
 function freshGame() { cameraControls?.reset(); game = createGame({ carousel: true }); game.position = { x: -1.12, z: .66 }; scene?.groundToys(game); aligned = null; hud.invalidate(); }
+function restoreTrophies() {
+  if (shared) return;
+  for (const turn of run?.turns || []) {
+    const toy = game.toys.find(toy => toy.id === turn.prizeId);
+    if (toy && !toy.claimed) { toy.claimed = true; game.collection.push(toy.id); }
+  }
+}
 function beginTurn() {
   nextTurnElapsed = 0; dropRemainingMs = 0;
-  if (grabEnabled && run.turns.length && !recovering && game.phase === 'result') {
+  if (!shared && run.turns.length && !recovering && game.phase === 'result') {
     cameraControls?.reset(); aligned = null; hud.invalidate();
   } else {
     freshGame();
-    if (grabEnabled) for (const turn of run.turns) {
-      const toy = game.toys.find(toy => toy.id === turn.prizeId);
-      if (toy && !toy.claimed) { toy.claimed = true; game.collection.push(toy.id); }
-    }
+    restoreTrophies();
   }
   turnNumber = run.turns.length + 1; remaining = run.rules.seconds; begin(game); recovering = false;
   if (turnNumber === 3) { [330, 440, 660].forEach((f, i) => audio.note(f, .16, i * .15)); }
@@ -497,6 +501,7 @@ try {
   await new Promise(resolve => requestAnimationFrame(resolve));
   scene = new ArcadeScene($('scene'), { wideControls: cabinetEnabled && new URLSearchParams(location.search).get('controls') !== 'grab' });
   scene.groundToys(game);
+  restoreTrophies();
   persist(); renderBoard();
   scene.update(game, 1 / 60, 0, { x: 0, z: 0 }, null);
   clearTimeout(loadingTimeout); clearTimeout(window.__arcadeBootTimer); document.documentElement.dataset.arcadeReady = 'true'; $('loading').hidden = true;

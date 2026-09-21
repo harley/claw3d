@@ -13,7 +13,7 @@ const snap=()=>page.evaluate(()=>window.__littleCloud.snapshot());
 const phase=state=>page.waitForFunction(state=>window.__littleCloud.snapshot().phase===state,state,{timeout:30000});
 const open=async()=>{await page.goto('http://127.0.0.1:4196/?setup=manual');await page.waitForFunction(()=>window.__littleCloud);};
 const register=async name=>{if(!(await snap()).event.handCamera.running){await page.locator('#play').click();await page.waitForFunction(()=>window.__littleCloud.snapshot().event.handCamera.running);}await page.locator('#play').click();assert.equal(await page.locator('#name').getAttribute('required'),null);await page.locator('#name').fill(name);await page.locator('#name').press('Enter');await assertScoredStart(page);await phase('aim');};
-async function aimButter(){ for(const axis of ['x','z']) for(let i=0;i<6;i++){const delta=({x:-.38,z:.72})[axis]-(await snap()).position[axis];if(Math.abs(delta)<.025)break;const speed=Math.abs(delta)<.14?.25:1;await cameraInput(page,{x:0,z:0,[axis]:Math.sign(delta)*speed});await page.waitForTimeout(Math.abs(delta)/(.85*speed)*1000);await cameraInput(page,{x:0,z:0});} assert.equal((await snap()).aligned,'butter');}
+async function aimToy(id='butter'){ for(const axis of ['x','z']) for(let i=0;i<6;i++){const delta=({butter:{x:-.38,z:.72},peach:{x:.20,z:.72}}[id])[axis]-(await snap()).position[axis];if(Math.abs(delta)<.025)break;const speed=Math.abs(delta)<.14?.25:1;await cameraInput(page,{x:0,z:0,[axis]:Math.sign(delta)*speed});await page.waitForTimeout(Math.abs(delta)/(.85*speed)*1000);await cameraInput(page,{x:0,z:0});} assert.equal((await snap()).aligned,id);}
 let checkedDelivery = false;
 async function catchTurn(){
  await cameraDrop(page);
@@ -70,21 +70,40 @@ try {
  await register('Linh r h'); assert.equal((await snap()).event.run.name,'Linh r h');
  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
  const camera=(await snap()).camera; await page.waitForTimeout(100); assert.deepEqual((await snap()).camera,camera);
- await aimButter();await catchTurn();assert.equal((await snap()).event.run.turns.length,1);assert.ok((await snap()).event.run.turns[0].score>100);
+ await aimToy();await catchTurn();assert.equal((await snap()).event.run.turns.length,1);assert.ok((await snap()).event.run.turns[0].score>100);
  await phase('aim');
- assert.ok((await snap()).toys.every(t=>!t.claimed));
+ assert.equal((await snap()).toys.find(t=>t.id==='butter').claimed,true);
+ assert.deepEqual((await snap()).collection,['butter']);
+ await page.locator('.turn-chip[data-prize="butter"]').waitFor();
+ assert.equal(await page.locator('.trophy-name').textContent(),'Butter');
+ const trophyRun=(await snap()).event.run.id;
+ await page.reload();await page.waitForFunction(()=>window.__littleCloud);
+ assert.deepEqual((await snap()).collection,['butter'],'reload restores shelf trophies before Continue');
+ await page.locator('.turn-chip[data-prize="butter"]').waitFor();
+ await page.locator('#play').click();await phase('aim');
+ assert.equal((await snap()).event.run.id,trophyRun);
+ assert.equal((await snap()).event.turn,2);
+ assert.equal((await snap()).toys.find(t=>t.id==='butter').claimed,true);
+ await page.setViewportSize({width:390,height:844});
+ const trophyBox=await page.locator('#turn-chips').boundingBox(),sceneBox=await page.locator('#scene').boundingBox();
+ assert.ok(trophyBox&&trophyBox.y+trophyBox.height<=sceneBox.y,'trophies stay visible above the chamber on phones');
+ await page.screenshot({path:'.screenshots/persistent-trophy-mobile.png'});
+ await page.setViewportSize({width:1440,height:900});
  // A clear miss at the far left: no consolation or hidden points.
  await cameraInput(page,{x:-1,z:0});await page.waitForTimeout(1800);await cameraInput(page,{x:0,z:0});await catchTurn();
  assert.equal((await snap()).event.run.turns[1].score,0);
  await phase('aim');assert.equal((await snap()).event.turn,3);
- await aimButter();await page.screenshot({path:'.screenshots/event-last-claw.png'});await catchTurn();await page.locator('#final').waitFor();
+ assert.deepEqual((await snap()).collection,['butter']);
+ await aimToy('peach');await page.screenshot({path:'.screenshots/event-last-claw.png'});await catchTurn();await page.locator('#final').waitFor();
  assert.ok((await snap()).event.complete.total>200 && (await snap()).event.complete.total<=300);assert.equal((await snap()).event.board.runs.length,1);
  await page.locator('#final-leaderboard').click(); await page.locator('#result-open').click();
  assert.equal(await page.locator('#final-score').textContent(),String((await snap()).event.complete.total),'reopening restores the full score after interrupted count-up');
  await page.screenshot({path:'.screenshots/event-result.png'});
  await page.reload();await page.waitForFunction(()=>window.__littleCloud);assert.equal((await snap()).event.board.runs.length,1);
- console.log('PASS official: catch + miss + catch, restock, exactly three turns, persisted speed-score total');
+ console.log('PASS distinct catches, persistent trophies across turns/reload, exactly three turns and saved speed-score total');
  await register('');
+ assert.ok((await snap()).toys.every(t=>!t.claimed),'new player restocks the machine');
+ assert.equal(await page.locator('.turn-chip[data-prize]').count(),0);
  await page.locator('#operator-open').click();const before=(await snap()).event.remaining;await page.waitForTimeout(350);assert.equal((await snap()).event.remaining,before);await page.locator('#operator .panel-head button').click();await page.locator('#scene').focus();
  await catchTurn();await phase('aim');await catchTurn();await phase('aim');
  // Final turn runs out naturally and commits one drop.
@@ -131,6 +150,6 @@ try {
  assert.equal((await snap()).event.board.runs[0].turns.length,3);
  console.log('PASS legacy unfinished practice remains preserved and excluded without a fabricated rank');
  assert.deepEqual(await page.evaluate(()=>window.mediaCalls),[]);assert.deepEqual(errors,[]);
- await writeFile('.screenshots/event-verification.json',JSON.stringify({checks:['official three-turn run with speed bonus','catch/miss and repeated drop','restock each turn','blank nickname scored','legacy practice preserved and excluded','timer auto-drop','modal pause','reload persistence and recovery','session history','export','820px viewport','no camera access'],errors},null,2));
+ await writeFile('.screenshots/event-verification.json',JSON.stringify({checks:['official three-turn run with speed bonus','catch/miss and repeated drop','caught toys stay removed until a new player','blank nickname scored','legacy practice preserved and excluded','timer auto-drop','modal pause','reload persistence and recovery','session history','export','820px viewport','no camera access'],errors},null,2));
  console.log('ALL EVENT BROWSER CHECKS PASSED');
 } finally {await browser.close();}

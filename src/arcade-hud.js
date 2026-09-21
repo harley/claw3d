@@ -2,7 +2,7 @@
 // labels. It reads a per-call view of game state and never mutates it; audio
 // and the phase-to-sound mapping are injected.
 import { PRESS_MS } from './grab-release.js';
-import { CAROUSEL, carouselCue } from './arcade-mechanics.js';
+import { ASSORTMENT, CAROUSEL, carouselCue } from './arcade-mechanics.js';
 
 const elements = new Map();
 const $ = id => { if (!elements.has(id)) elements.set(id, document.getElementById(id)); return elements.get(id); };
@@ -152,7 +152,19 @@ export function createHud({ audio, phaseSound }) {
   $('play').hidden = Boolean(startingRun || (run && !recovering && !cameraRecovery && !paused));
   $('play').disabled = cameraLoading;
   $('turn-chips').replaceChildren();
-  for (let i = 0; i < 3; i++) { const turn = run?.turns[i] || completedRun?.turns[i]; const chip = document.createElement('span'); chip.className = `turn-chip ${turn?.score ? 'scored' : ''}`; chip.textContent = turn ? turn.score ? `+${turn.score}` : 'MISS' : '—'; $('turn-chips').append(chip); }
+  for (let i = 0; i < 3; i++) {
+    const turn = run?.turns[i] || completedRun?.turns[i], toy = ASSORTMENT.find(toy => toy.id === turn?.prizeId);
+    const chip = document.createElement('span'); chip.className = `turn-chip ${turn?.score ? 'scored' : ''}`;
+    chip.textContent = turn ? turn.score ? `+${turn.score}` : 'MISS' : '—';
+    if (cabinetEnabled && toy) {
+      chip.dataset.prize = toy.id; chip.title = `Turn ${i + 1}: ${toy.name}, ${turn.score} points`;
+      chip.setAttribute('role', 'img'); chip.setAttribute('aria-label', chip.title); chip.replaceChildren();
+      for (const [className, text] of [['trophy-icon', { bunny: '🐰', capybara: '🐾', cloud: '☁️', star: '⭐', robot: '🤖' }[toy.family]], ['trophy-name', toy.name], ['trophy-score', `+${turn.score}`]]) {
+        const part = document.createElement('span'); part.className = className; part.textContent = text; part.setAttribute('aria-hidden', 'true'); chip.append(part);
+      }
+    }
+    $('turn-chips').append(chip);
+  }
   }
   return { update, invalidate: () => { lastStatus = ''; } };
 }
