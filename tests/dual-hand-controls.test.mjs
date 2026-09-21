@@ -107,13 +107,35 @@ test('one uncertain right sample cancels confirmation until a fresh open-to-clos
 // fixture above, these labels are independent of our role mapping assumption.
 import { readFileSync } from 'node:fs';
 const knownHands = JSON.parse(readFileSync(new URL('./fixtures/handedness-model-results.json', import.meta.url), 'utf8'));
-for (const { physicalHand, result } of knownHands.cases) test(`real model ${physicalHand} output acquires the same anatomical role`, () => {
+for (const { physicalHand, result } of knownHands.cases) test(`real model ${physicalHand} output routes to the same anatomical role`, () => {
   const f = cameraFixture();
   for (let i = 0; i < 12; i++) f.c.handle(result, 3000 + i * 65);
   const other = physicalHand === 'left' ? 'right' : 'left';
-  assert.equal(f.c.state.hands[physicalHand].ready, true);
+  assert.ok(f.c.state.hands[physicalHand].pointer);
   assert.equal(f.c.state.hands[other].pointer, null);
   const landmarks = result.landmarks[0];
   assert.equal(f.c.state.hands[physicalHand].pointer.x, 1 - (landmarks[0].x + landmarks[9].x) / 2, 'only cursor x is mirrored');
   assert.equal(f.drops(), 0);
+});
+
+
+test('acquisition seeds each local workspace at a comfortable separated position',()=>{
+  const f=fixture();f.repeat([hand('left','open',.22,.42)]);
+  assert.deepEqual(f.controls.left.origin,{x:.22,y:.42});
+  f.repeat([hand('left','closed',.22,.42)],5);
+  const s=f.repeat([hand('left','closed',.22,.42),hand('right','open',.78,.45)]);
+  assert.deepEqual(s.hands.left.workspace,{x:0,y:0});assert.deepEqual(s.hands.right.workspace,{x:0,y:0});
+  assert.deepEqual(s.input,{x:0,z:0});
+});
+for(const role of ['left','right'])test(`${role} workspace exit cancels its action and cannot resume clenched`,()=>{
+  const f=fixture();f.arm();const normal=[f.left,hand('right','closed')];f.step(normal);
+  const outside=role==='left'?[hand('left','closed',.49),hand('right')]:[f.left,hand('right','closed',.51)];
+  const s=f.step(outside);assert.equal(s.fired,false);assert.equal(s.hands[role].outside,true);
+  assert.equal(f.repeat(normal).fired,false);
+  assert.equal(f.controls[role].owner,null);
+});
+test('right local range exit leaves left steering active, even while still on the right side',()=>{
+  const f=fixture();f.arm();f.step([hand('left','closed',.30),hand('right','open',.65,.72)]);
+  const s=f.step([hand('left','closed',.30),hand('right','open',.65,.82)]);
+  assert.ok(s.input.x<0);assert.equal(s.hands.right.outside,true);assert.equal(s.fired,false);
 });

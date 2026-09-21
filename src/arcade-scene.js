@@ -8,7 +8,8 @@ import { palette, material, group, mesh, ball, box, cylinder, line, rod, batch, 
 const v = (x, y, z) => new T.Vector3(x, y, z);
 
 export class ArcadeScene {
-  constructor(canvas) {
+  constructor(canvas, { wideControls = false } = {}) {
+    this.wideControls = wideControls;
     this.canvas = canvas;
     this.renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
@@ -131,16 +132,17 @@ export class ArcadeScene {
     ball(cab, m.brass, [1.18, 1.09, 1.30], [.025, .025, .010]);
     label(cab, 'crafted by coderpush', .84, .083, [.79, .63, 1.287], { color: '#746b55', font: 'Arial', size: 29 });
     // Control deck: ivory over red, a ball-topped stick, one big enamel button.
-    box(cab, m.red, [.55, 1.525, 1.44], [2.08, .18, .53], .065);
-    box(cab, m.ivory, [.55, 1.633, 1.44], [2.01, .045, .49], .045);
-    cylinder(cab, m.brass, [-.28, 1.68, 1.44], .155, .023); cylinder(cab, m.rubber, [-.28, 1.70, 1.44], .09, .018);
-    this.stick = group(this.scene, -.28, 1.70, 1.44); cylinder(this.stick, m.chrome, [0, .092, 0], .023, .18); ball(this.stick, m.red, [0, .205, 0], [.10, .10, .10]);
+    const stickX = this.wideControls ? -1.28 : -.28, dropX = this.wideControls ? 1.28 : .87;
+    box(cab, m.red, [this.wideControls ? 0 : .55, 1.525, 1.44], [this.wideControls ? 3.5 : 2.08, .18, .53], .065);
+    box(cab, m.ivory, [this.wideControls ? 0 : .55, 1.633, 1.44], [this.wideControls ? 3.43 : 2.01, .045, .49], .045);
+    cylinder(cab, m.brass, [stickX, 1.68, 1.44], .155, .023); cylinder(cab, m.rubber, [stickX, 1.70, 1.44], .09, .018);
+    this.stick = group(this.scene, stickX, 1.70, 1.44); cylinder(this.stick, m.chrome, [0, .092, 0], .023, .18); ball(this.stick, m.red, [0, .205, 0], [.10, .10, .10]);
     this.stick.scale.setScalar(1.4);
     this.joystickHand = new JoystickHand(this.stick);
-    cylinder(cab, m.brass, [.87, 1.675, 1.44], .19, .036); this.button = cylinder(this.scene, m.red, [.87, 1.72, 1.44], .21, .10, 48);
+    cylinder(cab, m.brass, [dropX, 1.675, 1.44], .19, .036); this.button = cylinder(this.scene, m.red, [dropX, 1.72, 1.44], .21, .10, 48);
     const capLabel = label(this.button, 'DROP', .28, .10, [0, .054, 0], { color: '#fff4dd', font: 'Arial', weight: 'bold', size: 155 }); capLabel.rotation.x = -Math.PI / 2;
-    const aimLabel = label(cab, 'MOVE', .28, .075, [.05, 1.66, 1.47], { color: '#716b57', font: 'Arial', size: 30 }); aimLabel.rotation.x = -Math.PI / 2;
-    const dropLabel = label(cab, 'DROP', .28, .075, [1.20, 1.66, 1.47], { color: '#a04540', font: 'Arial', size: 30 }); dropLabel.rotation.x = -Math.PI / 2;
+    const aimLabel = label(cab, 'MOVE', .28, .075, [stickX + .33, 1.66, 1.47], { color: '#716b57', font: 'Arial', size: 30 }); aimLabel.rotation.x = -Math.PI / 2;
+    const dropLabel = label(cab, 'DROP', .28, .075, [dropX + (this.wideControls ? -.33 : .33), 1.66, 1.47], { color: '#a04540', font: 'Arial', size: 30 }); dropLabel.rotation.x = -Math.PI / 2;
     // Lantern-like marquee and tiny edge bulbs.
     box(cab, m.ivory, [0, 4.61, 0], [3.78, .24, 2.75], .12);
     box(cab, m.red, [0, 4.94, .00], [3.83, .57, 2.73], .15);
@@ -334,9 +336,11 @@ export class ArcadeScene {
 
   controlTargets() {
     const stick = this.stick.localToWorld(v(0, .205, 0));
-    const radius = Math.abs(this.screenPoint(1.12, 1.77, 1.44).x - this.screenPoint(.87, 1.77, 1.44).x);
-    return { stick: { ...this.screenPoint(stick.x, stick.y, stick.z), radius: Math.max(32, radius * 1.3) },
-      drop: { ...this.screenPoint(.87, this.button.position.y + .05, 1.44), radius: Math.max(26, radius) } };
+    const dropX = this.button.position.x;
+    const radius = Math.abs(this.screenPoint(dropX + .25, 1.77, 1.44).x - this.screenPoint(dropX, 1.77, 1.44).x);
+    const { left, right, top, bottom } = this.canvas.getBoundingClientRect();
+    return { bounds: { left, right, top, bottom }, stick: { ...this.screenPoint(stick.x, stick.y, stick.z), radius: Math.max(32, radius * 1.3) },
+      drop: { ...this.screenPoint(dropX, this.button.position.y + .05, 1.44), radius: Math.max(26, radius) } };
   }
 
   screenPoint(x, y, z) { const p = v(x, y, z).project(this.camera), rect = this.canvas.getBoundingClientRect(); return { x: rect.left + (p.x + 1) / 2 * rect.width, y: rect.top + (1 - p.y) / 2 * rect.height }; }

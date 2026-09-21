@@ -22,6 +22,7 @@ let game = createGame({ carousel: true }), scene, previous = 0, stopped = false,
 let cameraControls, cameraLoading = false;
 const handMenu = createHandMenu();
 document.body.classList.toggle('machine-controls', grabEnabled);
+document.body.classList.toggle('dual-controls', dualEnabled);
 const glove = createJoystickCursor(() => grabEnabled ? scene?.controlTargets() : null, () => { if (grabEnabled) gestureDrop(); });
 let previousMenuMode = '';
 function menuMode() {
@@ -292,7 +293,7 @@ async function startCamera() {
       const { createCameraControls } = await import('./camera-controls.js');
       cameraControls = await createCameraControls({ video: $('camera-video'), overlay: $('camera-overlay'), select: $('camera-select'),
         getControlProfile: () => grabEnabled && !menuMode() ? dualEnabled ? 'dual' : 'grab-release' : 'hold-drop',
-        getControlTarget: pointer => glove.targetAt(pointer),
+        getControlTarget: (pointer, role, origin) => glove.targetAt(pointer, role, origin),
         canControl: () => Boolean(menuMode() || (!startingRun && run && game.phase === 'aim' && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]'))),
         onDrop: () => menuMode() ? handMenu.confirm(menuMode(), cameraControls.feedback) : gestureDrop(),
         // Bounded so a boundary-trembling hand cannot evict funnel-critical
@@ -482,7 +483,7 @@ $('shared-start').addEventListener('cancel', event => event.preventDefault());
 const loadingTimeout = setTimeout(() => fail('The arcade took too long to open. Reload the page to try again.'), 15000);
 try {
   await new Promise(resolve => requestAnimationFrame(resolve));
-  scene = new ArcadeScene($('scene'));
+  scene = new ArcadeScene($('scene'), { wideControls: dualEnabled });
   scene.groundToys(game);
   persist(); renderBoard();
   scene.update(game, 1 / 60, 0, { x: 0, z: 0 }, null);

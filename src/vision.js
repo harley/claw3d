@@ -1,3 +1,4 @@
+import { HAND_ZONES } from './hand-workspace.js';
 import { pinchRatio, joystickAxis, matchHand } from './mechanics.js';
 import { clamp } from './arcade-mechanics.js';
 import {FistDrop,fistEvidence} from './fist.js';
@@ -332,7 +333,7 @@ export class HandController {
         this.dual.reset(); this.input = { x: 0, z: 0 }; this.onInput(this.input);
         this.onState({ kind: 'blocked', profile, controlEnabled: false, hands: {} });
       } else {
-        const state = this.dual.update(hands, now, point => this.getControlTarget?.(point) || {});
+        const state = this.dual.update(hands, now, (point, role, origin) => this.getControlTarget?.(point, role, origin) || {});
         this.input = state.input; this.onInput(this.input);
         if (state.fired) {
           const accepted = this.onDrop() !== false;
@@ -445,6 +446,15 @@ export class HandController {
     const ctx = this.overlay.getContext('2d');
     if (this.overlay.width !== 640 || this.overlay.height !== height) { this.overlay.width = 640; this.overlay.height = height; }
     else ctx.clearRect(0, 0, 640, height);
+    if (this.controlProfile === 'dual') {
+      for (const [role, zone] of Object.entries(HAND_ZONES)) {
+        ctx.strokeStyle = ctx.fillStyle = role === 'left' ? '#59e5f2' : '#ffcf65';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(zone.minX * 640, .12 * height, (zone.maxX - zone.minX) * 640, .76 * height);
+        ctx.font = 'bold 24px sans-serif';
+        ctx.fillText(role === 'left' ? 'L' : 'R', zone.minX * 640 + 10, .12 * height + 29);
+      }
+    }
     if (this.neutral && active) {
       ctx.strokeStyle = '#abd3ff'; ctx.lineWidth = 2;
       const x = this.neutral.x * 640, y = this.neutral.y * height;

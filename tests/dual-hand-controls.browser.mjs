@@ -36,10 +36,7 @@ try {
   const aim=async()=>{await page.waitForFunction(()=>window.__littleCloud.snapshot().phase==='aim',{},{timeout:10000});await frame();};
   await aim();
   assert.equal(await page.evaluate(()=>controller.getControlProfile()),'dual');
-  const targets=()=>page.evaluate(()=>{
-    const {stick,drop}=window.__littleCloud.snapshot().machineControls;
-    const point=p=>({x:.18+p.x/innerWidth*.64,y:.15+p.y/innerHeight*.70});return {stick:point(stick),drop:point(drop)};
-  });
+  const targets=async()=>({stick:{x:.25,y:.48},drop:{x:.75,y:.48}});
   const burst=(hands,n=10,age=20)=>page.evaluate(({hands,n,age})=>{let s;for(let i=0;i<n;i++)s=sample(hands,age);return s;},{hands,n,age});
   let t=await targets(),left={role:'left',...t.stick},right={role:'right',...t.drop};
   const acquire=async()=>{
@@ -59,12 +56,29 @@ try {
   for(const selector of ['#joystick-cursor','#right-hand-cursor'])assert.equal(await page.locator(selector).isVisible(),true);
   assert.ok((await page.locator('#right-hand-cursor').boundingBox()).width<=66);
   await page.screenshot({path:'.screenshots/dual-controls.png'});
-  for(const size of [{width:820,height:900},{width:390,height:844},{width:1440,height:900}]){
+  for(const size of [{width:820,height:900},{width:390,height:844},{width:390,height:700},{width:1440,height:900}]){
     await page.setViewportSize(size);await frame();
+    const controls=await page.evaluate(()=>window.__littleCloud.snapshot().machineControls);
+    assert.ok(controls.drop.x-controls.stick.x>(controls.bounds.right-controls.bounds.left)*.40,'actual controls sit well apart');
+    for(const [selector,control] of [['#joystick-cursor',controls.stick],['#right-hand-cursor',controls.drop]]){
+      const glove=await page.locator(selector).boundingBox();
+      assert.ok(Math.abs(glove.x+glove.width/2-control.x)<3,'comfortable hand position maps to its own control after resize');
+    }
     const box=await page.locator('#machine-drop').boundingBox();
     assert.ok(box&&box.x>=0&&box.y>=0&&box.x+box.width<=size.width&&box.y+box.height<=size.height);
-    if(size.width===390)await page.screenshot({path:'.screenshots/dual-mobile.png'});
+    if(size.width===390){
+      const camera=await page.locator('#camera-preview').boundingBox();
+      assert.ok(camera.y>=controls.bounds.bottom,'camera preview sits below the play area');
+    }
+    if(size.width===390&&size.height===844)await page.screenshot({path:'.screenshots/dual-mobile.png'});
   }
+  // Cross the physical centre: the affected hand must release, never clamp into a press.
+  await burst([left,{...right,x:.60}],1);
+  await burst([left,{...right,x:.49,kind:'closed'}],1);await frame();
+  assert.equal((await page.evaluate(()=>window.__littleCloud.snapshot())).phase,'aim');
+  assert.equal(await page.locator('#status').textContent(),'RETURN RIGHT HAND TO ITS AREA');
+  assert.equal((await burst([left,{...right,kind:'closed'}])).right.stage,'seeking');
+  await burst([left,right]);
   // Stale capture invalidates both roles, even if it contains a fist over DROP.
   await burst([left,{...right,kind:'closed'}],1,350);
   assert.equal((await burst([left,{...right,kind:'closed'}])).right.stage,'seeking');
@@ -83,7 +97,6 @@ try {
     await page.waitForFunction(()=>document.getElementById('jackpot-signal').hidden);
     if(turn===2){
       await burst([left,{...right,y:right.y-.10}],1);
-      await burst([left,{...right,y:right.y-.055}],1);
       assert.equal((await burst([left,right],1)).right.stage,'fired');
     }else{
       await burst([]);await page.locator('#machine-drop').click();

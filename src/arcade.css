@@ -307,3 +307,9 @@ button.hand-hover { outline:4px solid #ffca45; outline-offset:6px; box-shadow:0 
 @media (prefers-reduced-motion: reduce) { .play-button { transition: none; } }
 
 @media (max-width: 650px) { .machine-controls #scene { height: calc(100% - 335px); } }
+
+/* Keep the camera feedback below the widened controls on narrow displays. */
+@media (max-width: 650px) {
+  .dual-controls #scene { height: calc(100% - 425px); }
+  .dual-controls #camera-preview { top: calc(max(740px, 100svh) - 240px); }
+}

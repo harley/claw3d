@@ -1,3 +1,4 @@
+import { handOffset, projectHandWorkspace } from './hand-workspace.js';
 // Presentation owns the screen target; camera input only receives hit-test results.
 function createGlove(id, screen) {
   const root = document.createElement('div');
@@ -18,7 +19,8 @@ function createGlove(id, screen) {
       curl += (target - curl) * (reduced ? 1 : Math.min(1, dt * 22));
       root.style.width = `${attached ? Math.max(44, Math.min(65, targets.stick.radius * 1.35)) : Math.min(stage === 'pressing' ? 55 : 65, Math.max(44, targets.drop.radius * 1.6))}px`;
       root.style.height = 'auto';
-      const p = screen(feedback.pointer), anchor = stage === 'pressing' ? targets.drop : targets.stick;
+      root.style.opacity = feedback.outside ? '.35' : '1';
+      const p = feedback.workspace ? projectHandWorkspace(feedback.workspace, left ? 'left' : 'right', targets) : screen(feedback.pointer), anchor = stage === 'pressing' ? targets.drop : targets.stick;
       const dock = attached ? 1 : ['grabbing', 'pressing'].includes(stage) ? feedback.progress : 0;
       root.style.left = `${p.x + (anchor.x - p.x) * dock}px`;
       root.style.top = `${p.y + (anchor.y + (attached ? 10 : 0) - p.y) * dock}px`;
@@ -42,10 +44,10 @@ export function createJoystickCursor(getTargets = () => null, onDrop = () => {})
   const left = createGlove('joystick-cursor', screen);
   const right = createGlove('right-hand-cursor', screen);
   return {
-    targetAt(pointer) {
+    targetAt(pointer, role, origin) {
       const targets = getTargets();
       if (!pointer || !targets || button.hidden) return {};
-      const p = screen(pointer), { stick, drop } = targets;
+      const p = role ? projectHandWorkspace(handOffset(pointer, origin), role, targets) : screen(pointer), { stick, drop } = targets;
       const overTarget = Math.hypot(p.x - stick.x, p.y - stick.y) < stick.radius;
       const overDrop = Math.hypot((p.x - drop.x) / drop.radius, (p.y - drop.y) / drop.radius) < 1;
       const aboveDrop = Math.abs(p.x - drop.x) < drop.radius && p.y < drop.y - drop.radius && p.y > drop.y - drop.radius - innerHeight * .20;
