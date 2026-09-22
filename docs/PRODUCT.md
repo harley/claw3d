@@ -17,6 +17,10 @@ The wow moment is direct control followed by a believable grab, a tense lift and
 - The leaderboard is for fun and comparison only; rank earns no additional prize. Physical giveaway rules are separate. Min's ball artwork and 20/30/50-point proposal still need alignment with the game before adoption or printing.
 
 
+## Finale
+
+The results dialog reads the run in one line (TOP OF THE BOARD!, CLEAN SWEEP!, JACKPOT RUN!, RUN COMPLETE, or THE CLAW WINS THIS ONE for no catch) above the counted total, then shows the three turns as catch cards: the toy's icon, name and colour with base plus speed points, or MISS with the same reason line the player saw during the miss. Reasons are held in memory for the current run only; a recovered run shows plain MISS. Rank and board lines are unchanged.
+
 ## Hands-free menus and speed scoring
 
 Camera startup runs on launch; the browser still controls permission and may prompt on first use. A refusal opens camera setup with an explicit retry, without a retry loop. `?setup=manual` disables automatic camera and sound startup for diagnostics and existing setup tests.

@@ -9,7 +9,7 @@ const manualSetup = new URLSearchParams(location.search).get('setup') === 'manua
 import { createSharedBoard } from './shared-board.js';
 import { createPlaytestClient } from './playtest-client.js';
 import { createArcadeAudio } from './arcade-audio.js';
-import { createHud, $, setText, setHidden, nextTurnSeconds } from './arcade-hud.js';
+import { createHud, $, setText, setHidden, nextTurnSeconds, finaleHeadline, missCopy, TROPHY_ICONS } from './arcade-hud.js';
 import { createMovementMusic } from './movement-music.js';
 import { PerformanceGovernor, PERFORMANCE_WINDOW_MS } from './performance-governor.js';
 const shared = globalThis.__SHARED_PILOT__ === true;
@@ -64,6 +64,8 @@ let performanceFrames = [], performanceVisibleMs = 0, cameraReadyAt = null;
 let adaptationFrames = [], adaptationVisibleMs = 0;
 let holdSignalTurn = -1, holdSignalCount = 0;
 let nextTurnElapsed = 0, dropRemainingMs = 0, pendingSlam = null, contactFeedback = null;
+// Why each turn of the current run ended, for the finale (in memory only; recovered runs show plain MISS).
+let turnReasons = [];
 // Hit-stop: the world holds for a beat when the fingers meet the toy. Real time, not simulation time.
 const HIT_STOP_SECONDS = .08; let hitStop = 0;
 function showScorePop(points) {
@@ -155,6 +157,7 @@ function openRegistration(name = $('name').value) {
 function finishTurn() {
   if (!run) return;
   const outcome = recordTurn(store, turnNumber, game.plan?.prize?.id || null, dropRemainingMs); if (!outcome) return;
+  turnReasons[turnNumber - 1] = game.plan ? { reason: game.plan.reason, touched: game.plan.touched, blocker: game.plan.blocker } : null;
   persist();
   track('turn_complete', { turn: turnNumber, score: outcome.run.turns.at(-1).score, prizeId: outcome.run.turns.at(-1).prizeId, outcome: game.plan?.reason }, outcome.run);
   if (shared) pilot.queue(outcome.run);
@@ -166,11 +169,20 @@ function finishTurn() {
     completedRun = outcome.run; run = null; renderBoard();
     $('final-name').textContent = completedRun.name.toUpperCase(); $('final-score').textContent = String(completedRun.total).padStart(3, '0');
     const rank = shared ? undefined : leaderboard(currentBoard(store)).find(r => r.id === completedRun.id)?.rank;
-    $('final-kicker').textContent = rank === 1 ? 'TOP OF THE BOARD!' : 'RUN COMPLETE';
+    $('final-kicker').textContent = finaleHeadline(completedRun.turns, rank, completedRun.rules.points);
     $('final-rank').textContent = shared ? 'Score waiting to sync' : rank ? `LOCAL PREVIEW · RANK #${rank}` : 'LOCAL PREVIEW';
     setText('final-board', `Board: ${completedRun.boardName || store.boards.find(board => board.id === completedRun.boardId)?.name || completedRun.boardId}`);
     $('final-turns').replaceChildren();
-    for (const turn of completedRun.turns) { const chip = document.createElement('span'); chip.className = 'turn-chip scored'; chip.textContent = `+${turn.score}`; const name = document.createElement('small'); name.textContent = turn.prizeId ? `${completedRun.rules.points[turn.prizeId]} + ${turn.score - completedRun.rules.points[turn.prizeId]} SPEED` : 'MISS'; chip.append(name); $('final-turns').append(chip); }
+    completedRun.turns.forEach((turn, i) => {
+      const toy = turn.prizeId ? game.toys.find(t => t.id === turn.prizeId) : null;
+      const chip = document.createElement('span'); chip.className = `turn-chip scored catch-card${toy ? '' : ' miss'}`;
+      if (toy) { chip.dataset.prize = toy.id; chip.style.setProperty('--toy', toy.color); }
+      const parts = toy
+        ? [['catch-icon', TROPHY_ICONS[toy.family]], ['catch-name', toy.name.toUpperCase()], ['catch-points', `+${turn.score}`], ['catch-detail', `${completedRun.rules.points[toy.id]} + ${turn.score - completedRun.rules.points[toy.id]} SPEED`]]
+        : [['catch-icon', '—'], ['catch-name', 'MISS'], ['catch-points', '+0'], ['catch-detail', turnReasons[i] ? missCopy(turnReasons[i], game.toys) : `TURN ${i + 1}`]];
+      for (const [className, text] of parts) { const part = document.createElement('span'); part.className = className; part.textContent = text; chip.append(part); }
+      $('final-turns').append(chip);
+    });
     setText('final-sync', shared ? pilot.state().error : storageError);
     $('final').showModal(); $('play-again').focus();
     if (!scene.reducedMotion) { const total = completedRun.total, start = performance.now(); const count = time => { if (!$('final').open) return; const progress = Math.min(1, (time - start) / 850); $('final-score').textContent = String(Math.round(total * (1 - (1 - progress) ** 3))).padStart(3, '0'); if (progress < 1) scoreAnimation = requestAnimationFrame(count); }; scoreAnimation = requestAnimationFrame(count); }
@@ -203,6 +215,7 @@ async function startScoredRun() {
       run = issued;
       run.boardName = store.boards[0].name;
     } else run = startRun(store, pendingPlayer.name);
+    turnReasons = [];
     track('run_start', { steering, ...(holdMs ? { holdMs } : {}) }, run);
     pendingPlayer = null; completedRun = null; persist(); beginTurn();
     $('shared-start').close();
@@ -502,7 +515,7 @@ function updateSavedRank(saved) {
   if (completedRun?.id !== saved.id || saved.status !== 'complete' || !Number.isInteger(saved.rank)) return;
   completedRun.rank = saved.rank;
   setText('final-sync', '');
-  $('final-kicker').textContent = saved.rank === 1 ? 'TOP OF THE BOARD!' : 'RUN COMPLETE';
+  $('final-kicker').textContent = finaleHeadline(completedRun.turns, saved.rank, completedRun.rules.points);
   $('final-rank').textContent = `SAVED · RANK #${saved.rank}`;
 }
 const pilot = createSharedBoard({
