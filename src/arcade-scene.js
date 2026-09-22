@@ -44,7 +44,9 @@ export class ArcadeScene {
 
   buildWorld() {
     const m = this.mats, world = this.surroundings = group(this.scene);
-    const ground = mesh(this.scene, new T.PlaneGeometry(200, 200), new T.MeshBasicMaterial({ color: '#080e1c', toneMapped: false })); ground.rotation.x = -Math.PI / 2; ground.position.y = -.055; ground.castShadow = false;
+    // The room floor: dark and faintly glossy, so the environment and the lamp read on it
+    // and the cabinet sits in a space instead of on a void. Simple quality keeps it (one plane).
+    const ground = mesh(this.scene, new T.PlaneGeometry(200, 200), new T.MeshStandardMaterial({ color: '#070c19', roughness: .42, metalness: .45, envMapIntensity: .35 })); ground.rotation.x = -Math.PI / 2; ground.position.y = -.055; ground.castShadow = false;
     const shadow = mesh(this.scene, new T.PlaneGeometry(200, 200), new T.ShadowMaterial({ opacity: .16 })); shadow.rotation.x = -Math.PI / 2; shadow.position.y = -.05; shadow.castShadow = false;
     box(world, material('#142c50', .88), [-.55, .12, .12], [7.75, .33, 4.7], .23);
     box(world, m.ivory, [-.55, .285, .12], [7.64, .065, 4.58], .2);
@@ -66,6 +68,11 @@ export class ArcadeScene {
     cylinder(lamp, m.brass, [0, .06, 0], .34, .12); cylinder(lamp, m.brass, [0, 1.57, 0], .037, 3.03);
     mesh(lamp, new T.ConeGeometry(.56, .59, 40, 1, true), m.red, 0, 3.24, 0);
     cylinder(lamp, m.glow, [0, 2.97, 0], .47, .018); ball(lamp, m.brass, [0, 3.565, 0], [.06, .055, .06]);
+    // Its light shaft and floor pool live on the world, not the lamp, so the courier's
+    // obstacle box for the lamp is unchanged. Additive, no depth write: cheap and soft.
+    const shaft = new T.MeshBasicMaterial({ color: '#ffd9a0', transparent: true, opacity: .16, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide, toneMapped: false });
+    const cone = mesh(world, new T.ConeGeometry(1.25, 2.95, 40, 1, true), shaft, 2.28, .35 + 1.475, -.42); cone.rotation.x = Math.PI; cone.castShadow = cone.receiveShadow = false;
+    const pool = mesh(world, new T.CircleGeometry(1.35, 48), new T.MeshBasicMaterial({ color: '#ffd9a0', transparent: true, opacity: .2, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false }), 2.28, -.045, -.42); pool.rotation.x = -Math.PI / 2; pool.castShadow = pool.receiveShadow = false;
     const light = new T.PointLight('#ffe5b4', 3.5, 5, 2); light.position.set(2.28, 3.15, -.42); this.scene.add(light);
     // A tiny stool and a saucer of tokens establish the scale.
     const stool = group(world, 2.46, .35, 1.13);

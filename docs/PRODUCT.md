@@ -27,7 +27,7 @@ The results dialog reads the run in one line (TOP OF THE BOARD!, CLEAN SWEEP!, J
 
 ## Light that answers the player
 
-The marquee bulbs now cast light: a point light behind them follows the lit pattern (a soft glow at rest, a brighter chase while a prize travels to the shelf, a strobe on a star jackpot). The rim light answers play: it turns green while a toy is under the claw, gold from the moment a catch lifts, red for a miss, and rests otherwise; reduced motion cuts instead of fading. Selective bloom (`?fx=bloom`, opt-in) makes the marquee, the carousel signals and the confetti bleed light; it costs two extra scene passes, so it stays off by default and the governor's simple quality bypasses it until the booth laptop's frame budget is measured.
+The marquee bulbs now cast light: a point light behind them follows the lit pattern (a soft glow at rest, a brighter chase while a prize travels to the shelf, a strobe on a star jackpot). The rim light answers play: it turns green while a toy is under the claw, gold from the moment a catch lifts, red for a miss, and rests otherwise; reduced motion cuts instead of fading. The room floor is dark and faintly glossy so the environment and the lamp read on it, and the lamp casts a soft additive light shaft with a pool on the floor; both belong to the wide view only. Selective bloom (`?fx=bloom`, opt-in) makes the marquee, the carousel signals and the confetti bleed light; it costs two extra scene passes, so it stays off by default and the governor's simple quality bypasses it until the booth laptop's frame budget is measured.
 
 ## Hands-free menus and speed scoring
 
