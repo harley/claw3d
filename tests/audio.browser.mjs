@@ -111,8 +111,10 @@ try {
 
   await page.evaluate(() => { window.finalePauseAt = window.audioCheck.context.currentTime; });
   await page.locator('#final-feedback').click();
-  await page.waitForTimeout(50);
-  assert.ok(await page.evaluate(() => window.audioCheck.notes.filter(n => n.phase === 'result' && n.turn === 3 && n.frequency >= 587 && n.start > window.finalePauseAt).every(n => n.stops.length === 2 || n.ended)), 'feedback over results cancels the finale');
+  // The cut happens on the next animation frame; a fixed delay can be shorter than one CI frame.
+  const finaleCut = () => window.audioCheck.notes.filter(n => n.phase === 'result' && n.turn === 3 && n.frequency >= 587 && n.start > window.finalePauseAt).every(n => n.stops.length === 2 || n.ended);
+  await page.waitForFunction(finaleCut, null, { timeout: 5000 }).catch(() => {});
+  assert.ok(await page.evaluate(finaleCut), 'feedback over results cancels the finale');
 
   // Browser refusal keeps the preference enabled and exposes activation without rejection.
   await open(); await page.evaluate(() => { window.audioCheck.rejectResume = true; }); await page.locator('#sound').click();
