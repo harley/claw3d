@@ -58,13 +58,14 @@ export function createHud({ audio, phaseSound }) {
   function update(view, feedback, modal) {
     const { game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus, storageError, aligned } = view;
   const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
+  const turns = run?.rules?.turns ?? completedRun?.rules?.turns ?? RULES.turns;
   let title = 'READY', hint = '', button = 'Play', kicker = 'CLAW';
-  if (recovering) { title = `TURN ${turnNumber} OF 3`; button = cameraLoading ? 'Starting…' : 'CONTINUE'; }
-  else if (phase === 'aim') { kicker = turnNumber === 3 ? 'LAST CLAW!' : `TURN ${turnNumber} OF 3`; title = 'Clench & hold to drop'; hint = ''; button = '';  }
-  else if (phase === 'result' && run) { kicker = `ROUND ${turnNumber + 1} OF 3`; title = nextTurnCue(nextTurnElapsed, turnNumber + 1, Boolean(game.plan?.prize)); hint = title === 'MISSED' ? missCopy(game.plan, game.toys) : ''; button = ''; }
+  if (recovering) { title = `TURN ${turnNumber} OF ${turns}`; button = cameraLoading ? 'Starting…' : 'CONTINUE'; }
+  else if (phase === 'aim') { kicker = turnNumber === turns ? 'LAST CLAW!' : `TURN ${turnNumber} OF ${turns}`; title = 'Clench & hold to drop'; hint = ''; button = '';  }
+  else if (phase === 'result' && run) { kicker = `ROUND ${turnNumber + 1} OF ${turns}`; title = nextTurnCue(nextTurnElapsed, turnNumber + 1, Boolean(game.plan?.prize)); hint = title === 'MISSED' ? missCopy(game.plan, game.toys) : ''; button = ''; }
   else if (phase in phaseCopy) {
     title = phase === 'lift' && !game.plan?.prize ? 'MISSED' : phaseCopy[phase];
-    kicker = `TURN ${turnNumber} OF 3`;
+    kicker = `TURN ${turnNumber} OF ${turns}`;
     hint = title === 'MISSED' ? missCopy(game.plan, game.toys) : '';
     button = '';
   }
@@ -137,7 +138,7 @@ export function createHud({ audio, phaseSound }) {
   $('reset').disabled = startingRun;
   setText('timer', String(Math.ceil(remaining)).padStart(2, '0'));
   setText('speed-bonus', `SPEED +${Math.floor((run?.rules.speedBonus ?? 50) * remaining / (run?.rules.seconds || 15))}`);
-  $('arcade').classList.toggle('last-claw', Boolean(run && turnNumber === 3)); $('arcade').classList.toggle('urgent', phase === 'aim' && remaining <= 5);
+  $('arcade').classList.toggle('last-claw', Boolean(run && turnNumber === turns)); $('arcade').classList.toggle('urgent', phase === 'aim' && remaining <= 5);
   setText('mode-label', shared ? sharedStatus : storageError ? 'LOCAL PREVIEW · UNSAVED' : `LOCAL · ${dualEnabled ? '2 HANDS' : '1 HAND'}`);
   setHidden($('mode-label'), !$('mode-label').textContent);
   setHidden($('result-open'), !completedRun || startingRun || Boolean(run) || cameraLoading);
@@ -172,7 +173,7 @@ export function createHud({ audio, phaseSound }) {
   $('play').hidden = Boolean(startingRun || (run && !recovering && !cameraRecovery && !paused));
   $('play').disabled = cameraLoading;
   $('turn-chips').replaceChildren();
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < turns; i++) {
     const turn = run?.turns[i] || completedRun?.turns[i], toy = ASSORTMENT.find(toy => toy.id === turn?.prizeId);
     const chip = document.createElement('span'); chip.className = `turn-chip ${turn?.score ? 'scored' : ''}`;
     chip.textContent = turn ? turn.score ? `+${turn.score}` : 'MISS' : '—';
