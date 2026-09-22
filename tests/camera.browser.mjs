@@ -23,9 +23,11 @@ try {
   await page.locator('#camera-setup .panel-head button').click();
   await page.locator('#play').click();
   await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running, { }, { timeout: 35000 });
-  // A healthy machine keeps display-rate drawing with the camera on; simple quality caps it at 30 Hz.
-  await page.waitForFunction(() => window.cameraRenderBudget === false);
-  await page.evaluate(() => document.getElementById('quality').click());
+  // The draw cap follows quality, not camera state. A slow runner's governor may already
+  // have chosen simple, so drive the operator toggle from the observed mode.
+  await page.waitForFunction(() => typeof window.cameraRenderBudget === 'boolean');
+  assert.equal(await page.evaluate(() => window.cameraRenderBudget), await page.evaluate(() => window.__littleCloud.snapshot().lowQuality), 'capped exactly when quality is simple');
+  if (!(await page.evaluate(() => window.__littleCloud.snapshot().lowQuality))) await page.evaluate(() => document.getElementById('quality').click());
   await page.waitForFunction(() => window.cameraRenderBudget === true);
   assert.match(await page.locator('#quality').textContent(), /SIMPLE · 30 FPS CAP/);
   await page.evaluate(() => document.getElementById('quality').click());
