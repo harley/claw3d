@@ -203,3 +203,29 @@ test('server rejects short or shared staff and host codes', async () => {
     await assert.rejects(createPilotServer({ ...base, ...overrides }), /distinct host code of at least 8/);
   }
 });
+
+
+test('shared hand mode is validated, immutable on retry, and retained through completion and restart', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'claw-modes-'));
+  const filename = join(dir, 'pilot.sqlite');
+  let database = openDatabase(filename);
+  try {
+    database.db.prepare('INSERT INTO owners VALUES (?)').run('mode-owner');
+    const input = { name: 'Two hands', requestKey: randomUUID(), controlMode: 'two-hand' };
+    const run = database.createRun('mode-owner', input);
+    assert.equal(run.rules.controlMode, 'two-hand');
+    assert.equal(run.rules.controlVersion, 'camera-dual-raise-v1');
+    assert.equal(database.createRun('mode-owner', input).id, run.id);
+    assert.throws(() => database.createRun('mode-owner', { ...input, controlMode: 'one-hand' }), e => e.status === 409);
+    assert.throws(() => database.createRun('mode-owner', { ...input, controlMode: 'invalid' }), e => e.status === 400);
+    assert.equal(database.createRun('mode-owner', { name: 'Legacy client', requestKey: randomUUID() }).rules.controlMode ?? 'one-hand', 'one-hand');
+    database.record(run.id, 'mode-owner', { turn: 1, prizeId: 'sprout', remainingMs: 15000 });
+    database.close(); database = openDatabase(filename);
+    assert.equal(database.getRun(run.id, 'mode-owner').rules.controlMode, 'two-hand');
+    database.record(run.id, 'mode-owner', { turn: 2, prizeId: 'peach' });
+    const complete = database.record(run.id, 'mode-owner', { turn: 3, prizeId: null });
+    assert.equal(complete.total, 350);
+    assert.equal(complete.status, 'complete');
+    assert.equal(database.board().runs.find(r => r.id === run.id).rules.controlMode, 'two-hand');
+  } finally { database.close(); await rm(dir, { recursive: true, force: true }); }
+});
