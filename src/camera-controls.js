@@ -1,5 +1,5 @@
 // Lazy camera adapter: the event state machine owns registration and turns.
-export async function createCameraControls({ video, overlay, select, onChange, canControl, onDrop, onGesture, getControlProfile, getControlTarget, maxHands = 1 }) {
+export async function createCameraControls({ video, overlay, select, onChange, canControl, onDrop, onGesture, getControlProfile, getControlTarget, maxHands = 1, holdMs, steering = 'relative' }) {
   const { HandController } = await import('./vision.js');
   let input = { x: 0, z: 0 }, state = { kind: 'off', message: 'Start the camera to play' }, at = 0;
   let diagnostic = {};
@@ -13,7 +13,7 @@ export async function createCameraControls({ video, overlay, select, onChange, c
     if (next.milliseconds !== undefined && target.latencies.length < 2000) target.latencies.push(next.milliseconds);
   };
   const notify = next => { state = next; at = performance.now(); onChange(next); };
-  const controller = new HandController({ video, overlay, select, maxHands,
+  const controller = new HandController({ video, overlay, select, maxHands, holdMs, steering,
     getPhase: () => canControl() ? 'aim' : 'blocked',
     onDiagnostic: next => {
       if (import.meta.env?.DEV) diagnostic = { ...diagnostic, ...next };

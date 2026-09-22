@@ -12,16 +12,17 @@ const CODES = new Set(['permission_denied', 'no_camera', 'camera_busy', 'camera_
 const CATEGORIES = new Set(['controls', 'unexpected_drop', 'unfair_miss', 'stuck', 'other']);
 const CAUSES = new Set(['opened', 'uncertain_reset', 'hand_lost', 'frame_gap', 'blocked', 'stale']);
 const OUTCOMES = new Set(['supported', 'near', 'slipped', 'crowded', 'blocked', 'bumped', 'platform', 'empty']);
+const STEERING = new Set(['relative', 'absolute']);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const WEEK = 604800000;
 const METRICS = {
   acquisitionMs: WEEK, durationMs: WEEK, captureAgeMs: WEEK, averageFps: 1000,
   p95FrameMs: 60000, framesOver33ms: 10000000, frames: 10000000, sampleMs: WEEK,
-  turn: 3, score: 600, total: 600,
+  turn: 3, score: 600, total: 600, holdMs: 900,
   resultHz: 240, visionP50Ms: 60000, visionP95Ms: 60000,
   rejectOverAge: 10000000, rejectOutOfOrder: 10000000, rejectHidden: 10000000, rejectInvalid: 10000000,
 };
-const INTEGERS = new Set(['turn', 'score', 'total', 'frames', 'framesOver33ms', 'rejectOverAge', 'rejectOutOfOrder', 'rejectHidden', 'rejectInvalid']);
+const INTEGERS = new Set(['turn', 'score', 'total', 'holdMs', 'frames', 'framesOver33ms', 'rejectOverAge', 'rejectOutOfOrder', 'rejectHidden', 'rejectInvalid']);
 
 function cleanData(type, source) {
   const data = {};
@@ -33,6 +34,7 @@ function cleanData(type, source) {
   if (source.prizeId === null || PRIZES.has(source.prizeId)) data.prizeId = source.prizeId;
   if (CAUSES.has(source.cause)) data.cause = source.cause;
   if (OUTCOMES.has(source.outcome)) data.outcome = source.outcome;
+  if (STEERING.has(source.steering)) data.steering = source.steering;
   // A cause-less cancellation would 400 the whole batch server-side.
   if (type === 'hold_cancelled' && !data.cause) return null;
   for (const [key, max] of Object.entries(METRICS)) {

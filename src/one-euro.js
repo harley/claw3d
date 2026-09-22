@@ -28,4 +28,10 @@ export class OneEuroPoint {
     this.last = now;
     return { x: this.x.filter(point.x, dt), y: this.y.filter(point.y, dt) };
   }
+  // Where the hand will be `ms` from the last sample, from the filtered slope.
+  // Covers capture-to-control latency; null until a sample exists.
+  predict(ms) {
+    if (this.x.value === null) return null;
+    return { x: this.x.value + this.x.slope * ms / 1000, y: this.y.value + this.y.slope * ms / 1000 };
+  }
 }

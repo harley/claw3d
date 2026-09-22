@@ -242,3 +242,24 @@ test('losing the hand zeroes steering immediately while deflected',()=>{
   assert.deepEqual(events.inputs.at(-1),{x:0,z:0});
   assert.equal(events.states.at(-1).kind,'lost');
 });
+
+test('a flagged shorter hold fires at its own length and bleeds credit instead of zeroing on uncertainty',()=>{
+  const g=new FistDrop(undefined,{holdMs:300,decay:true});arm(g);
+  g.update(closed,1325);
+  let fired=false;for(let t=1390;t<=1650&&!fired;t+=65)fired=g.update(closed,t).fired;
+  assert.equal(fired,true,'300 ms of consecutive closed frames fires');
+  const d=new FistDrop(undefined,{holdMs:300,decay:true});arm(d);
+  for(let t=1325;t<=1520;t+=65)d.update(closed,t);
+  const before=d.held;assert.ok(before>=180);
+  assert.ok(d.update({},1585).progress<before/300,'an uncertain frame costs credit');
+  assert.ok(d.held>0,'one uncertain frame does not cancel');
+  const resumed=d.update(closed,1650);assert.ok(resumed.active&&resumed.progress>0,'closing again continues from the remaining credit');
+  const signals=[];const z=new FistDrop((n,c)=>signals.push(c||n),{holdMs:300,decay:true});arm(z);
+  z.update(closed,1325);z.update(closed,1390);
+  for(let t=1455;t<=1780;t+=65)z.update({},t);
+  assert.equal(z.held,0);assert.ok(signals.includes('uncertain_reset'),'credit that bleeds to nothing reports the cancel once');
+  assert.equal(signals.filter(s=>s==='uncertain_reset').length,1);
+});
+test('the default profile is unchanged: 550 ms, uncertainty zeroes after 130 ms',()=>{
+  const g=new FistDrop();assert.equal(g.holdMs,550);assert.equal(g.decay,false);
+});

@@ -320,3 +320,20 @@ test('camera failure exposes a bounded reason and clears steering before reporti
     assert.deepEqual(f.read().input, { x: 0, z: 0 });
   }
 });
+
+test('absolute steering maps the predicted hand offset onto the bed and carries a target with the input', () => {
+  const f = fixture(), c = f.controller;
+  c.steering = 'absolute';
+  f.setPhase('aim');
+  f.frame([hand(.5)], 10);
+  assert.deepEqual([f.read().input.x, f.read().input.z], [0, 0], 'the acquired pose is the neutral centre');
+  assert.ok(f.read().input.target, 'absolute mode publishes a target');
+  f.frame([hand(.59)], 6);
+  const { input } = f.read();
+  assert.ok(input.x > .4 && input.x <= 1, `deck deflection follows the offset (${input.x})`);
+  assert.ok(input.target.x > .4, `target moves toward the right of the bed (${input.target.x})`);
+  assert.ok(Math.abs(input.target.z - .0275) < .05, 'no vertical offset keeps the target on the centre row');
+  const relative = fixture();
+  relative.setPhase('aim'); relative.frame([hand(.5)], 10); relative.frame([hand(.59)], 6);
+  assert.equal(relative.read().input.target, undefined, 'the default profile never publishes a target');
+});
