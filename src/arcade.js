@@ -57,7 +57,7 @@ let cueLead = dualEnabled ? (HAND_ACQUIRE_MS + RIGHT_SLAM_MS) / 1000 : grabEnabl
 const performanceGovernor = new PerformanceGovernor({ onChange: (mode, source) => {
   scene?.setQuality(mode === 'simple');
   cameraControls?.setPerformanceMode(mode);
-  if (scene) $('quality').textContent = `QUALITY: ${mode === 'simple' ? 'SIMPLE' : 'FULL'}${source === 'auto' ? ' · AUTO' : ''}`;
+  if (scene) $('quality').textContent = `QUALITY: ${mode === 'simple' ? 'SIMPLE · 30 FPS CAP' : 'FULL'}${source === 'auto' ? ' · AUTO' : ''}`;
 } });
 const tags = game.toys.map(toy => {
   const element = document.createElement('span'); element.className = 'prize-tag'; element.dataset.points = RULES.points[toy.id]; element.textContent = RULES.points[toy.id]; $('prize-tags').append(element); return { toy, element };
@@ -423,10 +423,12 @@ function frame(time) {
       adaptationVisibleMs += raw * 1000;
       if (adaptationVisibleMs >= PERFORMANCE_WINDOW_MS) {
         const sorted = [...adaptationFrames].sort((a, b) => a - b);
-        const vision = cameraControls?.adaptationStats();
+        // Drain the camera window whenever the adapter exists; only a running camera contributes samples.
+        const drained = cameraControls?.adaptationStats(), vision = cameraControls?.running ? drained : null;
         const rejected = vision ? Object.values(vision.rejected).reduce((sum, count) => sum + count, 0) : 0;
         const averageFps = 1000 / (sorted.reduce((a, b) => a + b, 0) / sorted.length);
-        if (cameraControls?.running) performanceGovernor.observe({ averageFps, resultHz: vision.results / (adaptationVisibleMs / 1000), results: vision.results, rejected });
+        // The governor sees every visible window, camera or not, so attract mode adapts too.
+        performanceGovernor.observe({ averageFps, resultHz: vision ? vision.results / (adaptationVisibleMs / 1000) : 0, results: vision?.results || 0, rejected });
         adaptationFrames = []; adaptationVisibleMs = 0;
       }
       if (performanceVisibleMs >= 30000) {
@@ -446,7 +448,7 @@ function frame(time) {
       }
     }
     const sceneFeedback = paused || modal || document.hidden ? { ...feedback, kind: 'blocked' } : feedback;
-    scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, sceneFeedback, Boolean(cameraControls?.running || cameraControls?.starting), { preparing: Boolean(run && !recovering), nextTurnElapsed, machineControls: cabinetEnabled, cueLead }); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
+    scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, sceneFeedback, Boolean(cameraControls?.running || cameraControls?.starting) && performanceGovernor.mode === 'simple', { preparing: Boolean(run && !recovering), nextTurnElapsed, machineControls: cabinetEnabled, cueLead }); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
     glove.update(grabEnabled ? feedback : { ...feedback, pointer: null }, cabinetEnabled && (game.phase === 'aim' || (dualEnabled && contactFeedback && game.phase === 'anticipate')) && !paused && !modal && !frozen && !document.hidden, dt);
     const tagged = game.phase === 'aim' && aligned ? game.toys.find(toy => toy.id === aligned.id) : null;
     const target = tagged ? scene.screenPoint(tagged.x, BED + (tagged.elevation || 0) + .08, tagged.z) : null;

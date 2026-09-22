@@ -209,7 +209,7 @@ test('a mid-session CPU fallback stops the zero-copy stream and reports the flip
   assert.ok(diagnostics.some(d => d.driver === 'timer'));
 });
 
-test('simple performance mode replaces the stream with resized paced capture and can recover', () => {
+test('simple performance mode keeps zero-copy streaming and only resizes bitmap fallbacks', () => {
   const f = fixture(), c = f.controller, originalProcessor = globalThis.MediaStreamTrackProcessor;
   let cancelled = 0, readers = 0;
   globalThis.MediaStreamTrackProcessor = class { constructor() { this.readable = { getReader: () => ({ read: () => new Promise(() => {}), cancel: () => { cancelled++; return Promise.resolve(); } }) }; } };
@@ -218,9 +218,14 @@ test('simple performance mode replaces the stream with resized paced capture and
     video: { requestVideoFrameCallback: () => {} }, readFrames: () => { readers++; } });
   try {
     assert.equal(c.setPerformanceMode('simple'), true);
-    assert.equal(c.captureWidth, 320); assert.equal(c.captureDriver, 'rvfc'); assert.equal(cancelled, 1);
+    assert.equal(c.captureWidth, 320); assert.equal(c.captureDriver, 'stream'); assert.equal(cancelled, 0, 'the stream is never interrupted for a width change');
     assert.equal(c.setPerformanceMode('full'), true);
-    assert.equal(c.captureWidth, 0); assert.equal(c.captureDriver, 'stream'); assert.equal(readers, 1);
+    assert.equal(c.captureWidth, 0); assert.equal(c.captureDriver, 'stream'); assert.equal(readers, 0);
+    // Without streaming, the width governs the paced bitmap path and reconfiguration applies it.
+    globalThis.MediaStreamTrackProcessor = undefined;
+    c.captureDriver = 'rvfc';
+    assert.equal(c.setPerformanceMode('simple'), true);
+    assert.equal(c.captureWidth, 320); assert.equal(c.captureDriver, 'rvfc');
   } finally { globalThis.MediaStreamTrackProcessor = originalProcessor; }
 });
 

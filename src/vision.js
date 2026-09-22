@@ -231,7 +231,8 @@ export class HandController {
       return;
     }
     const track = this.stream?.getVideoTracks()[0];
-    if (!this.captureWidth && this.delegate !== 'CPU' && typeof MediaStreamTrackProcessor === 'function' && track) {
+    // Zero-copy frames stay on in simple mode; the capture width only sizes bitmap fallbacks.
+    if (!this.captureLocked && this.delegate !== 'CPU' && typeof MediaStreamTrackProcessor === 'function' && track) {
       try { this.frameReader = new MediaStreamTrackProcessor({ track }).readable.getReader(); this.captureDriver = 'stream'; }
       catch { this.frameReader = null; }
     }
@@ -246,7 +247,9 @@ export class HandController {
     const width = mode === 'simple' ? 320 : 0;
     if (width === this.captureWidth) return false;
     this.captureWidth = width;
-    this.configureCapture();
+    // A streaming capture is unaffected by bitmap width; do not interrupt it.
+    if (this.captureDriver !== 'stream') this.configureCapture();
+    else this.onDiagnostic?.({ delegate: this.delegate, driver: this.captureDriver, captureWidth: 0 });
     return true;
   }
 

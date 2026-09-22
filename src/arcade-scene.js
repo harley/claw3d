@@ -382,7 +382,7 @@ export class ArcadeScene {
     this.previousAim = steering ? { x: pose.x, z: pose.z } : null;
   }
 
-  update(game, dt, time, input, aligned, feedback = {}, cameraActive = false, presentation = {}) {
+  update(game, dt, time, input, aligned, feedback = {}, drawCapped = false, presentation = {}) {
     const phase = game.phase, elapsed = game.elapsed, plan = game.plan, motion = this.reducedMotion ? 0 : 1;
     this.carousel.visible = Boolean(game.carousel);
     if (game.carousel) {
@@ -478,7 +478,7 @@ export class ArcadeScene {
     this.courier.visible = this.deliveryTray.visible;
     if (this.courier.visible) { const p = this.deliveryTray.position; this.courier.scale.set(this.deliveryTray.scale.x, 1, this.deliveryTray.scale.z); this.courier.position.set(p.x, 0, 1.69); this.courierMast.scale.y = Math.max(.1, p.y - .44); this.courierMast.position.y = .44 + (p.y - .44) / 2; this.courierArm.scale.y = Math.max(.025, 1.69 - p.z); this.courierArm.position.set(0, p.y - .08, -(1.69 - p.z) / 2); }
     this.updateCamera(game, presentation);
-    this.draw(time, cameraActive);
+    this.draw(time, drawCapped);
   }
 
   updateCamera(game, { preparing = false, nextTurnElapsed = 0, machineControls = false } = {}) {
@@ -503,12 +503,13 @@ export class ArcadeScene {
     this.camera.lookAt(this.currentLook);
   }
 
-  draw(time, cameraActive) {
-    // Leave GPU time for camera recognition, especially on 120/144 Hz displays.
-    // Only draw submission is capped; transforms and contact response still update.
+  draw(time, capped) {
+    // The governor asks for the 30 Hz cap only when a machine is measured slow;
+    // a healthy machine animates at display rate with the camera on. Only draw
+    // submission is capped; transforms and contact response still update.
     const frame = Math.floor((time + .000001) * 30);
-    if (cameraActive && frame === this.cameraRenderFrame) return;
-    this.cameraRenderFrame = cameraActive ? frame : undefined;
+    if (capped && frame === this.cameraRenderFrame) return;
+    this.cameraRenderFrame = capped ? frame : undefined;
     this.renderer.render(this.scene, this.camera);
   }
 
