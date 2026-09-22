@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { ASSORTMENT, BED, FIELD, FINGER_ANGLES, OPEN_RADIUS, FINGER_DEPTH, HIGH, PHASES, PHASE_ORDER, MISS_LIFT, START, CHUTE, phaseSeconds, homeClaw, MAX_FRAME_DELTA, createGame, begin, drop, advance, move, planGrab, clawPose, collectionSlot } from '../src/arcade-mechanics.js';
+import { ASSORTMENT, BED, FIELD, FINGER_ANGLES, OPEN_RADIUS, FINGER_DEPTH, HIGH, PHASES, PHASE_ORDER, MISS_LIFT, MISS_REASONS, CAROUSEL, START, CHUTE, phaseSeconds, homeClaw, MAX_FRAME_DELTA, createGame, begin, drop, advance, move, planGrab, clawPose, collectionSlot } from '../src/arcade-mechanics.js';
 
 const finish = game => { for (let i = 0; i < 1500 && game.phase !== 'result'; i++) advance(game, 1 / 60); assert.equal(game.phase, 'result'); };
 
@@ -163,4 +163,35 @@ test('a missed grab keeps its fingers open across the lift/result boundary', () 
   assert.equal(game.phase, 'grip'); assert.equal(clawPose(game).y, stop);
   assert.equal(game.plan.prize, null); assert.equal(game.plan.stop, 'mesh-contact');
   finish(game); assert.deepEqual(game.collection, []);
+});
+
+test('every miss carries a reason a player can act on', () => {
+  const game = createGame({ carousel: true }); const toy = id => game.toys.find(t => t.id === id);
+  // Clearly over a toy but off-centre: fingers cannot all reach it.
+  const slipped = planGrab({ x: toy('butter').x + .20, z: toy('butter').z }, game.toys);
+  assert.equal(slipped.prize, null); assert.equal(slipped.reason, 'slipped'); assert.equal(slipped.touched.id, 'butter');
+  // Barely off the support triangle with all three fingers touching.
+  let near = null;
+  for (let d = .02; d < .24 && !near; d += .005) { const plan = planGrab({ x: toy('butter').x + d, z: toy('butter').z + d * .3 }, game.toys); if (!plan.prize && plan.contacts.every(r => r != null)) near = plan; }
+  assert.ok(near, 'an all-contact unsupported pose exists'); assert.equal(near.reason, 'near'); assert.equal(near.blocker, null);
+  // Nothing under the claw at all.
+  const empty = planGrab({ x: -1.18, z: .6 }, game.toys);
+  assert.equal(empty.reason, 'empty'); assert.equal(empty.stop, 'bed');
+  // A finger landing on a neighbour stops the descent above it.
+  const blocked = planGrab({ x: toy('miso').x + OPEN_RADIUS * .55, z: toy('miso').z + OPEN_RADIUS * .55 }, game.toys);
+  if (blocked.stop === 'neighbour') { assert.equal(blocked.reason, 'blocked'); assert.equal(blocked.blocker, 'miso'); }
+  // A supported toy jammed against another cannot be lifted through it.
+  const crowded = createGame(); const cirrus = crowded.toys.find(t => t.id === 'cirrus'), butter = crowded.toys.find(t => t.id === 'butter');
+  cirrus.x = butter.x + .30; cirrus.z = butter.z;
+  const jammed = planGrab({ x: butter.x, z: butter.z }, crowded.toys);
+  assert.equal(jammed.prize, null); assert.equal(jammed.reason, 'crowded'); assert.equal(jammed.blocker, 'cirrus'); assert.equal(jammed.touched.id, 'butter');
+  // A drop over the carousel deck with the star elsewhere is a timing miss.
+  const timing = createGame({ carousel: true }); begin(timing); timing.position = { x: CAROUSEL.x, z: CAROUSEL.z }; timing.carouselTime = 0; drop(timing);
+  assert.equal(timing.plan.stop, 'platform');
+  advance(timing, PHASES.anticipate + PHASES.descend + .01);
+  assert.equal(timing.phase, 'grip'); assert.equal(timing.plan.prize, null);
+  if (!timing.plan.touched) { assert.equal(timing.plan.reason, 'platform'); assert.equal(timing.plan.stop, 'platform'); }
+  // A supported grab reports success, and the reason set is closed.
+  assert.equal(planGrab({ x: toy('butter').x, z: toy('butter').z }, game.toys).reason, 'supported');
+  assert.deepEqual([...MISS_REASONS].sort(), ['blocked', 'bumped', 'crowded', 'empty', 'near', 'platform', 'slipped']);
 });

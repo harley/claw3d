@@ -134,7 +134,7 @@ function finishTurn() {
   if (!run) return;
   const outcome = recordTurn(store, turnNumber, game.plan?.prize?.id || null, dropRemainingMs); if (!outcome) return;
   persist();
-  track('turn_complete', { turn: turnNumber, score: outcome.run.turns.at(-1).score, prizeId: outcome.run.turns.at(-1).prizeId }, outcome.run);
+  track('turn_complete', { turn: turnNumber, score: outcome.run.turns.at(-1).score, prizeId: outcome.run.turns.at(-1).prizeId, outcome: game.plan?.reason }, outcome.run);
   if (shared) pilot.queue(outcome.run);
   const points = outcome.run.turns.at(-1).score;
   if (outcome.completed) audio.fanfare('complete');
