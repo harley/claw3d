@@ -1,0 +1,32 @@
+# CodeRabbit review configuration. Free for public repositories.
+language: en-US
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!public/vision/**"
+    - "!public/models/**"
+    - "!dist/**"
+    - "!package-lock.json"
+  path_instructions:
+    - path: "src/**"
+      instructions: |
+        Apply AGENTS.md and docs/PRODUCT.md. Flag: accepted drops that could be cancelled by hand loss or dialogs; anything that lets a fourth turn, a duplicate score, or a non-deterministic catch happen; allocations or forced layout inside the frame loop or vision callback; telemetry fields added on one side of the client/server allowlist only; frame-rate-dependent timing; camera frames or landmarks leaving the browser.
+    - path: "server/**"
+      instructions: |
+        Flag any path that could reset or merge leaderboard boards, weaken staff/host auth, skip the Origin check, or write beyond the allowlisted telemetry schema.
+    - path: ".github/**"
+      instructions: |
+        Actions must be pinned by commit SHA. The deploy job must keep its superseded-commit guards and the live BUILD verification.
+    - path: "tests/**"
+      instructions: |
+        Browser suites must not run concurrently on one machine. Prefer deterministic waits over fixed sleeps.
+chat:
+  auto_reply: true

@@ -84,7 +84,8 @@ try {
   await page.screenshot({path:'.screenshots/dual-controls.png'});
   await page.emulateMedia({reducedMotion:'reduce'});
   for(const size of [{width:820,height:900},{width:390,height:844},{width:390,height:700},{width:1440,height:900}]){
-    await page.setViewportSize(size);await frame();
+    // Screenshots and layout reads on slow runners outlast the 700 ms input freshness window; re-feed the hands first.
+    await page.setViewportSize(size);await burst([left,right]);await frame();
     const controls=await page.evaluate(()=>window.__littleCloud.snapshot().machineControls);
     assert.ok(controls.drop.x-controls.stick.x>(controls.bounds.right-controls.bounds.left)*.40,'actual controls sit well apart');
     const hands=await page.evaluate(()=>testHands().hands);
