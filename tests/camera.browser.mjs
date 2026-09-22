@@ -23,15 +23,6 @@ try {
   await page.locator('#camera-setup .panel-head button').click();
   await page.locator('#play').click();
   await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running, { }, { timeout: 35000 });
-  // The draw cap follows quality, not camera state. A slow runner's governor may already
-  // have chosen simple, so drive the operator toggle from the observed mode.
-  await page.waitForFunction(() => typeof window.cameraRenderBudget === 'boolean');
-  assert.equal(await page.evaluate(() => window.cameraRenderBudget), await page.evaluate(() => window.__littleCloud.snapshot().lowQuality), 'capped exactly when quality is simple');
-  if (!(await page.evaluate(() => window.__littleCloud.snapshot().lowQuality))) await page.evaluate(() => document.getElementById('quality').click());
-  await page.waitForFunction(() => window.cameraRenderBudget === true);
-  assert.match(await page.locator('#quality').textContent(), /SIMPLE · 30 FPS CAP/);
-  await page.evaluate(() => document.getElementById('quality').click());
-  await page.waitForFunction(() => window.cameraRenderBudget === false);
   assert.equal((await snap()).event.run, null); assert.equal((await snap()).phase, 'idle');
   assert.equal(await page.locator('#registration').isVisible(), false);
   assert.equal(await page.locator('#camera-preview').isVisible(), true);
@@ -39,6 +30,18 @@ try {
   await page.waitForFunction(() => document.getElementById('status').textContent === 'SHOW ONE HAND');
   assert.equal(await page.locator('#hint').isVisible(), false, 'camera recovery uses one clear status line');
   assert.equal(await page.locator('#camera-recognition').textContent(), 'Camera view');
+  // The draw cap follows quality, not camera state. A slow runner's governor may already
+  // have chosen simple, so drive the operator toggle from the observed mode. Toggling
+  // reconfigures capture, so let tracking settle again afterwards before reading camera state.
+  await page.waitForFunction(() => typeof window.cameraRenderBudget === 'boolean');
+  assert.equal(await page.evaluate(() => window.cameraRenderBudget), await page.evaluate(() => window.__littleCloud.snapshot().lowQuality), 'capped exactly when quality is simple');
+  if (!(await page.evaluate(() => window.__littleCloud.snapshot().lowQuality))) await page.evaluate(() => document.getElementById('quality').click());
+  await page.waitForFunction(() => window.cameraRenderBudget === true);
+  assert.match(await page.locator('#quality').textContent(), /SIMPLE · 30 FPS CAP/);
+  await page.evaluate(() => document.getElementById('quality').click());
+  await page.waitForFunction(() => window.cameraRenderBudget === false);
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'SHOW ONE HAND', null, { timeout: 45000 }).catch(() => {});
+  assert.equal(await page.locator('#status').textContent(), 'SHOW ONE HAND', `tracking settles after a quality toggle (${JSON.stringify(await page.evaluate(() => window.__littleCloud.snapshot().event.handCamera))})`);
   const geometry = await page.evaluate(() => {
     const video = document.getElementById('camera-video'), overlay = document.getElementById('camera-overlay');
     const v = video.getBoundingClientRect(), o = overlay.getBoundingClientRect();
