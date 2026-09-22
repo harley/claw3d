@@ -12,8 +12,8 @@ export const OWNER_LOSS_GRACE = 650;
 const LINKS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 
 export class HandController {
-  constructor({ video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic = () => {}, onGesture, getControlProfile = () => 'hold-drop', getControlTarget = () => ({}), maxHands = 1 }) {
-    Object.assign(this, { video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic, onGesture, getControlProfile, getControlTarget, maxHands });
+  constructor({ video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic = () => {}, onGesture, getControlProfile = () => 'hold-drop', getControlTarget = () => ({}), maxHands = 1, holdMs }) {
+    Object.assign(this, { video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic, onGesture, getControlProfile, getControlTarget, maxHands, holdMs });
     this.running = false;
     this.starting = false;
     this.generation = 0;
@@ -33,7 +33,7 @@ export class HandController {
 
   resetOwner() {
     this.fist?.reset('blocked'); // a discarded mid-hold still reports its cancellation
-    this.fist = new FistDrop((name, cause) => this.onGesture?.(name, cause));
+    this.fist = new FistDrop((name, cause) => this.onGesture?.(name, cause), this.holdMs ? { holdMs: this.holdMs, decay: true } : undefined);
     this.grab = new GrabRelease();
     this.dual = new DualHandControls();
     this.pointer = new OneEuroPoint();

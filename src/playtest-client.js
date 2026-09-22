@@ -17,11 +17,11 @@ const WEEK = 604800000;
 const METRICS = {
   acquisitionMs: WEEK, durationMs: WEEK, captureAgeMs: WEEK, averageFps: 1000,
   p95FrameMs: 60000, framesOver33ms: 10000000, frames: 10000000, sampleMs: WEEK,
-  turn: 3, score: 600, total: 600,
+  turn: 3, score: 600, total: 600, holdMs: 900,
   resultHz: 240, visionP50Ms: 60000, visionP95Ms: 60000,
   rejectOverAge: 10000000, rejectOutOfOrder: 10000000, rejectHidden: 10000000, rejectInvalid: 10000000,
 };
-const INTEGERS = new Set(['turn', 'score', 'total', 'frames', 'framesOver33ms', 'rejectOverAge', 'rejectOutOfOrder', 'rejectHidden', 'rejectInvalid']);
+const INTEGERS = new Set(['turn', 'score', 'total', 'holdMs', 'frames', 'framesOver33ms', 'rejectOverAge', 'rejectOutOfOrder', 'rejectHidden', 'rejectInvalid']);
 
 function cleanData(type, source) {
   const data = {};
