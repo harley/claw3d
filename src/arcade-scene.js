@@ -5,6 +5,7 @@ import { JoystickHand } from './joystick-hand.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ASSORTMENT, CAROUSEL, carouselCue, carouselRider, BED, HIGH, FINGER_ANGLES, PHASES, SHELF_LEVELS, collectionSlot, clawPose, mix, ease, clamp } from './arcade-mechanics.js';
 import { palette, material, group, mesh, ball, box, cylinder, line, rod, batch, label, createArtMaterials, createToy } from './arcade-art.js';
+import { createBloom, BLOOM_LAYER, rimColorFor, marqueeGlowFor } from './arcade-fx.js';
 
 const v = (x, y, z) => new T.Vector3(x, y, z);
 
@@ -26,7 +27,7 @@ export class ArcadeScene {
     this.scene.add(new T.HemisphereLight('#fff5e2', '#93a895', 1.15));
     const key = new T.DirectionalLight('#fff0d7', 2.35); key.position.set(-3.5, 8, 5); key.castShadow = true;
     Object.assign(key.shadow.camera, { left: -6, right: 6, top: 7, bottom: -5, near: .1, far: 22 }); key.shadow.mapSize.set(2048, 2048); key.shadow.normalBias = .022; key.shadow.bias = -.00015; key.shadow.radius = 3; this.scene.add(key);
-    const rim = new T.DirectionalLight('#dceee3', 1.65); rim.position.set(4, 5, -4); this.scene.add(rim);
+    const rim = new T.DirectionalLight('#dceee3', 1.65); rim.position.set(4, 5, -4); this.scene.add(rim); this.rim = rim; this.rimTarget = new T.Color('#dceee3');
     const front = new T.DirectionalLight('#ffe8df', .5); front.position.set(0, 3, 7); this.scene.add(front);
     this.mats = createArtMaterials(); this.toys = new Map(); this.buildWorld(); this.buildCabinet(); this.buildClaw();
     for (const toy of ASSORTMENT) { const object = createToy(toy, this.mats); object.position.set(toy.x, BED, toy.z); this.scene.add(object); this.toys.set(toy.id, object); }
@@ -170,6 +171,9 @@ export class ArcadeScene {
     // Kept out of the static batch so instance colors stay addressable.
     this.marqueeBulbs = new T.InstancedMesh(new T.SphereGeometry(1, 10, 8), new T.MeshBasicMaterial({ toneMapped: false }), 11);
     this.marqueeBulbs.castShadow = this.marqueeBulbs.receiveShadow = false;
+    this.marqueeBulbs.layers.enable(BLOOM_LAYER);
+    // The bulbs are unlit dots; this is the light they appear to cast onto the cabinet.
+    this.marqueeLight = new T.PointLight('#ffd27a', 1.4, 7, 2); this.marqueeLight.position.set(0, 4.95, 1.9); this.scene.add(this.marqueeLight);
     const bulb = new T.Object3D();
     for (let i = 0; i < 11; i++) {
       bulb.position.set(-1.5 + i * .3, 5.19, 1.375); bulb.scale.set(.030, .030, .015); bulb.updateMatrix();
@@ -243,6 +247,7 @@ export class ArcadeScene {
       const mat = new T.MeshStandardMaterial({ color: '#3e3426', emissive: '#ffb52b', emissiveIntensity: 0, roughness: .4 });
       return ball(panel, mat, [x, 0, .025], [.038, .038, .014]);
     });
+    for (const light of this.carouselLights) light.layers.enable(BLOOM_LAYER);
 
   }
 
@@ -262,12 +267,15 @@ export class ArcadeScene {
     this.burst = new T.InstancedMesh(new T.BoxGeometry(.05, .028, .01), new T.MeshBasicMaterial({ toneMapped: false }), 150);
     this.burst.instanceMatrix.setUsage(T.DynamicDrawUsage);
     this.burst.castShadow = this.burst.receiveShadow = false;
+    this.burst.layers.enable(BLOOM_LAYER);
     this.burst.frustumCulled = false;
     this.burst.count = 0; this.burst.visible = false;
     this.scene.add(this.burst);
     this.burstParticles = []; this.burstDummy = new T.Object3D();
     this.lastPhase = '';
     this.punch = null;
+    // `?fx=bloom` opts into selective bloom; the governor's simple mode bypasses it.
+    this.bloom = new URLSearchParams(location.search).get('fx') === 'bloom' ? createBloom(this.renderer, this.scene, this.camera) : null;
   }
 
   // A short decaying camera punch: contact, catch and the shelf landing each
@@ -328,6 +336,7 @@ export class ArcadeScene {
       : 'rest';
     if (key === this.marqueeKey) return;
     this.marqueeKey = key;
+    if (this.marqueeLight) { this.marqueeLight.intensity = marqueeGlowFor(key); this.marqueeLight.color.copy(jackpot ? palette.bright : delivering ? palette.bright : palette.warm); }
     for (let i = 0; i < 11; i++) {
       const color = jackpot ? (!motion || (time * 14 + i) % 2 < 1 ? palette.bright : palette.dim)
         : delivering ? (!motion || (i - Math.floor(time * 8)) % 3 === 0 ? palette.bright : palette.dim)
@@ -343,6 +352,7 @@ export class ArcadeScene {
     if (!width || !height) return;
     this.viewport = { width, height };
     this.renderer.setSize(width, height, false); this.camera.aspect = width / height; this.camera.updateProjectionMatrix();
+    this.bloom?.setSize(width, height);
     const extra = Math.max(1, 1.45 / this.camera.aspect); this.home.set(7.25 * extra, 2.25 + 3.90 * extra, 11.6 * extra);
     const playScale = Math.max(1, 1.05 / this.camera.aspect);
     this.playCamera.set((this.angledView ? 1.8 : .45) * playScale, 2.95 + 1.85 * playScale, 6.4 * playScale);
@@ -477,6 +487,11 @@ export class ArcadeScene {
     for (const toy of game.toys) if (toy.impact && !toy.claimed && game.plan?.prize?.id !== toy.id) this.contacts.rock(game, toy, this.toys.get(toy.id), dt);
     this.contacts.resolve(game, pose);
     this.updateClawFeedback(pose, phase, dt, feedback, holding);
+    // The rim light answers the player: green when a toy is under the claw, gold on a catch, red on a miss.
+    if (this.rim) {
+      this.rimTarget.set(rimColorFor({ phase, aligned: Boolean(aligned), prize: Boolean(plan?.prize) }));
+      if (motion && dt > 0) this.rim.color.lerp(this.rimTarget, Math.min(1, dt * 6)); else this.rim.color.copy(this.rimTarget);
+    }
     if (phase !== this.lastPhase) {
       const star = plan?.prize?.family === 'star';
       if (phase === 'grip') this.kick(.022, time);
@@ -525,7 +540,7 @@ export class ArcadeScene {
     const frame = Math.floor((time + .000001) * 30);
     if (cameraActive && frame === this.cameraRenderFrame) return;
     this.cameraRenderFrame = cameraActive ? frame : undefined;
-    this.renderer.render(this.scene, this.camera);
+    if (this.bloom && !this.lowQuality) this.bloom.render(); else this.renderer.render(this.scene, this.camera);
   }
 
   inspect(toyId, phase = 'grip') {

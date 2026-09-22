@@ -17,6 +17,10 @@ The wow moment is direct control followed by a believable grab, a tense lift and
 - The leaderboard is for fun and comparison only; rank earns no additional prize. Physical giveaway rules are separate. Min's ball artwork and 20/30/50-point proposal still need alignment with the game before adoption or printing.
 
 
+## Light that answers the player
+
+The marquee bulbs now cast light: a point light behind them follows the lit pattern (a soft glow at rest, a brighter chase while a prize travels to the shelf, a strobe on a star jackpot). The rim light answers play: it turns green while a toy is under the claw, gold from the moment a catch lifts, red for a miss, and rests otherwise; reduced motion cuts instead of fading. Selective bloom (`?fx=bloom`, opt-in) makes the marquee, the carousel signals and the confetti bleed light; it costs two extra scene passes, so it stays off by default and the governor's simple quality bypasses it until the booth laptop's frame budget is measured.
+
 ## Hands-free menus and speed scoring
 
 Camera startup runs on launch; the browser still controls permission and may prompt on first use. A refusal opens camera setup with an explicit retry, without a retry loop. `?setup=manual` disables automatic camera and sound startup for diagnostics and existing setup tests.
