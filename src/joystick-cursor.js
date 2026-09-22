@@ -1,3 +1,4 @@
+import { menuScreenPoint } from './steering.js';
 import { handOffset, projectHandWorkspace } from './hand-workspace.js';
 // Presentation owns the screen target; camera input only receives hit-test results.
 function createGlove(id, screen) {
@@ -36,7 +37,7 @@ function createGlove(id, screen) {
 }
 
 export function createJoystickCursor(getTargets = () => null, onDrop = () => {}) {
-  const screen = p => ({ x: Math.max(0, Math.min(1, (p.x - .18) / .64)) * innerWidth, y: Math.max(0, Math.min(1, (p.y - .15) / .70)) * innerHeight });
+  const screen = p => menuScreenPoint(p, innerWidth, innerHeight);
   const button = document.createElement('button');
   button.id = 'machine-drop'; button.hidden = true; button.setAttribute('aria-label', 'Drop claw');
   button.addEventListener('click', onDrop); document.body.append(button);
