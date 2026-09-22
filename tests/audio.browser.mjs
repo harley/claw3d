@@ -23,6 +23,9 @@ try {
         oscillator.frequency.setValueAtTime = (value, time) => { record.frequency = value; return frequency(value, time); };
         oscillator.start = time => { Object.assign(record, { start: time, type: oscillator.type, visible: !document.getElementById('jackpot-signal').hidden, phase: window.__littleCloud?.snapshot().phase, turn: window.__littleCloud?.snapshot().event.turn }); window.audioCheck.notes.push(record); start(time); };
         oscillator.stop = time => { record.stops.push(time ?? this.currentTime); stop(time); };
+        // A note that ran to its scheduled end is released by the app and can no
+        // longer be cut; slow runners must not mistake that for a missed cancel.
+        oscillator.addEventListener('ended', () => { record.ended = true; });
         return oscillator;
       }
     };
@@ -39,7 +42,7 @@ try {
   assert.equal(await page.evaluate(() => window.audioCheck.gains[0].scheduledLevel), .5);
   await page.evaluate(() => { document.getElementById('sound').click(); });
   await page.waitForFunction(() => window.audioCheck.gains[0].scheduledLevel === 0);
-  assert.ok(await page.evaluate(() => window.audioCheck.notes.every(n => n.stops.length === 2)), 'mute cancels scheduled notes');
+  assert.ok(await page.evaluate(() => window.audioCheck.notes.every(n => n.stops.length === 2 || n.ended)), 'mute cancels every note still scheduled or sounding');
   await page.locator('#sound').click(); await start();
   const motorCount = () => page.evaluate(() => window.audioCheck.notes.filter(n => n.frequency === 130).length);
   await page.waitForTimeout(250); assert.equal(await motorCount(), 0, 'hand presence alone makes no movement sound');
@@ -109,7 +112,7 @@ try {
   await page.evaluate(() => { window.finalePauseAt = window.audioCheck.context.currentTime; });
   await page.locator('#final-feedback').click();
   await page.waitForTimeout(50);
-  assert.ok(await page.evaluate(() => window.audioCheck.notes.filter(n => n.phase === 'result' && n.turn === 3 && n.frequency >= 587 && n.start > window.finalePauseAt).every(n => n.stops.length === 2)), 'feedback over results cancels the finale');
+  assert.ok(await page.evaluate(() => window.audioCheck.notes.filter(n => n.phase === 'result' && n.turn === 3 && n.frequency >= 587 && n.start > window.finalePauseAt).every(n => n.stops.length === 2 || n.ended)), 'feedback over results cancels the finale');
 
   // Browser refusal keeps the preference enabled and exposes activation without rejection.
   await open(); await page.evaluate(() => { window.audioCheck.rejectResume = true; }); await page.locator('#sound').click();
