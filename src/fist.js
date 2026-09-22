@@ -1,6 +1,8 @@
 import {clamp} from './arcade-mechanics.js';
 
 export const FIST_HOLD_MS = 550;
+// Physical A/B range for the `?hold=` flag; the default profile stays at 550 ms.
+export const HOLD_LIMITS = Object.freeze({ min: 200, max: 900 });
 
 export function fistEvidence(landmarks,gesture,score=0,aspect=1){
   const d=(a,b)=>Math.hypot((a.x-b.x)*aspect,a.y-b.y);
@@ -19,7 +21,9 @@ export function fistEvidence(landmarks,gesture,score=0,aspect=1){
 // begins, hold_cancelled with the precise cause when an unfired hold is lost.
 // Signals never alter recognition behaviour.
 export class FistDrop {
-  constructor(signal){this.signal=signal;this.reset();}
+  // `decay` lets uncertain frames bleed credit at 1.5x real time instead of
+  // zeroing it after 130 ms, so a flickering classifier reads as latency, not a cancel.
+  constructor(signal,{holdMs=FIST_HOLD_MS,decay=false}={}){this.signal=signal;this.holdMs=holdMs;this.decay=decay;this.reset();}
   emit(name,cause){try{this.signal?.(name,cause);}catch{/* telemetry must never alter recognition */}}
   cancelled(cause){if(this.held>0&&!this.fired)this.emit('hold_cancelled',cause);}
   reset(cause='blocked'){this.cancelled(cause);this.armed=false;this.openMs=0;this.held=0;this.last=0;this.wasClosed=false;this.uncertainSince=0;this.fired=false;}
@@ -33,16 +37,17 @@ export class FistDrop {
     if(!closed){
       this.wasClosed=false;
       this.uncertainSince||=now;
-      if(now-this.uncertainSince>130){this.cancelled('uncertain_reset');this.held=0;}
-      return{active:this.held>0,progress:this.held/FIST_HOLD_MS,fired:false};
+      if(this.decay){const next=Math.max(0,this.held-dt*1.5);if(this.held>0&&!next)this.cancelled('uncertain_reset');this.held=next;}
+      else if(now-this.uncertainSince>130){this.cancelled('uncertain_reset');this.held=0;}
+      return{active:this.held>0,progress:this.held/this.holdMs,fired:false};
     }
-    if(this.uncertainSince && now-this.uncertainSince>130){this.cancelled('uncertain_reset');this.held=0;}
+    if(!this.decay&&this.uncertainSince&&now-this.uncertainSince>130){this.cancelled('uncertain_reset');this.held=0;}
     // Only the interval between two closed detections counts as a hold.
     // Opening or uncertainty must not receive credit on the returning frame.
     if(this.wasClosed&&!this.uncertainSince){if(!this.held&&dt>0)this.emit('hold_start');this.held+=dt;}
     this.wasClosed=true;
     this.uncertainSince=0;
-    const progress=clamp(this.held/FIST_HOLD_MS,0,1);this.fired=progress===1;
+    const progress=clamp(this.held/this.holdMs,0,1);this.fired=progress===1;
     return{active:true,progress,fired:this.fired};
   }
 }
