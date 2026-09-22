@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createGame, begin, drop, advance, moveCarousel, aimTarget, carouselPose, carouselCue, CAROUSEL, CONTACT_DELAY, PHASES, BODY, BED, clawPose } from '../src/arcade-mechanics.js';
+import { createGame, begin, drop, advance, moveCarousel, aimTarget, carouselPose, carouselCue, carouselRider, riderAhead, CAROUSEL, CAROUSEL_RIDERS, RIDER_TRANSIT, CONTACT_DELAY, PHASES, BODY, BED, clawPose } from '../src/arcade-mechanics.js';
 import { FIST_HOLD_MS } from '../src/fist.js';
 const holdSeconds = FIST_HOLD_MS / 1000;
 const pickup = { x: CAROUSEL.x, z: CAROUSEL.z + CAROUSEL.radius };
@@ -54,4 +54,45 @@ test('camera cue includes the hold delay across repeated orbits', () => {
     assert.equal(carouselCue(time).text, 'CLENCH FIST & HOLD');
     assert.equal(shot(time + holdSeconds).plan.prize?.id, CAROUSEL.id);
   }
+});
+
+test('catching the star promotes the next rider, which slides onto the deck and takes over the cue', () => {
+  const game = createGame({ carousel: true });
+  assert.equal(game.rider, 'sprout'); assert.deepEqual([...CAROUSEL_RIDERS], ['sprout', 'peach']);
+  // Catch the star at the pickup mark on the cue.
+  begin(game); game.position = { x: .80, z: .22 };
+  while (!carouselCue(game.carouselTime, 0).now) moveCarousel(game, 1 / 60);
+  assert.ok(drop(game));
+  for (let i = 0; i < 3000 && game.phase !== 'result'; i++) advance(game, 1 / 120);
+  assert.equal(game.phase, 'result'); assert.deepEqual(game.collection, ['sprout']);
+  assert.equal(game.rider, 'peach', 'the next candidate is promoted at reveal');
+  const peach = game.toys.find(t => t.id === 'peach'), from = { x: peach.x, z: peach.z };
+  assert.ok(peach.transit, 'the new rider is in transit from its bed spot');
+  assert.equal(peach.elevation, 0, 'nothing moves until the carousel runs again');
+  assert.ok(begin(game)); game.position = { x: .80, z: .22 };
+  moveCarousel(game, 1 / 60);
+  assert.ok(Math.hypot(peach.x - from.x, peach.z - from.z) < .1, 'it starts near its old spot');
+  for (let t = 0; t < RIDER_TRANSIT + .1; t += 1 / 60) moveCarousel(game, 1 / 60);
+  assert.equal(peach.transit, undefined, 'transit completes');
+  assert.ok(Math.abs(peach.elevation - CAROUSEL.height) < 1e-9);
+  const pose = carouselPose(game.carouselTime);
+  assert.ok(Math.abs(peach.x - pose.x) < 1e-9 && Math.abs(peach.z - pose.z) < 1e-9, 'it rides the deck exactly');
+  assert.equal(carouselRider(game).id, 'peach');
+  // The cue and contact prediction now follow Peach.
+  const ahead = riderAhead(game, CONTACT_DELAY); assert.equal(ahead.id, 'peach');
+  while (!carouselCue(game.carouselTime, 0).now) moveCarousel(game, 1 / 60);
+  assert.equal(aimTarget(game)?.id, 'peach', 'a drop on the cue at the mark catches the new rider');
+  assert.ok(drop(game));
+  for (let i = 0; i < 3000 && game.phase !== 'result'; i++) advance(game, 1 / 120);
+  assert.deepEqual(game.collection, ['sprout', 'peach']);
+  assert.equal(game.rider, null, 'no candidates remain');
+  assert.equal(carouselRider(game), null);
+  assert.equal(aimTarget(game), null);
+});
+
+test('a stationary miss never promotes and the star keeps riding', () => {
+  const game = createGame({ carousel: true }); begin(game); game.position = { x: -.38, z: .72 }; drop(game);
+  for (let i = 0; i < 3000 && game.phase !== 'result'; i++) advance(game, 1 / 120);
+  assert.deepEqual(game.collection, ['butter']); assert.equal(game.rider, 'sprout');
+  assert.equal(game.toys.find(t => t.id === 'peach').transit, undefined);
 });

@@ -3,7 +3,7 @@ import { ToyContacts } from './arcade-contact.js';
 import { CabinetHands } from './cabinet-hands.js';
 import { JoystickHand } from './joystick-hand.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { ASSORTMENT, CAROUSEL, carouselCue, BED, HIGH, FINGER_ANGLES, PHASES, SHELF_LEVELS, collectionSlot, clawPose, mix, ease, clamp } from './arcade-mechanics.js';
+import { ASSORTMENT, CAROUSEL, carouselCue, carouselRider, BED, HIGH, FINGER_ANGLES, PHASES, SHELF_LEVELS, collectionSlot, clawPose, mix, ease, clamp } from './arcade-mechanics.js';
 import { palette, material, group, mesh, ball, box, cylinder, line, rod, batch, label, createArtMaterials, createToy } from './arcade-art.js';
 
 const v = (x, y, z) => new T.Vector3(x, y, z);
@@ -399,7 +399,7 @@ export class ArcadeScene {
     if (game.carousel) {
       this.carouselDeck.rotation.y = -game.carouselTime / CAROUSEL.period * Math.PI * 2;
       const cue = carouselCue(game.carouselTime, presentation.cueLead);
-      const starAvailable = game.toys.some(toy => toy.id === CAROUSEL.id && !toy.claimed);
+      const starAvailable = Boolean(carouselRider(game));
       this.carouselLights.forEach((light, i) => { const on = starAvailable && ['idle', 'aim'].includes(game.phase) && i < cue.lights; light.material.color.set(on ? cue.now ? '#66ffb3' : '#ffc14d' : '#3e3426'); light.material.emissive.set(cue.now ? '#33ff99' : '#ffb52b'); light.material.emissiveIntensity = on ? 2 : 0; });
     }
     for (const [id, object] of this.toys) object.visible = game.toys.some(toy => toy.id === id);
