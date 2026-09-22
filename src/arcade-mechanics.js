@@ -25,6 +25,11 @@ export const ease = t => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
 // the cue leads the star by the time needed for the claw to reach contact.
 export const CAROUSEL = Object.freeze({ id: 'sprout', x: .80, z: -.04, radius: .26, height: .16, period: 5.6 });
 export const EVENT_TOYS = ['bonbon', 'miso', 'blue-hour', 'peach', 'butter', 'sprout'];
+// When the rider is caught the next candidate mounts the deck, so the timing
+// challenge outlives the star. Points stay the toy's own; no rules change.
+export const CAROUSEL_RIDERS = Object.freeze(['sprout', 'peach']);
+export const RIDER_TRANSIT = .9;
+export const carouselRider = game => game.rider ? game.toys.find(t => t.id === game.rider && !t.claimed) || null : null;
 export const CONTACT_DELAY = PHASES.anticipate + PHASES.descend;
 export function carouselPose(time) {
   const angle = Math.PI / 2 + time / CAROUSEL.period * Math.PI * 2;
@@ -40,8 +45,30 @@ export function carouselCue(time, holdRemaining = FIST_HOLD_MS / 1000) {
 export function moveCarousel(game, dt) {
   if (!game.carousel || !['idle', 'aim', 'anticipate', 'descend'].includes(game.phase)) return;
   game.carouselTime += dt;
-  const toy = game.toys.find(t => t.id === CAROUSEL.id);
-  if (toy && !toy.claimed) Object.assign(toy, carouselPose(game.carouselTime));
+  const toy = carouselRider(game);
+  if (!toy) return;
+  const pose = carouselPose(game.carouselTime);
+  if (toy.transit) {
+    // A freshly promoted rider slides from its bed spot onto the moving deck.
+    const t = ease((game.carouselTime - toy.transit.start) / RIDER_TRANSIT);
+    Object.assign(toy, { x: mix(toy.transit.x, pose.x, t), z: mix(toy.transit.z, pose.z, t), angle: pose.angle, elevation: mix(0, CAROUSEL.height, t) });
+    if (t >= 1) delete toy.transit;
+  } else Object.assign(toy, pose);
+}
+// The rider's pose `ahead` seconds from now, for cue and contact prediction.
+export function riderAhead(game, ahead) {
+  const toy = carouselRider(game);
+  if (!toy) return null;
+  const pose = carouselPose(game.carouselTime + ahead);
+  if (!toy.transit) return { ...toy, ...pose };
+  const t = ease((game.carouselTime + ahead - toy.transit.start) / RIDER_TRANSIT);
+  return { ...toy, x: mix(toy.transit.x, pose.x, t), z: mix(toy.transit.z, pose.z, t), elevation: mix(0, CAROUSEL.height, t) };
+}
+function promoteRider(game) {
+  const next = CAROUSEL_RIDERS.find(id => game.toys.some(t => t.id === id && !t.claimed));
+  game.rider = next || null;
+  const toy = carouselRider(game);
+  if (toy && toy.id !== CAROUSEL.id) toy.transit = { x: toy.x, z: toy.z, start: game.carouselTime };
 }
 
 // Each silhouette is authored with a matching supporting body envelope.
@@ -134,7 +161,7 @@ export function planGrab(position, toys) {
 }
 export const MISS_REASONS = Object.freeze(['near', 'slipped', 'crowded', 'blocked', 'bumped', 'platform', 'empty']);
 
-export function createGame({ carousel = false } = {}) { const game = { carousel, carouselTime: 0, phase: 'idle', elapsed: 0, position: { ...START }, plan: null, rounds: 0, collection: [], toys: ASSORTMENT.filter(t => !carousel || EVENT_TOYS.includes(t.id)).map(t => ({ ...t, ...(carousel && t.id === 'peach' ? { x: .20, z: .72, scale: .82 } : {}), elevation: carousel && t.id === CAROUSEL.id ? CAROUSEL.height : 0, claimed: false })) }; moveCarousel(game, 0); return game; }
+export function createGame({ carousel = false } = {}) { const game = { carousel, carouselTime: 0, phase: 'idle', elapsed: 0, position: { ...START }, plan: null, rounds: 0, collection: [], toys: ASSORTMENT.filter(t => !carousel || EVENT_TOYS.includes(t.id)).map(t => ({ ...t, ...(carousel && t.id === 'peach' ? { x: .20, z: .72, scale: .82 } : {}), elevation: carousel && t.id === CAROUSEL.id ? CAROUSEL.height : 0, claimed: false })), rider: carousel ? CAROUSEL.id : null }; moveCarousel(game, 0); return game; }
 // A miss continues over its drop; a catch or a fresh run starts at the bed centre.
 export function begin(game) { if (!['idle', 'result'].includes(game.phase)) return false; if (game.collection.length === game.toys.length) return false; const pose = clawPose(game); game.position = game.plan && !game.plan.prize ? { x: pose.x, z: pose.z } : { ...START }; game.phase = 'aim'; game.elapsed = 0; game.plan = null; return true; }
 // After a delivery the empty claw drives from the chute to the start while the next round is announced.
@@ -151,13 +178,13 @@ export function homeClaw(game, dt) {
   return true;
 }
 export function aimTarget(game) {
-  const toys = game.toys.map(t => game.carousel && t.id === CAROUSEL.id && !t.claimed ? { ...t, ...carouselPose(game.carouselTime + CONTACT_DELAY) } : t);
+  const toys = game.toys.map(t => game.carousel && t.id === game.rider && !t.claimed ? riderAhead(game, CONTACT_DELAY) : t);
   return planGrab(game.position, toys).prize;
 }
 export function drop(game) {
   if (game.phase !== 'aim') return false;
   // Predict only the descent height. Award a catch from the actual contact pose.
-  const future = game.toys.map(t => game.carousel && t.id === CAROUSEL.id && !t.claimed ? { ...t, ...carouselPose(game.carouselTime + CONTACT_DELAY) } : t);
+  const future = game.toys.map(t => game.carousel && t.id === game.rider && !t.claimed ? riderAhead(game, CONTACT_DELAY) : t);
   game.plan = planGrab(game.position, future);
   if (game.carousel) {
     const overDeck = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - CAROUSEL.z) < .57;
@@ -186,7 +213,7 @@ export function advance(game, dt) {
         if (actual.prize) game.plan.offset.y = low - BED - (actual.prize.elevation || 0);
       }
       game.phase = next;
-      if (next === 'reveal' && game.plan.prize) { game.plan.prize.claimed = true; game.collection.push(game.plan.prize.id); }
+      if (next === 'reveal' && game.plan.prize) { game.plan.prize.claimed = true; game.collection.push(game.plan.prize.id); if (game.carousel && game.plan.prize.id === game.rider) promoteRider(game); }
     }
   }
   return true;

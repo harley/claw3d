@@ -3,7 +3,8 @@ import { HAND_ACQUIRE_MS, RIGHT_SLAM_MS } from './dual-hand-controls.js';
 // labels. It reads a per-call view of game state and never mutates it; audio
 // and the phase-to-sound mapping are injected.
 import { PRESS_MS } from './grab-release.js';
-import { ASSORTMENT, CAROUSEL, carouselCue } from './arcade-mechanics.js';
+import { ASSORTMENT, CAROUSEL, carouselCue, carouselRider } from './arcade-mechanics.js';
+import { RULES } from './event-session.js';
 
 const elements = new Map();
 const $ = id => { if (!elements.has(id)) elements.set(id, document.getElementById(id)); return elements.get(id); };
@@ -73,7 +74,7 @@ export function createHud({ audio, phaseSound }) {
   $('action-copy').classList.toggle('attract', phase === 'idle' && !paused && !recovering && (!cameraControls?.running || cameraControls.waiting));
   const cue = carouselCue(game.carouselTime, dualEnabled ? ((feedback.hands?.right?.ready ? 0 : HAND_ACQUIRE_MS) + RIGHT_SLAM_MS) / 1000 : grabEnabled ? PRESS_MS / 1000 : holdMs ? holdMs / 1000 : undefined), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
   const gripStage = feedback.grab?.stage;
-  const starAvailable = game.toys.some(toy => toy.id === CAROUSEL.id && !toy.claimed);
+  const rider = carouselRider(game), starAvailable = Boolean(rider), riderPoints = rider ? (run?.rules || RULES).points[rider.id] : 0;
   const cueVisible = starAvailable && (!grabEnabled || (feedback.profile === 'dual' ? feedback.dropEnabled : gripStage !== 'gripped')) && phase === 'aim' && nearPickup && !paused && !frozen && !document.hidden && !modal && cameraControls?.running && !cameraControls.waiting;
   setHidden($('jackpot-signal'), !cueVisible);
   const cueKey = `${phase}:${cue.lights}:${cue.now}`; if (cueKey !== lastCue) { if (cueVisible && cue.lights) audio.note(cue.now ? 880 : 440 + cue.lights * 110, .09); lastCue = cueKey; }
@@ -87,7 +88,8 @@ export function createHud({ audio, phaseSound }) {
     setText('jackpot-cue', dualEnabled && cue.now ? 'RAISE RIGHT HAND' : grabEnabled && confirming ? (gripStage === 'pressing' ? 'PRESS DROP' : 'GRAB JOYSTICK') : confirming ? 'KEEP HOLDING' : ['idle', 'aim'].includes(phase) ? (grabEnabled && cue.now ? 'PRESS DROP' : cue.text) : 'Claw in action');
     [...$('jackpot-lights').children].forEach((light, i) => light.classList.toggle('on', ['idle', 'aim'].includes(phase) && i < cue.lights));
   }
-  if (phase === 'aim' && nearPickup && starAvailable) { title = 'STAR 200'; hint = ''; }
+  if (phase === 'aim' && nearPickup && starAvailable) { title = `${rider.name.toUpperCase()} ${riderPoints}`; hint = ''; }
+  if (starAvailable) setText('jackpot-title', `★ ${rider.id === CAROUSEL.id ? 'JACKPOT' : rider.name.toUpperCase()} ${riderPoints}`);
   const learning = phase === 'aim' || (!run && !recovering && cameraControls?.running);
   if (learning) {
     if (feedback.kind === 'off') { title = 'CAMERA OFF'; hint = ''; }
