@@ -16,7 +16,7 @@ const grabEnabled = dualEnabled || (!shared && new URLSearchParams(location.sear
 const cabinetEnabled = !shared;
 const scoreKey = dualEnabled ? `${STORAGE_KEY}:dual-controls` : grabEnabled ? `${STORAGE_KEY}:cabinet-controls` : STORAGE_KEY;
 import { ArcadeScene } from './arcade-scene.js';
-import { createGame, begin, drop, advance, move, planGrab, clawPose, PHASES, MAX_FRAME_DELTA, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
+import { createGame, begin, drop, advance, move, homeClaw, planGrab, clawPose, PHASES, MAX_FRAME_DELTA, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
 import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, scoreTurn } from './event-session.js';
 
 $('build-info').textContent = `BUILD ${__BUILD_INFO__.commit}${__BUILD_INFO__.dirty ? ' · uncommitted changes' : ''} · ${__BUILD_INFO__.branch}`;
@@ -42,7 +42,6 @@ let lastSoundPhase = '', lastMovementSound = -Infinity;
 let aligned = null, paused = false;
 let store, storageError = '', storageBlocked = false;
 try { store = shared ? newStore() : loadStore({ getItem: () => localStorage.getItem(scoreKey) }); } catch (error) { store = newStore(); storageError = error.message; storageBlocked = true; }
-game.position = { x: -1.12, z: .66 };
 let run = store.active, completedRun = null, turnNumber = run ? run.turns.length + 1 : 0, remaining = RULES.seconds;
 let recovering = Boolean(run);
 const frames = [], errors = [];
@@ -105,7 +104,7 @@ function phaseSound(phase, modal) {
   } else if (phase === 'deliver' && game.plan?.prize) audio.fanfare('shelf');
   else if (phase === 'release' && game.plan?.prize) { audio.note(740, .1, 0, 'sine'); audio.note(980, .14, .1, 'sine'); }
 }
-function freshGame() { pendingSlam = contactFeedback = null; cameraControls?.reset(); game = createGame({ carousel: true }); game.position = { x: -1.12, z: .66 }; scene?.groundToys(game); aligned = null; hud.invalidate(); }
+function freshGame() { pendingSlam = contactFeedback = null; cameraControls?.reset(); game = createGame({ carousel: true }); scene?.groundToys(game); aligned = null; hud.invalidate(); }
 function restoreTrophies() {
   if (shared) return;
   for (const turn of run?.turns || []) {
@@ -404,7 +403,7 @@ function frame(time) {
     } else {
       input.x = input.z = 0;
       if (game.phase === 'idle') moveCarousel(game, dt);
-      if (game.phase === 'result' && run && !recovering && !modal) { nextTurnElapsed += dt; if (nextTurnElapsed >= nextTurnSeconds(Boolean(game.plan?.prize))) beginTurn(); }
+      if (game.phase === 'result' && run && !recovering && !modal) { homeClaw(game, dt); nextTurnElapsed += dt; if (nextTurnElapsed >= nextTurnSeconds(Boolean(game.plan?.prize))) beginTurn(); }
       const before = game.phase; advance(game, dt); if (game.phase === 'result' && before !== 'result') finishTurn();
     }
   } else input.x = input.z = 0;
