@@ -30,5 +30,5 @@ Read `docs/PRODUCT.md` before changing player behavior. The immediate milestone 
 
 ## Keep documentation and delivery status current
 
-- Update README and docs/PRODUCT.md whenever behavior changes. Remove contradictory current instructions and resolved assumptions; move superseded decisions and release evidence to docs/archive with a clear historical label.
+- Update README and docs/PRODUCT.md whenever behavior changes. Put a new PRODUCT.md sentence under the heading it belongs to; do not append to the shared camera/privacy paragraph, which every concurrent PR then conflicts on. Remove contradictory current instructions and resolved assumptions; move superseded decisions and release evidence to docs/archive with a clear historical label.
 - Before reporting shipped or unshipped work, compare current main with the authenticated live BUILD and refresh relevant coordinating-task status. Refresh actual tester messages before selecting another feedback-driven change. Separate deployed functionality, unfinished proposals and physical acceptance.
