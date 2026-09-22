@@ -13,6 +13,7 @@ const ENUMS = {
   code: ['permission_denied', 'no_camera', 'camera_busy', 'camera_unavailable', 'tracking_error', 'tracking_init_error', 'worker_error', 'worker_timeout', 'camera_disconnected', 'capture_error', 'renderer_error', 'network_error', 'save_error', 'unknown'],
   category: ['controls', 'unexpected_drop', 'unfair_miss', 'stuck', 'other'],
   cause: ['opened', 'uncertain_reset', 'hand_lost', 'frame_gap', 'blocked', 'stale'],
+  outcome: ['supported', 'near', 'slipped', 'crowded', 'blocked', 'bumped', 'platform', 'empty'],
   prizeId: [null, ...Object.keys(RULES.points)],
 };
 const NUMBERS = { acquisitionMs: 604800000, durationMs: 604800000, captureAgeMs: 604800000, sampleMs: 604800000, averageFps: 1000, p95FrameMs: 60000, framesOver33ms: 10000000, frames: 10000000, turn: 3, score: 750, total: 750, resultHz: 240, visionP50Ms: 60000, visionP95Ms: 60000, rejectOverAge: 10000000, rejectOutOfOrder: 10000000, rejectHidden: 10000000, rejectInvalid: 10000000 };

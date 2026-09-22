@@ -172,6 +172,7 @@ test('gesture funnel and vision telemetry are allowlisted, bounded and aggregate
       event('hold_start', { phase: 'aim' }),
       event('hold_cancelled', { phase: 'aim', cause: 'uncertain_reset' }),
       event('time_to_control', { acquisitionMs: 4200 }),
+      event('turn_complete', { turn: 1, score: 0, prizeId: null, outcome: 'near' }),
       event('performance', { averageFps: 60, p95FrameMs: 17, frames: 1800, framesOver33ms: 0,
         resultHz: 19.7, visionP50Ms: 9.8, visionP95Ms: 21.6,
         rejectOverAge: 1, rejectOutOfOrder: 0, rejectHidden: 0, rejectInvalid: 0 }),
@@ -180,6 +181,7 @@ test('gesture funnel and vision telemetry are allowlisted, bounded and aggregate
     for (const bad of [
       batch(event('hold_cancelled', { phase: 'aim' })),
       batch(event('hold_cancelled', { phase: 'aim', cause: 'network glitch' })),
+      batch(event('turn_complete', { turn: 1, score: 0, prizeId: null, outcome: 'gremlins' })),
       batch(event('performance', { resultHz: 241 })),
       batch(event('performance', { visionP95Ms: 60001 })),
       batch(event('performance', { rejectOverAge: 1.5 })),
