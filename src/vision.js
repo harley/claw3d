@@ -5,6 +5,7 @@ import {FistDrop,fistEvidence} from './fist.js';
 import { DualHandControls } from './dual-hand-controls.js';
 import { GrabRelease } from './grab-release.js';
 import { OneEuroPoint } from './one-euro.js';
+import { absoluteTarget, ABSOLUTE_RANGE, ABSOLUTE_LEAD_MS } from './steering.js';
 
 export const CAPTURE_MAX_AGE = 300;
 export const OWNER_LOSS_GRACE = 650;
@@ -12,8 +13,8 @@ export const OWNER_LOSS_GRACE = 650;
 const LINKS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 
 export class HandController {
-  constructor({ video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic = () => {}, onGesture, getControlProfile = () => 'hold-drop', getControlTarget = () => ({}), maxHands = 1, holdMs }) {
-    Object.assign(this, { video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic, onGesture, getControlProfile, getControlTarget, maxHands, holdMs });
+  constructor({ video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic = () => {}, onGesture, getControlProfile = () => 'hold-drop', getControlTarget = () => ({}), maxHands = 1, holdMs, steering = 'relative' }) {
+    Object.assign(this, { video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic, onGesture, getControlProfile, getControlTarget, maxHands, holdMs, steering });
     this.running = false;
     this.starting = false;
     this.generation = 0;
@@ -439,8 +440,14 @@ export class HandController {
     if (!this.neutral) this.pointer.reset();
     const point = this.pointer.filter(hand.center, now);
     this.neutral ||= { ...point };
-    this.input.x = joystickAxis(point.x - this.neutral.x);
-    this.input.z = joystickAxis(point.y - this.neutral.y);
+    if (this.steering === 'absolute') {
+      // Point, don't nudge: the predicted hand offset is the claw's target.
+      const lead = this.pointer.predict(ABSOLUTE_LEAD_MS) || point;
+      const offset = { x: lead.x - this.neutral.x, y: lead.y - this.neutral.y };
+      this.input = { x: clamp(offset.x / ABSOLUTE_RANGE.x, -1, 1), z: clamp(offset.y / ABSOLUTE_RANGE.y, -1, 1), target: absoluteTarget(offset) };
+    } else {
+      this.input = { x: joystickAxis(point.x - this.neutral.x), z: joystickAxis(point.y - this.neutral.y) };
+    }
     sendInput(this.input);
     report({ kind: 'tracking', message: !acceptsInput ? 'Hand ready.' : 'Steer with an open hand. Clench your fist and hold to drop.', progress: 0 });
     this.draw(hands, hand);
