@@ -76,38 +76,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Skip commits superseded while checks were running
-        id: head
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          current=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
-          if [ "$current" = "$GITHUB_SHA" ]; then
-            echo "current=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Skipped superseded commit $GITHUB_SHA; main is $current." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          fetch-depth: 0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        if: steps.head.outputs.current == 'true'
         with:
           node-version: '24'
           cache: npm
-      - if: steps.head.outputs.current == 'true'
-        run: npm ci && npm install --global @railway/cli@5.44.0
-      - if: steps.head.outputs.current == 'true'
-        run: npx playwright install chromium
-      - name: Recheck main immediately before production mutation
+      - run: npm ci && npm install --global @railway/cli@5.44.0
+      - run: npx playwright install chromium
+      # Deploy when this commit is newer than the live build. An older run that
+      # finishes after a newer deploy is skipped; a newer commit is never skipped
+      # merely because another one merged while its checks were running.
+      - name: Compare with the live build
+        id: head
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: bash scripts/deploy-if-newer.sh "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Recheck the live build immediately before production mutation
         id: release
         if: steps.head.outputs.current == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          current=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
-          if [ "$current" = "$GITHUB_SHA" ]; then
-            echo "current=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Skipped superseded commit $GITHUB_SHA; main is $current." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: bash scripts/deploy-if-newer.sh "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
       - name: Set exact build identity without triggering a separate deployment
         if: steps.release.outputs.current == 'true'
         env:
