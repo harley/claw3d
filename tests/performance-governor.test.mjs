@@ -42,3 +42,13 @@ test('an operator selection stays pinned and reports its source', () => {
   assert.equal(governor.mode, 'full');
   assert.deepEqual(changes, [['simple', 'operator'], ['full', 'operator']]);
 });
+
+test('without camera samples the governor still adapts to rendering alone', () => {
+  const changes = [], governor = new PerformanceGovernor({ onChange: mode => changes.push(mode) });
+  const noCamera = { averageFps: 18, resultHz: 0, results: 0, rejected: 0 };
+  governor.observe(noCamera); governor.observe(noCamera);
+  assert.equal(governor.mode, 'simple');
+  for (let i = 0; i < 6; i++) governor.observe({ averageFps: 60, resultHz: 0, results: 0, rejected: 0 });
+  assert.equal(governor.mode, 'full');
+  assert.deepEqual(changes, ['simple', 'full']);
+});
