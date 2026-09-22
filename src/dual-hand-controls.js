@@ -1,7 +1,7 @@
 import { HAND_ZONES, handInZone, handOffset, inHandRange } from './hand-workspace.js';
 import { GrabRelease } from './grab-release.js';
-import { OneEuroPoint } from './one-euro.js';
-import { joystickAxis } from './mechanics.js';
+import { Steering } from './steering.js';
+
 
 export const HAND_ACQUIRE_MS = 300;
 export const RIGHT_RAISE_DISTANCE = .06;
@@ -24,8 +24,8 @@ class RightRaise {
 
 const MAX_STEP = .18, SEPARATION = .065;
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-const role = () => ({ owner: null, origin: null, observed: null, candidate: null, gesture: new GrabRelease(), filter: new OneEuroPoint(), neutral: null });
-const clear = state => { state.owner = state.origin = state.observed = state.candidate = state.neutral = null; state.gesture.reset(); state.filter.reset(); };
+const role = () => ({ owner: null, origin: null, observed: null, candidate: null, gesture: new GrabRelease(), steer: new Steering() });
+const clear = state => { state.owner = state.origin = state.observed = state.candidate = null; state.gesture.reset(); state.steer.release(); };
 
 // A camera-controller helper: the scene supplies targets, mechanics accepts drops.
 // Each role has independent ownership and gesture evidence; neither can inherit
@@ -89,12 +89,9 @@ export class DualHandControls {
     const rightClear = right.ready && right.hand.fist.open && !right.hand.fist.closed;
     const press = this.right.gesture.update(dropEnabled && rightClear, { acquired: right.acquired, y: right.ready ? right.hand.center.y : undefined });
     let input = { x: 0, z: 0 };
-    if (grip.grabbed) { this.left.neutral = null; this.left.filter.reset(); }
-    if (grip.steering && leftClear && !press.fired) {
-      const point = this.left.filter.filter(left.hand.center, now);
-      this.left.neutral ||= { ...point };
-      input = { x: joystickAxis(point.x - this.left.neutral.x), z: joystickAxis(point.y - this.left.neutral.y) };
-    } else this.left.neutral = null;
+    if (grip.grabbed) this.left.steer.release();
+    if (grip.steering && leftClear && !press.fired) input = this.left.steer.update(left.hand.center, now);
+    else this.left.steer.release();
     const view = (observation, gesture, target, state) => ({
       workspace: observation.hand ? handOffset(observation.hand.center, state.origin) : null,
       outside: Boolean(observation.outside),

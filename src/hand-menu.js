@@ -1,3 +1,4 @@
+import { menuScreenPoint } from './steering.js';
 // Only player-facing actions participate. Operator controls never accept gestures.
 const actions = {
   idle: ['play', 'mode-one', 'mode-two', 'result-open'],
@@ -28,8 +29,7 @@ export function createHandMenu() {
       if (clenching && !holding) locked = hovered;
       if (!clenching) {
         locked = null;
-        const x = Math.max(0, Math.min(1, (feedback.pointer.x - .18) / .64)) * innerWidth;
-        const y = Math.max(0, Math.min(1, (feedback.pointer.y - .15) / .70)) * innerHeight;
+        const { x, y } = menuScreenPoint(feedback.pointer, innerWidth, innerHeight);
         cursor.style.left = `${x}px`; cursor.style.top = `${y}px`;
         const target = document.elementFromPoint(x, y)?.closest('button');
         const next = actions[mode].map(eligible).find(button => button && button === target) || null;

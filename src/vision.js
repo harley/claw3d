@@ -4,8 +4,7 @@ import { clamp } from './arcade-mechanics.js';
 import {FistDrop,fistEvidence} from './fist.js';
 import { DualHandControls } from './dual-hand-controls.js';
 import { GrabRelease } from './grab-release.js';
-import { OneEuroPoint } from './one-euro.js';
-import { absoluteTarget, ABSOLUTE_RANGE, ABSOLUTE_LEAD_MS } from './steering.js';
+import { Steering } from './steering.js';
 
 export const CAPTURE_MAX_AGE = 300;
 export const OWNER_LOSS_GRACE = 650;
@@ -32,13 +31,16 @@ export class HandController {
     select.addEventListener('change', () => { if (this.running) this.start(); });
   }
 
+  get neutral() { return this.steer?.neutral ?? null; }
+  set neutral(value) { if (value) this.steer.seed(value); else this.steer.release(); }
+
   resetOwner() {
     this.fist?.reset('blocked'); // a discarded mid-hold still reports its cancellation
     this.fist = new FistDrop((name, cause) => this.onGesture?.(name, cause), this.holdMs ? { holdMs: this.holdMs, decay: true } : undefined);
     this.grab = new GrabRelease();
     this.dual = new DualHandControls();
-    this.pointer = new OneEuroPoint();
-    this.owner = null; this.neutral = null; this.candidate = null;
+    this.steer = new Steering({ mode: this.steering });
+    this.owner = null; this.candidate = null;
     this.pinchSince = 0; this.lostSince = 0;
     this.input = { x: 0, z: 0 };
     this.onInput?.(this.input);
@@ -410,12 +412,9 @@ export class HandController {
       const grip = this.grab.update({ ...hand.fist, visible: hands.length === 1,
         point: hand.center, ...target }, now);
       this.input = { x: 0, z: 0 };
-      if (grip.grabbed) { this.pointer.reset(); this.neutral = null; }
-      if (grip.steering) {
-        const point = this.pointer.filter(hand.center, now);
-        this.neutral ||= { ...point };
-        this.input = { x: joystickAxis(point.x - this.neutral.x), z: joystickAxis(point.y - this.neutral.y) };
-      } else this.neutral = null;
+      if (grip.grabbed) this.steer.release();
+      if (grip.steering) this.input = this.steer.update(hand.center, now);
+      else this.steer.release();
       sendInput(this.input);
       let kind = hands.length !== 1 ? 'lost' : ['grabbing', 'pressing'].includes(grip.stage) ? 'clenching' : 'tracking';
       if (grip.fired) {
@@ -443,21 +442,10 @@ export class HandController {
       // A fist shown before arming never steers or drops the claw.
       if(hand.fist.closed){this.input={x:0,z:0};sendInput(this.input);this.neutral=null;report({kind:'clenching',message:hands.length>1?'Lower your other hand. Open, then clench to drop.':'Open your hand first, then clench to drop.',progress:0});this.draw(hands,hand);return;}
     }
-    // One-euro on the hand centre: still hands stay planted, fast moves land
-    // without the trailing lag of the old fixed lerp. A fresh grab discards
-    // filter state so neutral seeds at the true hand position and steering
-    // starts at exactly zero — never at the filter's convergence residue.
-    if (!this.neutral) this.pointer.reset();
-    const point = this.pointer.filter(hand.center, now);
-    this.neutral ||= { ...point };
-    if (this.steering === 'absolute') {
-      // Point, don't nudge: the predicted hand offset is the claw's target.
-      const lead = this.pointer.predict(ABSOLUTE_LEAD_MS) || point;
-      const offset = { x: lead.x - this.neutral.x, y: lead.y - this.neutral.y };
-      this.input = { x: clamp(offset.x / ABSOLUTE_RANGE.x, -1, 1), z: clamp(offset.y / ABSOLUTE_RANGE.y, -1, 1), target: absoluteTarget(offset) };
-    } else {
-      this.input = { x: joystickAxis(point.x - this.neutral.x), z: joystickAxis(point.y - this.neutral.y) };
-    }
+    // Steering owns the One Euro filter and the neutral pose: a fresh grab
+    // discards filter state so steering starts at exactly zero.
+    this.steer.mode = this.steering === 'absolute' ? 'absolute' : 'relative';
+    this.input = this.steer.update(hand.center, now);
     sendInput(this.input);
     report({ kind: 'tracking', message: !acceptsInput ? 'Hand ready.' : 'Steer with an open hand. Clench your fist and hold to drop.', progress: 0 });
     this.draw(hands, hand);
