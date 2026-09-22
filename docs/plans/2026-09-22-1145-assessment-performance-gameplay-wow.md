@@ -1,6 +1,8 @@
 # Cloud Claw assessment: performance, gameplay, wow (2026-09-22)
 
-Status: assessment only, no code changed. Written against `main` at `59d64ed`, which is the verified live BUILD (GitHub run 35686476212, deploy job verified `BUILD 59d64ed · main` at 04:29 UTC). Event: AWS Cloud & AI Day Hanoi, 29 September 2026 (7 days).
+Historical assessment snapshot; implementation has advanced since this review. The active work and status are in [tracking issue #43](https://github.com/harley/claw3d/issues/43). This file preserves the queue rationale, not current code or deployment status.
+
+At assessment time: no code changed. Written against `main` at `59d64ed`, which is the verified live BUILD (GitHub run 35686476212, deploy job verified `BUILD 59d64ed · main` at 04:29 UTC). Event: AWS Cloud & AI Day Hanoi, 29 September 2026 (7 days).
 
 Evidence used: five parallel source audits (gesture pipeline, rendering, mechanics/state/server, docs history, tests/CI), a scripted synthetic 3-turn playthrough on the dev server with screenshots and timing, render statistics from the DEV snapshot, and the CI logs. Synthetic input is not physical validation; every gameplay claim below still needs the booth laptop, TV and camera.
 

@@ -8,7 +8,6 @@ Historical observation for BUILD `05d1f79`; this record is not a claim about lat
 - [Actions run 34696040933](https://github.com/harley/claw3d/actions/runs/34696040933), attempt 2: success. Includes unit/build, sequential booth-browser, shared-session, production Linux container/backup, deployment and authenticated/rendered BUILD verification.
 - GitHub production environment secret listing confirms `RAILWAY_TOKEN` is configured. No credential value was recorded.
 - The signed-in physical-test page's DOM contained `BUILD 05d1f79 · main` before play. The operator panel remained behind host authentication; this session did not independently render that panel. Direct JSON navigation was blocked by the in-app browser; authenticated endpoint/rendered verification above comes from the successful release run.
-- This supersedes the current-status interpretation of the [September 12 release record](2026-09-12-five-track-release.md), whose missing-token note is historical.
 
 ## Physical staff run
 
@@ -34,3 +33,7 @@ These source facts support the reported slow, unclear transition; they are not m
 The session confirms completion and saving, not a full acceptance pass. Await player observations for intended camera/display, acquisition within 10 seconds, setup/tracking delay, gameplay duration, hesitation, unintended drops/freezes, cue readability, speaker audibility and what to try differently. No timing measurement was captured; chat timestamps must not be treated as gameplay duration. Harley is a staff tester, not established as a first-time player. Five first-time-player sessions remain the product target.
 
 The next iteration should address the diagnosed miss transition. Three misses alone do not establish a difficulty or hand-recognition defect.
+
+## Earlier camera-contention evidence — September 9
+
+September 9 physical-camera diagnosis on the development Mac: the same CPU recognizer measured 66 ms median with the scene off, versus 613 ms with uncapped full graphics. Full graphics capped at 30 FPS measured 66 ms median / 107 ms p95, with all 170 replies under 300 ms (148 detected a hand). The implemented draw-only cap with a larger scene measured 58 ms median / 163 ms p95 over 275 replies; 270 were under 300 ms and 73 detected a hand. These are bounded physical-camera timing samples, not first-time-player or three-turn acceptance results. No camera images or landmarks were saved.
