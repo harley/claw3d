@@ -35,11 +35,11 @@ try {
  assert.equal(await page.evaluate(() => window.__littleCloud.snapshot().event.run.turns.length), 0);
  await page.screenshot({ path: '.screenshots/arcade-outcome.png' });
  // Screenshots may span a phase boundary on CI. The lift cue expires, while a
- // missed transfer deliberately keeps its outcome visible without narration.
+ // missed result deliberately keeps its outcome visible without narration.
  await page.waitForFunction(() => window.__littleCloud.snapshot().phase !== 'lift' || getComputedStyle(document.getElementById('action-copy')).opacity === '0');
  const outcome = await page.evaluate(() => ({ phase: window.__littleCloud.snapshot().phase, caught: window.__littleCloud.snapshot().caught, opacity: getComputedStyle(document.getElementById('action-copy')).opacity, hint: document.getElementById('hint').textContent }));
  if (outcome.phase === 'lift') assert.equal(outcome.opacity, '0');
- if (outcome.phase === 'transfer' && !outcome.caught) { assert.equal(outcome.hint, ''); assert.equal(outcome.opacity, '1'); }
+ if (outcome.phase === 'result' && !outcome.caught) { assert.equal(outcome.hint, ''); assert.equal(outcome.opacity, '1'); }
  assert.equal(await page.locator('#action-copy').getAttribute('role'), 'status');
  assert.equal(await page.locator('#celebration').count(), 0);
  await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim' && window.__littleCloud.snapshot().event.turn === 2 && getComputedStyle(document.getElementById('action-copy')).opacity === '0');

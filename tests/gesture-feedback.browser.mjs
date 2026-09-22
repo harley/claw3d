@@ -74,13 +74,12 @@ try {
   await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'result', {}, { timeout: 30000 });
   assert.equal((await snap()).event.run.turns.length, 1);
   assert.equal((await snap()).joystick.visible, false);
-  assert.equal(await page.locator('#phase-label').textContent(), 'ROUND 2 OF 3');
-  assert.equal(await page.locator('#status').textContent(), 'ROUND 2');
-  await page.waitForTimeout(1000);
-  const countdownCamera = (await snap()).camera;
-  assert.ok(countdownCamera.some((value, i) => Math.abs(value - aimingCamera[i]) > 1), 'the early countdown shows the full machine');
-  await page.screenshot({ path: '.screenshots/round-two-ready.png' });
+  // Hold the short miss announcement with a dialog before asserting its shape.
   await page.locator('#operator-open').click();
+  assert.equal(await page.locator('#phase-label').textContent(), 'ROUND 2 OF 3');
+  assert.equal(await page.locator('#status').textContent(), 'MISSED');
+  assert.deepEqual((await snap()).camera, aimingCamera, 'a miss keeps the close view for the next attempt');
+  await page.screenshot({ path: '.screenshots/round-two-ready.png' });
   await page.waitForTimeout(2100);
   assert.equal((await snap()).phase, 'result', 'a dialog holds the next-round announcement');
   await page.locator('#pause').click();
@@ -88,11 +87,9 @@ try {
   assert.equal((await snap()).phase, 'result', 'host pause holds the announcement');
   assert.equal(await cameraDrop(page), false);
   await page.locator('#operator-open').click(); await page.locator('#pause').click();
-  for (const cue of ['3', '2', '1', 'START!']) {
-    await page.waitForFunction(cue => document.getElementById('status').textContent === cue, cue);
-    assert.equal(await cameraDrop(page), false, `${cue} cue rejects drops`);
-    if (cue === 'START!') assert.deepEqual((await snap()).camera, aimingCamera, 'close view is ready before aiming resumes');
-  }
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'START!');
+  assert.equal(await cameraDrop(page), false, 'START! cue rejects drops');
+  assert.deepEqual((await snap()).camera, aimingCamera, 'close view is ready before aiming resumes');
   await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
   assert.equal((await snap()).event.turn, 2);
   assert.equal((await snap()).event.remaining, 15, 'missing hands hold the full aiming time after the cue');

@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { ASSORTMENT, BED, FIELD, FINGER_ANGLES, OPEN_RADIUS, FINGER_DEPTH, HIGH, PHASES, MAX_FRAME_DELTA, createGame, begin, drop, advance, move, planGrab, clawPose, collectionSlot } from '../src/arcade-mechanics.js';
+import { ASSORTMENT, BED, FIELD, FINGER_ANGLES, OPEN_RADIUS, FINGER_DEPTH, HIGH, PHASES, PHASE_ORDER, MISS_LIFT, phaseSeconds, MAX_FRAME_DELTA, createGame, begin, drop, advance, move, planGrab, clawPose, collectionSlot } from '../src/arcade-mechanics.js';
 
 const finish = game => { for (let i = 0; i < 1500 && game.phase !== 'result'; i++) advance(game, 1 / 60); assert.equal(game.phase, 'result'); };
 
 test('phase pacing stays readable while cutting passive wait, and 10 FPS is real time', () => {
-  const delivery = Object.values(PHASES).reduce((sum, seconds) => sum + seconds, 0);
-  assert.equal(delivery, 8.8);
+  const delivery = PHASE_ORDER.reduce((sum, phase) => sum + PHASES[phase], 0);
+  assert.equal(+delivery.toFixed(2), 7.2, 'a catch runs the full shelf choreography in 7.2 s');
+  assert.deepEqual(Object.keys(PHASES).sort(), [...PHASE_ORDER].sort(), 'every duration has a place in the explicit order');
   assert.equal(MAX_FRAME_DELTA, .1);
   const game = createGame(); begin(game); drop(game);
   for (let i = 0; i < 10; i++) advance(game, MAX_FRAME_DELTA);
@@ -15,17 +16,29 @@ test('phase pacing stays readable while cutting passive wait, and 10 FPS is real
   assert.equal(game.phase, 'descend');
 });
 
-test('a miss returns home without empty delivery, with one drop and no score', () => {
+test('a miss ends over its drop after a short lift, with one drop and no score', () => {
  const game = createGame({ carousel: true }); begin(game); game.position = { x: -1.18, z: .6 }; drop(game);
  const phases = new Set(); let elapsed = 0;
  while (game.phase !== 'result' && elapsed < 15) { phases.add(game.phase); advance(game, .01); elapsed += .01; }
  assert.equal(game.phase, 'result'); assert.equal(game.plan.prize, null);
- assert.ok(elapsed < 6, 'miss completes in under six simulation seconds from drop');
- for (const phase of ['release', 'deliver', 'reveal']) assert.equal(phases.has(phase), false);
+ assert.ok(Math.abs(elapsed - (PHASES.anticipate + PHASES.descend + PHASES.grip + MISS_LIFT)) < .02, 'miss ends 2.45 s after the drop');
+ assert.equal(phaseSeconds(game, 'lift'), MISS_LIFT);
+ for (const phase of ['transfer', 'release', 'deliver', 'reveal']) assert.equal(phases.has(phase), false);
  assert.equal(game.rounds, 1); assert.deepEqual(game.collection, []);
- game.phase = 'transfer'; game.elapsed = PHASES.transfer;
- const returning = clawPose(game); game.phase = 'result'; game.elapsed = 0;
- assert.deepEqual(clawPose(game), returning, 'return-to-result pose stays continuous');
+ game.phase = 'lift'; game.elapsed = MISS_LIFT;
+ const lifted = clawPose(game); game.phase = 'result'; game.elapsed = 0;
+ assert.deepEqual(clawPose(game), lifted, 'lift-to-result pose stays continuous');
+ assert.deepEqual([lifted.x, lifted.z], [-1.18, .6], 'the empty claw stays over the drop instead of returning to the chute');
+ assert.equal(lifted.y, HIGH);
+ assert.ok(begin(game)); assert.deepEqual(game.position, { x: -1.18, z: .6 }, 'the next turn starts where the miss ended');
+});
+
+test('a catch still travels to the chute and the next turn starts there', () => {
+ const game = createGame(); begin(game); drop(game); assert.ok(game.plan.prize);
+ for (let i = 0; i < 2000 && game.phase !== 'result'; i++) advance(game, 1 / 120);
+ assert.equal(game.phase, 'result');
+ const pose = clawPose(game); assert.ok(Math.abs(pose.x - (-1.08 - game.plan.offset.x)) < 1e-9);
+ assert.ok(begin(game)); assert.ok(Math.abs(game.position.x - pose.x) < 1e-9);
 });
 
 test('every one of eleven distinct toys has a supported centred grip with independent contacts', () => {
@@ -84,9 +97,9 @@ test('collection persists across replays, has distinct full-size shelf slots, an
 
 test('phase boundaries keep the claw continuous and the lift has no vertical jump', () => {
   const game=createGame(); begin(game); drop(game);
-  const phases=Object.keys(PHASES);
+  const phases=PHASE_ORDER;
   for(let i=0;i<phases.length-1;i++) {
-    game.phase=phases[i];game.elapsed=PHASES[game.phase];const end=clawPose(game);
+    game.phase=phases[i];game.elapsed=phaseSeconds(game);const end=clawPose(game);
     game.phase=phases[i+1];game.elapsed=0;const start=clawPose(game);
     for(const axis of ['x','y','z'])assert.ok(Math.abs(end[axis]-start[axis])<1e-8,`${phases[i]} → ${phases[i+1]} ${axis}`);
   }
@@ -96,7 +109,7 @@ test('phase boundaries keep the claw continuous and the lift has no vertical jum
 });
 
 test('reset state is fresh after interruption in every phase', () => {
-  for(const phase of Object.keys(PHASES)) { let game=createGame();begin(game);drop(game);game.phase=phase;game.elapsed=.1;game=createGame();assert.equal(game.phase,'idle');assert.equal(game.plan,null);assert.deepEqual(game.collection,[]);assert.ok(game.toys.every(t=>!t.claimed)); }
+  for(const phase of PHASE_ORDER) { let game=createGame();begin(game);drop(game);game.phase=phase;game.elapsed=.1;game=createGame();assert.equal(game.phase,'idle');assert.equal(game.plan,null);assert.deepEqual(game.collection,[]);assert.ok(game.toys.every(t=>!t.claimed)); }
 });
 
 test('boot imports stay free of eager camera, tracking, and legacy scene dependencies', async () => {
@@ -115,9 +128,9 @@ test('replay starts at the returned claw position without a carriage jump', () =
  assert.deepEqual(next,returned);assert.ok(next.x>=FIELD.minX&&next.x<=FIELD.maxX);
 });
 
-test('a missed grab keeps its fingers open across the lift/transfer boundary', () => {
+test('a missed grab keeps its fingers open across the lift/result boundary', () => {
  const game=createGame();begin(game);game.position={x:-1.18,z:.6};drop(game);assert.equal(game.plan.prize,null);
- game.phase='lift';game.elapsed=PHASES.lift;const before=clawPose(game);game.phase='transfer';game.elapsed=0;const after=clawPose(game);
+ game.phase='lift';game.elapsed=MISS_LIFT;const before=clawPose(game);game.phase='result';game.elapsed=0;const after=clawPose(game);
  assert.deepEqual(before.radii,after.radii);assert.ok(after.radii.every(r=>r===OPEN_RADIUS));
 });
 

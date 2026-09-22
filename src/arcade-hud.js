@@ -11,13 +11,16 @@ const setText = (id, value) => { const text = String(value); if ($(id).textConte
 const setHidden = (element, hidden) => { if (element.hidden !== hidden) element.hidden = hidden; };
 
 const deliveryPhases = new Set(['anticipate', 'descend', 'grip', 'lift', 'transfer', 'release', 'deliver', 'reveal']);
-export const NEXT_TURN_SECONDS = 3.7;
+// After a catch the machine pulls back to the shelf, so the next round gets a
+// full count-in. After a miss the view never left the claw: name it, then go.
+export const nextTurnSeconds = caught => caught ? 2.5 : 1.2;
 
-export function nextTurnCue(elapsed, round) {
-  if (elapsed < .9) return `ROUND ${round}`;
-  if (elapsed < 1.6) return '3';
-  if (elapsed < 2.3) return '2';
-  if (elapsed < 3) return '1';
+export function nextTurnCue(elapsed, round, caught = true) {
+  if (!caught) return elapsed < .6 ? 'MISSED' : 'START!';
+  if (elapsed < .7) return `ROUND ${round}`;
+  if (elapsed < 1.2) return '3';
+  if (elapsed < 1.7) return '2';
+  if (elapsed < 2.2) return '1';
   return 'START!';
 }
 
@@ -43,14 +46,13 @@ export function createHud({ audio, phaseSound }) {
   let title = 'READY', hint = '', button = 'Play', kicker = 'CLAW';
   if (recovering) { title = `TURN ${turnNumber} OF 3`; button = cameraLoading ? 'Starting…' : 'CONTINUE'; }
   else if (phase === 'aim') { kicker = turnNumber === 3 ? 'LAST CLAW!' : `TURN ${turnNumber} OF 3`; title = 'Clench & hold to drop'; hint = ''; button = '';  }
-  else if (phase === 'result' && run) { kicker = `ROUND ${turnNumber + 1} OF 3`; title = nextTurnCue(nextTurnElapsed, turnNumber + 1); hint = ''; button = ''; }
+  else if (phase === 'result' && run) { kicker = `ROUND ${turnNumber + 1} OF 3`; title = nextTurnCue(nextTurnElapsed, turnNumber + 1, Boolean(game.plan?.prize)); hint = ''; button = ''; }
   else if (phase in phaseCopy) {
     title = phase === 'lift' && !game.plan?.prize ? 'MISSED' : phaseCopy[phase];
     kicker = `TURN ${turnNumber} OF 3`;
     hint = '';
     button = '';
   }
-  if (phase === 'transfer' && !game.plan?.prize) { title = 'MISSED'; hint = ''; }
   phaseSound(phase, modal);
   // Attract mode: the idle machine gently pulses its invitation until a hand
   // takes control. CSS disables the pulse under reduced motion.
@@ -134,7 +136,7 @@ export function createHud({ audio, phaseSound }) {
     button = cameraLoading ? 'Starting…' : 'Restart camera';
   }
   if (paused) { title = 'PAUSED'; hint = ''; button = shared ? 'HOST CONTROLS' : cameraLoading ? 'Starting…' : 'RESUME'; }
-  const timed = !paused && deliveryPhases.has(phase) && !(phase === 'transfer' && !game.plan?.prize);
+  const timed = !paused && deliveryPhases.has(phase);
   // Teach once per run. Keep the live-region text, but let the machine lead
   // after the first drop; recovery and deliberate hold feedback always return.
   const steering = (!grabEnabled || gripStage === 'gripped') && phase === 'aim' && Boolean(run) && !recovering && !startingRun &&
@@ -144,7 +146,8 @@ export function createHud({ audio, phaseSound }) {
   // instruction for assistive tech; camera failures and pause stay visible.
   $('action-copy').classList.toggle('quiet', Boolean(!paused && (cameraGuide || (steering && rightReady && (run.turns.length > 0 || cueVisible)))));
   $('action-copy').classList.toggle('gesture-guide', Boolean(steering && !nearPickup));
-  presentMessage(title, hint, `${['anticipate', 'descend'].includes(phase) ? 'drop' : phase}:${turnNumber}:${title}:${hint}`, timed ? 1600 : 0);
+  // A miss keeps one message surface from the empty lift through the next-turn cue.
+  presentMessage(title, hint, `${title === 'MISSED' ? 'missed' : ['anticipate', 'descend'].includes(phase) ? 'drop' : phase}:${turnNumber}:${title}:${hint}`, timed ? 1600 : 0);
   if ($('arcade').dataset.phase !== phase) $('arcade').dataset.phase = phase;
   const signature = [title, hint, button, kicker, total, run?.name, pendingPlayer?.name, completedRun?.id, paused].join('');
   if (signature === lastStatus) return; lastStatus = signature;
