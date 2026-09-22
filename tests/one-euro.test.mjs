@@ -29,3 +29,14 @@ test('a long frame gap snaps to the new position instead of sweeping across', ()
   const { x, y } = filter.filter({ x: .8, y: .7 }, 1500);
   assert.equal(x, .8); assert.equal(y, .7);
 });
+
+test('prediction extends the filtered slope by the requested lead and is null before any sample', () => {
+  const point = new OneEuroPoint();
+  assert.equal(point.predict(60), null);
+  let now = 1000;
+  for (let i = 0; i <= 20; i++) { point.filter({ x: .3 + i * .01, y: .5 }, now); now += 33; }
+  const last = point.filter({ x: .51, y: .5 }, now), ahead = point.predict(100);
+  assert.ok(ahead.x > last.x, 'a hand moving right is predicted further right');
+  assert.ok(Math.abs(ahead.y - last.y) < 1e-6, 'a still axis is not extrapolated');
+  assert.ok(ahead.x - last.x < .06, 'the lead is bounded by the measured slope');
+});

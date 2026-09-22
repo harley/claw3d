@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { ASSORTMENT, BED, FIELD, FINGER_ANGLES, OPEN_RADIUS, FINGER_DEPTH, HIGH, PHASES, PHASE_ORDER, MISS_LIFT, MISS_REASONS, CAROUSEL, START, CHUTE, phaseSeconds, homeClaw, MAX_FRAME_DELTA, createGame, begin, drop, advance, move, planGrab, clawPose, collectionSlot } from '../src/arcade-mechanics.js';
+import { ASSORTMENT, BED, FIELD, FINGER_ANGLES, OPEN_RADIUS, FINGER_DEPTH, HIGH, PHASES, PHASE_ORDER, MISS_LIFT, MISS_REASONS, CAROUSEL, START, CHUTE, phaseSeconds, homeClaw, moveToward, MAX_FRAME_DELTA, createGame, begin, drop, advance, move, planGrab, clawPose, collectionSlot } from '../src/arcade-mechanics.js';
 
 const finish = game => { for (let i = 0; i < 1500 && game.phase !== 'result'; i++) advance(game, 1 / 60); assert.equal(game.phase, 'result'); };
 
@@ -194,4 +194,14 @@ test('every miss carries a reason a player can act on', () => {
   // A supported grab reports success, and the reason set is closed.
   assert.equal(planGrab({ x: toy('butter').x, z: toy('butter').z }, game.toys).reason, 'supported');
   assert.deepEqual([...MISS_REASONS].sort(), ['blocked', 'bumped', 'crowded', 'empty', 'near', 'platform', 'slipped']);
+});
+
+test('moveToward follows a target at a bounded speed and never leaves the field', () => {
+  const step = moveToward({ x: 0, z: 0 }, { x: 1, z: 0 }, .1, 2.4);
+  assert.ok(Math.abs(step.x - .24) < 1e-9 && step.z === 0, 'one tenth of a second at 2.4 units/s');
+  const arrive = moveToward({ x: .9, z: 0 }, { x: 1, z: 0 }, 1, 2.4);
+  assert.deepEqual(arrive, { x: 1, z: 0 }, 'arrives without overshoot');
+  const clamped = moveToward({ x: 1.1, z: .7 }, { x: 5, z: 5 }, 1, 2.4);
+  assert.deepEqual(clamped, { x: FIELD.maxX, z: FIELD.maxZ });
+  assert.deepEqual(moveToward({ x: .5, z: .5 }, { x: .5, z: .5 }, .1), { x: .5, z: .5 });
 });

@@ -14,10 +14,11 @@ const ENUMS = {
   category: ['controls', 'unexpected_drop', 'unfair_miss', 'stuck', 'other'],
   cause: ['opened', 'uncertain_reset', 'hand_lost', 'frame_gap', 'blocked', 'stale'],
   outcome: ['supported', 'near', 'slipped', 'crowded', 'blocked', 'bumped', 'platform', 'empty'],
+  steering: ['relative', 'absolute'],
   prizeId: [null, ...Object.keys(RULES.points)],
 };
-const NUMBERS = { acquisitionMs: 604800000, durationMs: 604800000, captureAgeMs: 604800000, sampleMs: 604800000, averageFps: 1000, p95FrameMs: 60000, framesOver33ms: 10000000, frames: 10000000, turn: 3, score: 750, total: 750, resultHz: 240, visionP50Ms: 60000, visionP95Ms: 60000, rejectOverAge: 10000000, rejectOutOfOrder: 10000000, rejectHidden: 10000000, rejectInvalid: 10000000 };
-const integerFields = new Set(['turn', 'score', 'total', 'frames', 'framesOver33ms', 'rejectOverAge', 'rejectOutOfOrder', 'rejectHidden', 'rejectInvalid']);
+const NUMBERS = { acquisitionMs: 604800000, durationMs: 604800000, captureAgeMs: 604800000, sampleMs: 604800000, averageFps: 1000, p95FrameMs: 60000, framesOver33ms: 10000000, frames: 10000000, turn: 3, score: 750, total: 750, holdMs: 900, resultHz: 240, visionP50Ms: 60000, visionP95Ms: 60000, rejectOverAge: 10000000, rejectOutOfOrder: 10000000, rejectHidden: 10000000, rejectInvalid: 10000000 };
+const integerFields = new Set(['turn', 'score', 'total', 'holdMs', 'frames', 'framesOver33ms', 'rejectOverAge', 'rejectOutOfOrder', 'rejectHidden', 'rejectInvalid']);
 const invalid = () => { throw new ApiError(400, 'Invalid playtest event.'); };
 function object(value, keys) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !keys.includes(key))) invalid();

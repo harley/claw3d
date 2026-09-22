@@ -69,6 +69,14 @@ export const SHELF_LEVELS = [.64, 1.49, 2.42, 3.46];
 const SHELF_PLACES = { miso: [0, 0], cocoa: [0, 1], 'blue-hour': [0, 2], cirrus: [1, 0], peach: [1, 1], sprout: [1, 2], pip: [2, 0], otto: [2, 1], bonbon: [3, 0], butter: [3, 1], lilac: [3, 2] };
 export function collectionSlot(id) { const [row, column] = SHELF_PLACES[id]; return { x: -2.92 + (column - 1) * .67, y: SHELF_LEVELS[row], z: .12 }; }
 
+// Drive toward an absolute target at a bounded speed; the field clamp still applies.
+export function moveToward(position, target, dt, speed = 2.4) {
+  const dx = target.x - position.x, dz = target.z - position.z, distance = Math.hypot(dx, dz);
+  if (distance < 1e-9 || dt <= 0) return { x: clamp(position.x, FIELD.minX, FIELD.maxX), z: clamp(position.z, FIELD.minZ, FIELD.maxZ) };
+  const step = Math.min(distance, speed * dt);
+  return { x: clamp(position.x + dx / distance * step, FIELD.minX, FIELD.maxX), z: clamp(position.z + dz / distance * step, FIELD.minZ, FIELD.maxZ) };
+}
+
 export function move(position, input, dt, fine = false) {
   const length = Math.max(1, Math.hypot(input.x, input.z));
   const speed = fine ? .28 : .85;

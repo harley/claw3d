@@ -55,7 +55,7 @@ function presentMessage(title, hint, key, duration = 0) {
 export function createHud({ audio, phaseSound }) {
   let lastCue = '', lastStatus = '';
   function update(view, feedback, modal) {
-    const { game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, grabEnabled, dualEnabled, cabinetEnabled, sharedStatus, storageError, aligned } = view;
+    const { game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus, storageError, aligned } = view;
   const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
   let title = 'READY', hint = '', button = 'Play', kicker = 'CLAW';
   if (recovering) { title = `TURN ${turnNumber} OF 3`; button = cameraLoading ? 'Starting…' : 'CONTINUE'; }
@@ -71,7 +71,7 @@ export function createHud({ audio, phaseSound }) {
   // Attract mode: the idle machine gently pulses its invitation until a hand
   // takes control. CSS disables the pulse under reduced motion.
   $('action-copy').classList.toggle('attract', phase === 'idle' && !paused && !recovering && (!cameraControls?.running || cameraControls.waiting));
-  const cue = carouselCue(game.carouselTime, dualEnabled ? ((feedback.hands?.right?.ready ? 0 : HAND_ACQUIRE_MS) + RIGHT_SLAM_MS) / 1000 : grabEnabled ? PRESS_MS / 1000 : undefined), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
+  const cue = carouselCue(game.carouselTime, dualEnabled ? ((feedback.hands?.right?.ready ? 0 : HAND_ACQUIRE_MS) + RIGHT_SLAM_MS) / 1000 : grabEnabled ? PRESS_MS / 1000 : holdMs ? holdMs / 1000 : undefined), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
   const gripStage = feedback.grab?.stage;
   const starAvailable = game.toys.some(toy => toy.id === CAROUSEL.id && !toy.claimed);
   const cueVisible = starAvailable && (!grabEnabled || (feedback.profile === 'dual' ? feedback.dropEnabled : gripStage !== 'gripped')) && phase === 'aim' && nearPickup && !paused && !frozen && !document.hidden && !modal && cameraControls?.running && !cameraControls.waiting;
