@@ -5,10 +5,10 @@ import { FilesetResolver, GestureRecognizer } from '@mediapipe/tasks-vision';
 // The worker shares this module instance, so replacing the statics stubs it.
 // Each test imports the worker with a unique query string for fresh module state.
 FilesetResolver.forVisionTasks = async () => ({});
-let plan, made, posted;
+let plan, made, posted, lastOptions;
 GestureRecognizer.createFromOptions = async (files, options) => {
   const which = options.baseOptions.delegate;
-  made.push(which);
+  made.push(which); lastOptions = options;
   const behavior = () => plan[which] ?? {};
   if (behavior().createThrows) throw new Error(`${which} create failed`);
   return {
@@ -82,4 +82,16 @@ test('after a proven GPU frame a later failure is an error, never a silent deleg
   assert.equal(image.closed, 1);
   assert.deepEqual(made, ['GPU'], 'no CPU recreate after the delegate proved itself');
   assert.equal(posted.at(-1).type, 'error');
+});
+
+test('the worker asks the model for one hand unless dual play requests two, at the shared confidences', async () => {
+  await boot({});
+  assert.equal(lastOptions.numHands, 1);
+  assert.deepEqual([lastOptions.minHandDetectionConfidence, lastOptions.minHandPresenceConfidence, lastOptions.minTrackingConfidence], [.65, .5, .5]);
+  plan = {}; made = []; posted = [];
+  globalThis.OffscreenCanvas = class {};
+  globalThis.self = { postMessage: message => posted.push(message) };
+  await import(`../src/vision-worker.js?case=${imports++}`);
+  await self.onmessage({ data: { type: 'init', base: '/x', maxHands: 2 } });
+  assert.equal(lastOptions.numHands, 2);
 });

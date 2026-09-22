@@ -12,8 +12,8 @@ export const OWNER_LOSS_GRACE = 650;
 const LINKS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 
 export class HandController {
-  constructor({ video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic = () => {}, onGesture, getControlProfile = () => 'hold-drop', getControlTarget = () => ({}) }) {
-    Object.assign(this, { video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic, onGesture, getControlProfile, getControlTarget });
+  constructor({ video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic = () => {}, onGesture, getControlProfile = () => 'hold-drop', getControlTarget = () => ({}), maxHands = 1 }) {
+    Object.assign(this, { video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic, onGesture, getControlProfile, getControlTarget, maxHands });
     this.running = false;
     this.starting = false;
     this.generation = 0;
@@ -93,7 +93,7 @@ export class HandController {
           else if (data.type === 'error') { clearTimeout(timeout); this.initReject = null; resolve('main_thread_required'); }
         };
         this.worker.onerror = () => { clearTimeout(timeout); this.initReject = null; resolve('main_thread_required'); };
-        this.worker.postMessage({ type: 'init', base: location.origin });
+        this.worker.postMessage({ type: 'init', base: location.origin, maxHands: this.maxHands });
       });
       if (workerResult === 'main_thread_required') {
         this.worker.terminate();
@@ -144,7 +144,7 @@ export class HandController {
   async useMainThreadVision(generation, base) {
     const create = this.createMainThreadVision || (async origin => {
       const runtime = await import('./vision-main-thread.js');
-      return runtime.createMainThreadVision(origin);
+      return runtime.createMainThreadVision(origin, this.maxHands);
     });
     const runtime = await create(base);
     // Camera stop/switch can win while WebKit is loading the model. Do not
