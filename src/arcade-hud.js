@@ -3,6 +3,7 @@ import { HAND_ACQUIRE_MS, RIGHT_SLAM_MS } from './dual-hand-controls.js';
 // labels. It reads a per-call view of game state and never mutates it; audio
 // and the phase-to-sound mapping are injected.
 import { PRESS_MS } from './grab-release.js';
+import { cueLeadSeconds } from './play-mode.js';
 import { ASSORTMENT, CAROUSEL, carouselCue, carouselRider } from './arcade-mechanics.js';
 import { RULES } from './event-session.js';
 
@@ -83,7 +84,7 @@ export function createHud({ audio, phaseSound }) {
   // Attract mode: the idle machine gently pulses its invitation until a hand
   // takes control. CSS disables the pulse under reduced motion.
   $('action-copy').classList.toggle('attract', phase === 'idle' && !paused && !recovering && (!cameraControls?.running || cameraControls.waiting));
-  const cue = carouselCue(game.carouselTime, dualEnabled ? ((feedback.hands?.right?.ready ? 0 : HAND_ACQUIRE_MS) + RIGHT_SLAM_MS) / 1000 : grabEnabled ? PRESS_MS / 1000 : holdMs ? holdMs / 1000 : undefined), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
+  const cue = carouselCue(game.carouselTime, cueLeadSeconds({ dual: dualEnabled, grab: grabEnabled, holdMs }, feedback)), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
   const gripStage = feedback.grab?.stage;
   const rider = carouselRider(game), starAvailable = Boolean(rider), riderPoints = rider ? (run?.rules || RULES).points[rider.id] : 0;
   const cueVisible = starAvailable && (!grabEnabled || (feedback.profile === 'dual' ? feedback.dropEnabled : gripStage !== 'gripped')) && phase === 'aim' && nearPickup && !paused && !frozen && !document.hidden && !modal && cameraControls?.running && !cameraControls.waiting;
