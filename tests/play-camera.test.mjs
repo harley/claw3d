@@ -32,12 +32,25 @@ test('pullback starts only after lift, and next-turn preparation completes befor
     scene.updateCamera({phase, elapsed:0});
     assert.deepEqual(scene.camera.position, scene.home);
   }
-  scene.updateCamera({phase:'result'}, {preparing:true,nextTurnElapsed:2.7});
+  const caught = { phase: 'result', plan: { prize: {} } };
+  scene.updateCamera(caught, {preparing:true,nextTurnElapsed:1.9});
   assert.ok(scene.camera.position.distanceTo(scene.playCamera) > 0);
-  scene.updateCamera({phase:'result'}, {preparing:true,nextTurnElapsed:3});
-  assert.deepEqual(scene.camera.position, scene.playCamera);
+  assert.ok(scene.camera.position.distanceTo(scene.home) > 0);
+  scene.updateCamera(caught, {preparing:true,nextTurnElapsed:2.2});
+  assert.deepEqual(scene.camera.position, scene.playCamera, 'close view is back before START! at 2.2 s');
   scene.updateCamera({phase:'aim',elapsed:0});
   assert.deepEqual(scene.camera.position, scene.playCamera);
+});
+test('a miss never leaves the close view while the next turn is prepared', () => {
+  const scene = fixture();
+  const missed = { phase: 'result', plan: { prize: null } };
+  for (const nextTurnElapsed of [0, .6, 1.2]) {
+    scene.updateCamera(missed, {preparing:true,nextTurnElapsed});
+    assert.deepEqual(scene.camera.position, scene.playCamera);
+    assert.equal(scene.surroundings.visible, false);
+  }
+  scene.updateCamera(missed, {preparing:false});
+  assert.deepEqual(scene.camera.position, scene.home, 'a finished run shows the whole machine behind the results');
 });
 test('reduced motion uses stable cuts with no zoom interpolation', () => {
   const scene = fixture(); scene.reducedMotion = true;
@@ -45,8 +58,9 @@ test('reduced motion uses stable cuts with no zoom interpolation', () => {
   assert.deepEqual(scene.camera.position, scene.playCamera);
   scene.updateCamera({phase:'transfer',elapsed:0});
   assert.deepEqual(scene.camera.position, scene.home);
-  scene.updateCamera({phase:'result'}, {preparing:true,nextTurnElapsed:2.9});
+  const caught = { phase: 'result', plan: { prize: {} } };
+  scene.updateCamera(caught, {preparing:true,nextTurnElapsed:2.1});
   assert.deepEqual(scene.camera.position, scene.home);
-  scene.updateCamera({phase:'result'}, {preparing:true,nextTurnElapsed:3});
+  scene.updateCamera(caught, {preparing:true,nextTurnElapsed:2.2});
   assert.deepEqual(scene.camera.position, scene.playCamera);
 });

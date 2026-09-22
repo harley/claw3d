@@ -482,12 +482,12 @@ export class ArcadeScene {
   }
 
   updateCamera(game, { preparing = false, nextTurnElapsed = 0, machineControls = false } = {}) {
-    // Stay on the contact through the entire lift. Transfer is the first point
-    // where the outcome is known and the whole machine becomes useful again.
+    // Stay on the contact through the entire lift. A held prize pulls the view
+    // back for its shelf run; after a miss the claw stays put and so does the view.
     let wide = ['idle', 'release', 'deliver', 'reveal', 'result'].includes(game.phase) ? 1 : 0;
     if (game.phase === 'transfer') wide = this.reducedMotion ? 1 : ease(game.elapsed / .65);
     if (game.phase === 'result' && preparing) {
-      wide = this.reducedMotion ? Number(nextTurnElapsed < 3) : 1 - ease((nextTurnElapsed - 2.4) / .6);
+      wide = !game.plan?.prize ? 0 : this.reducedMotion ? Number(nextTurnElapsed < 2.2) : 1 - ease((nextTurnElapsed - 1.6) / .6);
     }
     this.surroundings.visible = wide > 0;
     for (const id of game.collection || []) {

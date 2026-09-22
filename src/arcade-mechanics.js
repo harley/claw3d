@@ -7,7 +7,12 @@ export const CHUTE = { x: -1.08, z: .66 };
 export const FINGER_ANGLES = [Math.PI / 6, Math.PI * 5 / 6, Math.PI * 3 / 2];
 export const OPEN_RADIUS = .41;
 export const FINGER_DEPTH = .98;
-export const PHASES = { anticipate: .20, descend: .85, grip: .85, lift: 1.45, transfer: 1.45, release: .45, deliver: 2.65, reveal: .90 };
+// Durations of the committed-drop phases; PHASE_ORDER is the explicit sequence.
+export const PHASES = { anticipate: .20, descend: .85, grip: .85, lift: 1.45, transfer: 1.10, release: .45, deliver: 1.60, reveal: .70 };
+export const PHASE_ORDER = Object.freeze(['anticipate', 'descend', 'grip', 'lift', 'transfer', 'release', 'deliver', 'reveal']);
+// An empty claw lifts briefly, then the turn ends where it is: no shelf run, no return home.
+export const MISS_LIFT = .55;
+export const phaseSeconds = (game, phase = game.phase) => phase === 'lift' && !game.plan?.prize ? MISS_LIFT : PHASES[phase];
 export const MAX_FRAME_DELTA = .10;
 export const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 export const mix = (a, b, t) => a + (b - a) * t;
@@ -134,12 +139,12 @@ export function advance(game, dt) {
   if (!(game.phase in PHASES)) return false;
   // Split at phase boundaries so frame rate cannot move the interception time.
   while (dt > 1e-10 && game.phase in PHASES) {
-    const step = Math.min(dt, PHASES[game.phase] - game.elapsed);
+    const seconds = phaseSeconds(game);
+    const step = Math.min(dt, seconds - game.elapsed);
     moveCarousel(game, step); game.elapsed += step; dt -= step;
-    if (game.elapsed >= PHASES[game.phase] - 1e-10) {
-      const phases = Object.keys(PHASES);
-      // An empty claw returns home but has nothing to release or carry to a shelf.
-      const next = game.phase === 'transfer' && !game.plan.prize ? 'result' : phases[phases.indexOf(game.phase) + 1] || 'result';
+    if (game.elapsed >= seconds - 1e-10) {
+      // An empty claw has nothing to carry: the turn ends after its short lift.
+      const next = game.phase === 'lift' && !game.plan.prize ? 'result' : PHASE_ORDER[PHASE_ORDER.indexOf(game.phase) + 1] || 'result';
       game.elapsed = 0;
       if (next === 'grip' && game.plan.pendingContact) {
         const actual = planGrab(game.position, game.toys), low = game.plan.low, blocked = game.plan.blockedDescent, touched = game.plan.touched;
@@ -158,7 +163,7 @@ export function clawPose(game) {
   const plan = game.plan;
   const pose = { x: game.position.x, y: HIGH, z: game.position.z, radii: [OPEN_RADIUS, OPEN_RADIUS, OPEN_RADIUS] };
   if (!plan) return pose;
-  const { phase, elapsed } = game, t = elapsed / (PHASES[phase] || 1);
+  const { phase, elapsed } = game, t = elapsed / (phaseSeconds(game, phase) || 1);
   Object.assign(pose, plan.position);
   if (phase === 'descend') pose.y = plan.blockedDescent || mix(HIGH, plan.low, ease(t));
   if (phase === 'grip') { pose.y = plan.low; pose.radii = plan.radii.map((r, i) => mix(OPEN_RADIUS, r, ease((t - i * .075) / .67))); }
@@ -166,7 +171,8 @@ export function clawPose(game) {
     pose.y = phase === 'lift' ? mix(plan.low, HIGH, ease(t)) : HIGH;
     pose.radii = plan.prize ? [...plan.radii] : phase === 'lift' ? plan.radii.map(r => mix(r, OPEN_RADIUS, ease(t * 4))) : [OPEN_RADIUS, OPEN_RADIUS, OPEN_RADIUS];
   }
-  if (['transfer', 'release', 'deliver', 'reveal', 'result'].includes(phase)) {
+  // Only a held prize travels to the chute; an empty claw stays over its drop.
+  if (plan.prize && ['transfer', 'release', 'deliver', 'reveal', 'result'].includes(phase)) {
     const travel = phase === 'transfer' ? ease(t) : 1;
     pose.x = mix(plan.position.x, clamp(CHUTE.x - (plan.offset?.x || 0), FIELD.minX, FIELD.maxX), travel);
     pose.z = mix(plan.position.z, clamp(CHUTE.z - (plan.offset?.z || 0), FIELD.minZ, FIELD.maxZ), travel);

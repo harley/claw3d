@@ -7,7 +7,7 @@ const manualSetup = new URLSearchParams(location.search).get('setup') === 'manua
 import { createSharedBoard } from './shared-board.js';
 import { createPlaytestClient } from './playtest-client.js';
 import { createArcadeAudio } from './arcade-audio.js';
-import { createHud, $, setText, setHidden, NEXT_TURN_SECONDS } from './arcade-hud.js';
+import { createHud, $, setText, setHidden, nextTurnSeconds } from './arcade-hud.js';
 import { createMovementMusic } from './movement-music.js';
 import { PerformanceGovernor, PERFORMANCE_WINDOW_MS } from './performance-governor.js';
 const shared = globalThis.__SHARED_PILOT__ === true;
@@ -404,7 +404,7 @@ function frame(time) {
     } else {
       input.x = input.z = 0;
       if (game.phase === 'idle') moveCarousel(game, dt);
-      if (game.phase === 'result' && run && !recovering && !modal) { nextTurnElapsed += dt; if (nextTurnElapsed >= NEXT_TURN_SECONDS) beginTurn(); }
+      if (game.phase === 'result' && run && !recovering && !modal) { nextTurnElapsed += dt; if (nextTurnElapsed >= nextTurnSeconds(Boolean(game.plan?.prize))) beginTurn(); }
       const before = game.phase; advance(game, dt); if (game.phase === 'result' && before !== 'result') finishTurn();
     }
   } else input.x = input.z = 0;
