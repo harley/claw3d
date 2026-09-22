@@ -20,6 +20,11 @@ The wow moment is direct control followed by a believable grab, a tense lift and
 ## Attract mode
 
 Unattended, the machine attracts: with nobody registered, no dialog open and no hand in view, the 3D view fills the screen in the close framing with a slow drift, the marquee chases faster, and a large SHOW YOUR HAND invitation with the one-line rule sits over the machine while the leaderboard stays visible. The instant a hand is seen the view eases back (0.4 s; a cut under reduced motion) to the existing idle framing and hand menus; nothing about registration or play changes.
+
+## Finale
+
+The results dialog reads the run in one line (TOP OF THE BOARD!, CLEAN SWEEP!, JACKPOT RUN!, RUN COMPLETE, or THE CLAW WINS THIS ONE for no catch) above the counted total, then shows the three turns as catch cards: the toy's icon, name and colour with base plus speed points, or MISS with the same reason line the player saw during the miss. Reasons are held in memory for the current run only; a recovered run shows plain MISS. Cards fit within the result dialog on narrow screens. Rank and board lines are unchanged.
+
 ## Light that answers the player
 
 The marquee bulbs now cast light: a point light behind them follows the lit pattern (a soft glow at rest, a brighter chase while a prize travels to the shelf, a strobe on a star jackpot). The rim light answers play: it turns green while a toy is under the claw, gold from the moment a catch lifts, red for a miss, and rests otherwise; reduced motion cuts instead of fading. Selective bloom (`?fx=bloom`, opt-in) makes the marquee, the carousel signals and the confetti bleed light; it costs two extra scene passes, so it stays off by default and the governor's simple quality bypasses it until the booth laptop's frame budget is measured.

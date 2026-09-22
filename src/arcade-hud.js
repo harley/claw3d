@@ -25,6 +25,16 @@ export function nextTurnCue(elapsed, round, caught = true) {
   return 'START!';
 }
 
+export const TROPHY_ICONS = Object.freeze({ bunny: '🐰', capybara: '🐾', cloud: '☁️', star: '⭐', robot: '🤖' });
+// The finale headline reads the run: rank first, then how the three turns went.
+export function finaleHeadline(turns, rank, points = {}) {
+  const catches = turns.filter(turn => turn.prizeId).length;
+  if (rank === 1) return 'TOP OF THE BOARD!';
+  if (catches === turns.length && catches > 0) return 'CLEAN SWEEP!';
+  if (turns.some(turn => turn.prizeId && (points[turn.prizeId] || 0) >= 200)) return 'JACKPOT RUN!';
+  if (catches === 0) return 'THE CLAW WINS THIS ONE';
+  return 'RUN COMPLETE';
+}
 // One short line under MISSED that says what the claw actually met.
 export function missCopy(plan, toys = []) {
   const name = id => (toys.find(toy => toy.id === id)?.name || '').toUpperCase();
@@ -180,7 +190,7 @@ export function createHud({ audio, phaseSound }) {
     if (cabinetEnabled && toy) {
       chip.dataset.prize = toy.id; chip.title = `Turn ${i + 1}: ${toy.name}, ${turn.score} points`;
       chip.setAttribute('role', 'img'); chip.setAttribute('aria-label', chip.title); chip.replaceChildren();
-      for (const [className, text] of [['trophy-icon', { bunny: '🐰', capybara: '🐾', cloud: '☁️', star: '⭐', robot: '🤖' }[toy.family]], ['trophy-name', toy.name], ['trophy-score', `+${turn.score}`]]) {
+      for (const [className, text] of [['trophy-icon', TROPHY_ICONS[toy.family]], ['trophy-name', toy.name], ['trophy-score', `+${turn.score}`]]) {
         const part = document.createElement('span'); part.className = className; part.textContent = text; part.setAttribute('aria-hidden', 'true'); chip.append(part);
       }
     }
