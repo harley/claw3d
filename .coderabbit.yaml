@@ -7,8 +7,9 @@ reviews:
   poem: false
   review_status: true
   collapse_walkthrough: true
+  # On demand only: comment `@coderabbitai review` on a PR. Required checks are the GitHub Actions jobs.
   auto_review:
-    enabled: true
+    enabled: false
     drafts: false
   path_filters:
     - "!public/vision/**"

@@ -25,7 +25,7 @@ export class ArcadeScene {
     this.angledView = new URLSearchParams(location.search).get('view') === 'angle';
     this.scene.add(new T.HemisphereLight('#fff5e2', '#93a895', 1.15));
     const key = new T.DirectionalLight('#fff0d7', 2.35); key.position.set(-3.5, 8, 5); key.castShadow = true;
-    Object.assign(key.shadow.camera, { left: -6, right: 6, top: 7, bottom: -5, near: .1, far: 22 }); key.shadow.mapSize.set(2048, 2048); key.shadow.normalBias = .022; key.shadow.bias = -.00015; key.shadow.radius = 3; this.scene.add(key);
+    Object.assign(key.shadow.camera, { left: -6, right: 6, top: 7, bottom: -5, near: .1, far: 22 }); key.shadow.mapSize.set(2048, 2048); key.shadow.normalBias = .022; key.shadow.bias = -.00015; key.shadow.radius = 3; this.scene.add(key); this.key = key;
     const rim = new T.DirectionalLight('#dceee3', 1.65); rim.position.set(4, 5, -4); this.scene.add(rim);
     const front = new T.DirectionalLight('#ffe8df', .5); front.position.set(0, 3, 7); this.scene.add(front);
     this.mats = createArtMaterials(); this.toys = new Map(); this.buildWorld(); this.buildCabinet(); this.buildClaw();
@@ -348,7 +348,16 @@ export class ArcadeScene {
     this.playCamera.set((this.angledView ? 1.8 : .45) * playScale, 2.95 + 1.85 * playScale, 6.4 * playScale);
   }
 
-  setQuality(low) { this.lowQuality = low; this.renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, 1.5)); this.renderer.shadowMap.enabled = !low; this.resize(); }
+  // Simple quality lowers pixel ratio and halves the shadow map. Shadows stay
+  // enabled: toggling them recompiles every material, which on a weak GPU can
+  // starve the camera worker's own inference for seconds.
+  setQuality(low) {
+    this.lowQuality = low;
+    this.renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, 1.5));
+    const size = low ? 1024 : 2048;
+    if (this.key && this.key.shadow.mapSize.x !== size) { this.key.shadow.mapSize.set(size, size); this.key.shadow.map?.dispose(); this.key.shadow.map = null; }
+    this.resize();
+  }
 
   controlTargets() {
     const stick = this.stick.localToWorld(v(0, .205, 0));
@@ -393,7 +402,7 @@ export class ArcadeScene {
     this.previousAim = steering ? { x: pose.x, z: pose.z } : null;
   }
 
-  update(game, dt, time, input, aligned, feedback = {}, cameraActive = false, presentation = {}) {
+  update(game, dt, time, input, aligned, feedback = {}, drawCapped = false, presentation = {}) {
     const phase = game.phase, elapsed = game.elapsed, plan = game.plan, motion = this.reducedMotion ? 0 : 1;
     this.carousel.visible = Boolean(game.carousel);
     if (game.carousel) {
@@ -492,7 +501,7 @@ export class ArcadeScene {
     this.courier.visible = this.deliveryTray.visible;
     if (this.courier.visible) { const p = this.deliveryTray.position; this.courier.scale.set(this.deliveryTray.scale.x, 1, this.deliveryTray.scale.z); this.courier.position.set(p.x, 0, 1.69); this.courierMast.scale.y = Math.max(.1, p.y - .44); this.courierMast.position.y = .44 + (p.y - .44) / 2; this.courierArm.scale.y = Math.max(.025, 1.69 - p.z); this.courierArm.position.set(0, p.y - .08, -(1.69 - p.z) / 2); }
     this.updateCamera(game, presentation, time);
-    this.draw(time, cameraActive);
+    this.draw(time, drawCapped);
   }
 
   updateCamera(game, { preparing = false, nextTurnElapsed = 0, machineControls = false } = {}, time = 0) {
@@ -519,12 +528,13 @@ export class ArcadeScene {
     if (punch) { this.camera.position.y += punch; this.camera.position.x += punch * .4; }
   }
 
-  draw(time, cameraActive) {
-    // Leave GPU time for camera recognition, especially on 120/144 Hz displays.
-    // Only draw submission is capped; transforms and contact response still update.
+  draw(time, capped) {
+    // The governor asks for the 30 Hz cap only when a machine is measured slow;
+    // a healthy machine animates at display rate with the camera on. Only draw
+    // submission is capped; transforms and contact response still update.
     const frame = Math.floor((time + .000001) * 30);
-    if (cameraActive && frame === this.cameraRenderFrame) return;
-    this.cameraRenderFrame = cameraActive ? frame : undefined;
+    if (capped && frame === this.cameraRenderFrame) return;
+    this.cameraRenderFrame = capped ? frame : undefined;
     this.renderer.render(this.scene, this.camera);
   }
 

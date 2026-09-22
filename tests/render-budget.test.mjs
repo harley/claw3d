@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ArcadeScene } from '../src/arcade-scene.js';
 
-test('camera rendering stays at 30 FPS on high refresh displays', () => {
+test('the governor cap holds 30 FPS on any refresh rate', () => {
   for (const refresh of [60, 120, 144]) {
     const scene = Object.create(ArcadeScene.prototype);
     let draws = 0;
@@ -12,7 +12,7 @@ test('camera rendering stays at 30 FPS on high refresh displays', () => {
   }
 });
 
-test('camera shutdown restores display cadence; a stall does not cause catch-up draws', () => {
+test('lifting the cap restores display cadence; a stall does not cause catch-up draws', () => {
   const scene = Object.create(ArcadeScene.prototype);
   let draws = 0;
   scene.renderer = { render: () => draws++ };
@@ -25,4 +25,12 @@ test('camera shutdown restores display cadence; a stall does not cause catch-up 
   scene.draw(20, true);
   scene.draw(20.008, true);
   assert.equal(draws, 4);
+});
+
+test('a healthy machine draws every frame with the camera on', () => {
+  const scene = Object.create(ArcadeScene.prototype);
+  let draws = 0;
+  scene.renderer = { render: () => draws++ };
+  for (let frame = 0; frame < 120 * 2; frame++) scene.draw(frame / 120, false);
+  assert.equal(draws, 240);
 });
