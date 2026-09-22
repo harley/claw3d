@@ -92,6 +92,9 @@ test('attract drifts a close view while unattended and hands back the idle frami
   scene.updateCamera({ phase: 'idle' }, { attract: false, dt: 1 }, 6);
   assert.equal(scene.attractBlend, 0);
   assert.deepEqual(scene.camera.position, scene.home, 'a hand restores the idle framing exactly');
+  const cut = fixture(); cut.updateCamera({ phase: 'idle' }, { attract: true, dt: 1 }, 1);
+  cut.updateCamera({ phase: 'aim', elapsed: 0 }, { attract: false, dt: 1 / 60 }, 1.02);
+  assert.equal(cut.attractBlend, 0); assert.deepEqual(cut.camera.position, cut.playCamera, 'aiming starts on the exact play viewpoint even mid-ease');
   const blend = fixture(); blend.updateCamera({ phase: 'idle' }, { attract: true, dt: 1 / 60 }, 1);
   assert.ok(blend.attractBlend > 0 && blend.attractBlend < 1, 'transitions ease rather than cut');
   const still = fixture(); still.reducedMotion = true;

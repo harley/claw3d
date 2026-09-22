@@ -498,8 +498,10 @@ export class ArcadeScene {
   }
 
   // Attract eases in and out over ~0.4 s; reduced motion cuts.
-  updateAttract(active, dt) {
+  updateAttract(active, dt, phase = 'idle') {
     const target = active ? 1 : 0;
+    // Attract belongs to idle only: once a turn starts the aiming viewpoint must be exact at once.
+    if (phase !== 'idle') { this.attractBlend = 0; return; }
     this.attractBlend = this.reducedMotion || dt <= 0 ? target : this.attractBlend + (target - this.attractBlend) * Math.min(1, dt * 7);
     if (Math.abs(this.attractBlend - target) < .002) this.attractBlend = target;
   }
@@ -510,7 +512,7 @@ export class ArcadeScene {
     look.copy(this.playLook); look.y -= .15;
   }
   updateCamera(game, { preparing = false, nextTurnElapsed = 0, machineControls = false, attract = false, dt = 0 } = {}, time = 0) {
-    this.updateAttract(attract, dt);
+    this.updateAttract(attract, dt, game.phase);
     // Stay on the contact through the entire lift. A held prize pulls the view
     // back for its shelf run; after a miss the claw stays put and so does the view.
     let wide = ['idle', 'release', 'deliver', 'reveal', 'result'].includes(game.phase) ? 1 : 0;
