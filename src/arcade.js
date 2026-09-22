@@ -13,9 +13,9 @@ import { createHud, $, setText, setHidden, nextTurnSeconds } from './arcade-hud.
 import { createMovementMusic } from './movement-music.js';
 import { PerformanceGovernor, PERFORMANCE_WINDOW_MS } from './performance-governor.js';
 const shared = globalThis.__SHARED_PILOT__ === true;
-const dualEnabled = !shared && new URLSearchParams(location.search).get('controls') === 'dual';
+const dualEnabled = new URLSearchParams(location.search).get('controls') === 'dual';
 const grabEnabled = dualEnabled || (!shared && new URLSearchParams(location.search).get('controls') === 'grab');
-const cabinetEnabled = !shared;
+const cabinetEnabled = true;
 // `?hold=N` (local only) trials a shorter fist hold with decaying credit for the booth A/B; the shared pilot keeps its control version.
 const requestedHold = Number(new URLSearchParams(location.search).get('hold'));
 const holdMs = !shared && requestedHold >= HOLD_LIMITS.min && requestedHold <= HOLD_LIMITS.max ? Math.round(requestedHold) : undefined;
@@ -33,6 +33,10 @@ const handMenu = createHandMenu();
 document.body.classList.toggle('machine-controls', cabinetEnabled);
 document.body.classList.toggle('dual-controls', cabinetEnabled);
 document.body.classList.toggle('two-hand-mode', dualEnabled);
+if (dualEnabled) {
+  $('scene').setAttribute('aria-label', 'Clench your left hand to steer. Raise your open right hand to drop.');
+  $('camera-help').textContent = 'Show both open hands. Clench your left hand to grip and steer; raise your open right hand to drop. Open your left hand to release without dropping.';
+}
 const glove = createJoystickCursor(() => cabinetEnabled ? scene?.controlTargets() : null, () => { if (cabinetEnabled) gestureDrop(); });
 let previousMenuMode = '';
 function menuMode() {
@@ -104,7 +108,10 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
   hud.update({ game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus: pilot.status, storageError, aligned }, feedback, modal);
 }
 function syncSoundUI() {
-  $('sound').textContent = !audio.enabled ? 'SOUND OFF' : !audio.volume ? 'MUTED' : audio.ready ? 'SOUND ON' : 'TAP FOR SOUND';
+  const label = !audio.enabled ? 'Sound off' : !audio.volume ? 'Muted' : audio.ready ? 'Sound on' : 'Tap for sound';
+  $('sound').textContent = audio.enabled && audio.volume ? '🔊' : '🔇';
+  $('sound').setAttribute('aria-label', label);
+  $('sound').title = label;
   $('sound').setAttribute('aria-pressed', String(audio.enabled));
 }
 function phaseSound(phase, modal) {
@@ -122,7 +129,6 @@ function phaseSound(phase, modal) {
 }
 function freshGame() { pendingSlam = contactFeedback = null; cameraControls?.reset(); game = createGame({ carousel: true }); scene?.groundToys(game); aligned = null; hud.invalidate(); }
 function restoreTrophies() {
-  if (shared) return;
   for (const turn of run?.turns || []) {
     const toy = game.toys.find(toy => toy.id === turn.prizeId);
     if (toy && !toy.claimed) { toy.claimed = true; game.collection.push(toy.id); }
@@ -130,7 +136,7 @@ function restoreTrophies() {
 }
 function beginTurn() {
   nextTurnElapsed = 0; dropRemainingMs = 0; contactFeedback = null;
-  if (!shared && run.turns.length && !recovering && game.phase === 'result') {
+  if (run.turns.length && !recovering && game.phase === 'result') {
     cameraControls?.reset(); aligned = null; hud.invalidate();
   } else {
     freshGame();
@@ -191,7 +197,7 @@ async function startScoredRun() {
   try {
     if (shared) {
       pendingPlayer.requestKey ??= crypto.randomUUID();
-      const issued = await pilot.start(pendingPlayer.name, pendingPlayer.requestKey);
+      const issued = await pilot.start(pendingPlayer.name, pendingPlayer.requestKey, dualEnabled ? 'two-hand' : 'one-hand');
       // Presentation accumulates turns under the acknowledged immutable rule snapshot.
       store = { version: 1, current: issued.boardId, boards: [{ id: issued.boardId, name: pilot.board?.id === issued.boardId ? pilot.board.name : issued.boardId, rules: issued.rules, runs: [] }], active: issued };
       run = issued;
@@ -257,11 +263,11 @@ $('final-leaderboard').addEventListener('click', () => {
 });
 $('final').addEventListener('cancel', event => event.preventDefault());
 $('play').addEventListener('click', () => { $('scene').focus(); play(); });
-$('play-alternate').addEventListener('click', () => {
-  if (shared || run || startingRun || cameraLoading || paused || recovering || document.querySelector('dialog[open]')) return;
+for (const [id, dual] of [['mode-one', false], ['mode-two', true]]) $(id).addEventListener('click', () => {
+  if (dual === dualEnabled || run || pendingPlayer || startingRun || cameraLoading || paused || recovering || document.querySelector('dialog[open]')) return;
   const url = new URL(location.href);
-  if (dualEnabled) url.searchParams.delete('controls'); else url.searchParams.set('controls', 'dual');
-  url.searchParams.set('start', '1'); location.assign(url);
+  if (dual) url.searchParams.set('controls', 'dual'); else url.searchParams.delete('controls');
+  url.searchParams.delete('start'); location.assign(url);
 });
 $('operator-open').addEventListener('click', openOperator);
 $('pause').addEventListener('click', () => { if (recovering) { beginTurn(); paused = false; } else paused = !paused; $('operator').close(); $('scene').focus(); });
@@ -351,7 +357,8 @@ async function startCamera() {
           if (video.videoWidth && video.videoHeight) $('camera-preview').style.setProperty('--camera-aspect', `${video.videoWidth} / ${video.videoHeight}`);
           const active = cameraControls?.running || state.kind === 'tracking';
           $('camera-preview').hidden = !active;
-          $('camera-open').textContent = active ? 'CAMERA ✓' : 'CAMERA';
+          $('camera-open').setAttribute('aria-label', active ? 'Camera settings — camera on' : 'Camera settings');
+          $('camera-open').title = active ? 'Camera settings — camera on' : 'Camera settings';
           $('camera-toggle').textContent = active ? 'STOP CAMERA' : 'START CAMERA';
         },
       });

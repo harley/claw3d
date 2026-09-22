@@ -91,9 +91,9 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
       const session = await request('/session');
       await flush(); return session;
     },
-    async start(name, requestKey) {
+    async start(name, requestKey, controlMode = 'one-hand') {
       storage.setItem('cloud-claw:storage-probe', '1'); storage.removeItem('cloud-claw:storage-probe');
-      const run = await request('/runs', { name, requestKey });
+      const run = await request('/runs', { name, requestKey, controlMode });
       if (run.status !== 'active' || run.turns.length) throw new Error('This start request was already used. Enter a new run.');
       write(run.id, 'run', run);
       tabStorage.setItem(ACTIVE, run.id); activeId = run.id;

@@ -142,11 +142,11 @@ export function createHud({ audio, phaseSound }) {
   setHidden($('mode-label'), !$('mode-label').textContent);
   setHidden($('result-open'), !completedRun || startingRun || Boolean(run) || cameraLoading);
   if (!run && !recovering) button = cameraLoading ? 'Starting…' : !shared ? (dualEnabled ? 'PLAY · 2 HANDS' : 'PLAY · 1 HAND') : cameraControls?.running ? 'Play' : 'Start camera';
-  const alternate = $('play-alternate');
-  setHidden(alternate, Boolean(shared || run || recovering || startingRun || paused));
-  alternate.disabled = cameraLoading;
-  setText('play-alternate', dualEnabled ? 'PLAY · 1 HAND' : 'PLAY · 2 HANDS');
-  alternate.style.order = dualEnabled ? '0' : '1';
+  for (const [id, selected] of [['mode-one', !dualEnabled], ['mode-two', dualEnabled]]) {
+    $(id).setAttribute('aria-pressed', String(selected));
+    $(id).disabled = Boolean(run || pendingPlayer || recovering || startingRun || paused || cameraLoading);
+    $(id).title = run || recovering ? 'Finish this run before changing controls' : '';
+  }
   const cameraRecovery = Boolean(run && !recovering && phase === 'aim' && !cameraControls?.running);
   if (cameraRecovery) {
     button = cameraLoading ? 'Starting…' : 'Restart camera';

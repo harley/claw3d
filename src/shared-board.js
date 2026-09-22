@@ -46,7 +46,7 @@ export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, 
   async function loginHost(code) { await api.request('/host/login', { code }); role = 'host'; }
   return {
     connect, refresh, rotate, loginStaff, loginHost,
-    start: (name, key) => api.start(name, key),
+    start: (name, key, controlMode) => api.start(name, key, controlMode),
     queue: run => api.queue(run), abandon: run => api.abandon(run),
     state: () => api.state(), flush: () => api.flush(),
     get board() { return board; }, get role() { return role; }, get status() { return status; }, get rotating() { return rotating; },

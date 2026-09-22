@@ -120,12 +120,12 @@ try {
 
   // Browser refusal keeps the preference enabled and exposes activation without rejection.
   await open(); await page.evaluate(() => { window.audioCheck.rejectResume = true; }); await page.locator('#sound').click();
-  await page.waitForFunction(() => document.getElementById('sound').textContent === 'TAP FOR SOUND');
+  await page.waitForFunction(() => document.getElementById('sound').getAttribute('aria-label') === 'Tap for sound');
   await page.locator('#sound').focus();
   await page.keyboard.down('Space');
   await page.evaluate(() => { window.audioCheck.rejectResume = false; });
   await page.keyboard.up('Space');
-  await page.waitForFunction(() => document.getElementById('sound').textContent === 'SOUND ON');
+  await page.waitForFunction(() => document.getElementById('sound').getAttribute('aria-label') === 'Sound on');
   assert.deepEqual(errors, []);
   await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: '.screenshots/audio-mobile.png' });
   console.log('PASS explicit activation, device volume without slider, queued-note mute, visible star cues, dialog/pause/hand-loss silence and audio refusal');

@@ -347,3 +347,17 @@ button.hand-hover { outline:4px solid #ffca45; outline-offset:6px; box-shadow:0 
 
 /* The forearm continues toward the player below the existing glove anchor. */
 .glove-forearm { display: none; }
+
+/* Mode stays visible beside compact camera/audio controls. */
+.hand-toggle { display: flex; padding: 3px; border: 1px solid #526781; border-radius: 12px; background: #101c2ddd; }
+.header-actions .hand-toggle button { border: 0; border-radius: 8px; padding: 10px 12px; white-space: nowrap; text-transform: none; letter-spacing: 0; }
+.header-actions .hand-toggle button[aria-pressed="true"] { background: #ffc14d; color: #101c2d; box-shadow: none; }
+.header-actions .icon-button { font-size: 20px; min-width: 44px; min-height: 44px; padding: 8px; }
+@media (max-width: 650px) {
+  .masthead { gap: 6px; }
+  .masthead .brand { font-size: 16px; letter-spacing: -.8px; }
+  .masthead .brand small { position: absolute; top: 42px; left: 0; margin-top: 0; }
+  .header-actions { margin-left: auto; align-items: center; gap: 3px; }
+  .header-actions .hand-toggle button { font-size: 10px; padding: 9px 6px; }
+  .header-actions .icon-button { font-size: 18px; min-width: 34px; min-height: 38px; padding: 5px; }
+}
