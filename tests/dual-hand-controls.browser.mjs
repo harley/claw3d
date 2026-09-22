@@ -59,6 +59,8 @@ try {
   await acquire();await frame();
   assert.equal(await page.locator('#camera-overlay').getAttribute('data-left'),'active');
   assert.equal(await page.locator('#camera-overlay').getAttribute('data-right'),'active');
+  // The ready highlight follows live input freshness (700 ms); re-feed right before reading it on slow runners.
+  await burst([left,right],1);await frame();
   assert.equal(await page.locator('#machine-drop').getAttribute('data-ready'),'true');
   await burst([left]);await frame();
   assert.equal(await page.locator('#camera-overlay').getAttribute('data-left'),'active');
