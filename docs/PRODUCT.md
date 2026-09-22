@@ -17,6 +17,10 @@ The wow moment is direct control followed by a believable grab, a tense lift and
 - The leaderboard is for fun and comparison only; rank earns no additional prize. Physical giveaway rules are separate. Min's ball artwork and 20/30/50-point proposal still need alignment with the game before adoption or printing.
 
 
+## Attract mode
+
+Unattended, the machine attracts: with nobody registered, no dialog open and no hand in view, the 3D view fills the screen in the close framing with a slow drift, the marquee chases faster, and a large SHOW YOUR HAND invitation with the one-line rule sits over the machine while the leaderboard stays visible. The instant a hand is seen the view eases back (0.4 s; a cut under reduced motion) to the existing idle framing and hand menus; nothing about registration or play changes.
+
 ## Hands-free menus and speed scoring
 
 Camera startup runs on launch; the browser still controls permission and may prompt on first use. A refusal opens camera setup with an explicit retry, without a retry loop. `?setup=manual` disables automatic camera and sound startup for diagnostics and existing setup tests.
