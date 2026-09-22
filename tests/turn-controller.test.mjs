@@ -1,0 +1,71 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createGame, begin, PHASES, MISS_LIFT } from '../src/arcade-mechanics.js';
+import { createTurnState, beginTurnState, requestDrop, stepTurn, nextTurnSeconds, HIT_STOP_SECONDS } from '../src/turn-controller.js';
+
+const step = (game, state, dt, options = {}, input = { x: 0, z: 0 }) => stepTurn(game, state, input, dt, options);
+const runTurn = (game, state, options = {}) => { const effects = []; for (let i = 0; i < 4000 && !effects.some(e => e.type === 'finish'); i++) effects.push(...step(game, state, 1 / 60, options)); return effects; };
+
+test('three turns, one result each, one drop each; a second request is refused', () => {
+  const game = createGame({ carousel: true }), state = createTurnState(15);
+  for (let turn = 1; turn <= 3; turn++) {
+    beginTurnState(state, 15); assert.ok(begin(game)); game.position = { x: -.38, z: .72 };
+    assert.equal(requestDrop(game, state), 'dropped');
+    assert.equal(requestDrop(game, state), false, 'no double acceptance');
+    assert.equal(state.dropRemainingMs, 15000, 'aiming time locked at the request');
+    const effects = runTurn(game, state, { preparing: false });
+    assert.equal(effects.filter(e => e.type === 'drop').length, 0, 'the request already dropped; the step never drops twice');
+    assert.equal(effects.filter(e => e.type === 'finish').length, 1);
+    assert.equal(game.phase, 'result');
+  }
+});
+
+test('the aiming clock drops once on timeout with zero speed time', () => {
+  const game = createGame({ carousel: true }), state = createTurnState(15); begin(game); game.position = { x: -1.18, z: .6 };
+  const effects = []; for (let i = 0; i < 16 * 60 && !effects.some(e => e.type === 'drop'); i++) effects.push(...step(game, state, 1 / 60));
+  const drops = effects.filter(e => e.type === 'drop');
+  assert.equal(drops.length, 1); assert.equal(drops[0].trigger, 'timeout'); assert.equal(state.dropRemainingMs, 0);
+  assert.ok(effects.filter(e => e.type === 'tick').length >= 5, 'the last five seconds tick');
+  assert.equal(game.phase, 'anticipate');
+});
+
+test('a dual strike locks the time at the request, keeps the carousel moving, then drops exactly once', () => {
+  const game = createGame({ carousel: true }), state = createTurnState(15); begin(game); game.position = { x: .80, z: .22 };
+  state.remaining = 10.5;
+  assert.equal(requestDrop(game, state, { dual: true, feedback: { hands: {} } }), 'slam');
+  assert.equal(state.dropRemainingMs, 10500);
+  const before = game.carouselTime; const effects = [];
+  for (let t = 0; t < .5; t += 1 / 60) effects.push(...step(game, state, 1 / 60, { slamSeconds: .36 }));
+  assert.ok(game.carouselTime > before, 'the carousel kept turning through the strike');
+  assert.equal(effects.filter(e => e.type === 'drop').length, 1);
+  assert.equal(state.pendingSlam, null); assert.deepEqual(state.contactFeedback, { hands: {} });
+  assert.ok(Math.abs(state.remaining - 10.5) < 1e-9, 'aiming time does not run during the strike');
+});
+
+test('the hit-stop holds the world for 80 ms at contact and reduced motion skips it', () => {
+  for (const reducedMotion of [false, true]) {
+    const game = createGame({ carousel: true }), state = createTurnState(15); begin(game); game.position = { x: -.38, z: .72 };
+    requestDrop(game, state);
+    while (game.phase !== 'grip') step(game, state, 1 / 120, { reducedMotion });
+    const elapsed = game.elapsed; step(game, state, .05, { reducedMotion }); step(game, state, .02, { reducedMotion });
+    if (reducedMotion) assert.ok(game.elapsed > elapsed + .06, 'reduced motion: no hold');
+    else { assert.ok(Math.abs(game.elapsed - elapsed) < 1e-9, 'held'); step(game, state, .05, { reducedMotion }); assert.ok(game.elapsed > elapsed, 'then resumes'); assert.equal(HIT_STOP_SECONDS, .08); }
+  }
+});
+
+test('the next turn is announced only while preparing, after the outcome-dependent pause', () => {
+  const game = createGame({ carousel: true }), state = createTurnState(15); begin(game); game.position = { x: -1.18, z: .6 };
+  requestDrop(game, state); runTurn(game, state); assert.equal(game.phase, 'result'); assert.equal(game.plan.prize, null);
+  let effects = []; for (let t = 0; t < 3; t += 1 / 60) effects.push(...step(game, state, 1 / 60, { preparing: false }));
+  assert.equal(effects.filter(e => e.type === 'nextTurn').length, 0, 'a finished run or an open dialog never starts the next turn');
+  state.nextTurnElapsed = 0; effects = []; let seconds = 0;
+  while (!effects.some(e => e.type === 'nextTurn') && seconds < 5) { effects.push(...step(game, state, 1 / 60, { preparing: true })); seconds += 1 / 60; }
+  assert.ok(Math.abs(seconds - nextTurnSeconds(false)) < .05, `miss announce ends at ${nextTurnSeconds(false)} s (${seconds.toFixed(2)})`);
+});
+
+test('a zero step changes nothing and a catch reports its score pop once', () => {
+  const game = createGame({ carousel: true }), state = createTurnState(15); begin(game); game.position = { x: -.38, z: .72 };
+  const snapshot = JSON.stringify([game.position, state]); step(game, state, 0); assert.equal(JSON.stringify([game.position, state]), snapshot);
+  requestDrop(game, state); const effects = runTurn(game, state);
+  assert.equal(effects.filter(e => e.type === 'scorePop').length, 1); assert.equal(effects.find(e => e.type === 'scorePop').prizeId, 'butter');
+});

@@ -14,7 +14,7 @@ const setHidden = (element, hidden) => { if (element.hidden !== hidden) element.
 const deliveryPhases = new Set(['anticipate', 'descend', 'grip', 'lift', 'transfer', 'release', 'deliver', 'reveal']);
 // After a catch the machine pulls back to the shelf, so the next round gets a
 // full count-in. After a miss the view never left the claw: name it, then go.
-export const nextTurnSeconds = caught => caught ? 2.5 : 1.2;
+export { nextTurnSeconds } from './turn-controller.js';
 
 export function nextTurnCue(elapsed, round, caught = true) {
   if (!caught) return elapsed < .6 ? 'MISSED' : 'START!';
