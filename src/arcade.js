@@ -13,9 +13,9 @@ import { createHud, $, setText, setHidden, nextTurnSeconds } from './arcade-hud.
 import { createMovementMusic } from './movement-music.js';
 import { PerformanceGovernor, PERFORMANCE_WINDOW_MS } from './performance-governor.js';
 const shared = globalThis.__SHARED_PILOT__ === true;
-const dualEnabled = !shared && new URLSearchParams(location.search).get('controls') === 'dual';
+const dualEnabled = new URLSearchParams(location.search).get('controls') === 'dual';
 const grabEnabled = dualEnabled || (!shared && new URLSearchParams(location.search).get('controls') === 'grab');
-const cabinetEnabled = !shared;
+const cabinetEnabled = true;
 // `?hold=N` (local only) trials a shorter fist hold with decaying credit for the booth A/B; the shared pilot keeps its control version.
 const requestedHold = Number(new URLSearchParams(location.search).get('hold'));
 const holdMs = !shared && requestedHold >= HOLD_LIMITS.min && requestedHold <= HOLD_LIMITS.max ? Math.round(requestedHold) : undefined;
@@ -33,6 +33,10 @@ const handMenu = createHandMenu();
 document.body.classList.toggle('machine-controls', cabinetEnabled);
 document.body.classList.toggle('dual-controls', cabinetEnabled);
 document.body.classList.toggle('two-hand-mode', dualEnabled);
+if (dualEnabled) {
+  $('scene').setAttribute('aria-label', 'Clench your left hand to steer. Raise your open right hand to drop.');
+  $('camera-help').textContent = 'Show both open hands. Clench your left hand to grip and steer; raise your open right hand to drop. Open your left hand to release without dropping.';
+}
 const glove = createJoystickCursor(() => cabinetEnabled ? scene?.controlTargets() : null, () => { if (cabinetEnabled) gestureDrop(); });
 let previousMenuMode = '';
 function menuMode() {
@@ -73,7 +77,7 @@ let cueLead = dualEnabled ? (HAND_ACQUIRE_MS + RIGHT_SLAM_MS) / 1000 : grabEnabl
 const performanceGovernor = new PerformanceGovernor({ onChange: (mode, source) => {
   scene?.setQuality(mode === 'simple');
   cameraControls?.setPerformanceMode(mode);
-  if (scene) $('quality').textContent = `QUALITY: ${mode === 'simple' ? 'SIMPLE' : 'FULL'}${source === 'auto' ? ' · AUTO' : ''}`;
+  if (scene) $('quality').textContent = `QUALITY: ${mode === 'simple' ? 'SIMPLE · 30 FPS CAP' : 'FULL'}${source === 'auto' ? ' · AUTO' : ''}`;
 } });
 const tags = game.toys.map(toy => {
   const element = document.createElement('span'); element.className = 'prize-tag'; element.dataset.points = RULES.points[toy.id]; element.textContent = RULES.points[toy.id]; $('prize-tags').append(element); return { toy, element };
@@ -104,7 +108,10 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
   hud.update({ game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus: pilot.status, storageError, aligned }, feedback, modal);
 }
 function syncSoundUI() {
-  $('sound').textContent = !audio.enabled ? 'SOUND OFF' : !audio.volume ? 'MUTED' : audio.ready ? 'SOUND ON' : 'TAP FOR SOUND';
+  const label = !audio.enabled ? 'Sound off' : !audio.volume ? 'Muted' : audio.ready ? 'Sound on' : 'Tap for sound';
+  $('sound').textContent = audio.enabled && audio.volume ? '🔊' : '🔇';
+  $('sound').setAttribute('aria-label', label);
+  $('sound').title = label;
   $('sound').setAttribute('aria-pressed', String(audio.enabled));
 }
 function phaseSound(phase, modal) {
@@ -122,7 +129,6 @@ function phaseSound(phase, modal) {
 }
 function freshGame() { pendingSlam = contactFeedback = null; cameraControls?.reset(); game = createGame({ carousel: true }); scene?.groundToys(game); aligned = null; hud.invalidate(); }
 function restoreTrophies() {
-  if (shared) return;
   for (const turn of run?.turns || []) {
     const toy = game.toys.find(toy => toy.id === turn.prizeId);
     if (toy && !toy.claimed) { toy.claimed = true; game.collection.push(toy.id); }
@@ -130,7 +136,7 @@ function restoreTrophies() {
 }
 function beginTurn() {
   nextTurnElapsed = 0; dropRemainingMs = 0; contactFeedback = null;
-  if (!shared && run.turns.length && !recovering && game.phase === 'result') {
+  if (run.turns.length && !recovering && game.phase === 'result') {
     cameraControls?.reset(); aligned = null; hud.invalidate();
   } else {
     freshGame();
@@ -191,7 +197,7 @@ async function startScoredRun() {
   try {
     if (shared) {
       pendingPlayer.requestKey ??= crypto.randomUUID();
-      const issued = await pilot.start(pendingPlayer.name, pendingPlayer.requestKey);
+      const issued = await pilot.start(pendingPlayer.name, pendingPlayer.requestKey, dualEnabled ? 'two-hand' : 'one-hand');
       // Presentation accumulates turns under the acknowledged immutable rule snapshot.
       store = { version: 1, current: issued.boardId, boards: [{ id: issued.boardId, name: pilot.board?.id === issued.boardId ? pilot.board.name : issued.boardId, rules: issued.rules, runs: [] }], active: issued };
       run = issued;
@@ -257,11 +263,11 @@ $('final-leaderboard').addEventListener('click', () => {
 });
 $('final').addEventListener('cancel', event => event.preventDefault());
 $('play').addEventListener('click', () => { $('scene').focus(); play(); });
-$('play-alternate').addEventListener('click', () => {
-  if (shared || run || startingRun || cameraLoading || paused || recovering || document.querySelector('dialog[open]')) return;
+for (const [id, dual] of [['mode-one', false], ['mode-two', true]]) $(id).addEventListener('click', () => {
+  if (dual === dualEnabled || run || pendingPlayer || startingRun || cameraLoading || paused || recovering || document.querySelector('dialog[open]')) return;
   const url = new URL(location.href);
-  if (dualEnabled) url.searchParams.delete('controls'); else url.searchParams.set('controls', 'dual');
-  url.searchParams.set('start', '1'); location.assign(url);
+  if (dual) url.searchParams.set('controls', 'dual'); else url.searchParams.delete('controls');
+  url.searchParams.delete('start'); location.assign(url);
 });
 $('operator-open').addEventListener('click', openOperator);
 $('pause').addEventListener('click', () => { if (recovering) { beginTurn(); paused = false; } else paused = !paused; $('operator').close(); $('scene').focus(); });
@@ -351,7 +357,8 @@ async function startCamera() {
           if (video.videoWidth && video.videoHeight) $('camera-preview').style.setProperty('--camera-aspect', `${video.videoWidth} / ${video.videoHeight}`);
           const active = cameraControls?.running || state.kind === 'tracking';
           $('camera-preview').hidden = !active;
-          $('camera-open').textContent = active ? 'CAMERA ✓' : 'CAMERA';
+          $('camera-open').setAttribute('aria-label', active ? 'Camera settings — camera on' : 'Camera settings');
+          $('camera-open').title = active ? 'Camera settings — camera on' : 'Camera settings';
           $('camera-toggle').textContent = active ? 'STOP CAMERA' : 'START CAMERA';
         },
       });
@@ -444,10 +451,12 @@ function frame(time) {
       adaptationVisibleMs += raw * 1000;
       if (adaptationVisibleMs >= PERFORMANCE_WINDOW_MS) {
         const sorted = [...adaptationFrames].sort((a, b) => a - b);
-        const vision = cameraControls?.adaptationStats();
+        // Drain the camera window whenever the adapter exists; only a running camera contributes samples.
+        const drained = cameraControls?.adaptationStats(), vision = cameraControls?.running ? drained : null;
         const rejected = vision ? Object.values(vision.rejected).reduce((sum, count) => sum + count, 0) : 0;
         const averageFps = 1000 / (sorted.reduce((a, b) => a + b, 0) / sorted.length);
-        if (cameraControls?.running) performanceGovernor.observe({ averageFps, resultHz: vision.results / (adaptationVisibleMs / 1000), results: vision.results, rejected });
+        // The governor sees every visible window, camera or not, so attract mode adapts too.
+        performanceGovernor.observe({ averageFps, resultHz: vision ? vision.results / (adaptationVisibleMs / 1000) : 0, results: vision?.results || 0, rejected });
         adaptationFrames = []; adaptationVisibleMs = 0;
       }
       if (performanceVisibleMs >= 30000) {
@@ -470,7 +479,7 @@ function frame(time) {
     // Attract: idle machine, nobody registered, no dialog, and no hand in view.
     const attract = game.phase === 'idle' && !run && !recovering && !paused && !modal && !startingRun && !document.hidden && !['calibrating', 'tracking', 'clenching', 'accepted'].includes(feedback.kind);
     if (attract !== document.body.classList.contains('attract')) document.body.classList.toggle('attract', attract);
-    scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, sceneFeedback, Boolean(cameraControls?.running || cameraControls?.starting), { preparing: Boolean(run && !recovering), nextTurnElapsed, machineControls: cabinetEnabled, cueLead, attract, dt }); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
+    scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, sceneFeedback, Boolean(cameraControls?.running || cameraControls?.starting) && performanceGovernor.mode === 'simple', { preparing: Boolean(run && !recovering), nextTurnElapsed, machineControls: cabinetEnabled, cueLead, attract, dt }); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
     glove.update(grabEnabled ? feedback : { ...feedback, pointer: null }, cabinetEnabled && (game.phase === 'aim' || (dualEnabled && contactFeedback && game.phase === 'anticipate')) && !paused && !modal && !frozen && !document.hidden, dt);
     const tagged = game.phase === 'aim' && aligned ? game.toys.find(toy => toy.id === aligned.id) : null;
     const target = tagged ? scene.screenPoint(tagged.x, BED + (tagged.elevation || 0) + .08, tagged.z) : null;

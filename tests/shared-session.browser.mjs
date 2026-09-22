@@ -254,7 +254,15 @@ try {
     if (startKeys.length === 1) await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Simulated lost start acknowledgement' }) });
     else await route.fulfill({ response });
   });
+  await page.locator('#mode-two').click();
+  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true' && document.getElementById('mode-two').getAttribute('aria-pressed') === 'true');
+  assert.equal(await page.locator('#camera-open').textContent(), '📷');
   await register(page, 'Browser A');
+  assert.equal(await page.evaluate(() => window.testCamera.maxHands), 2);
+  assert.equal(await page.evaluate(() => window.testCamera.getControlProfile()), 'dual');
+  assert.equal(await page.locator('#mode-one').isDisabled(), true);
+  const dualRun = app.database.db.prepare("SELECT rules FROM runs WHERE name='Browser A'").get();
+  assert.equal(JSON.parse(dualRun.rules).controlMode, 'two-hand');
   assert.equal(startKeys.length, 2); assert.equal(startKeys[0], startKeys[1]);
   let hold = true, lost = false;
   await page.route('**/api/runs/*/turns', async route => {
