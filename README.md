@@ -29,6 +29,8 @@ For development with live updates, run `npm run dev` and open **http://127.0.0.1
 4. In **1 Hand** mode, steer with an open hand and clench and hold to drop. In **2 Hands** mode, show the left hand open, then clench to grip and steer; raise the open right hand to drop.
 5. Finish three scored turns and view your result. The first drop counts; there is no practice round.
 
+Gameplay uses camera controls; keyboard aiming and dropping are not supported.
+
 Use **🔊 / 🔇** to toggle sound. If TAP FOR SOUND appears, click or press a key to unlock browser audio. The gear opens operator controls and BUILD identity. Detailed controls, scoring and optional experiments belong in [PRODUCT](docs/PRODUCT.md).
 
 ## Local and shared play
@@ -56,4 +58,4 @@ Follow [CONTRIBUTING](CONTRIBUTING.md) for branches, pull requests and the testi
 
 ## License and asset credits
 
-See [LICENSE](LICENSE) for the project license. Third-party hand models retain their own [license and provenance](public/models/hands/README.md). [Asset research](docs/archive/2026-09-11-arcade-presentation.md) records source reviews and the decision to use original synthesized audio and procedural artwork.
+See [LICENSE](LICENSE) for the project license. Third-party hand models retain their own [license and provenance](public/models/hands/README.md). [Audio provenance](docs/archive/2026-09-11-arcade-presentation.md) records the source review and original synthesis decision.
