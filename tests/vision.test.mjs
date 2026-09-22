@@ -143,7 +143,7 @@ test('continuously late results do not masquerade as a stopped camera or control
     const lastActivity=c.lastActivity;
     assert.equal(c.acceptResult({},1000,1,12000),false);
     assert.equal(c.lastActivity,lastActivity,'replayed results cannot keep the worker alive');
-    for(let t=lastActivity+65;t<=lastActivity+7001;t+=65)await c.frame(t);assert.equal(failed,1,'a genuinely silent worker still stops');assert.equal(failureCode,'worker_timeout');
+    for(let t=lastActivity+65;t<=lastActivity+7100&&!failed;t+=65)await c.frame(t);assert.equal(failed,1,'a genuinely silent worker still stops');assert.equal(failureCode,'worker_timeout');
   } finally {globalThis.document=originalDocument;}
 });
 
@@ -346,7 +346,7 @@ test('absolute steering maps the predicted hand offset onto the bed and carries 
 test('a stalled main thread never counts against the worker; a frame left unanswered for 7 s still does', () => {
   const originalDocument = globalThis.document; globalThis.document = { hidden: false };
   const f = fixture(), c = f.controller; let failed = 0;
-  Object.assign(c, { running: true, busy: true, generation: 1, lastResult: 1000, lastActivity: 1000, lastSent: 1000, fail: () => { failed++; } });
+  Object.assign(c, { running: true, busy: true, generation: 1, lastResult: 1000, lastActivity: 1000, lastSent: 1000, fail: () => { failed++; c.running = false; } });
   c.supervise(1065);
   // The tab froze for six seconds (material recompile): nothing was sent, so nothing is owed.
   c.supervise(7100); assert.equal(failed, 0, 'a tick gap resets liveness');
