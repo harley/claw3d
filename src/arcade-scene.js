@@ -38,7 +38,7 @@ export class ArcadeScene {
     this.buildEffects();
     this.motionQuery = matchMedia('(prefers-reduced-motion: reduce)'); this.reducedMotion = this.motionQuery.matches;
     this.motionQuery.addEventListener('change', e => { this.reducedMotion = e.matches; });
-    this.observer = new ResizeObserver(() => this.resize()); this.observer.observe(canvas.parentElement); this.resize();
+    this.observer = new ResizeObserver(() => this.resize()); this.observer.observe(canvas.parentElement); this.observer.observe(canvas); this.resize();
     this.time = 0; this.lowQuality = false; this.disposed = false;
   }
 
@@ -276,6 +276,7 @@ export class ArcadeScene {
     this.punch = null;
     // `?fx=bloom` opts into selective bloom; the governor's simple mode bypasses it.
     this.bloom = new URLSearchParams(location.search).get('fx') === 'bloom' ? createBloom(this.renderer, this.scene, this.camera) : null;
+    this.attractBlend = 0;
   }
 
   // A short decaying camera punch: contact, catch and the shelf landing each
@@ -325,14 +326,15 @@ export class ArcadeScene {
     if (!alive) { this.burst.visible = false; this.burst.count = 0; this.burstParticles = []; }
   }
 
-  updateMarquee(phase, plan, time, motion) {
+  updateMarquee(phase, plan, time, motion, attract = false) {
     const palette = this.marqueePalette ??= { dim: new T.Color('#5a4a33'), warm: new T.Color('#e8bd7a'), bright: new T.Color('#ffe9b0') };
     const delivering = Boolean(plan?.prize) && ['transfer', 'release', 'deliver', 'reveal'].includes(phase);
     const jackpot = delivering && phase === 'reveal' && plan.prize.family === 'star';
     // Repaint and re-upload only when the lit pattern actually changes.
+    const rate = attract ? 6 : 2.5;
     const key = jackpot ? `j${motion ? Math.floor(time * 14) % 2 : 's'}`
       : delivering ? `d${motion ? Math.floor(time * 8) % 3 : 's'}`
-      : phase === 'idle' ? `i${motion ? Math.floor(time * 2.5) % 5 : 's'}`
+      : phase === 'idle' ? `i${motion ? Math.floor(time * rate) % 5 : 's'}`
       : 'rest';
     if (key === this.marqueeKey) return;
     this.marqueeKey = key;
@@ -340,7 +342,7 @@ export class ArcadeScene {
     for (let i = 0; i < 11; i++) {
       const color = jackpot ? (!motion || (time * 14 + i) % 2 < 1 ? palette.bright : palette.dim)
         : delivering ? (!motion || (i - Math.floor(time * 8)) % 3 === 0 ? palette.bright : palette.dim)
-        : phase === 'idle' ? (motion ? (i - Math.floor(time * 2.5)) % 5 === 0 ? palette.warm : palette.dim : palette.warm)
+        : phase === 'idle' ? (motion ? (i - Math.floor(time * rate)) % 5 === 0 ? palette.warm : palette.dim : palette.warm)
         : palette.dim;
       this.marqueeBulbs.setColorAt(i, color);
     }
@@ -512,14 +514,29 @@ export class ArcadeScene {
     // matching every other effect's per-frame motion read.
     if (!motion && this.burst.visible) { this.burst.visible = false; this.burst.count = 0; this.burstParticles = []; }
     else if (this.burst.visible) this.updateBurst(dt);
-    this.updateMarquee(phase, plan, time, motion);
+    this.updateMarquee(phase, plan, time, motion, Boolean(presentation.attract));
     this.courier.visible = this.deliveryTray.visible;
     if (this.courier.visible) { const p = this.deliveryTray.position; this.courier.scale.set(this.deliveryTray.scale.x, 1, this.deliveryTray.scale.z); this.courier.position.set(p.x, 0, 1.69); this.courierMast.scale.y = Math.max(.1, p.y - .44); this.courierMast.position.y = .44 + (p.y - .44) / 2; this.courierArm.scale.y = Math.max(.025, 1.69 - p.z); this.courierArm.position.set(0, p.y - .08, -(1.69 - p.z) / 2); }
     this.updateCamera(game, presentation, time);
     this.draw(time, drawCapped);
   }
 
-  updateCamera(game, { preparing = false, nextTurnElapsed = 0, machineControls = false } = {}, time = 0) {
+  // Attract eases in and out over ~0.4 s; reduced motion cuts.
+  updateAttract(active, dt, phase = 'idle') {
+    const target = active ? 1 : 0;
+    // Attract belongs to idle only: once a turn starts the aiming viewpoint must be exact at once.
+    if (phase !== 'idle') { this.attractBlend = 0; return; }
+    this.attractBlend = this.reducedMotion || dt <= 0 ? target : this.attractBlend + (target - this.attractBlend) * Math.min(1, dt * 7);
+    if (Math.abs(this.attractBlend - target) < .002) this.attractBlend = target;
+  }
+  // The unattended machine: close framing with a slow drift, so a passer-by sees toys, not a still photograph.
+  attractPose(time, position, look) {
+    position.copy(this.playCamera);
+    if (!this.reducedMotion) { position.x += Math.sin(time * .21) * .9; position.y += Math.sin(time * .13) * .25 + .15; position.z += Math.cos(time * .17) * .4; }
+    look.copy(this.playLook); look.y -= .15;
+  }
+  updateCamera(game, { preparing = false, nextTurnElapsed = 0, machineControls = false, attract = false, dt = 0 } = {}, time = 0) {
+    this.updateAttract(attract, dt, game.phase);
     // Stay on the contact through the entire lift. A held prize pulls the view
     // back for its shelf run; after a miss the claw stays put and so does the view.
     let wide = ['idle', 'release', 'deliver', 'reveal', 'result'].includes(game.phase) ? 1 : 0;
@@ -538,6 +555,13 @@ export class ArcadeScene {
     this.currentLook.copy(this.playLook);
     if (machineControls) this.currentLook.y -= .20;
     this.currentLook.lerp(this.look, wide);
+    if (this.attractBlend > 0) {
+      const pose = this.attractScratch ??= { position: new T.Vector3(), look: new T.Vector3() };
+      this.attractPose(time, pose.position, pose.look);
+      this.camera.position.lerp(pose.position, this.attractBlend);
+      this.currentLook.lerp(pose.look, this.attractBlend);
+      this.surroundings.visible = this.surroundings.visible || this.attractBlend < 1;
+    }
     this.camera.lookAt(this.currentLook);
     const punch = this.punchOffset(time);
     if (punch) { this.camera.position.y += punch; this.camera.position.x += punch * .4; }

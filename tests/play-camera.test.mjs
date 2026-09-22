@@ -7,7 +7,7 @@ function fixture() {
     camera: new T.PerspectiveCamera(35, 1.5, .1, 70),
     playCamera: new T.Vector3(.45, 4.8, 6.4), playLook: new T.Vector3(0, 2.95, 0),
     home: new T.Vector3(7.25, 6.15, 11.6), look: new T.Vector3(-.4, 2.25, 0),
-    currentLook: new T.Vector3(), surroundings: { visible: true }, punch: null,
+    currentLook: new T.Vector3(), surroundings: { visible: true }, punch: null, attractBlend: 0,
   });
 }
 test('aim, accepted drop, contact and full lift retain exactly the same close viewpoint', () => {
@@ -79,4 +79,28 @@ test('a camera punch is a short decaying kick that reduced motion never applies'
   const still = fixture(); still.reducedMotion = true; still.kick(.05, 10);
   still.updateCamera({ phase: 'grip', elapsed: .1 }, {}, 10.02);
   assert.deepEqual(still.camera.position, still.playCamera, 'reduced motion ignores kicks');
+});
+
+test('attract drifts a close view while unattended and hands back the idle framing the moment a hand appears', () => {
+  const scene = fixture();
+  scene.updateCamera({ phase: 'idle' }, { attract: true, dt: 1 }, 3);
+  assert.equal(scene.attractBlend, 1, 'a long step is fully attracted');
+  const a = scene.camera.position.clone();
+  assert.ok(a.distanceTo(scene.playCamera) < 1.3 && a.distanceTo(scene.home) > 3, 'close framing, not the wide home view');
+  scene.updateCamera({ phase: 'idle' }, { attract: true, dt: 1 / 60 }, 5);
+  assert.ok(scene.camera.position.distanceTo(a) > .05, 'the view drifts over time');
+  scene.updateCamera({ phase: 'idle' }, { attract: false, dt: 1 }, 6);
+  assert.equal(scene.attractBlend, 0);
+  assert.deepEqual(scene.camera.position, scene.home, 'a hand restores the idle framing exactly');
+  const cut = fixture(); cut.updateCamera({ phase: 'idle' }, { attract: true, dt: 1 }, 1);
+  cut.updateCamera({ phase: 'aim', elapsed: 0 }, { attract: false, dt: 1 / 60 }, 1.02);
+  assert.equal(cut.attractBlend, 0); assert.deepEqual(cut.camera.position, cut.playCamera, 'aiming starts on the exact play viewpoint even mid-ease');
+  const blend = fixture(); blend.updateCamera({ phase: 'idle' }, { attract: true, dt: 1 / 60 }, 1);
+  assert.ok(blend.attractBlend > 0 && blend.attractBlend < 1, 'transitions ease rather than cut');
+  const still = fixture(); still.reducedMotion = true;
+  still.updateCamera({ phase: 'idle' }, { attract: true, dt: 1 / 60 }, 3);
+  assert.equal(still.attractBlend, 1, 'reduced motion cuts');
+  const s1 = still.camera.position.clone();
+  still.updateCamera({ phase: 'idle' }, { attract: true, dt: 1 / 60 }, 9);
+  assert.deepEqual(still.camera.position, s1, 'and never drifts');
 });
