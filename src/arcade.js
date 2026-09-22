@@ -24,7 +24,7 @@ const steering = !shared && new URLSearchParams(location.search).get('steer') ==
 const scoreKey = dualEnabled ? `${STORAGE_KEY}:dual-controls` : grabEnabled ? `${STORAGE_KEY}:cabinet-controls` : STORAGE_KEY;
 import { ArcadeScene } from './arcade-scene.js';
 import { createGame, begin, drop, advance, move, moveToward, homeClaw, planGrab, clawPose, PHASES, MAX_FRAME_DELTA, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
-import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, scoreTurn } from './event-session.js';
+import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, scoreTurn, turnContext } from './event-session.js';
 
 $('build-info').textContent = `BUILD ${__BUILD_INFO__.commit}${__BUILD_INFO__.dirty ? ' · uncommitted changes' : ''} · ${__BUILD_INFO__.branch}`;
 let game = createGame({ carousel: true }), scene, previous = 0, stopped = false, frozen = false;
@@ -143,7 +143,7 @@ function beginTurn() {
     restoreTrophies();
   }
   turnNumber = run.turns.length + 1; remaining = run.rules.seconds; begin(game); recovering = false;
-  if (turnNumber === 3) { [330, 440, 660].forEach((f, i) => audio.note(f, .16, i * .15)); }
+  if (turnNumber === run.rules.turns) { [330, 440, 660].forEach((f, i) => audio.note(f, .16, i * .15)); }
   else { [523, 784].forEach((f, i) => audio.note(f, .12, i * .09)); }
   updateUI();
 }
@@ -431,7 +431,7 @@ function frame(time) {
       if (hitStop > 0) hitStop -= dt;
       advance(game, hitStop > 0 ? 0 : dt);
       if (before === 'descend' && game.phase === 'grip' && !scene.reducedMotion) hitStop = HIT_STOP_SECONDS;
-      if (before !== 'lift' && game.phase === 'lift' && game.plan?.prize) showScorePop(scoreTurn(run?.rules || RULES, game.plan.prize.id, dropRemainingMs));
+      if (before !== 'lift' && game.phase === 'lift' && game.plan?.prize) showScorePop(scoreTurn(run?.rules || RULES, turnContext(run?.turns || [], game.plan.prize.id, dropRemainingMs)));
       if (game.phase === 'result' && before !== 'result') finishTurn();
     }
   } else input.x = input.z = 0;
@@ -489,7 +489,7 @@ function frame(time) {
       if (element.hidden) continue;
       element.style.transform = `translate(${Math.round(target.x - tagOrigin.left)}px, ${Math.round(target.y - tagOrigin.top)}px) translate(-50%, -50%)`;
       element.classList.add('targeted');
-      element.textContent = scoreTurn(run?.rules || RULES, toy.id, Math.floor(remaining * 1000));
+      element.textContent = scoreTurn(run?.rules || RULES, turnContext(run?.turns || [], toy.id, Math.floor(remaining * 1000)));
     }
   } catch (error) { fail('The game stopped unexpectedly. Reload to recover this player.', error); return; }
   requestAnimationFrame(frame);

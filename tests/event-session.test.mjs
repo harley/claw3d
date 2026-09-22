@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard } from '../src/event-session.js';
+import { turnContext, scoreTurn, RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard } from '../src/event-session.js';
 import { createGame, planGrab, FIELD } from '../src/arcade-mechanics.js';
 test('three drops produce exactly one total; duplicate and extra results are ignored', () => {
   const store = newStore(); startRun(store, ' Linh ');
@@ -69,4 +69,15 @@ test('speed score rewards active aiming time, never a miss; exact scores survive
   const upgraded = loadStore({ getItem: () => JSON.stringify(store) });
   assert.equal(upgraded.boards[0].interruptedRuns[0].turns[0].score, 100);
   assert.equal(upgraded.boards.length, 2);
+});
+
+test('the context form of scoreTurn is golden-equal to the positional form and carries run context', () => {
+  const previous = [{ turn: 1, prizeId: 'butter', score: 150, remainingMs: 15000 }];
+  for (const [prizeId, ms] of [['butter', 15000], ['butter', 7500], ['sprout', 14999], [null, 15000], ['peach', 0]]) {
+    assert.equal(scoreTurn(RULES, turnContext(previous, prizeId, ms)), scoreTurn(RULES, prizeId, ms));
+  }
+  const context = turnContext(previous, 'sprout', 1000);
+  assert.deepEqual(Object.keys(context).sort(), ['previousTurns', 'prizeId', 'remainingMs', 'turnIndex']);
+  assert.equal(context.turnIndex, 1);
+  assert.throws(() => scoreTurn(RULES, turnContext([], 'butter', 15001)));
 });
