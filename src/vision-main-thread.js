@@ -1,16 +1,13 @@
 import { FilesetResolver, GestureRecognizer } from '@mediapipe/tasks-vision';
+import { recognizerOptions } from './recognizer-options.js';
 
 // Compatibility runtime for WebKit browsers that cannot give MediaPipe an
 // OffscreenCanvas inside a worker. It mirrors the worker message surface so the
 // camera controller keeps one result/failure path. Detection is paced by the
 // controller's existing 65 ms timer and reads the video element directly.
-export async function createMainThreadVision(base) {
+export async function createMainThreadVision(base, maxHands = 1) {
   const files = await FilesetResolver.forVisionTasks(base + '/vision/wasm');
-  const create = which => GestureRecognizer.createFromOptions(files, {
-    baseOptions: { modelAssetPath: base + '/vision/gesture_recognizer.task', delegate: which },
-    runningMode: 'VIDEO', numHands: 2,
-    minHandDetectionConfidence: .65, minHandPresenceConfidence: .65, minTrackingConfidence: .65,
-  });
+  const create = which => GestureRecognizer.createFromOptions(files, recognizerOptions(base, which, maxHands));
   let recognizer, delegate, proven = false, stopped = false, rebuildTimer = null;
   try { recognizer = await create('GPU'); delegate = 'GPU'; }
   catch { recognizer = await create('CPU'); delegate = 'CPU'; }
