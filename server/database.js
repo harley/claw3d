@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
-import { RULES, scoreTurn } from '../src/event-session.js';
+import { RULES, scoreTurn, turnContext } from '../src/event-session.js';
 
 export class ApiError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -94,10 +94,11 @@ export function openDatabase(filename) {
   function record(id, owner, input) {
     return transaction(() => {
       const row = owned(id, owner), run = runData(row), { turn, prizeId } = input;
-      if (!Number.isInteger(turn) || turn < 1 || turn > 3 || (prizeId !== null && (typeof prizeId !== 'string' || !Object.hasOwn(run.rules.points, prizeId)))) throw new ApiError(400, 'Invalid turn or prize.');
+      if (!Number.isInteger(turn) || turn < 1 || turn > run.rules.turns || (prizeId !== null && (typeof prizeId !== 'string' || !Object.hasOwn(run.rules.points, prizeId)))) throw new ApiError(400, 'Invalid turn or prize.');
       const remainingMs = input.remainingMs ?? 0;
       let score;
-      try { score = scoreTurn(run.rules, prizeId, remainingMs); } catch { throw new ApiError(400, 'Invalid aiming time.'); }
+      // The run already carries its recorded turns; earlier ones are the scoring context.
+      try { score = scoreTurn(run.rules, turnContext(run.turns.filter(item => item.turn < turn), prizeId, remainingMs)); } catch { throw new ApiError(400, 'Invalid aiming time.'); }
       const previous = run.turns.find(item => item.turn === turn);
       if (previous) {
         if (previous.prizeId !== prizeId || previous.remainingMs !== remainingMs) throw new ApiError(409, 'This turn already has a different result.');
@@ -106,7 +107,7 @@ export function openDatabase(filename) {
       // Abandonment stops new gameplay; already completed client turns can still drain from its outbox.
       if (turn !== run.turns.length + 1) throw new ApiError(409, 'Save the earlier turn first.');
       db.prepare('INSERT INTO turns (run_id,turn,prize_id,score,remaining_ms) VALUES (?,?,?,?,?)').run(id, turn, prizeId, score, remainingMs);
-      if (turn === 3) db.prepare("UPDATE runs SET status='complete', total=(SELECT SUM(score) FROM turns WHERE run_id=?), completed_at=? WHERE id=?").run(id, now(), id);
+      if (turn === run.rules.turns) db.prepare("UPDATE runs SET status='complete', total=(SELECT SUM(score) FROM turns WHERE run_id=?), completed_at=? WHERE id=?").run(id, now(), id);
       return getRun(id, owner);
     });
   }

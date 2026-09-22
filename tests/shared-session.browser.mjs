@@ -273,6 +273,8 @@ try {
   });
   await finish(page);
   assert.equal(await page.locator('#final-rank').textContent(), 'Score waiting to sync');
+  assert.equal(await page.locator('#final-turns .catch-card').count(), 3);
+  assert.notEqual(await page.locator('#final-kicker').textContent(), 'TOP OF THE BOARD!', 'pending score must not claim a confirmed top rank');
   await page.locator('#final-leaderboard').click();
   await page.locator('#result-open').click();
   assert.equal(await page.locator('#final-rank').textContent(), 'Score waiting to sync');
@@ -296,6 +298,8 @@ try {
   assert.equal(app.database.board().runs.length, 2, 'both acknowledged runs exist exactly once');
   assert.equal(await page.locator('#leaders li').count(), 2);
   assert.match(await page.locator('#final-rank').textContent(), /RANK #1/);
+  assert.equal(await page.locator('#final-kicker').textContent(), 'TOP OF THE BOARD!');
+  assert.equal(await page.locator('#final-turns .catch-card').count(), 3);
   await page.screenshot({ path: '.screenshots/shared-saved.png' });
   await page.locator('#next-player').click();
   assert.match(await page.locator('#name').inputValue(), /^(?:🦀|🦊|🐻|🐱|🐰|🦦|🐧|🐉) [A-Z][a-z]+$/u);

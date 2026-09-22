@@ -9,8 +9,8 @@ Closes #
 
 ## Checks
 - [ ] `npm run check` (unit + build)
-- [ ] `npm run check:booth` and `npm run test:shared` if camera, phase, scoring, collision or server changed
-- [ ] Docs updated (README / docs/PRODUCT.md) if behaviour changed
+- [ ] Affected browser/shared checks per [testing policy](../CONTRIBUTING.md#testing-policy), or n/a with reason
+- [ ] Owning documentation updated if needed
 
 ## Physical validation
 - [ ] Not needed for this change

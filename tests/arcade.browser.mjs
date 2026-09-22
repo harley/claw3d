@@ -102,6 +102,17 @@ try {
  await page.locator('#final-leaderboard').click(); await page.locator('#result-open').click();
  assert.equal(await page.locator('#final-score').textContent(),String((await snap()).event.complete.total),'reopening restores the full score after interrupted count-up');
  await page.screenshot({path:'.screenshots/event-result.png'});
+ assert.equal(await page.locator('#final-turns .catch-card').count(),3);
+ assert.deepEqual(await page.locator('#final-turns .catch-name').allTextContents(),['BUTTER','MISS','PEACH']);
+ const completed=(await snap()).event.complete;
+ assert.deepEqual(await page.locator('#final-turns .catch-points').allTextContents(),completed.turns.map(t=>`+${t.score}`));
+ for(const width of [390,320]) {
+  await page.setViewportSize({width,height:844});
+  assert.ok(await page.locator('#final').evaluate(el=>el.scrollWidth<=el.clientWidth),'finale cards fit the phone dialog without horizontal scrolling');
+  await page.screenshot({path:`.screenshots/finale-${width}.png`});
+ }
+ await page.setViewportSize({width:1440,height:900});
+
  await page.reload();await page.waitForFunction(()=>window.__littleCloud);assert.equal((await snap()).event.board.runs.length,1);
  console.log('PASS distinct catches, persistent trophies across turns/reload, exactly three turns and saved speed-score total');
  await register('');
@@ -148,6 +159,10 @@ try {
  await page.waitForFunction(()=>!window.__littleCloud.snapshot().event.handCamera.waiting);
  await cameraDrop(page); await page.locator('#final').waitFor({timeout:30000});
  assert.equal(await page.locator('#final-rank').textContent(),'LOCAL PREVIEW');
+ assert.deepEqual(await page.locator('#final-turns .catch-name').allTextContents(),['MISS','MISS','MISS']);
+ assert.equal(await page.locator('#final-kicker').textContent(),'THE CLAW WINS THIS ONE');
+ assert.deepEqual((await page.locator('#final-turns .catch-detail').allTextContents()).slice(0,2),['TURN 1','TURN 2'],'recovered misses do not inherit another run reason');
+ await page.screenshot({path:'.screenshots/finale-all-misses.png'});
  assert.equal(await page.locator('#leaders li').count(),0);
  assert.equal((await snap()).event.board.runs[0].practice,true);
  assert.equal((await snap()).event.board.runs[0].turns.length,3);

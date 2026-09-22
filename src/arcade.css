@@ -167,7 +167,7 @@ dialog .play-button { width: 100%; margin-top: 24px; }
 #final-turns .turn-chip { width: auto; min-width: 0; flex: 1; height: auto; display: flex; flex-direction: column; padding: 10px 5px; gap: 7px; }
 #final-turns small { font: 10px Arial, sans-serif; color: #91abc9; }
 /* Finale catch cards: the three turns as something worth photographing. */
-#final-turns .catch-card { --toy: #35c9ff; border: 1px solid color-mix(in srgb, var(--toy) 70%, #fff 0%); background: linear-gradient(180deg, color-mix(in srgb, var(--toy) 22%, #0b1426), #0b1426); border-radius: 12px; padding: 12px 6px 10px; gap: 3px; min-width: 96px; }
+#final-turns .catch-card { --toy: #35c9ff; border: 1px solid color-mix(in srgb, var(--toy) 70%, #fff 0%); background: linear-gradient(180deg, color-mix(in srgb, var(--toy) 22%, #0b1426), #0b1426); border-radius: 12px; padding: 12px 6px 10px; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
 #final-turns .catch-card.miss { --toy: #4a5b74; color: #91abc9; }
 #final-turns .catch-icon { font-size: 34px; line-height: 1; }
 #final-turns .catch-name { font: 800 11px ui-monospace, monospace; letter-spacing: 1px; color: #e8f1ff; }
