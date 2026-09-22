@@ -26,7 +26,7 @@ async function catchTurn(){
  if (!caught) {
   const missCamera = (await snap()).camera;
   await phase('result');
-  assert.equal(await page.locator('#hint').textContent(), '');
+  assert.match(await page.locator('#hint').textContent(), /^(SO CLOSE|SLIPPED OFF [A-Z ]+|[A-Z ]+ STUCK BESIDE [A-Z ]+|BLOCKED BY [A-Z ]+|BUMPED [A-Z ]+|STAR MOVED ON|NOTHING THERE)$/, 'a miss says why');
   assert.deepEqual((await snap()).camera, missCamera, 'a miss keeps the close view');
   assert.ok(Math.abs((await snap()).claw.x - (await snap()).position.x) < 1e-6, 'the empty claw stays over its drop');
  }
