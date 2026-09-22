@@ -4,10 +4,10 @@ import { FilesetResolver, GestureRecognizer } from '@mediapipe/tasks-vision';
 import { createMainThreadVision } from '../src/vision-main-thread.js';
 
 FilesetResolver.forVisionTasks = async path => ({ path });
-let plan, made;
+let plan, made, lastOptions;
 GestureRecognizer.createFromOptions = async (files, options) => {
   const which = options.baseOptions.delegate;
-  made.push(which);
+  made.push(which); lastOptions = options;
   if (plan[which]?.factory) return plan[which].factory();
   if (plan[which]?.createThrows) throw new Error(`${which} create failed`);
   return {
@@ -71,4 +71,12 @@ test('terminating during a slow CPU rebuild closes the late recognizer and emits
     globalThis.setInterval = originalSetInterval;
     globalThis.clearInterval = originalClearInterval;
   }
+});
+
+test('the main-thread runtime shares the recognizer options and hand count', async () => {
+  plan = {}; made = [];
+  const one = await createMainThreadVision('/base'); one.terminate();
+  assert.equal(lastOptions.numHands, 1); assert.equal(lastOptions.minTrackingConfidence, .5);
+  const two = await createMainThreadVision('/base', 2); two.terminate();
+  assert.equal(lastOptions.numHands, 2);
 });

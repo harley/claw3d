@@ -1,11 +1,8 @@
 import { FilesetResolver, GestureRecognizer } from '@mediapipe/tasks-vision';
+import { recognizerOptions } from './recognizer-options.js';
 
-let recognizer, files, base, delegate, proven = false;
-const create = which => GestureRecognizer.createFromOptions(files, {
-  baseOptions: { modelAssetPath: base + '/vision/gesture_recognizer.task', delegate: which },
-  runningMode: 'VIDEO', numHands: 2,
-  minHandDetectionConfidence: .65, minHandPresenceConfidence: .65, minTrackingConfidence: .65,
-});
+let recognizer, files, base, delegate, maxHands = 1, proven = false;
+const create = which => GestureRecognizer.createFromOptions(files, recognizerOptions(base, which, maxHands));
 self.onmessage = async ({ data }) => {
   if (data.type === 'init') {
     // MediaPipe creates its task canvas with OffscreenCanvas in a worker. On
@@ -17,7 +14,7 @@ self.onmessage = async ({ data }) => {
       return;
     }
     try {
-      base = data.base;
+      base = data.base; maxHands = data.maxHands === 2 ? 2 : 1;
       // ES module workers need the module-aware WASM loader, not importScripts.
       files = await FilesetResolver.forVisionTasks(base + '/vision/wasm', true);
       try { recognizer = await create('GPU'); delegate = 'GPU'; }
