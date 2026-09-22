@@ -46,7 +46,9 @@ try {
   await page.locator('#sound').click(); await start();
   const motorCount = () => page.evaluate(() => window.audioCheck.notes.filter(n => n.frequency === 130).length);
   await page.waitForTimeout(250); assert.equal(await motorCount(), 0, 'hand presence alone makes no movement sound');
-  await cameraInput(page, { x: 1, z: 0 }); await page.waitForTimeout(450);
+  await cameraInput(page, { x: 1, z: 0 });
+  // Pulses are throttled to one per 140 ms of real movement; wait for them rather than assuming frame pace.
+  await page.waitForFunction(() => window.audioCheck.notes.filter(n => n.frequency === 130).length >= 2, null, { timeout: 5000 }).catch(() => {});
   assert.ok(await motorCount() >= 2, 'actual steering has movement pulses');
   await cameraInput(page, { x: 0, z: 0 }); await page.waitForTimeout(100);
   const stoppedCount = await motorCount(); await page.waitForTimeout(350);
