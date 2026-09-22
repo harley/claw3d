@@ -182,3 +182,13 @@ test('gesture funnel and vision rollup fields survive the client allowlist', asy
   assert.equal(batches[0].events.length, 4);
   client.dispose();
 });
+
+test('turn outcomes travel only when they are known reasons', async () => {
+  let body;
+  const client = createPlaytestClient({ build, enabled: true, fetcher: async (_url, options) => { body = JSON.parse(options.body); return response(body.events.map(event => event.id)); } });
+  client.track('turn_complete', { turn: 1, score: 0, prizeId: null, outcome: 'near' }, { mode: 'event' });
+  client.track('turn_complete', { turn: 2, score: 0, prizeId: null, outcome: 'gremlins' }, { mode: 'event' });
+  await client.flush();
+  assert.equal(body.events[0].data.outcome, 'near');
+  assert.equal('outcome' in body.events[1].data, false);
+});

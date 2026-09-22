@@ -59,7 +59,7 @@ export class ToyContacts {
       }
       if (first && pose.y < first.stop) {
         game.plan.blockedDescent = first.stop; game.plan.low = first.stop; game.plan.prize = null; game.plan.offset = null;
-        game.plan.touched = first.toy; game.plan.stop = 'mesh-contact'; pose.y = first.stop;
+        game.plan.touched = first.toy; game.plan.stop = 'mesh-contact'; game.plan.reason = 'bumped'; pose.y = first.stop;
         this.impact(first.toy, first.point, 'descend');
       }
     }

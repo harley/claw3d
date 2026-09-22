@@ -102,20 +102,27 @@ export function planGrab(position, toys) {
   const points = contacts.map((r, i) => r == null ? null : { x: position.x + Math.cos(FINGER_ANGLES[i]) * r, z: position.z + Math.sin(FINGER_ANGLES[i]) * r });
   const crosses = toy && points.every(Boolean) ? points.map((a, i) => { const b = points[(i + 1) % 3]; return (b.x - a.x) * (toy.z - a.z) - (b.z - a.z) * (toy.x - a.x); }) : [];
   const supported = crosses.length === 3 && (crosses.every(v => v >= .001) || crosses.every(v => v <= -.001));
-  let prize = supported ? toy : null;
+  let prize = supported ? toy : null, blocker = null;
   // The lift keeps the original offset; it cannot pass through another body.
-  if (prize && available.some(other => other !== prize && Math.hypot(other.x - prize.x, other.z - prize.z) < BODY[other.family].rx * other.scale + BODY[prize.family].rx * prize.scale + .025)) prize = null;
+  if (prize) { blocker = available.find(other => other !== prize && Math.hypot(other.x - prize.x, other.z - prize.z) < BODY[other.family].rx * other.scale + BODY[prize.family].rx * prize.scale + .025) || null; if (blocker) prize = null; }
   let low = BED + FINGER_DEPTH + .021;
   if (toy) low = BED + (toy.elevation || 0) + (BODY[toy.family].grip - (toy.groundOffset || 0)) * toy.scale + FINGER_DEPTH;
   else {
     // A badly aimed finger touching a neighbour stops above it, then opens.
     for (const other of available) for (const angle of FINGER_ANGLES) {
       const x = position.x + Math.cos(angle) * OPEN_RADIUS, z = position.z + Math.sin(angle) * OPEN_RADIUS;
-      if (Math.hypot(x - other.x, z - other.z) < Math.max(BODY[other.family].rx, BODY[other.family].rz) * other.scale + .025) low = Math.max(low, BED + (other.elevation || 0) + BODY[other.family].height * other.scale + FINGER_DEPTH);
+      if (Math.hypot(x - other.x, z - other.z) < Math.max(BODY[other.family].rx, BODY[other.family].rz) * other.scale + .025) {
+        const top = BED + (other.elevation || 0) + BODY[other.family].height * other.scale + FINGER_DEPTH;
+        if (top > low) { low = top; blocker = other; }
+      }
     }
   }
-  return { position: { ...position }, low, contacts, radii: contacts.map(r => r ?? .075), prize, touched: toy, offset: prize ? { x: prize.x - position.x, z: prize.z - position.z, y: low - BED - (prize.elevation || 0) } : null, stop: toy ? 'toy' : low > BED + FINGER_DEPTH + .022 ? 'neighbour' : 'bed' };
+  // Why the grab did (not) succeed, for the player and for telemetry. Contact
+  // sweeps may later downgrade a plan to 'bumped'; they never upgrade one.
+  const reason = prize ? 'supported' : toy ? (blocker ? 'crowded' : points.every(Boolean) ? 'near' : 'slipped') : blocker ? 'blocked' : 'empty';
+  return { position: { ...position }, low, contacts, radii: contacts.map(r => r ?? .075), prize, touched: toy, blocker: blocker?.id ?? null, reason, offset: prize ? { x: prize.x - position.x, z: prize.z - position.z, y: low - BED - (prize.elevation || 0) } : null, stop: toy ? 'toy' : low > BED + FINGER_DEPTH + .022 ? 'neighbour' : 'bed' };
 }
+export const MISS_REASONS = Object.freeze(['near', 'slipped', 'crowded', 'blocked', 'bumped', 'platform', 'empty']);
 
 export function createGame({ carousel = false } = {}) { const game = { carousel, carouselTime: 0, phase: 'idle', elapsed: 0, position: { x: -.38, z: .72 }, plan: null, rounds: 0, collection: [], toys: ASSORTMENT.filter(t => !carousel || EVENT_TOYS.includes(t.id)).map(t => ({ ...t, ...(carousel && t.id === 'peach' ? { x: .20, z: .72, scale: .82 } : {}), elevation: carousel && t.id === CAROUSEL.id ? CAROUSEL.height : 0, claimed: false })) }; moveCarousel(game, 0); return game; }
 export function begin(game) { if (!['idle', 'result'].includes(game.phase)) return false; if (game.collection.length === game.toys.length) return false; const pose = clawPose(game); game.position = { x: pose.x, z: pose.z }; game.phase = 'aim'; game.elapsed = 0; game.plan = null; return true; }
@@ -130,7 +137,7 @@ export function drop(game) {
   game.plan = planGrab(game.position, future);
   if (game.carousel) {
     const overDeck = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - CAROUSEL.z) < .57;
-    if (overDeck && !game.plan.touched) { game.plan.low = Math.max(game.plan.low, BED + CAROUSEL.height + FINGER_DEPTH + .021); game.plan.stop = 'platform'; }
+    if (overDeck && !game.plan.touched) { game.plan.low = Math.max(game.plan.low, BED + CAROUSEL.height + FINGER_DEPTH + .021); game.plan.stop = 'platform'; game.plan.reason = 'platform'; }
     game.plan.pendingContact = true; game.plan.prize = null; game.plan.offset = null;
   }
   game.phase = 'anticipate'; game.elapsed = 0; game.rounds++; return true;
@@ -147,9 +154,11 @@ export function advance(game, dt) {
       const next = game.phase === 'lift' && !game.plan.prize ? 'result' : PHASE_ORDER[PHASE_ORDER.indexOf(game.phase) + 1] || 'result';
       game.elapsed = 0;
       if (next === 'grip' && game.plan.pendingContact) {
-        const actual = planGrab(game.position, game.toys), low = game.plan.low, blocked = game.plan.blockedDescent, touched = game.plan.touched;
+        const actual = planGrab(game.position, game.toys), low = game.plan.low, blocked = game.plan.blockedDescent, touched = game.plan.touched, platform = game.plan.stop === 'platform';
         game.plan = actual; game.plan.low = low;
-        if (blocked) { game.plan.blockedDescent = blocked; game.plan.prize = null; game.plan.offset = null; game.plan.touched = touched; game.plan.stop = 'mesh-contact'; }
+        // An empty grab over the carousel deck means the star was elsewhere at contact.
+        if (platform && !actual.touched) { game.plan.stop = 'platform'; game.plan.reason = 'platform'; }
+        if (blocked) { game.plan.blockedDescent = blocked; game.plan.prize = null; game.plan.offset = null; game.plan.touched = touched; game.plan.stop = 'mesh-contact'; game.plan.reason = 'bumped'; }
         if (actual.prize) game.plan.offset.y = low - BED - (actual.prize.elevation || 0);
       }
       game.phase = next;

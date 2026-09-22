@@ -24,6 +24,20 @@ export function nextTurnCue(elapsed, round, caught = true) {
   return 'START!';
 }
 
+// One short line under MISSED that says what the claw actually met.
+export function missCopy(plan, toys = []) {
+  const name = id => (toys.find(toy => toy.id === id)?.name || '').toUpperCase();
+  switch (plan?.reason) {
+    case 'near': return 'SO CLOSE';
+    case 'slipped': return `SLIPPED OFF ${name(plan.touched?.id)}`.trim();
+    case 'crowded': return `${name(plan.touched?.id)} STUCK BESIDE ${name(plan.blocker)}`.trim();
+    case 'blocked': return `BLOCKED BY ${name(plan.blocker)}`.trim();
+    case 'bumped': return `BUMPED ${name(plan.touched?.id)}`.trim();
+    case 'platform': return 'STAR MOVED ON';
+    default: return 'NOTHING THERE';
+  }
+}
+
 // One announcement surface; delivery messages expire without changing game timing.
 const phaseCopy = { anticipate: 'DROP!', descend: 'DROP!', grip: '', lift: 'GOT IT!', transfer: '', release: '', deliver: '', reveal: '' };
 let messageKey = '', messageUntil = 0;
@@ -46,11 +60,11 @@ export function createHud({ audio, phaseSound }) {
   let title = 'READY', hint = '', button = 'Play', kicker = 'CLAW';
   if (recovering) { title = `TURN ${turnNumber} OF 3`; button = cameraLoading ? 'Starting…' : 'CONTINUE'; }
   else if (phase === 'aim') { kicker = turnNumber === 3 ? 'LAST CLAW!' : `TURN ${turnNumber} OF 3`; title = 'Clench & hold to drop'; hint = ''; button = '';  }
-  else if (phase === 'result' && run) { kicker = `ROUND ${turnNumber + 1} OF 3`; title = nextTurnCue(nextTurnElapsed, turnNumber + 1, Boolean(game.plan?.prize)); hint = ''; button = ''; }
+  else if (phase === 'result' && run) { kicker = `ROUND ${turnNumber + 1} OF 3`; title = nextTurnCue(nextTurnElapsed, turnNumber + 1, Boolean(game.plan?.prize)); hint = title === 'MISSED' ? missCopy(game.plan, game.toys) : ''; button = ''; }
   else if (phase in phaseCopy) {
     title = phase === 'lift' && !game.plan?.prize ? 'MISSED' : phaseCopy[phase];
     kicker = `TURN ${turnNumber} OF 3`;
-    hint = '';
+    hint = title === 'MISSED' ? missCopy(game.plan, game.toys) : '';
     button = '';
   }
   phaseSound(phase, modal);
