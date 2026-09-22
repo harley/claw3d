@@ -23,7 +23,13 @@ try {
   await page.locator('#camera-setup .panel-head button').click();
   await page.locator('#play').click();
   await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running, { }, { timeout: 35000 });
+  // A healthy machine keeps display-rate drawing with the camera on; simple quality caps it at 30 Hz.
+  await page.waitForFunction(() => window.cameraRenderBudget === false);
+  await page.evaluate(() => document.getElementById('quality').click());
   await page.waitForFunction(() => window.cameraRenderBudget === true);
+  assert.match(await page.locator('#quality').textContent(), /SIMPLE · 30 FPS CAP/);
+  await page.evaluate(() => document.getElementById('quality').click());
+  await page.waitForFunction(() => window.cameraRenderBudget === false);
   assert.equal((await snap()).event.run, null); assert.equal((await snap()).phase, 'idle');
   assert.equal(await page.locator('#registration').isVisible(), false);
   assert.equal(await page.locator('#camera-preview').isVisible(), true);
