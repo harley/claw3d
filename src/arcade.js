@@ -1,9 +1,8 @@
-import { HAND_ACQUIRE_MS, RIGHT_SLAM_MS } from './dual-hand-controls.js';
-import { HOLD_LIMITS } from './fist.js';
+import { RIGHT_SLAM_MS } from './dual-hand-controls.js';
+import { resolvePlayMode, cueLeadSeconds } from './play-mode.js';
 import { ABSOLUTE_SPEED } from './steering.js';
 import './arcade.css';
 import { createJoystickCursor } from './joystick-cursor.js';
-import { PRESS_MS } from './grab-release.js';
 import { createHandMenu, generatedName } from './hand-menu.js';
 const manualSetup = new URLSearchParams(location.search).get('setup') === 'manual';
 import { createSharedBoard } from './shared-board.js';
@@ -14,15 +13,9 @@ import { createTurnState, beginTurnState, requestDrop, stepTurn } from './turn-c
 import { createMovementMusic } from './movement-music.js';
 import { PerformanceGovernor, PERFORMANCE_WINDOW_MS } from './performance-governor.js';
 const shared = globalThis.__SHARED_PILOT__ === true;
-const dualEnabled = new URLSearchParams(location.search).get('controls') === 'dual';
-const grabEnabled = dualEnabled || (!shared && new URLSearchParams(location.search).get('controls') === 'grab');
-const cabinetEnabled = true;
-// `?hold=N` (local only) trials a shorter fist hold with decaying credit for the booth A/B; the shared pilot keeps its control version.
-const requestedHold = Number(new URLSearchParams(location.search).get('hold'));
-const holdMs = !shared && requestedHold >= HOLD_LIMITS.min && requestedHold <= HOLD_LIMITS.max ? Math.round(requestedHold) : undefined;
-// `?steer=absolute` (local only): the hand's offset maps straight onto the bed for the booth A/B against joystick steering.
-const steering = !shared && new URLSearchParams(location.search).get('steer') === 'absolute' ? 'absolute' : 'relative';
-const scoreKey = dualEnabled ? `${STORAGE_KEY}:dual-controls` : grabEnabled ? `${STORAGE_KEY}:cabinet-controls` : STORAGE_KEY;
+// One resolution of the play mode: input profile, storage namespace, experiment flags.
+const mode = resolvePlayMode(location.search, shared);
+const { dual: dualEnabled, grab: grabEnabled, cabinet: cabinetEnabled, holdMs, steering, storageKey: scoreKey } = mode;
 import { ArcadeScene } from './arcade-scene.js';
 import { createGame, begin, drop, advance, move, moveToward, homeClaw, planGrab, clawPose, PHASES, MAX_FRAME_DELTA, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
 import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, scoreTurn, turnContext } from './event-session.js';
@@ -75,7 +68,7 @@ function showScorePop(points) {
   pop.style.transform = `translate(${Math.round(at.x - origin.left)}px, ${Math.round(at.y - origin.top)}px) translate(-50%, -50%)`;
   $('prize-tags').append(pop); setTimeout(() => pop.remove(), 1400);
 }
-let cueLead = dualEnabled ? (HAND_ACQUIRE_MS + RIGHT_SLAM_MS) / 1000 : grabEnabled ? PRESS_MS / 1000 : holdMs ? holdMs / 1000 : undefined;
+let cueLead = cueLeadSeconds(mode);
 const performanceGovernor = new PerformanceGovernor({ onChange: (mode, source) => {
   scene?.setQuality(mode === 'simple');
   cameraControls?.setPerformanceMode(mode);
@@ -208,7 +201,7 @@ async function startScoredRun() {
   try {
     if (shared) {
       pendingPlayer.requestKey ??= crypto.randomUUID();
-      const issued = await pilot.start(pendingPlayer.name, pendingPlayer.requestKey, dualEnabled ? 'two-hand' : 'one-hand');
+      const issued = await pilot.start(pendingPlayer.name, pendingPlayer.requestKey, mode.controlMode);
       // Presentation accumulates turns under the acknowledged immutable rule snapshot.
       store = { version: 1, current: issued.boardId, boards: [{ id: issued.boardId, name: pilot.board?.id === issued.boardId ? pilot.board.name : issued.boardId, rules: issued.rules, runs: [] }], active: issued };
       run = issued;
@@ -424,7 +417,7 @@ function frame(time) {
   } else input.x = input.z = 0;
   try {
     const feedback = flow.pendingSlam ? { ...flow.pendingSlam.feedback, profile: 'dual', kind: 'slamming', slamProgress: flow.pendingSlam.elapsed / (RIGHT_SLAM_MS / 1000), progress: 1, controlEnabled: false } : dualEnabled && flow.contactFeedback && game.phase === 'anticipate' ? { ...flow.contactFeedback, profile: 'dual', kind: 'slamming', slamProgress: 1, progress: 1, controlEnabled: false } : cameraControls?.feedback || { kind: 'off', progress: 0, controlEnabled: false };
-    if (dualEnabled) cueLead = ((feedback.hands?.right?.ready ? 0 : HAND_ACQUIRE_MS) + RIGHT_SLAM_MS) / 1000;
+    cueLead = cueLeadSeconds(mode, feedback);
     updateUI(feedback, modal);
     if (feedback.kind !== observedControl) { observedControl = feedback.kind; track('control_state', { state: feedback.kind, phase: game.phase }); }
     if (cameraReadyAt !== null && feedback.kind === 'tracking') { track('time_to_control', { acquisitionMs: Math.min(604800000, performance.now() - cameraReadyAt) }); cameraReadyAt = null; }
