@@ -1,0 +1,19 @@
+# Categories for auto-generated production release notes (by PR label).
+changelog:
+  exclude:
+    labels: [tracking]
+  categories:
+    - title: Control feel
+      labels: [batch:control]
+    - title: Pacing and feedback
+      labels: [batch:pacing]
+    - title: Presentation and wow
+      labels: [batch:wow]
+    - title: Performance and loading
+      labels: [batch:render]
+    - title: Fixes
+      labels: [bug]
+    - title: Structure, CI and tooling
+      labels: [batch:structure, batch:foundation, dependencies]
+    - title: Other changes
+      labels: ['*']

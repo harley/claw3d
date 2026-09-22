@@ -15,6 +15,10 @@ jobs:
     name: Unit, build and browser checks
     runs-on: macos-15
     timeout-minutes: 30
+    # A newer push to the same PR supersedes its running checks; main runs never cancel.
+    concurrency:
+      group: checks-${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -52,6 +56,8 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: macos-15
     timeout-minutes: 20
+    permissions:
+      contents: write
     # Never cancel an upload already in progress. One production writer at a time.
     concurrency:
       group: cloud-claw-production
@@ -117,6 +123,17 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           EXPECTED_BUILD: ${{ github.sha }}
         run: node scripts/verify-release.mjs
+      - name: Publish production release notes
+        if: steps.release.outputs.current == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          short=${GITHUB_SHA::7}; stamp=$(date -u +%Y%m%d-%H%M)
+          tag="prod-$stamp-$short"
+          gh release create "$tag" --target "$GITHUB_SHA" --title "Production $stamp · $short" --generate-notes --latest
+          echo "## Release notes" >> "$GITHUB_STEP_SUMMARY"
+          gh release view "$tag" --json body --jq .body >> "$GITHUB_STEP_SUMMARY"
       - name: Report release failure
         if: failure()
         run: |
