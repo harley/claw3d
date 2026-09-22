@@ -16,7 +16,7 @@ const gate = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="v
 
 export async function createPilotServer(options) {
   const { filename, origin, staffCode, hostCode, dist = resolve('dist'), secure = true } = options;
-  if (!origin || !staffCode || !hostCode || staffCode.length < 16 || hostCode.length < 16 || staffCode === hostCode) throw new Error('A fixed origin and distinct staff/host secrets of at least 16 characters are required.');
+  if (!origin || !staffCode || !hostCode || staffCode.length < 16 || hostCode.length < 8 || staffCode === hostCode) throw new Error('A fixed origin, a staff secret of at least 16 characters and a distinct host code of at least 8 characters are required.');
   const database = openDatabase(filename), { db } = database;
   const root = await realpath(dist), attempts = new Map();
   const playtest = createPlaytestStore(db);

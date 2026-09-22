@@ -20,11 +20,14 @@ test('practice is saved but unranked; tied totals share rank; boards preserve hi
   rotateBoard(store, 'Afternoon'); assert.equal(leaderboard(currentBoard(store)).length, 0); assert.equal(store.boards[0].runs.length, 4);
 });
 test('active player survives storage and holds a rules snapshot; cannot rotate or replace mid-run', () => {
-  const store = newStore(); const run = startRun(store, 'Hà'); recordTurn(store, 1, 'butter');
+  const store = newStore(); const run = startRun(store, '🦦 Ripple'); recordTurn(store, 1, 'butter');
   assert.notEqual(run.rules, currentBoard(store).rules); assert.equal(run.badgeId, null);
   assert.throws(() => startRun(store, 'Other')); assert.throws(() => rotateBoard(store, 'Other'));
   const restored = loadStore({ getItem: key => { assert.equal(key, STORAGE_KEY); return JSON.stringify(store); } });
+  assert.equal(restored.active.name, '🦦 Ripple');
   assert.equal(restored.active.turns[0].score, 100); assert.equal(restored.active.playerId, run.playerId);
+  recordTurn(restored, 2, null); recordTurn(restored, 3, null);
+  assert.equal(leaderboard(currentBoard(restored))[0].name, '🦦 Ripple');
   assert.throws(() => loadStore({ getItem: () => '{invalid' }));
   assert.throws(() => recordTurn(store, 2, 'unknown'));
 });

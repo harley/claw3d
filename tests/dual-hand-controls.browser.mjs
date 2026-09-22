@@ -193,7 +193,7 @@ try {
   const menuState=await page.evaluate(()=>window.__littleCloud.snapshot());
   assert.equal(menuState.event.pendingSlam,null,'menu blocks right-hand actions');
   assert.equal(menuState.phase,'aim');assert.equal(menuState.event.run.turns.length,0);
-  await page.evaluate(()=>document.getElementById('operator').close());await acquire();
+  await page.evaluate(()=>document.getElementById('operator').close());await frame();await acquire();
   await page.evaluate(hands=>{sample(hands);document.getElementById('reset').click();},[left,{...right,y:right.y-.10}]);
   await frame();
   const reset=await page.evaluate(()=>window.__littleCloud.snapshot());

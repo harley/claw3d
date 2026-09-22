@@ -1,6 +1,6 @@
 # Claw
 
-A camera-controlled CoderPush × AWS arcade. Players use an editable generated callsign and get three scored turns: 100-point toys, a 200-point star and up to 50 speed points per catch. The staff pilot adds a protected shared leaderboard; standalone local play keeps browser-local scores.
+A camera-controlled CoderPush × AWS arcade. Players use an editable animal-emoji name such as 🦀 Pebble or 🐱 Miso and get three scored turns: 100-point toys, a 200-point star and up to 50 speed points per catch. The staff pilot adds a protected shared leaderboard; standalone local play keeps browser-local scores.
 
 ## Working agreement
 
@@ -57,7 +57,8 @@ Run the shared service locally with Node 22.13+ (deployment uses Node 24):
 ```sh
 npm ci
 npm run build
-# Set STAFF_CODE and HOST_CODE to distinct random secrets of at least 16 characters.
+# Set STAFF_CODE to a secret of at least 16 characters.
+# Set HOST_CODE to a distinct operator code of at least 8 characters.
 # Keep them in a private shell/environment file outside this repository.
 PUBLIC_ORIGIN=http://127.0.0.1:4200 DATA_DIR=.local-data npm start
 ```
