@@ -31,7 +31,8 @@ try {
  await page.screenshot({ path: '.screenshots/arcade-drop.png' });
  await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'lift');
  assert.match(await page.locator('#status').textContent(), /^(GOT IT!|MISSED)$/);
- assert.deepEqual(await page.evaluate(() => window.__littleCloud.snapshot().camera), aimCamera, 'camera stays fixed through lift');
+ const liftCamera = await page.evaluate(() => window.__littleCloud.snapshot().camera);
+ assert.ok(Math.hypot(...liftCamera.map((v, i) => v - aimCamera[i])) < .12, 'the lift keeps the close viewpoint apart from a brief catch punch');
  assert.equal(await page.evaluate(() => window.__littleCloud.snapshot().event.run.turns.length), 0);
  await page.screenshot({ path: '.screenshots/arcade-outcome.png' });
  // Screenshots may span a phase boundary on CI. The lift cue expires, while a

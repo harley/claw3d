@@ -134,6 +134,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, #scene:focus-vi
 .prize-tag { position: absolute; transform: translate(-50%, -50%); border: 1px solid #35c9ff99; background: #091426df; color: #7bdeff; font: 800 10px ui-monospace, monospace; padding: 3px 6px; border-radius: 4px; white-space: nowrap; }
 .prize-tag[data-points="200"] { color: #ff809c; border-color: #ff405799; }
 .prize-tag.targeted { box-shadow: 0 0 14px #35c9ff; outline: 2px solid #fff; }
+.score-pop { position: absolute; color: #ffd75e; font: 900 clamp(22px, 2.6vw, 34px) ui-monospace, monospace; text-shadow: 0 2px 0 #7a4a00, 0 0 18px #ffb52b99; white-space: nowrap; animation: score-rise 1.3s cubic-bezier(.2, .8, .3, 1) forwards; }
+@keyframes score-rise { 0% { opacity: 0; margin-top: 16px; scale: .7; } 12% { opacity: 1; scale: 1.15; } 30% { scale: 1; } 100% { opacity: 0; margin-top: -90px; } }
+@media (prefers-reduced-motion: reduce) { .score-pop { animation: score-hold 1.3s linear forwards; } @keyframes score-hold { 0%, 80% { opacity: 1; } 100% { opacity: 0; } } }
 
 /* Dialogs retain the complete host and recovery controls. */
 dialog { color: #f3f6ff; background: #0d192c; border: 1px solid #355074; border-top: 4px solid #ff4057; border-radius: 12px; padding: 34px; width: min(440px, calc(100vw - 32px)); max-height: 85svh; overflow: auto; box-shadow: 0 20px 100px #0009; }
