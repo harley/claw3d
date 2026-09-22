@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { ASSORTMENT, BED, FIELD, FINGER_ANGLES, OPEN_RADIUS, FINGER_DEPTH, HIGH, PHASES, PHASE_ORDER, MISS_LIFT, MISS_REASONS, CAROUSEL, phaseSeconds, MAX_FRAME_DELTA, createGame, begin, drop, advance, move, planGrab, clawPose, collectionSlot } from '../src/arcade-mechanics.js';
+import { ASSORTMENT, BED, FIELD, FINGER_ANGLES, OPEN_RADIUS, FINGER_DEPTH, HIGH, PHASES, PHASE_ORDER, MISS_LIFT, MISS_REASONS, CAROUSEL, START, CHUTE, phaseSeconds, homeClaw, MAX_FRAME_DELTA, createGame, begin, drop, advance, move, planGrab, clawPose, collectionSlot } from '../src/arcade-mechanics.js';
 
 const finish = game => { for (let i = 0; i < 1500 && game.phase !== 'result'; i++) advance(game, 1 / 60); assert.equal(game.phase, 'result'); };
 
@@ -33,12 +33,28 @@ test('a miss ends over its drop after a short lift, with one drop and no score',
  assert.ok(begin(game)); assert.deepEqual(game.position, { x: -1.18, z: .6 }, 'the next turn starts where the miss ended');
 });
 
-test('a catch still travels to the chute and the next turn starts there', () => {
- const game = createGame(); begin(game); drop(game); assert.ok(game.plan.prize);
+test('a catch parks at the chute, homes to the start during the announce, and the next turn begins there', () => {
+ const game = createGame(); begin(game); game.position = { x: -.38, z: .72 }; drop(game); assert.ok(game.plan.prize);
  for (let i = 0; i < 2000 && game.phase !== 'result'; i++) advance(game, 1 / 120);
  assert.equal(game.phase, 'result');
- const pose = clawPose(game); assert.ok(Math.abs(pose.x - (-1.08 - game.plan.offset.x)) < 1e-9);
- assert.ok(begin(game)); assert.ok(Math.abs(game.position.x - pose.x) < 1e-9);
+ const parked = clawPose(game); assert.ok(Math.abs(parked.x - (CHUTE.x - game.plan.offset.x)) < 1e-9, 'delivery ends over the chute');
+ assert.equal(homeClaw(game, 0), false);
+ let seconds = 0; while (homeClaw(game, 1 / 60)) seconds += 1 / 60;
+ assert.ok(seconds > .8 && seconds < 2.2, `homing takes ${seconds.toFixed(2)} s at claw speed, inside the 2.5 s announce`);
+ assert.deepEqual([clawPose(game).x, clawPose(game).z], [START.x, START.z]);
+ assert.equal(homeClaw(game, 1 / 60), false, 'homing stops at the start');
+ assert.ok(begin(game)); assert.deepEqual(game.position, { x: START.x, z: START.z });
+});
+
+test('runs and turns start clear of every toy at the bed centre', () => {
+ const game = createGame({ carousel: true });
+ assert.deepEqual(game.position, { x: 0, z: .03 });
+ assert.ok(Math.abs(START.x - (FIELD.minX + FIELD.maxX) / 2) < 1e-9 && Math.abs(START.z - (FIELD.minZ + FIELD.maxZ) / 2) < .01);
+ assert.ok(begin(game)); assert.equal(planGrab(game.position, game.toys).touched, null, 'nothing is under the claw at the start');
+ const missed = createGame({ carousel: true }); begin(missed); missed.position = { x: -1.18, z: .6 }; drop(missed);
+ for (let i = 0; i < 2000 && missed.phase !== 'result'; i++) advance(missed, 1 / 120);
+ assert.equal(homeClaw(missed, 1 / 60), false, 'a miss never homes');
+ assert.ok(begin(missed)); assert.deepEqual(missed.position, { x: -1.18, z: .6 });
 });
 
 test('every one of eleven distinct toys has a supported centred grip with independent contacts', () => {
@@ -55,7 +71,7 @@ test('every one of eleven distinct toys has a supported centred grip with indepe
 test('an unsupported edge and an empty patch never turn into wins', () => {
   const game = createGame(), toy = game.toys.find(t => t.id === 'butter');
   assert.equal(planGrab({x:toy.x + .23,z:toy.z},game.toys).prize,null);
-  game.position = {x:-1.18,z:.6}; begin(game); drop(game);
+  begin(game); game.position = {x:-1.18,z:.6}; drop(game);
   assert.equal(game.plan.prize,null); assert.equal(game.plan.stop,'bed');
   game.phase='descend'; game.elapsed=PHASES.descend;
   assert.ok(Math.abs(clawPose(game).y - FINGER_DEPTH - BED - .021) < 1e-8);
@@ -79,10 +95,10 @@ test('full open fingers stay inside the chamber at all keyboard travel limits', 
 });
 
 test('Space cannot overlap any phase or award the same toy twice', () => {
-  const game=createGame(); assert.equal(drop(game),false); begin(game); assert.equal(drop(game),true);
+  const game=createGame(); assert.equal(drop(game),false); begin(game); game.position={x:-.38,z:.72}; assert.equal(drop(game),true);
   for(let i=0;i<1500 && game.phase!=='result';i++) { assert.equal(drop(game),false); assert.equal(begin(game),false); advance(game,1/60); }
   assert.equal(game.rounds,1); assert.deepEqual(game.collection,['butter']);
-  begin(game); drop(game); finish(game); assert.equal(game.rounds,2); assert.deepEqual(game.collection,['butter']);
+  begin(game); game.position={x:-.38,z:.72}; drop(game); finish(game); assert.equal(game.rounds,2); assert.deepEqual(game.collection,['butter']);
 });
 
 test('collection persists across replays, has distinct full-size shelf slots, and can be completed', () => {
@@ -123,9 +139,10 @@ test('boot imports stay free of eager camera, tracking, and legacy scene depende
   await inspect(new URL('../src/arcade.js',import.meta.url));assert.ok(visited.size>=4);
 });
 
-test('replay starts at the returned claw position without a carriage jump', () => {
- const game=createGame();begin(game);drop(game);finish(game);const returned=clawPose(game);begin(game);const next=clawPose(game);
- assert.deepEqual(next,returned);assert.ok(next.x>=FIELD.minX&&next.x<=FIELD.maxX);
+test('replay starts where the homed claw stands, without a carriage jump', () => {
+ const game=createGame();begin(game);game.position={x:-.38,z:.72};drop(game);finish(game);
+ while(homeClaw(game,1/60));const homed=clawPose(game);begin(game);const next=clawPose(game);
+ assert.deepEqual(next,homed);assert.ok(next.x>=FIELD.minX&&next.x<=FIELD.maxX);
 });
 
 test('a missed grab keeps its fingers open across the lift/result boundary', () => {

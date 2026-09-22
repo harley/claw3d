@@ -4,6 +4,8 @@ export const BED = 1.66;
 export const HIGH = 4.04;
 export const FIELD = { minX: -1.18, maxX: 1.18, minZ: -.675, maxZ: .73 };
 export const CHUTE = { x: -1.08, z: .66 };
+// Every turn that does not continue over a miss begins here, clear of every toy.
+export const START = Object.freeze({ x: 0, z: .03 });
 export const FINGER_ANGLES = [Math.PI / 6, Math.PI * 5 / 6, Math.PI * 3 / 2];
 export const OPEN_RADIUS = .41;
 export const FINGER_DEPTH = .98;
@@ -124,8 +126,22 @@ export function planGrab(position, toys) {
 }
 export const MISS_REASONS = Object.freeze(['near', 'slipped', 'crowded', 'blocked', 'bumped', 'platform', 'empty']);
 
-export function createGame({ carousel = false } = {}) { const game = { carousel, carouselTime: 0, phase: 'idle', elapsed: 0, position: { x: -.38, z: .72 }, plan: null, rounds: 0, collection: [], toys: ASSORTMENT.filter(t => !carousel || EVENT_TOYS.includes(t.id)).map(t => ({ ...t, ...(carousel && t.id === 'peach' ? { x: .20, z: .72, scale: .82 } : {}), elevation: carousel && t.id === CAROUSEL.id ? CAROUSEL.height : 0, claimed: false })) }; moveCarousel(game, 0); return game; }
-export function begin(game) { if (!['idle', 'result'].includes(game.phase)) return false; if (game.collection.length === game.toys.length) return false; const pose = clawPose(game); game.position = { x: pose.x, z: pose.z }; game.phase = 'aim'; game.elapsed = 0; game.plan = null; return true; }
+export function createGame({ carousel = false } = {}) { const game = { carousel, carouselTime: 0, phase: 'idle', elapsed: 0, position: { ...START }, plan: null, rounds: 0, collection: [], toys: ASSORTMENT.filter(t => !carousel || EVENT_TOYS.includes(t.id)).map(t => ({ ...t, ...(carousel && t.id === 'peach' ? { x: .20, z: .72, scale: .82 } : {}), elevation: carousel && t.id === CAROUSEL.id ? CAROUSEL.height : 0, claimed: false })) }; moveCarousel(game, 0); return game; }
+// A miss continues over its drop; a catch or a fresh run starts at the bed centre.
+export function begin(game) { if (!['idle', 'result'].includes(game.phase)) return false; if (game.collection.length === game.toys.length) return false; const pose = clawPose(game); game.position = game.plan && !game.plan.prize ? { x: pose.x, z: pose.z } : { ...START }; game.phase = 'aim'; game.elapsed = 0; game.plan = null; return true; }
+// After a delivery the empty claw drives from the chute to the start while the next round is announced.
+export function homeClaw(game, dt) {
+  const plan = game.plan;
+  if (game.phase !== 'result' || !plan?.prize || dt <= 0) return false;
+  plan.park ??= { x: clamp(CHUTE.x - (plan.offset?.x || 0), FIELD.minX, FIELD.maxX), z: clamp(CHUTE.z - (plan.offset?.z || 0), FIELD.minZ, FIELD.maxZ) };
+  const dx = START.x - plan.park.x, dz = START.z - plan.park.z, distance = Math.hypot(dx, dz);
+  if (distance < 1e-9) return false;
+  // Mutate in place: this runs every result-phase frame.
+  const step = .85 * dt;
+  if (distance <= step) Object.assign(plan.park, START);
+  else { plan.park.x += dx / distance * step; plan.park.z += dz / distance * step; }
+  return true;
+}
 export function aimTarget(game) {
   const toys = game.toys.map(t => game.carousel && t.id === CAROUSEL.id && !t.claimed ? { ...t, ...carouselPose(game.carouselTime + CONTACT_DELAY) } : t);
   return planGrab(game.position, toys).prize;
@@ -185,6 +201,7 @@ export function clawPose(game) {
     const travel = phase === 'transfer' ? ease(t) : 1;
     pose.x = mix(plan.position.x, clamp(CHUTE.x - (plan.offset?.x || 0), FIELD.minX, FIELD.maxX), travel);
     pose.z = mix(plan.position.z, clamp(CHUTE.z - (plan.offset?.z || 0), FIELD.minZ, FIELD.maxZ), travel);
+    if (phase === 'result' && plan.park) { pose.x = plan.park.x; pose.z = plan.park.z; }
   }
   if (phase === 'release') pose.radii = pose.radii.map(r => mix(r, OPEN_RADIUS, ease(t)));
   if (['deliver', 'reveal', 'result'].includes(phase)) pose.radii = [OPEN_RADIUS, OPEN_RADIUS, OPEN_RADIUS];
