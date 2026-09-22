@@ -267,6 +267,17 @@ export class ArcadeScene {
     this.scene.add(this.burst);
     this.burstParticles = []; this.burstDummy = new T.Object3D();
     this.lastPhase = '';
+    this.punch = null;
+  }
+
+  // A short decaying camera punch: contact, catch and the shelf landing each
+  // give the viewpoint a physical kick. Off under reduced motion.
+  kick(amplitude, at) { if (!this.reducedMotion) this.punch = { amplitude, at }; }
+  punchOffset(time) {
+    if (!this.punch) return 0;
+    const t = time - this.punch.at;
+    if (t < 0 || t > .6) { this.punch = null; return 0; }
+    return this.punch.amplitude * Math.exp(-t * 9) * Math.sin(t * 45);
   }
 
   spawnBurst(origin, star) {
@@ -467,7 +478,10 @@ export class ArcadeScene {
     this.contacts.resolve(game, pose);
     this.updateClawFeedback(pose, phase, dt, feedback, holding);
     if (phase !== this.lastPhase) {
-      if (motion && phase === 'lift' && plan?.prize) this.spawnBurst(v(pose.x, pose.y - .45, pose.z), plan.prize.family === 'star');
+      const star = plan?.prize?.family === 'star';
+      if (phase === 'grip') this.kick(.022, time);
+      if (phase === 'lift' && plan?.prize) { this.kick(star ? .06 : .035, time); if (motion) this.spawnBurst(v(pose.x, pose.y - .45, pose.z), star); }
+      if (phase === 'reveal' && plan?.prize) { const slot = collectionSlot(plan.prize.id); this.kick(.02, time); if (motion) this.spawnBurst(v(slot.x, slot.y + .35, slot.z + .2), star); }
       this.lastPhase = phase;
     }
     // A reduced-motion toggle mid-flight ends the burst on the same frame,
@@ -477,11 +491,11 @@ export class ArcadeScene {
     this.updateMarquee(phase, plan, time, motion);
     this.courier.visible = this.deliveryTray.visible;
     if (this.courier.visible) { const p = this.deliveryTray.position; this.courier.scale.set(this.deliveryTray.scale.x, 1, this.deliveryTray.scale.z); this.courier.position.set(p.x, 0, 1.69); this.courierMast.scale.y = Math.max(.1, p.y - .44); this.courierMast.position.y = .44 + (p.y - .44) / 2; this.courierArm.scale.y = Math.max(.025, 1.69 - p.z); this.courierArm.position.set(0, p.y - .08, -(1.69 - p.z) / 2); }
-    this.updateCamera(game, presentation);
+    this.updateCamera(game, presentation, time);
     this.draw(time, cameraActive);
   }
 
-  updateCamera(game, { preparing = false, nextTurnElapsed = 0, machineControls = false } = {}) {
+  updateCamera(game, { preparing = false, nextTurnElapsed = 0, machineControls = false } = {}, time = 0) {
     // Stay on the contact through the entire lift. A held prize pulls the view
     // back for its shelf run; after a miss the claw stays put and so does the view.
     let wide = ['idle', 'release', 'deliver', 'reveal', 'result'].includes(game.phase) ? 1 : 0;
@@ -501,6 +515,8 @@ export class ArcadeScene {
     if (machineControls) this.currentLook.y -= .20;
     this.currentLook.lerp(this.look, wide);
     this.camera.lookAt(this.currentLook);
+    const punch = this.punchOffset(time);
+    if (punch) { this.camera.position.y += punch; this.camera.position.x += punch * .4; }
   }
 
   draw(time, cameraActive) {
