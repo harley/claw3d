@@ -1,5 +1,6 @@
 import * as T from 'three';
 import { ToyContacts } from './arcade-contact.js';
+import { CabinetHands } from './cabinet-hands.js';
 import { JoystickHand } from './joystick-hand.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ASSORTMENT, CAROUSEL, carouselCue, BED, HIGH, FINGER_ANGLES, PHASES, SHELF_LEVELS, collectionSlot, clawPose, mix, ease, clamp } from './arcade-mechanics.js';
@@ -8,7 +9,8 @@ import { palette, material, group, mesh, ball, box, cylinder, line, rod, batch, 
 const v = (x, y, z) => new T.Vector3(x, y, z);
 
 export class ArcadeScene {
-  constructor(canvas) {
+  constructor(canvas, { wideControls = false } = {}) {
+    this.wideControls = wideControls;
     this.canvas = canvas;
     this.renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
@@ -19,6 +21,8 @@ export class ArcadeScene {
     this.environment = pmrem.fromScene(room, .04); this.scene.environment = this.environment.texture; this.scene.environmentIntensity = .48; room.dispose(); pmrem.dispose();
     this.camera = new T.PerspectiveCamera(35, 1, .1, 70);
     this.home = v(7.25, 6.15, 11.6); this.look = v(-.4, 2.25, 0); this.camera.position.copy(this.home); this.currentLook = this.look.clone();
+    this.playLook = v(0, 2.95, 0); this.playCamera = v(0, 0, 0);
+    this.angledView = new URLSearchParams(location.search).get('view') === 'angle';
     this.scene.add(new T.HemisphereLight('#fff5e2', '#93a895', 1.15));
     const key = new T.DirectionalLight('#fff0d7', 2.35); key.position.set(-3.5, 8, 5); key.castShadow = true;
     Object.assign(key.shadow.camera, { left: -6, right: 6, top: 7, bottom: -5, near: .1, far: 22 }); key.shadow.mapSize.set(2048, 2048); key.shadow.normalBias = .022; key.shadow.bias = -.00015; key.shadow.radius = 3; this.scene.add(key);
@@ -27,6 +31,7 @@ export class ArcadeScene {
     this.mats = createArtMaterials(); this.toys = new Map(); this.buildWorld(); this.buildCabinet(); this.buildClaw();
     for (const toy of ASSORTMENT) { const object = createToy(toy, this.mats); object.position.set(toy.x, BED, toy.z); this.scene.add(object); this.toys.set(toy.id, object); }
     this.contacts = new ToyContacts(this.toys);
+    if (wideControls) this.cabinetHands = new CabinetHands(this.scene);
     this.buildCarousel();
     this.createTarget();
     this.buildEffects();
@@ -37,7 +42,7 @@ export class ArcadeScene {
   }
 
   buildWorld() {
-    const m = this.mats, world = group(this.scene);
+    const m = this.mats, world = this.surroundings = group(this.scene);
     const ground = mesh(this.scene, new T.PlaneGeometry(200, 200), new T.MeshBasicMaterial({ color: '#080e1c', toneMapped: false })); ground.rotation.x = -Math.PI / 2; ground.position.y = -.055; ground.castShadow = false;
     const shadow = mesh(this.scene, new T.PlaneGeometry(200, 200), new T.ShadowMaterial({ opacity: .16 })); shadow.rotation.x = -Math.PI / 2; shadow.position.y = -.05; shadow.castShadow = false;
     box(world, material('#142c50', .88), [-.55, .12, .12], [7.75, .33, 4.7], .23);
@@ -53,10 +58,8 @@ export class ArcadeScene {
     box(shelf, material('#aa9478'), [0, 2.56, -.29], [2.08, 4.00, .07], .025);
     for (const level of SHELF_LEVELS) { box(shelf, m.wood, [0, level - .05, .28], [2.18, .10, .86], .025); box(shelf, m.brass, [0, level, .65], [2.12, .025, .025], .008); }
     box(shelf, m.ivory, [0, 4.65, .06], [2.18, .24, .64], .055);
-    label(shelf, 'PRIZE GALLERY', 1.95, .15, [0, 4.66, .388], { color: '#625d4d', font: 'Arial', size: 29, tracking: 2.5 });
-    for (const toy of ASSORTMENT) { const slot = collectionSlot(toy.id); label(world, toy.name.toUpperCase(), .42, .065, [slot.x, slot.y - .051, .555], { color: '#eddebf', font: 'Arial', size: 27 }); }
+    label(shelf, 'PRIZES', 1.95, .15, [0, 4.66, .388], { color: '#625d4d', font: 'Arial', size: 29, tracking: 2.5 });
     box(shelf, m.ivory, [.67, 2.64, .30], [.40, .29, .07], .025);
-    label(shelf, 'a keeper.', .33, .12, [.67, 2.64, .341], { color: '#ad4d47', size: 43 });
     // A little lamp and its pool of light.
     const lamp = group(world, 2.28, .35, -.42);
     cylinder(lamp, m.brass, [0, .06, 0], .34, .12); cylinder(lamp, m.brass, [0, 1.57, 0], .037, 3.03);
@@ -73,7 +76,6 @@ export class ArcadeScene {
     for (let i = 0; i < 7; i++) { const token = cylinder(dish, m.brass, [Math.sin(i * 5) * .11, .10 + i * .009, Math.cos(i * 5) * .1], .073, .015); token.rotation.z = Math.sin(i) * .13; }
     // A small illustrated postcard, original cloud mark and a potted sprig.
     const card = group(world, 2.68, 1.13, 1.10); box(card, m.ivory, [0, 0, 0], [.29, .40, .025], .012); card.rotation.y = -.15; card.rotation.x = -.15;
-    label(card, 'GOOD', .22, .09, [0, .095, .018], { color: '#b44942', font: 'Arial', size: 38, weight: 'bold' }); label(card, 'LUCK', .22, .09, [0, -.005, .018], { color: '#b44942', font: 'Arial', size: 38, weight: 'bold' });
     // Keep decoration outside the courier lane along the front of the gallery.
     const pot = group(world, 2.95, .35, -.95); mesh(pot, new T.CylinderGeometry(.17, .13, .23, 24), m.red, 0, .115, 0); cylinder(pot, material('#614d3d'), [0, .235, 0], .145, .01);
     const leafMat = material('#6a8d69', .84);
@@ -104,7 +106,6 @@ export class ArcadeScene {
       const x = -1.36 + col * .385 + (row % 2) * .06, y = 2.17 + row * .44;
       const star = mesh(cab, new T.CircleGeometry(.022, 4), mural, x, y, -1.13); star.rotation.z = .0;
     }
-    label(cab, 'AWS CLOUD & AI DAY', 2.40, .21, [0, 3.57, -1.12], { color: '#2266a3', font: 'Arial', weight: 'bold', size: 38 });
     for (const x of [-1.73, 1.73]) for (const z of [-1.25, 1.25]) {
       box(cab, m.ivory, [x, 3.045, z], [.16, 3.02, .17], .047);
       box(cab, m.brass, [x, 3.00, z + (z > 0 ? .087 : -.087)], [.035, 2.80, .025], .01);
@@ -123,28 +124,38 @@ export class ArcadeScene {
     box(cab, m.red, [-1.07, 1.535, 1.28], [1.24, .072, .12], .025);
     box(cab, m.rubber, [-1.07, .92, .15], [1.07, .84, .025], .04);
     box(cab, m.wood, [-1.07, .47, 1.11], [1.10, .06, 1.49], .025);
-    label(cab, 'SPECIAL DELIVERY', .98, .075, [-1.07, .414, 1.374], { color: '#f3dfb7', size: 24, font: 'Arial', tracking: 2 });
     box(cab, m.mint, [.79, .92, 1.275], [1.08, .57, .028], .035);
     for (let i = 0; i < 6; i++) box(cab, m.darkMetal, [.79, .82 + i * .042, 1.293], [.54, .009, .009], .004);
     ball(cab, m.brass, [1.18, 1.09, 1.30], [.025, .025, .010]);
-    label(cab, 'crafted by coderpush', .84, .083, [.79, .63, 1.287], { color: '#746b55', font: 'Arial', size: 29 });
     // Control deck: ivory over red, a ball-topped stick, one big enamel button.
-    box(cab, m.red, [.55, 1.525, 1.44], [2.08, .18, .53], .065);
-    box(cab, m.ivory, [.55, 1.633, 1.44], [2.01, .045, .49], .045);
-    cylinder(cab, m.brass, [-.28, 1.68, 1.44], .155, .023); cylinder(cab, m.rubber, [-.28, 1.70, 1.44], .09, .018);
-    this.stick = group(this.scene, -.28, 1.70, 1.44); cylinder(this.stick, m.chrome, [0, .092, 0], .023, .18); ball(this.stick, m.red, [0, .205, 0], [.10, .10, .10]);
+    const stickX = this.wideControls ? -1.28 : -.28, dropX = this.wideControls ? 1.28 : .87;
+    box(cab, m.red, [this.wideControls ? 0 : .55, 1.525, 1.44], [this.wideControls ? 3.5 : 2.08, .18, .53], .065);
+    box(cab, this.wideControls ? material('#203346', .32, .3) : m.ivory, [this.wideControls ? 0 : .55, 1.633, 1.44], [this.wideControls ? 3.43 : 2.01, .045, .49], .045);
+    cylinder(cab, m.brass, [stickX, 1.68, 1.44], .155, .023); cylinder(cab, m.rubber, [stickX, 1.70, 1.44], .09, .018);
+    this.stick = group(this.scene, stickX, 1.70, 1.44); cylinder(this.stick, m.chrome, [0, .092, 0], .023, .18); ball(this.stick, this.wideControls ? new T.MeshPhysicalMaterial({color:'#147c91',roughness:.18,metalness:.12,clearcoat:1,clearcoatRoughness:.12}) : m.red, [0, .205, 0], [.10, .10, .10]);
     this.stick.scale.setScalar(1.4);
     this.joystickHand = new JoystickHand(this.stick);
-    cylinder(cab, m.brass, [.87, 1.675, 1.44], .19, .036); this.button = cylinder(this.scene, m.red, [.87, 1.72, 1.44], .147, .076, 48);
-    const aimLabel = label(cab, 'MOVE', .28, .075, [.05, 1.66, 1.47], { color: '#716b57', font: 'Arial', size: 30 }); aimLabel.rotation.x = -Math.PI / 2;
-    const dropLabel = label(cab, 'DROP', .28, .075, [1.20, 1.66, 1.47], { color: '#a04540', font: 'Arial', size: 30 }); dropLabel.rotation.x = -Math.PI / 2;
+    cylinder(cab, m.brass, [dropX, 1.675, 1.44], this.wideControls ? .235 : .19, .036);
+    if (this.wideControls) cylinder(cab, m.rubber, [dropX, 1.705, 1.44], .218, .024);
+    this.button = this.wideControls
+      ? mesh(this.scene, new T.SphereGeometry(1, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2), m.red.clone(), dropX, 1.72, 1.44)
+      : cylinder(this.scene, m.red.clone(), [dropX, 1.72, 1.44], .21, .10, 48);
+    if (this.wideControls) {
+      this.button.scale.set(.21, .135, .21);
+      this.button.material.dispose();
+      this.button.material = new T.MeshPhysicalMaterial({ color:'#ed941d',roughness:.18,metalness:.12,clearcoat:1,clearcoatRoughness:.1 });
+      const capLabel = label(cab, 'DROP', .28, .085, [dropX, 1.665, 1.77], { color: '#e1d6ba', font: 'Arial', weight: 'bold', size: 155 }); capLabel.rotation.x = -Math.PI / 2;
+    } else {
+      const capLabel = label(this.button, 'DROP', .28, .10, [0, .054, 0], { color: '#fff4dd', font: 'Arial', weight: 'bold', size: 155 }); capLabel.rotation.x = -Math.PI / 2;
+    }
+    const aimLabel = label(cab, 'MOVE', .28, .075, [stickX + .33, 1.66, 1.47], { color: this.wideControls ? '#e1d6ba' : '#716b57', font: 'Arial', size: 30 }); aimLabel.rotation.x = -Math.PI / 2;
+    if (!this.wideControls) { const dropLabel = label(cab, 'DROP', .28, .075, [dropX + (this.wideControls ? -.33 : .33), 1.66, 1.47], { color: '#a04540', font: 'Arial', size: 30 }); dropLabel.rotation.x = -Math.PI / 2; }
     // Lantern-like marquee and tiny edge bulbs.
     box(cab, m.ivory, [0, 4.61, 0], [3.78, .24, 2.75], .12);
     box(cab, m.red, [0, 4.94, .00], [3.83, .57, 2.73], .15);
     box(cab, m.brass, [0, 4.946, 1.373], [3.39, .433, .022], .09);
     box(cab, m.ivory, [0, 4.946, 1.394], [3.32, .367, .018], .08);
-    label(cab, 'CLOUD CLAW', 2.62, .29, [0, 4.965, 1.408], { color: '#e52948', font: 'Arial', weight: 'bold', size: 59 });
-    label(cab, 'C O D E R P U S H', 1.60, .07, [0, 4.766, 1.413], { color: '#f5dfb9', font: 'Arial', size: 22 });
+    label(cab, 'CLAW', 2.62, .29, [0, 4.965, 1.408], { color: '#e52948', font: 'Arial', weight: 'bold', size: 59 });
     for (const x of [-1.54, 1.54]) ball(cab, m.glow, [x, 4.957, 1.413], [.035, .035, .019]);
     // Original cloud finial; silhouette stays readable at a distance.
     for (const [x, y, r] of [[-.29, 5.337, .15], [-.08, 5.397, .22], [.17, 5.364, .18], [.33, 5.315, .11]]) ball(cab, m.ivory, [x, y, .03], [r, r, .12]);
@@ -171,7 +182,6 @@ export class ArcadeScene {
     const flap = mesh(this.outletFlap, new T.PlaneGeometry(1.03, .95), flapGlass, 0, -.475, 0); flap.castShadow = false;
     line(this.outletFlap, m.brass, [[-.515, 0, 0], [-.515, -.95, 0], [.515, -.95, 0], [.515, 0, 0]], .009);
     for (const x of [-.38, .38]) { const hinge = cylinder(this.outletFlap, m.brass, [x, 0, 0], .024, .16, 16); hinge.rotation.z = Math.PI / 2; }
-    label(this.outletFlap, 'a little joy.', .72, .16, [0, -.49, .005], { color: '#6b7b64', size: 45 });
     // Side glazing and fine front reflections: transparent, never a milky wall.
     const glazing = group(this.scene);
     for (const x of [-1.722, 1.722]) { const panel = mesh(glazing, new T.PlaneGeometry(2.40, 2.80), m.glass, x, 3.03, 0); panel.rotation.y = Math.PI / 2; panel.castShadow = false; }
@@ -243,15 +253,6 @@ export class ArcadeScene {
     for (let i = 0; i < 4; i++) { const tick = box(this.target, this.targetMat, [Math.cos(i * Math.PI / 2) * .227, 0, Math.sin(i * Math.PI / 2) * .227], [.09, .008, .016], .005); tick.rotation.y = -i * Math.PI / 2; }
     batch(this.target);
     this.target.traverse(m => { if (m.isMesh) m.castShadow = m.receiveShadow = false; });
-    // Hold-progress arc inside the ring: the confirmation lives where the
-    // player is already looking. Added after the batch so its draw range and
-    // colour stay addressable; progress reveals existing triangles only.
-    this.holdMat = new T.MeshBasicMaterial({ color: '#ffc14d', transparent: true, opacity: .92, depthWrite: false, side: T.DoubleSide, toneMapped: false });
-    this.holdArc = mesh(this.target, new T.RingGeometry(.115, .152, 64), this.holdMat);
-    this.holdArc.rotation.x = -Math.PI / 2; this.holdArc.rotation.z = Math.PI / 2;
-    this.holdArc.castShadow = this.holdArc.receiveShadow = false;
-    this.holdArc.visible = false;
-    this.holdWarm = new T.Color('#ffc14d'); this.holdGo = new T.Color('#66ffb3');
     this.beamMat = new T.LineBasicMaterial({ color: '#698d79', transparent: true, opacity: .34, depthWrite: false });
     this.beam = new T.Line(new T.BufferGeometry().setFromPoints([v(0, 0, 0), v(0, 1, 0)]), this.beamMat); this.scene.add(this.beam);
   }
@@ -332,11 +333,22 @@ export class ArcadeScene {
     this.viewport = { width, height };
     this.renderer.setSize(width, height, false); this.camera.aspect = width / height; this.camera.updateProjectionMatrix();
     const extra = Math.max(1, 1.45 / this.camera.aspect); this.home.set(7.25 * extra, 2.25 + 3.90 * extra, 11.6 * extra);
+    const playScale = Math.max(1, 1.05 / this.camera.aspect);
+    this.playCamera.set((this.angledView ? 1.8 : .45) * playScale, 2.95 + 1.85 * playScale, 6.4 * playScale);
   }
 
   setQuality(low) { this.lowQuality = low; this.renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, 1.5)); this.renderer.shadowMap.enabled = !low; this.resize(); }
 
-  screenPoint(x, y, z) { const p = v(x, y, z).project(this.camera); return { x: (p.x + 1) / 2 * this.viewport.width, y: (1 - p.y) / 2 * this.viewport.height }; }
+  controlTargets() {
+    const stick = this.stick.localToWorld(v(0, .205, 0));
+    const dropX = this.button.position.x;
+    const radius = Math.abs(this.screenPoint(dropX + .25, 1.77, 1.44).x - this.screenPoint(dropX, 1.77, 1.44).x);
+    const { left, right, top, bottom } = this.canvas.getBoundingClientRect();
+    return { bounds: { left, right, top, bottom }, stick: { ...this.screenPoint(stick.x, stick.y, stick.z), radius: Math.max(32, radius * 1.3), ballRadius: Math.abs(this.screenPoint(stick.x + .14, stick.y, stick.z).x - this.screenPoint(stick.x, stick.y, stick.z).x) },
+      drop: { ...this.screenPoint(dropX, this.button.position.y + (this.wideControls ? .115 : .05), 1.44), radius: Math.max(26, radius), ready: Boolean(this.dropReady) } };
+  }
+
+  screenPoint(x, y, z) { const p = v(x, y, z).project(this.camera), rect = this.canvas.getBoundingClientRect(); return { x: rect.left + (p.x + 1) / 2 * rect.width, y: rect.top + (1 - p.y) / 2 * rect.height }; }
 
   groundToys(game) { for (const toy of game.toys) toy.groundOffset = this.toys.get(toy.id).userData.groundOffset; }
   toyBounds(id) { const bounds = new T.Box3().setFromObject(this.toys.get(id), true); return { min: bounds.min.toArray(), max: bounds.max.toArray() }; }
@@ -354,33 +366,54 @@ export class ArcadeScene {
     });
   }
 
-  update(game, dt, time, input, aligned, feedback = {}, cameraActive = false) {
+  updateClawFeedback(pose, phase, dt, feedback, holding) {
+    // Rendering only: contacts have already resolved from the unmodified pose.
+    this.applyClawPose(holding ? { ...pose, radii: pose.radii.map(r => Math.max(.06, r - .22 * ease(holding))) } : pose);
+    const steering = phase === 'aim' && feedback.controlEnabled && feedback.kind === 'tracking';
+    const previous = this.previousAim;
+    const lean = delta => Math.abs(delta) < .08 ? 0 : clamp(delta * .035, -.035, .035);
+    this.claw.rotation.set(0, 0, 0);
+    if (steering && previous && dt > 0 && !this.reducedMotion) {
+      this.claw.rotation.x = lean((pose.z - previous.z) / dt);
+      this.claw.rotation.z = -lean((pose.x - previous.x) / dt);
+    }
+    // Actual travel, not raw hand jitter. No accumulated sway or trailing spring;
+    // stopping, hitting a limit, clenching or losing control returns to neutral.
+    this.previousAim = steering ? { x: pose.x, z: pose.z } : null;
+  }
+
+  update(game, dt, time, input, aligned, feedback = {}, cameraActive = false, presentation = {}) {
     const phase = game.phase, elapsed = game.elapsed, plan = game.plan, motion = this.reducedMotion ? 0 : 1;
     this.carousel.visible = Boolean(game.carousel);
     if (game.carousel) {
       this.carouselDeck.rotation.y = -game.carouselTime / CAROUSEL.period * Math.PI * 2;
-      const cue = carouselCue(game.carouselTime);
-      this.carouselLights.forEach((light, i) => { const on = ['idle', 'aim'].includes(game.phase) && i < cue.lights; light.material.color.set(on ? cue.now ? '#66ffb3' : '#ffc14d' : '#3e3426'); light.material.emissive.set(cue.now ? '#33ff99' : '#ffb52b'); light.material.emissiveIntensity = on ? 2 : 0; });
+      const cue = carouselCue(game.carouselTime, presentation.cueLead);
+      const starAvailable = game.toys.some(toy => toy.id === CAROUSEL.id && !toy.claimed);
+      this.carouselLights.forEach((light, i) => { const on = starAvailable && ['idle', 'aim'].includes(game.phase) && i < cue.lights; light.material.color.set(on ? cue.now ? '#66ffb3' : '#ffc14d' : '#3e3426'); light.material.emissive.set(cue.now ? '#33ff99' : '#ffb52b'); light.material.emissiveIntensity = on ? 2 : 0; });
     }
     for (const [id, object] of this.toys) object.visible = game.toys.some(toy => toy.id === id);
     const pose = clawPose(game);
-    this.stick.rotation.set(input.z * .24, 0, -input.x * .24); this.button.position.y = phase === 'anticipate' ? 1.688 : 1.72;
+    this.stick.rotation.set(input.z * .24, 0, -input.x * .24); this.button.position.y = 1.72 - .05 * (phase === 'anticipate' ? 1 : phase === 'descend' ? Math.max(0, 1 - elapsed / .18) : 0);
     this.joystickHand.update(phase, elapsed, dt, feedback, this.reducedMotion);
+    this.stick.visible = this.button.visible = presentation.machineControls || ['idle', 'result'].includes(phase);
+    if (presentation.machineControls && ['dual', 'grab-release'].includes(feedback.profile)) this.joystickHand.root.visible = false;
+    if (presentation.machineControls && phase === 'aim' && feedback.grab?.stage === 'pressing') this.button.position.y -= .04 * feedback.progress;
+    const activeControl = phase === 'aim' && feedback.controlEnabled && ['tracking', 'clenching'].includes(feedback.kind);
+    this.dropReady = Boolean(activeControl && (feedback.profile === 'dual'
+      ? feedback.dropEnabled && feedback.hands?.right?.ready && feedback.hands.right.grab?.armed
+      : feedback.profile === 'grab-release' ? feedback.grab?.armed && feedback.target === 'drop' : feedback.kind === 'clenching'));
+    this.button.material.emissive.set('#ffb52b'); this.button.material.emissiveIntensity = this.dropReady ? .55 : 0;
+    if (presentation.machineControls && activeControl && !['dual', 'grab-release'].includes(feedback.profile)) this.button.position.y -= .04 * (feedback.progress || 0);
+    this.cabinetHands?.update(phase, elapsed, dt, feedback, presentation.machineControls, this.stick, this.button, this.reducedMotion);
     this.target.visible = ['idle', 'aim'].includes(phase); this.target.position.set(game.position.x, BED + (game.carousel && Math.hypot(game.position.x - CAROUSEL.x, game.position.z - CAROUSEL.z) < .55 ? CAROUSEL.height : 0) + .014, game.position.z); this.targetMat.color.set(aligned ? '#547e69' : '#bb5b49');
     // Fist-hold confirmation fills the ring the player is already watching.
-    const holding = phase === 'aim' && feedback.kind === 'clenching' ? clamp(feedback.progress, 0, 1) : 0;
-    this.holdArc.visible = holding > 0 && this.target.visible;
-    if (this.holdArc.visible) {
-      this.holdArc.geometry.setDrawRange(0, Math.floor(64 * holding) * 6);
-      this.holdMat.color.copy(this.holdWarm).lerp(this.holdGo, holding);
-    }
+    const holding = !['grab-release', 'dual'].includes(feedback.profile) && phase === 'aim' && feedback.controlEnabled && feedback.kind === 'clenching' ? clamp(feedback.progress, 0, 1) : 0;
     this.beam.visible = this.target.visible; this.beam.position.set(game.position.x, BED + .02, game.position.z); this.beam.scale.y = HIGH - BED - 1.01; this.beamMat.color.copy(this.targetMat.color);
     this.deliveryTray.visible = false; this.deliveryTray.scale.setScalar(1);
     const hatchOpen = plan?.prize && ['release', 'deliver', 'reveal', 'result'].includes(phase);
     this.hatch.rotation.x = hatchOpen ? (phase === 'release' ? ease(elapsed / .18) : 1) * Math.PI / 2 : phase === 'idle' ? 0 : Math.max(0, this.hatch.rotation.x - dt * 9);
     const delivery = phase === 'deliver' && plan?.prize ? elapsed / PHASES.deliver : -1;
     this.outletFlap.rotation.x = delivery >= 0 ? -Math.PI / 2 * ease(delivery / .22) * (1 - ease((delivery - .65) / .22)) : 0;
-    let focusToy = null;
     for (const toy of game.toys) {
       const object = this.toys.get(toy.id), { body, articulation, blink, wave, waveTime, face } = object.userData;
       object.position.set(toy.x, BED + (toy.elevation || 0), toy.z); object.rotation.set(0, toy.yaw, 0); object.scale.setScalar(toy.scale); body.scale.set(1, 1, 1); body.rotation.set(0, 0, 0);
@@ -414,7 +447,7 @@ export class ArcadeScene {
         object.rotation.y = mix(toy.yaw, .35, ease(t)); wobble = motion * Math.sin(t * 25) * .07 * Math.sin(t * Math.PI);
       }
       if (held && ['reveal', 'result'].includes(phase)) {
-        focusToy = object; wobble = motion * (phase === 'reveal' ? Math.sin(elapsed * 12) * Math.exp(-elapsed * 3) * (toy.family === 'star' ? .13 : .07) : 0);
+        wobble = motion * (phase === 'reveal' ? Math.sin(elapsed * 12) * Math.exp(-elapsed * 3) * (toy.family === 'star' ? .13 : .07) : 0);
         if (phase === 'reveal') { const t = elapsed / PHASES.reveal, slot = collectionSlot(toy.id); this.deliveryTray.visible = t < .97; this.deliveryTray.position.set(mix(slot.x, -1.08, ease((t - .45) / .55)), mix(slot.y, .50, ease((t - .22) / .60)), mix(slot.z, 1.69, ease(t / .30))); }
       }
       body.scale.set(1 + compression * .65, 1 - compression, 1 + compression * .45); body.rotation.z = wobble;
@@ -432,12 +465,7 @@ export class ArcadeScene {
     }
     for (const toy of game.toys) if (toy.impact && !toy.claimed && game.plan?.prize?.id !== toy.id) this.contacts.rock(game, toy, this.toys.get(toy.id), dt);
     this.contacts.resolve(game, pose);
-    // Pre-tension: the claw visibly readies itself as the hold fills. Contacts
-    // above resolved against the untensioned pose, so gameplay is untouched.
-    if (holding) {
-      const tremble = motion * Math.sin(time * 34) * .006 * holding;
-      this.applyClawPose({ ...pose, radii: pose.radii.map(r => Math.max(.06, r - .055 * ease(holding) + tremble)) });
-    } else this.applyClawPose(pose);
+    this.updateClawFeedback(pose, phase, dt, feedback, holding);
     if (phase !== this.lastPhase) {
       if (motion && phase === 'lift' && plan?.prize) this.spawnBurst(v(pose.x, pose.y - .45, pose.z), plan.prize.family === 'star');
       this.lastPhase = phase;
@@ -449,15 +477,30 @@ export class ArcadeScene {
     this.updateMarquee(phase, plan, time, motion);
     this.courier.visible = this.deliveryTray.visible;
     if (this.courier.visible) { const p = this.deliveryTray.position; this.courier.scale.set(this.deliveryTray.scale.x, 1, this.deliveryTray.scale.z); this.courier.position.set(p.x, 0, 1.69); this.courierMast.scale.y = Math.max(.1, p.y - .44); this.courierMast.position.y = .44 + (p.y - .44) / 2; this.courierArm.scale.y = Math.max(.025, 1.69 - p.z); this.courierArm.position.set(0, p.y - .08, -(1.69 - p.z) / 2); }
-    let cameraPos = this.home, look = this.look;
-    // Aiming never drifts. The viewpoint moves only for the earned reveal and
-    // a slight lean-in while the drop plays out (input is frozen there).
-    if (motion && focusToy && phase === 'reveal') { look = focusToy.position.clone().add(v(.2, .40, .1)); cameraPos = look.clone().add(v(1.8, 1.0, 5.0)); }
-    else if (motion && ['descend', 'grip'].includes(phase)) { cameraPos = (this.pushIn ??= v(0, 0, 0)).copy(this.home).lerp(this.look, .085); }
-    if (['aim', 'idle'].includes(phase) || !motion) { this.camera.position.copy(this.home); this.currentLook.copy(this.look); }
-    else { const k = 1 - Math.exp(-dt * 3); this.camera.position.lerp(cameraPos, k); this.currentLook.lerp(look, k); }
-    this.camera.lookAt(this.currentLook);
+    this.updateCamera(game, presentation);
     this.draw(time, cameraActive);
+  }
+
+  updateCamera(game, { preparing = false, nextTurnElapsed = 0, machineControls = false } = {}) {
+    // Stay on the contact through the entire lift. Transfer is the first point
+    // where the outcome is known and the whole machine becomes useful again.
+    let wide = ['idle', 'release', 'deliver', 'reveal', 'result'].includes(game.phase) ? 1 : 0;
+    if (game.phase === 'transfer') wide = this.reducedMotion ? 1 : ease(game.elapsed / .65);
+    if (game.phase === 'result' && preparing) {
+      wide = this.reducedMotion ? Number(nextTurnElapsed < 3) : 1 - ease((nextTurnElapsed - 2.4) / .6);
+    }
+    this.surroundings.visible = wide > 0;
+    for (const id of game.collection || []) {
+      const object = this.toys.get(id);
+      if (object) object.visible = wide > 0 && game.toys.some(toy => toy.id === id);
+    }
+    this.camera.position.copy(this.playCamera);
+    if (machineControls) this.camera.position.z += .65;
+    this.camera.position.lerp(this.home, wide);
+    this.currentLook.copy(this.playLook);
+    if (machineControls) this.currentLook.y -= .20;
+    this.currentLook.lerp(this.look, wide);
+    this.camera.lookAt(this.currentLook);
   }
 
   draw(time, cameraActive) {

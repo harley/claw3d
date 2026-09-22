@@ -119,7 +119,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, #scene:focus-vi
   @keyframes attract-pulse { 50% { opacity: .68; } }
 }
 #arcade[data-phase="lift"] #status, #arcade[data-phase="result"] #status { color: #ffc14d; }
-#gesture-meter { width: 180px; height: 8px; margin-top: 3px; border: 1px solid #ffc14d; background: #152138; overflow: hidden; }
+#gesture-meter { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 #gesture-progress { display: block; width: 100%; height: 100%; background: #ffc14d; transform: scaleX(0); transform-origin: left; }
 .play-button {
   display: flex; align-items: center; justify-content: center; gap: 22px;
@@ -168,7 +168,6 @@ dialog .play-button { width: 100%; margin-top: 24px; }
 #shared-access button { margin: 6px; }
 
 /* Announcements occupy the clear strip above the cabinet. */
-#pause-banner { position: absolute; top: 100px; left: 50%; transform: translateX(-50%); max-width: 80vw; z-index: 4; background: #ffc14d; color: #081021; padding: 10px 20px; text-align: center; font-size: 10px; font-weight: 700; }
 #loading, #error { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #080e1c; text-align: center; padding: 30px; }
 #loading h2, #error h2 { font-size: 28px; }
 #loading p, #error p { font-size: 12px; color: #9db3d0; max-width: 440px; line-height: 1.6; }
@@ -240,12 +239,6 @@ dialog .play-button { width: 100%; margin-top: 24px; }
 #feedback-dialog textarea { resize: vertical; }
 .playtest-notice { font-size: 12px; line-height: 1.5; color: #9db3d0; }
 
-/* Keep booth volume within reach without another dialog. */
-.sound-controls { display: grid; width: 96px; gap: 3px; }
-.sound-controls label { display: flex; justify-content: space-between; font-size: 9px; color: #acc2df; }
-.sound-controls input { width: 100%; height: 12px; margin: 0; accent-color: #ffc14d; }
-@media (max-width: 650px) { .sound-controls { width: 59px; } .sound-controls label { font-size: 8px; } }
-
 /* Hand-operated arcade menus: the same deliberate fist hold as gameplay. */
 #hand-cursor { position:fixed; width:64px; height:64px; transform:translate(-50%,-50%); pointer-events:none; z-index:10000; filter:drop-shadow(0 2px 8px #000); }
 #hand-cursor svg { width:100%; height:100%; overflow:visible; }
@@ -259,3 +252,95 @@ button.hand-hover { outline:4px solid #ffca45; outline-offset:6px; box-shadow:0 
 #registration #register-play { display:block; width:100%; min-height:76px; margin-top:24px; }
 #registration #register-cancel, #final .text-button { min-height:48px; }
 #registration .playtest-notice { font-size:11px; opacity:.6; }
+
+/* A fixed control deck below the chamber. These are gesture indicators, not
+   pointer controls; the camera remains the only gameplay input. */
+#control-deck { left: 50%; bottom: 47px; transform: translateX(-50%); width: min(440px, calc(100% - 40px)); height: 112px; display: flex; align-items: center; justify-content: space-around; gap: 16px; padding: 12px 24px; border: 1px solid #456079; border-bottom: 5px solid #20304b; border-radius: 18px; background: #101e30f5; box-shadow: 0 12px 32px #0006; pointer-events: none; }
+.deck-steer, .deck-drop { display: grid; justify-items: center; gap: 7px; }
+.deck-steer > span, .deck-drop > span { color: #b2c3d6; font-size: 9px; font-weight: 700; letter-spacing: 1px; }
+.stick-base { width: 70px; height: 57px; border-radius: 50%; background: radial-gradient(ellipse, #53677c 0 25%, #0a1423 28% 62%, #64758a 65% 68%, #182b42 71%); display: grid; place-items: center; }
+#deck-stick { display: block; width: 38px; height: 38px; border-radius: 50%; background: radial-gradient(circle at 32% 25%, #ff9ba8, #ed304b 48%, #8e1529 85%); box-shadow: 0 8px 0 #abb9c8, 0 13px 9px #0008; margin-top: -15px; }
+.deck-label { text-align: center; }
+.deck-label span { display: block; font-size: 9px; color: #829bb8; letter-spacing: 1.4px; }
+.deck-label strong { display: block; margin-top: 8px; font: 700 11px ui-monospace, monospace; color: #66ffb3; }
+#deck-drop { --hold: 0; padding: 5px; width: 65px; height: 65px; border-radius: 50%; background: conic-gradient(#66ffb3 calc(var(--hold) * 360deg), #455268 0); }
+#deck-drop > span { display: grid; place-items: center; width: 100%; height: 100%; border-radius: 50%; background: #ffcc62; color: #332109; font: 900 13px Arial, sans-serif; box-shadow: inset 0 -5px 0 #b67a20; }
+#control-deck[data-state="accepted"] #deck-drop > span { transform: translateY(3px); box-shadow: inset 0 -2px 0 #b67a20; }
+#control-deck[data-state="waiting"] { opacity: .55; }
+/* Give the chamber its own unobstructed stage; HUD never sits on the glass. */
+#scene { position: absolute; left: 292px; top: 145px; width: calc(100% - 558px); height: calc(100% - 310px); border-radius: 12px; }
+#scene:focus-visible { outline: 1px solid #344b68; outline-offset: 0; }
+@media (max-width: 1000px) and (min-width: 651px) {
+  #scene { left: 215px; width: calc(100% - 400px); top: 165px; height: calc(100% - 325px); }
+}
+@media (max-width: 650px) {
+  #control-deck { width: calc(100% - 32px); bottom: 43px; height: 96px; padding: 10px 18px; }
+  #control-deck .deck-label, #turn-chips { display: none; }
+  #scene { left: 8px; top: 280px; width: calc(100% - 16px); height: calc(100% - 525px); }
+  .controls { top: 244px; }
+  #arcade:is([data-phase="idle"], [data-phase="aim"]) #status { font-size: 20px; }
+  .round-copy strong { font-size: 24px; }
+  /* Match the arcade's minimum height, including short screens that scroll. */
+  #camera-preview { position: absolute; top: calc(max(740px, 100svh) - 340px); left: -4px; width: 90px; }
+  .controls button { top: calc(max(740px, 100svh) - 458px); left: 105px; }
+}
+
+/* Local grab/release study: one physical control and a free articulated glove. */
+.joystick-cursor { position: fixed; z-index: 8; width: 65px; height: auto; aspect-ratio: 110 / 130; transform: translate(-50%, -58%); pointer-events: none; filter: drop-shadow(0 5px 5px #071a2b88); }
+.joystick-cursor svg { width: 100%; height: 100%; overflow: visible; }
+.joystick-cursor[hidden] { display: none; }
+
+/* The projected hit area belongs to the cabinet button, never a second deck. */
+#machine-drop { position: fixed; z-index: 5; border: 0; padding: 0; border-radius: 50%; background: transparent; box-shadow: none; cursor: pointer; }
+#machine-drop:hover, #machine-drop:focus-visible { outline: 3px solid #ffdf77; outline-offset: 3px; filter: drop-shadow(0 0 9px #ffc34c); }
+#machine-drop[hidden] { display: none; }
+.machine-controls #scene { height: calc(100% - 210px); }
+.play-button { border-radius: 18px; border: 3px solid #ff9294; background: linear-gradient(#ff6574 0%, #ed304b 45%, #c71938 100%); box-shadow: inset 0 3px 2px #fff7, inset 0 -3px 4px #8d102b, 0 9px 0 #77152b, 0 13px 0 #18202f, 0 16px 22px #0008; text-shadow: 0 2px 1px #7c1326; transition: transform 90ms, box-shadow 90ms; }
+.play-button:active, .play-button.hand-hover { transform: translateY(6px); box-shadow: inset 0 2px 3px #fff4, 0 3px 0 #77152b, 0 6px 0 #18202f, 0 8px 12px #0008; }
+@media (prefers-reduced-motion: reduce) { .play-button { transition: none; } }
+
+@media (max-width: 650px) { .machine-controls #scene { height: calc(100% - 335px); } }
+
+/* Keep the camera feedback below the widened controls on narrow displays. */
+@media (max-width: 650px) {
+  .dual-controls #scene { height: calc(100% - 425px); }
+  .dual-controls #camera-preview { top: calc(max(740px, 100svh) - 240px); }
+}
+
+/* One visible choice before a run; the active run keeps its original controls. */
+#play-options { position:absolute; top:calc(100svh - 240px); display:flex; gap:20px; justify-content:center; }
+#play-options button { position:static; white-space:nowrap; }
+#play-alternate { background:linear-gradient(#4196c6,#16628d); border-color:#84cbed; box-shadow:inset 0 3px 2px #fff7,0 9px 0 #123c59,0 13px 0 #18202f; }
+#machine-drop[data-ready="true"] { outline:3px solid #ffdf77; outline-offset:3px; filter:drop-shadow(0 0 9px #ffc34c); }
+@media(max-width:650px) {
+  #play-options { top:calc(max(740px,100svh) - 458px); left:0; right:0; gap:12px; }
+  #play-options button { padding:16px 12px; font-size:12px; }
+}
+
+#machine-drop::after { content:""; position:absolute; inset:-8px; border-radius:50%; background:conic-gradient(#66ffb3 calc(var(--hold,0) * 360deg),transparent 0); mask:radial-gradient(farthest-side,transparent calc(100% - 4px),#000 0); pointer-events:none; }
+
+/* Two readable hand windows below the cabinet, rather than a tiny thumbnail. */
+@media (max-width:650px) {
+  .two-hand-mode #scene { height:calc(100% - 480px); }
+  .two-hand-mode #camera-preview { width:210px; top:calc(max(740px,100svh) - 295px); left:calc(50vw - 22px); transform:translateX(-50%); }
+  .two-hand-mode .camera-image { aspect-ratio:16 / 9; }
+}
+@media (max-width:374px) {
+  .two-hand-mode #camera-preview { left:calc(50vw - 14px); }
+}
+
+/* Captures remain visible even while the close camera hides the prize shelf. */
+.machine-controls .turn-chip { height:66px; flex-direction:column; gap:2px; border-radius:6px; }
+.trophy-icon { font-size:22px; line-height:1; }
+.trophy-name { font:700 10px Arial,sans-serif; }
+.trophy-score { font-size:12px; }
+@media (max-width:650px) {
+  .machine-controls #turn-chips { display:flex; margin-top:8px; gap:4px; }
+  .machine-controls .turn-chip { width:56px; height:26px; flex-direction:row; gap:3px; font-size:9px; }
+  .trophy-icon { font-size:16px; }
+  .trophy-score { font-size:9px; }
+  .trophy-name { display:none; }
+}
+
+/* The forearm continues toward the player below the existing glove anchor. */
+.glove-forearm { display: none; }

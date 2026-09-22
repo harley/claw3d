@@ -12,7 +12,7 @@ import { openDatabase } from '../server/database.js';
 const origin = 'http://127.0.0.1:4208', staffCode = 'browser-test-staff-secret', hostCode = 'browser-test-host-secret';
 const dir = await mkdtemp(join(tmpdir(), 'cloud-claw-browser-'));
 await mkdir('.screenshots', { recursive: true });
-const app = await createPilotServer({ filename: join(dir, 'pilot.sqlite'), origin, staffCode, hostCode, secure: false });
+const app = await createPilotServer({ filename: join(dir, 'pilot.sqlite'), origin, staffCode, hostCode, dist: process.env.CLAW_BUILD_OUT_DIR || 'dist', secure: false });
 await new Promise(resolve => app.server.listen(4208, '127.0.0.1', resolve));
 const browser = await chromium.launch(browserOptions);
 const errors = []; let activePage;
@@ -284,6 +284,8 @@ try {
   await page.close(); // Browser suites stay sequential: no simultaneous WebGL timing load.
   page = await open(b); await register(page, 'Browser B'); await finish(page);
   await page.waitForFunction(() => document.getElementById('final-rank').textContent.includes('SAVED'));
+  await page.waitForFunction(() => document.querySelectorAll('#leaders li').length === 2);
+  assert.equal(app.database.board().runs.length, 2, 'both acknowledged runs exist exactly once');
   assert.equal(await page.locator('#leaders li').count(), 2);
   assert.match(await page.locator('#final-rank').textContent(), /RANK #1/);
   await page.screenshot({ path: '.screenshots/shared-saved.png' });

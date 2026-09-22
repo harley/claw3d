@@ -79,6 +79,12 @@ try {
   await real.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
   await samples(startPosition, true, 10);
   assert.equal(await real.evaluate(() => window.__littleCloud.snapshot().phase), 'aim', 'real recognizer requires open hand after START; no carried drop');
+  await real.locator('#operator-open').click();await real.locator('#pause').click();
+  await real.waitForFunction(()=>document.getElementById('status').textContent==='PAUSED');
+  const resumePosition=await select('play');
+  await real.waitForFunction(()=>!window.__littleCloud.snapshot().event.paused);
+  await samples(resumePosition,true,10);
+  assert.equal(await real.evaluate(()=>window.__littleCloud.snapshot().phase),'aim','held RESUME gesture cannot drop');
   await real.close();
   console.log('PASS automatic camera/audio preference, generated name, hand menu selection, lost-hand cancellation and gameplay/host isolation');
 } finally { await browser.close(); }

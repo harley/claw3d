@@ -1,4 +1,7 @@
+import { HAND_ACQUIRE_MS, RIGHT_SLAM_MS } from './dual-hand-controls.js';
 import './arcade.css';
+import { createJoystickCursor } from './joystick-cursor.js';
+import { PRESS_MS } from './grab-release.js';
 import { createHandMenu, generatedName } from './hand-menu.js';
 const manualSetup = new URLSearchParams(location.search).get('setup') === 'manual';
 import { createSharedBoard } from './shared-board.js';
@@ -8,6 +11,10 @@ import { createHud, $, setText, setHidden, NEXT_TURN_SECONDS } from './arcade-hu
 import { createMovementMusic } from './movement-music.js';
 import { PerformanceGovernor, PERFORMANCE_WINDOW_MS } from './performance-governor.js';
 const shared = globalThis.__SHARED_PILOT__ === true;
+const dualEnabled = !shared && new URLSearchParams(location.search).get('controls') === 'dual';
+const grabEnabled = dualEnabled || (!shared && new URLSearchParams(location.search).get('controls') === 'grab');
+const cabinetEnabled = !shared;
+const scoreKey = dualEnabled ? `${STORAGE_KEY}:dual-controls` : grabEnabled ? `${STORAGE_KEY}:cabinet-controls` : STORAGE_KEY;
 import { ArcadeScene } from './arcade-scene.js';
 import { createGame, begin, drop, advance, move, planGrab, clawPose, PHASES, MAX_FRAME_DELTA, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
 import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, scoreTurn } from './event-session.js';
@@ -16,11 +23,17 @@ $('build-info').textContent = `BUILD ${__BUILD_INFO__.commit}${__BUILD_INFO__.di
 let game = createGame({ carousel: true }), scene, previous = 0, stopped = false, frozen = false;
 let cameraControls, cameraLoading = false;
 const handMenu = createHandMenu();
+document.body.classList.toggle('machine-controls', cabinetEnabled);
+document.body.classList.toggle('dual-controls', cabinetEnabled);
+document.body.classList.toggle('two-hand-mode', dualEnabled);
+const glove = createJoystickCursor(() => cabinetEnabled ? scene?.controlTargets() : null, () => { if (cabinetEnabled) gestureDrop(); });
 let previousMenuMode = '';
 function menuMode() {
-  if (startingRun || recovering || paused || frozen || stopped || document.hidden) return '';
+  if (startingRun || frozen || stopped || document.hidden) return '';
+  if ((recovering || paused) && shared) return '';
   const dialogs = [...document.querySelectorAll('dialog[open]')];
   if (dialogs.length) return dialogs.length === 1 && ['registration', 'final'].includes(dialogs[0].id) ? dialogs[0].id : '';
+  if ((recovering || paused) && cameraControls?.running) return 'resume';
   return !run && cameraControls?.running ? 'idle' : '';
 }
 let pendingPlayer = null, startingRun = false;
@@ -28,7 +41,7 @@ let scoreAnimation;
 let lastSoundPhase = '', lastMovementSound = -Infinity;
 let aligned = null, paused = false;
 let store, storageError = '', storageBlocked = false;
-try { store = shared ? newStore() : loadStore(localStorage); } catch (error) { store = newStore(); storageError = error.message; storageBlocked = true; }
+try { store = shared ? newStore() : loadStore({ getItem: () => localStorage.getItem(scoreKey) }); } catch (error) { store = newStore(); storageError = error.message; storageBlocked = true; }
 game.position = { x: -1.12, z: .66 };
 let run = store.active, completedRun = null, turnNumber = run ? run.turns.length + 1 : 0, remaining = RULES.seconds;
 let recovering = Boolean(run);
@@ -40,7 +53,8 @@ let observedControl = '', observedPhase = '', observedSaveError = false, cameraF
 let performanceFrames = [], performanceVisibleMs = 0, cameraReadyAt = null;
 let adaptationFrames = [], adaptationVisibleMs = 0;
 let holdSignalTurn = -1, holdSignalCount = 0;
-let nextTurnElapsed = 0, dropRemainingMs = 0;
+let nextTurnElapsed = 0, dropRemainingMs = 0, pendingSlam = null, contactFeedback = null;
+let cueLead = dualEnabled ? (HAND_ACQUIRE_MS + RIGHT_SLAM_MS) / 1000 : grabEnabled ? PRESS_MS / 1000 : undefined;
 const performanceGovernor = new PerformanceGovernor({ onChange: (mode, source) => {
   scene?.setQuality(mode === 'simple');
   cameraControls?.setPerformanceMode(mode);
@@ -52,7 +66,7 @@ const tags = game.toys.map(toy => {
 function persist() {
   if (shared) return;
   if (storageBlocked) return;
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(store)); storageError = ''; }
+  try { localStorage.setItem(scoreKey, JSON.stringify(store)); storageError = ''; }
   catch { storageError = 'Storage unavailable. Results are in memory only. Export before closing.'; }
   $('storage-status').textContent = shared ? pilot.status : storageError || store.notice || 'Scores saved on this browser.';
 }
@@ -72,7 +86,7 @@ const audio = createArcadeAudio({ onChange: syncSoundUI, enabledByDefault: !manu
 const movementMusic = createMovementMusic(audio);
 const hud = createHud({ audio, phaseSound });
 function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ? 'loading' : 'off' }, modal = Boolean(document.querySelector('dialog[open]'))) {
-  hud.update({ game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, sharedStatus: pilot.status, storageError, aligned }, feedback, modal);
+  hud.update({ game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, grabEnabled, dualEnabled, cabinetEnabled, sharedStatus: pilot.status, storageError, aligned }, feedback, modal);
 }
 function syncSoundUI() {
   $('sound').textContent = !audio.enabled ? 'SOUND OFF' : !audio.volume ? 'MUTED' : audio.ready ? 'SOUND ON' : 'TAP FOR SOUND';
@@ -91,10 +105,23 @@ function phaseSound(phase, modal) {
   } else if (phase === 'deliver' && game.plan?.prize) audio.fanfare('shelf');
   else if (phase === 'release' && game.plan?.prize) { audio.note(740, .1, 0, 'sine'); audio.note(980, .14, .1, 'sine'); }
 }
-function freshGame() { cameraControls?.reset(); game = createGame({ carousel: true }); game.position = { x: -1.12, z: .66 }; scene?.groundToys(game); aligned = null; hud.invalidate(); }
+function freshGame() { pendingSlam = contactFeedback = null; cameraControls?.reset(); game = createGame({ carousel: true }); game.position = { x: -1.12, z: .66 }; scene?.groundToys(game); aligned = null; hud.invalidate(); }
+function restoreTrophies() {
+  if (shared) return;
+  for (const turn of run?.turns || []) {
+    const toy = game.toys.find(toy => toy.id === turn.prizeId);
+    if (toy && !toy.claimed) { toy.claimed = true; game.collection.push(toy.id); }
+  }
+}
 function beginTurn() {
-  nextTurnElapsed = 0; dropRemainingMs = 0;
-  freshGame(); turnNumber = run.turns.length + 1; remaining = run.rules.seconds; begin(game); recovering = false;
+  nextTurnElapsed = 0; dropRemainingMs = 0; contactFeedback = null;
+  if (!shared && run.turns.length && !recovering && game.phase === 'result') {
+    cameraControls?.reset(); aligned = null; hud.invalidate();
+  } else {
+    freshGame();
+    restoreTrophies();
+  }
+  turnNumber = run.turns.length + 1; remaining = run.rules.seconds; begin(game); recovering = false;
   if (turnNumber === 3) { [330, 440, 660].forEach((f, i) => audio.note(f, .16, i * .15)); }
   else { [523, 784].forEach((f, i) => audio.note(f, .12, i * .09)); }
   updateUI();
@@ -128,9 +155,17 @@ function finishTurn() {
     if (!scene.reducedMotion) { const total = completedRun.total, start = performance.now(); const count = time => { if (!$('final').open) return; const progress = Math.min(1, (time - start) / 850); $('final-score').textContent = String(Math.round(total * (1 - (1 - progress) ** 3))).padStart(3, '0'); if (progress < 1) scoreAnimation = requestAnimationFrame(count); }; scoreAnimation = requestAnimationFrame(count); }
   }
 }
-function play() {
-  if (!scene || stopped || frozen || paused || document.querySelector('dialog[open]')) return;
-  if (recovering) return openOperator();
+async function play() {
+  if (!scene || stopped || frozen || cameraLoading || document.querySelector('dialog[open]')) return;
+  if (recovering || paused) {
+    if (shared) return openOperator();
+    const currentRun = run;
+    if (recovering && !cameraControls?.running) await startCamera();
+    if ((recovering && !cameraControls?.running) || run !== currentRun || stopped || document.querySelector('dialog[open]')) return;
+    cameraControls?.reset(); paused = false;
+    if (recovering) beginTurn();
+    updateUI(); return;
+  }
   if (!run) { if (!cameraControls?.running) return startCamera(); return openRegistration(); }
   if (game.phase === 'aim' && !cameraControls?.running) return startCamera();
   updateUI();
@@ -161,7 +196,12 @@ async function startScoredRun() {
   } finally { startingRun = false; updateUI(); }
 }
 function gestureDrop() {
-  if (!run || game.phase !== 'aim' || startingRun || paused || frozen || stopped || document.hidden || document.querySelector('dialog[open]')) return false;
+  if (pendingSlam || !run || game.phase !== 'aim' || startingRun || paused || frozen || stopped || document.hidden || document.querySelector('dialog[open]')) return false;
+  if (dualEnabled) {
+    pendingSlam = { elapsed: 0, feedback: cameraControls?.feedback || {} };
+    dropRemainingMs = Math.floor(remaining * 1000);
+    return true;
+  }
   if (!drop(game)) return false;
   dropRemainingMs = Math.floor(remaining * 1000);
   track('drop', { trigger: 'gesture', phase: game.phase, turn: turnNumber });
@@ -202,6 +242,12 @@ $('final-leaderboard').addEventListener('click', () => {
 });
 $('final').addEventListener('cancel', event => event.preventDefault());
 $('play').addEventListener('click', () => { $('scene').focus(); play(); });
+$('play-alternate').addEventListener('click', () => {
+  if (shared || run || startingRun || cameraLoading || paused || recovering || document.querySelector('dialog[open]')) return;
+  const url = new URL(location.href);
+  if (dualEnabled) url.searchParams.delete('controls'); else url.searchParams.set('controls', 'dual');
+  url.searchParams.set('start', '1'); location.assign(url);
+});
 $('operator-open').addEventListener('click', openOperator);
 $('pause').addEventListener('click', () => { if (recovering) { beginTurn(); paused = false; } else paused = !paused; $('operator').close(); $('scene').focus(); });
 $('reset').addEventListener('click', () => { if (startingRun) return; if (shared && run) pilot.abandon(run); if (store.active) { store.active.abortedAt = new Date().toISOString(); store.active = null; } run = null; pendingPlayer = null; completedRun = null; recovering = paused = frozen = false; persist(); freshGame(); $('operator').close(); updateUI(); });
@@ -219,15 +265,11 @@ $('new-board').addEventListener('click', async () => {
   try { rotateBoard(store, $('session-name').value); persist(); completedRun = null; renderBoard(); $('operator-message').textContent = 'New leaderboard started. Previous results are preserved.'; }
   catch (error) { $('operator-message').textContent = error.message; }
 });
-$('export').addEventListener('click', () => { if (shared) { window.location.assign('/api/host/export'); return; } let data = JSON.stringify(store, null, 2); if (storageBlocked) { try { data = localStorage.getItem(STORAGE_KEY) || data; } catch { /* In-memory export remains available. */ } } const url = URL.createObjectURL(new Blob([data], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = `cloud-claw-sessions-${new Date().toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
+$('export').addEventListener('click', () => { if (shared) { window.location.assign('/api/host/export'); return; } let data = JSON.stringify(store, null, 2); if (storageBlocked) { try { data = localStorage.getItem(scoreKey) || data; } catch { /* In-memory export remains available. */ } } const url = URL.createObjectURL(new Blob([data], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = `cloud-claw-sessions-${new Date().toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
 $('quality').addEventListener('click', () => { if (!scene) return; performanceGovernor.setMode(scene.lowQuality ? 'full' : 'simple', 'operator'); });
 $('sound').addEventListener('click', () => { if (audio.enabled && !audio.ready) audio.unlock(); else audio.toggle(); });
 document.addEventListener('pointerdown', event => { if (event.target.closest('#sound')) return; audio.unlock(); });
 document.addEventListener('keydown', event => { if (!event.target.closest('#sound')) audio.unlock(); });
-$('sound-volume').addEventListener('input', () => {
-  audio.setVolume(Number($('sound-volume').value) / 100);
-  $('sound-level').textContent = `${Math.round(audio.volume * 100)}%`;
-});
 let feedbackSubmission = null, feedbackContext = null;
 function openFeedback() {
   feedbackContext = { phase: game.phase, turn: Math.min(3, turnNumber) };
@@ -258,7 +300,7 @@ $('feedback-form').addEventListener('submit', async event => {
   setText('feedback-status', result.sent ? 'Thanks. Your feedback is saved.' : 'Feedback was not saved. Please try again.');
   if (result.sent) $('feedback-comment').value = '';
 });
-$('fullscreen').addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { $('hint').textContent = 'Use your browser’s fullscreen command.'; } });
+$('fullscreen').addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { $('status').textContent = 'FULLSCREEN UNAVAILABLE'; } });
 $('camera-open').addEventListener('click', () => $('camera-setup').showModal());
 function reportCameraFailure(code) {
   if (cameraFailureReported) return;
@@ -275,7 +317,9 @@ async function startCamera() {
     if (!cameraControls) {
       const { createCameraControls } = await import('./camera-controls.js');
       cameraControls = await createCameraControls({ video: $('camera-video'), overlay: $('camera-overlay'), select: $('camera-select'),
-        canControl: () => Boolean(menuMode() || (!startingRun && run && game.phase === 'aim' && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]'))),
+        getControlProfile: () => grabEnabled && !menuMode() ? dualEnabled ? 'dual' : 'grab-release' : 'hold-drop',
+        getControlTarget: (pointer, role, origin) => glove.targetAt(pointer, role, origin),
+        canControl: () => Boolean(menuMode() || (!pendingSlam && !startingRun && run && game.phase === 'aim' && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]'))),
         onDrop: () => menuMode() ? handMenu.confirm(menuMode(), cameraControls.feedback) : gestureDrop(),
         // Bounded so a boundary-trembling hand cannot evict funnel-critical
         // events (drop, turn_complete) from the retry queue.
@@ -320,7 +364,7 @@ $('camera-recenter').addEventListener('click', () => { cameraControls?.reset(); 
 window.addEventListener('pagehide', () => { cameraControls?.stop(); void playtest.flush(); });
 window.addEventListener('error', () => track('client_error', { reason: 'runtime' }));
 window.addEventListener('unhandledrejection', () => track('client_error', { reason: 'unhandled' }));
-$('scene').addEventListener('webglcontextlost', event => { event.preventDefault(); fail('The renderer stopped. Reload, then ask your host to resume the interrupted turn.'); });
+$('scene').addEventListener('webglcontextlost', event => { event.preventDefault(); fail('The renderer stopped. Reload to continue.'); });
 function frame(time) {
   if (stopped) return;
   const raw = previous ? (time - previous) / 1000 : 1 / 60, dt = Math.min(raw, MAX_FRAME_DELTA); previous = time;
@@ -332,16 +376,23 @@ function frame(time) {
   const openDialogs = document.querySelectorAll('dialog[open]');
   const aiming = game.phase === 'aim', modal = openDialogs.length > 0;
   const modalBeyondFinal = modal && [...openDialogs].some(dialog => dialog.id !== 'final');
-  const cameraWaiting = aiming && (!cameraControls?.running || cameraControls.waiting);
+  const cameraWaiting = aiming && !pendingSlam && (!cameraControls?.running || cameraControls.waiting);
   // Only explicit operator pause stops a drop already in flight.
-  const blocked = paused || (aiming && (cameraWaiting || modal || document.hidden));
-  movementMusic?.update(aiming && !blocked && !frozen && !document.hidden, dt);
+  const blocked = paused || (aiming && !pendingSlam && (cameraWaiting || modal || document.hidden));
+  movementMusic?.update(aiming && !pendingSlam && !blocked && !frozen && !document.hidden, dt);
   if (paused || modalBeyondFinal || document.hidden) audio.silence();
-  setHidden($('pause-banner'), !paused);
-  setText('pause-banner', 'Paused by host');
   const input = { ...cameraControls?.input || { x: 0, z: 0 } };
   if (!frozen && !blocked && !document.hidden) {
-    if (aiming) {
+    if (pendingSlam) {
+      input.x = input.z = 0;
+      pendingSlam.elapsed += dt;
+      moveCarousel(game, dt);
+      if (pendingSlam.elapsed >= RIGHT_SLAM_MS / 1000) {
+        contactFeedback = pendingSlam.feedback;
+        pendingSlam = null;
+        if (drop(game)) track('drop', { trigger: 'gesture', phase: game.phase, turn: turnNumber });
+      }
+    } else if (aiming) {
       const oldPosition = game.position;
       game.position = move(game.position, input, dt); moveCarousel(game, dt); aligned = aimTarget(game);
       // Actual movement, not hand presence: stay quiet at rest and at the travel limit.
@@ -358,7 +409,8 @@ function frame(time) {
     }
   } else input.x = input.z = 0;
   try {
-    const feedback = cameraControls?.feedback || { kind: 'off', progress: 0, controlEnabled: false };
+    const feedback = pendingSlam ? { ...pendingSlam.feedback, profile: 'dual', kind: 'slamming', slamProgress: pendingSlam.elapsed / (RIGHT_SLAM_MS / 1000), progress: 1, controlEnabled: false } : dualEnabled && contactFeedback && game.phase === 'anticipate' ? { ...contactFeedback, profile: 'dual', kind: 'slamming', slamProgress: 1, progress: 1, controlEnabled: false } : cameraControls?.feedback || { kind: 'off', progress: 0, controlEnabled: false };
+    if (dualEnabled) cueLead = ((feedback.hands?.right?.ready ? 0 : HAND_ACQUIRE_MS) + RIGHT_SLAM_MS) / 1000;
     updateUI(feedback, modal);
     if (feedback.kind !== observedControl) { observedControl = feedback.kind; track('control_state', { state: feedback.kind, phase: game.phase }); }
     if (cameraReadyAt !== null && feedback.kind === 'tracking') { track('time_to_control', { acquisitionMs: Math.min(604800000, performance.now() - cameraReadyAt) }); cameraReadyAt = null; }
@@ -394,14 +446,16 @@ function frame(time) {
         performanceFrames = []; performanceVisibleMs = 0;
       }
     }
-    if (paused || modal || document.hidden) feedback.kind = 'blocked';
-    scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, feedback, Boolean(cameraControls?.running || cameraControls?.starting)); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
+    const sceneFeedback = paused || modal || document.hidden ? { ...feedback, kind: 'blocked' } : feedback;
+    scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, sceneFeedback, Boolean(cameraControls?.running || cameraControls?.starting), { preparing: Boolean(run && !recovering), nextTurnElapsed, machineControls: cabinetEnabled, cueLead }); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
+    glove.update(grabEnabled ? feedback : { ...feedback, pointer: null }, cabinetEnabled && (game.phase === 'aim' || (dualEnabled && contactFeedback && game.phase === 'anticipate')) && !paused && !modal && !frozen && !document.hidden, dt);
     const tagged = game.phase === 'aim' && aligned ? game.toys.find(toy => toy.id === aligned.id) : null;
     const target = tagged ? scene.screenPoint(tagged.x, BED + (tagged.elevation || 0) + .08, tagged.z) : null;
+    const tagOrigin = target ? $('prize-tags').getBoundingClientRect() : null;
     for (const { toy, element } of tags) {
       setHidden(element, !target || aligned.id !== toy.id);
       if (element.hidden) continue;
-      element.style.transform = `translate(${Math.round(target.x)}px, ${Math.round(target.y)}px) translate(-50%, -50%)`;
+      element.style.transform = `translate(${Math.round(target.x - tagOrigin.left)}px, ${Math.round(target.y - tagOrigin.top)}px) translate(-50%, -50%)`;
       element.classList.add('targeted');
       element.textContent = scoreTurn(run?.rules || RULES, toy.id, Math.floor(remaining * 1000));
     }
@@ -412,7 +466,7 @@ function frame(time) {
 // Read-only development diagnostics.
 function snapshot(includeBounds = false) {
   const sorted = [...frames].sort((a, b) => a - b), average = frames.reduce((a, b) => a + b, 0) / (frames.length || 1);
-  return { phase: game.phase, elapsed: game.elapsed, position: { ...game.position }, rounds: game.rounds, event: { run, remaining, turn: turnNumber, paused, board: shared ? pilot.board : currentBoard(store), complete: completedRun, storageError, handCamera: { running: cameraControls?.running || false, waiting: cameraControls?.waiting || false, feedback: cameraControls?.feedback, diagnostic: cameraControls?.diagnostic }, carouselTime: game.carouselTime, cue: carouselCue(game.carouselTime) }, aligned: aligned?.id || null, caught: game.plan?.prize?.id || null, contacts: game.plan?.contacts || null, claw: clawPose(game), stop: game.plan?.stop || null, collection: [...game.collection], reducedMotion: scene?.reducedMotion, camera: scene?.camera.position.toArray(), lowQuality: scene?.lowQuality, joystick: { mode: scene?.joystickHand.mode, visible: scene?.joystickHand.root.visible, progress: scene?.joystickHand.progress }, effects: { holdArc: scene?.holdArc.visible ?? false, burst: scene?.burst.count ?? 0 }, errors: [...errors], render: { calls: scene?.renderer.info.render.calls, triangles: scene?.renderer.info.render.triangles }, performance: { frames: frames.length, averageFps: +(1000 / average).toFixed(1), p95FrameMs: sorted[Math.floor(sorted.length * .95)], framesOver33ms: frames.filter(t => t > 33.4).length }, toys: game.toys.map(toy => ({ id: toy.id, family: toy.family, claimed: toy.claimed, position: scene?.toys.get(toy.id).position.toArray(), scale: scene?.toys.get(toy.id).scale.toArray(), bounds: includeBounds ? scene?.toyBounds(toy.id) : undefined })) };
+  return { phase: game.phase, elapsed: game.elapsed, position: { ...game.position }, rounds: game.rounds, event: { run, remaining, turn: turnNumber, paused, board: shared ? pilot.board : currentBoard(store), complete: completedRun, storageError, handCamera: { running: cameraControls?.running || false, waiting: cameraControls?.waiting || false, feedback: cameraControls?.feedback, diagnostic: cameraControls?.diagnostic }, carouselTime: game.carouselTime, pendingSlam: pendingSlam ? { elapsed: pendingSlam.elapsed } : null, controlProfile: dualEnabled ? 'dual' : grabEnabled ? 'grab-release' : 'hold-drop', cue: carouselCue(game.carouselTime, cueLead) }, aligned: aligned?.id || null, caught: game.plan?.prize?.id || null, contacts: game.plan?.contacts || null, claw: clawPose(game), stop: game.plan?.stop || null, collection: [...game.collection], reducedMotion: scene?.reducedMotion, camera: scene?.camera.position.toArray(), cameraLook: scene?.currentLook.toArray(), lowQuality: scene?.lowQuality, machineControls: cabinetEnabled ? scene?.controlTargets() : null, joystick: { mode: scene?.joystickHand.mode, visible: scene?.joystickHand.root.visible, progress: scene?.joystickHand.progress }, effects: { clawLean: scene?.claw.rotation.toArray().slice(0, 3), fingerRadius: scene?.fingers[0].pad.position.x + .017, burst: scene?.burst.count ?? 0 }, errors: [...errors], render: { calls: scene?.renderer.info.render.calls, triangles: scene?.renderer.info.render.triangles }, performance: { frames: frames.length, averageFps: +(1000 / average).toFixed(1), p95FrameMs: sorted[Math.floor(sorted.length * .95)], framesOver33ms: frames.filter(t => t > 33.4).length }, toys: game.toys.map(toy => ({ id: toy.id, family: toy.family, claimed: toy.claimed, position: scene?.toys.get(toy.id).position.toArray(), scale: scene?.toys.get(toy.id).scale.toArray(), bounds: includeBounds ? scene?.toyBounds(toy.id) : undefined })) };
 }
 
 function updateSavedRank(saved) {
@@ -462,8 +516,9 @@ $('shared-start').addEventListener('cancel', event => event.preventDefault());
 const loadingTimeout = setTimeout(() => fail('The arcade took too long to open. Reload the page to try again.'), 15000);
 try {
   await new Promise(resolve => requestAnimationFrame(resolve));
-  scene = new ArcadeScene($('scene'));
+  scene = new ArcadeScene($('scene'), { wideControls: cabinetEnabled && new URLSearchParams(location.search).get('controls') !== 'grab' });
   scene.groundToys(game);
+  restoreTrophies();
   persist(); renderBoard();
   scene.update(game, 1 / 60, 0, { x: 0, z: 0 }, null);
   clearTimeout(loadingTimeout); clearTimeout(window.__arcadeBootTimer); document.documentElement.dataset.arcadeReady = 'true'; $('loading').hidden = true;
@@ -474,5 +529,10 @@ try {
   }
   requestAnimationFrame(frame);
   syncSoundUI();
-  if (!manualSetup && !frozen) { audio.unlock(); void startCamera(); }
+  const autoPlay = new URLSearchParams(location.search).get('start') === '1';
+  if (autoPlay) { const url = new URL(location.href); url.searchParams.delete('start'); history.replaceState(null, '', url); }
+  if ((!manualSetup || autoPlay) && !frozen) {
+    audio.unlock();
+    void startCamera().then(() => { if (autoPlay && cameraControls?.running && !run && !document.querySelector('dialog[open]')) openRegistration(); });
+  }
 } catch (error) { clearTimeout(loadingTimeout); fail('The 3D renderer could not start. Try reloading in Chrome or Edge with WebGL enabled. All artwork is generated locally; no additional model downloads are required.', error); }

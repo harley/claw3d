@@ -16,11 +16,12 @@ try {
     const T = await import('/node_modules/three/build/three.module.js');
     window.checkStarTag = state => {
       const position = state.toys.find(toy => toy.id === 'sprout').position;
-      const camera = new T.PerspectiveCamera(35, innerWidth / innerHeight, .1, 70);
-      camera.position.fromArray(state.camera); camera.lookAt(-.4, 2.25, 0); camera.updateMatrixWorld();
+      const viewport = document.querySelector('#scene').getBoundingClientRect();
+      const camera = new T.PerspectiveCamera(35, viewport.width / viewport.height, .1, 70);
+      camera.position.fromArray(state.camera); camera.lookAt(...state.cameraLook); camera.updateMatrixWorld();
       const point = new T.Vector3(position[0], position[1] + .08, position[2]).project(camera);
       const tag = document.querySelector('.prize-tag[data-points="200"]'), rect = tag.getBoundingClientRect();
-      return { visible: !tag.hidden, distance: Math.hypot(rect.x + rect.width / 2 - (point.x + 1) / 2 * innerWidth, rect.y + rect.height / 2 - (1 - point.y) / 2 * innerHeight) };
+      return { visible: !tag.hidden, distance: Math.hypot(rect.x + rect.width / 2 - (viewport.x + (point.x + 1) / 2 * viewport.width), rect.y + rect.height / 2 - (viewport.y + (1 - point.y) / 2 * viewport.height)) };
     };
   });
   const snap = () => page.evaluate(() => window.__littleCloud.snapshot());

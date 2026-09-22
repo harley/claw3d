@@ -1,6 +1,9 @@
+import { handCameraGuide, drawHandCameraGuide } from './hand-camera-guide.js';
 import { pinchRatio, joystickAxis, matchHand } from './mechanics.js';
 import { clamp } from './arcade-mechanics.js';
 import {FistDrop,fistEvidence} from './fist.js';
+import { DualHandControls } from './dual-hand-controls.js';
+import { GrabRelease } from './grab-release.js';
 import { OneEuroPoint } from './one-euro.js';
 
 export const CAPTURE_MAX_AGE = 300;
@@ -9,8 +12,8 @@ export const OWNER_LOSS_GRACE = 650;
 const LINKS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 
 export class HandController {
-  constructor({ video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic = () => {}, onGesture }) {
-    Object.assign(this, { video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic, onGesture });
+  constructor({ video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic = () => {}, onGesture, getControlProfile = () => 'hold-drop', getControlTarget = () => ({}) }) {
+    Object.assign(this, { video, overlay, select, onState, onInput, onStart, onDrop, getPhase, onDiagnostic, onGesture, getControlProfile, getControlTarget });
     this.running = false;
     this.starting = false;
     this.generation = 0;
@@ -31,11 +34,15 @@ export class HandController {
   resetOwner() {
     this.fist?.reset('blocked'); // a discarded mid-hold still reports its cancellation
     this.fist = new FistDrop((name, cause) => this.onGesture?.(name, cause));
+    this.grab = new GrabRelease();
+    this.dual = new DualHandControls();
     this.pointer = new OneEuroPoint();
     this.owner = null; this.neutral = null; this.candidate = null;
     this.pinchSince = 0; this.lostSince = 0;
     this.input = { x: 0, z: 0 };
     this.onInput?.(this.input);
+    this.dualFeedback = null;
+    if (this.controlProfile === 'dual' && this.overlay) this.draw([], null);
   }
 
   async listCameras(selected) {
@@ -280,7 +287,9 @@ export class HandController {
       this.lastActivity = receivedAt; this.lastResponseCapture = capturedAt;
     }
     if (reason) {
-      this.fist.reset('stale'); this.onInput({ x: 0, z: 0 });
+      this.fist.reset('stale'); this.grab.reset(); this.dual.reset(); this.onInput({ x: 0, z: 0 });
+      this.dualFeedback = null;
+      if (this.controlProfile === 'dual') this.draw([], null);
       if (reason === 'over age') this.delayTracking();
       return false;
     }
@@ -291,35 +300,59 @@ export class HandController {
   }
 
   delayTracking() {
-    this.fist.reset('stale');
+    this.fist.reset('stale'); this.grab.reset(); this.dual.reset();
     // Reacquisition after delayed results must seed a fresh neutral, just like
     // a missing hand. Otherwise its changed position immediately steers.
     this.neutral = null; this.input = { x: 0, z: 0 };
     this.onInput(this.input);
+    this.dualFeedback = null;
+    if (this.controlProfile === 'dual') this.draw([], null);
     this.onState({ kind: 'delayed', message: 'Tracking is slow. Keep your hand steady while it catches up.', progress: 0 });
   }
 
-  // The one gesture profile: an open hand steers, a held fist drops.
+  // Menus retain hold-to-select. Gameplay may opt into the local grab profile.
   handle(result, now) {
     const aspect = this.video?.videoWidth && this.video?.videoHeight ? this.video.videoWidth / this.video.videoHeight : 1;
     const hands = result.landmarks.map((landmarks, i) => ({ landmarks,
       fist: fistEvidence(landmarks,result.gestures[i]?.[0]?.categoryName,result.gestures[i]?.[0]?.score,aspect),
       center: { x: 1 - (landmarks[0].x + landmarks[9].x) / 2, y: (landmarks[0].y + landmarks[9].y) / 2 },
       handedness: result.handedness[i]?.[0]?.categoryName,
+      // Tasks GestureRecognizer labels the anatomical hand on raw frames.
+      // Mirror cursor x above, not identity; the legacy Hands API differed.
+      physicalHand: result.handedness[i]?.[0]?.categoryName === 'Left' ? 'left' : result.handedness[i]?.[0]?.categoryName === 'Right' ? 'right' : null,
+      handednessScore: result.handedness[i]?.[0]?.score ?? 0,
       ratio: pinchRatio(landmarks, aspect),
     }));
     this.onDiagnostic?.({ count: hands.length, gesture: result.gestures[0]?.[0]?.categoryName || 'No hand', pinch: hands[0]?.ratio ?? null, milliseconds: performance.now() - now });
     const phase = this.getPhase();
+    const profile = this.getControlProfile?.() || 'hold-drop';
     const acceptsInput = ['idle', 'aim', 'result'].includes(phase);
     // Recognition stays visible during setup and delivery. Only game permission
     // enables actions; a held gesture cannot carry across that boundary.
-    if (this.acceptedInput !== acceptsInput) {
-      this.fist.reset();
+    if (this.acceptedInput !== acceptsInput || this.controlProfile !== profile) {
+      this.fist.reset(); this.grab.reset(); this.dual.reset(); this.controlProfile = profile;
       this.neutral = null; this.input = { x: 0, z: 0 };
       this.acceptedInput = acceptsInput;
     }
+    if (profile === 'dual') {
+      if (!acceptsInput) {
+        this.dual.reset(); this.input = { x: 0, z: 0 }; this.onInput(this.input);
+        this.dualFeedback = { kind: 'blocked', profile, controlEnabled: false, hands: {} };
+      } else {
+        const state = this.dual.update(hands, now, (point, role, origin) => this.getControlTarget?.(point, role, origin) || {});
+        this.input = state.input; this.onInput(this.input);
+        if (state.fired) {
+          const accepted = this.onDrop() !== false;
+          state.kind = accepted ? 'accepted' : 'tracking';
+          if (!accepted) this.dual.right.gesture.reset();
+        }
+        this.dualFeedback = { ...state, profile, handCount: hands.length, controlEnabled: true };
+      }
+      this.onState(this.dualFeedback);
+      this.draw(hands, null); return;
+    }
     const sendInput = input => this.onInput(acceptsInput ? input : { x: 0, z: 0 });
-    const report = state => this.onState({ ...state, handCount: hands.length, controlEnabled: acceptsInput,
+    const report = state => this.onState({ ...state, profile, handCount: hands.length, controlEnabled: acceptsInput,
       pointer: hands.length === 1 && hand && this.owner && ['tracking', 'clenching'].includes(state.kind) ? { ...hand.center } : null });
     let hand;
     if (!this.owner) {
@@ -353,7 +386,7 @@ export class HandController {
     // continuation is still the same spatial track; an extra hand never is.
     if (!hand && hands.length === 1 && Math.hypot(hands[0].center.x-this.owner.x,hands[0].center.y-this.owner.y) < .08) hand = hands[0];
     if (!hand) {
-      this.lostSince ||= now; this.neutral = null; this.fist.reset('hand_lost');
+      this.lostSince ||= now; this.neutral = null; this.fist.reset('hand_lost'); this.grab.reset();
       sendInput({ x: 0, z: 0 });
       report({ kind: 'lost', message: 'Bring one hand back to the same area.' });
       this.draw(hands, null); return;
@@ -361,6 +394,30 @@ export class HandController {
     if (this.lostSince) this.neutral = null;
     this.lostSince = 0;
     this.owner.x = hand.center.x; this.owner.y = hand.center.y;
+    if (phase === 'aim' && profile === 'grab-release') {
+      const target = this.getControlTarget?.(hand.center) || {};
+      const grip = this.grab.update({ ...hand.fist, visible: hands.length === 1,
+        point: hand.center, ...target }, now);
+      this.input = { x: 0, z: 0 };
+      if (grip.grabbed) { this.pointer.reset(); this.neutral = null; }
+      if (grip.steering) {
+        const point = this.pointer.filter(hand.center, now);
+        this.neutral ||= { ...point };
+        this.input = { x: joystickAxis(point.x - this.neutral.x), z: joystickAxis(point.y - this.neutral.y) };
+      } else this.neutral = null;
+      sendInput(this.input);
+      let kind = hands.length !== 1 ? 'lost' : ['grabbing', 'pressing'].includes(grip.stage) ? 'clenching' : 'tracking';
+      if (grip.fired) {
+        const accepted = this.onDrop() !== false;
+        if (!accepted) { this.grab.reset(); grip.stage = 'seeking'; grip.armed = false; }
+        kind = accepted ? 'accepted' : 'tracking';
+      }
+      // Pose drives artwork only; it never contributes to gesture timing.
+      report({ kind, progress: grip.progress, grab: grip, target: target.overDrop ? 'drop' : target.overTarget ? 'stick' : '',
+        closed: hand.fist.closed, open: hand.fist.open,
+        message: grip.stage === 'gripped' ? 'Move your fist to steer. Open to let go.' : 'Open your hand, reach the joystick and clench to grab.' });
+      this.draw(hands, hand); return;
+    }
     if (phase === 'aim') {
       const fist=this.fist.update({...hand.fist,visible:hands.length===1},now);
       if(fist.active){
@@ -396,6 +453,13 @@ export class HandController {
     const ctx = this.overlay.getContext('2d');
     if (this.overlay.width !== 640 || this.overlay.height !== height) { this.overlay.width = 640; this.overlay.height = height; }
     else ctx.clearRect(0, 0, 640, height);
+    if (this.controlProfile === 'dual') {
+      const guides = ['left', 'right'].map(role => handCameraGuide(role, this.dualFeedback, this.dual[role].origin));
+      drawHandCameraGuide(ctx, 640, height, guides);
+      for (const guide of guides) {
+        this.overlay.dataset[guide.role] = guide.state;
+      }
+    } else { delete this.overlay.dataset.left; delete this.overlay.dataset.right; }
     if (this.neutral && active) {
       ctx.strokeStyle = '#abd3ff'; ctx.lineWidth = 2;
       const x = this.neutral.x * 640, y = this.neutral.y * height;
@@ -403,13 +467,23 @@ export class HandController {
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(active.center.x * 640, active.center.y * height); ctx.stroke();
     }
     for (const hand of hands) {
+      const roleView = this.dualFeedback?.hands?.[hand.physicalHand];
+      const roleGuide = this.controlProfile === 'dual' && handCameraGuide(hand.physicalHand === 'left' ? 'left' : 'right', this.dualFeedback);
+      const recognized = roleGuide && roleView?.ready && !roleView.outside && roleGuide.state !== 'inactive' &&
+        hand.handednessScore >= .75 && Math.hypot(hand.center.x - roleView.pointer.x, hand.center.y - roleView.pointer.y) < .001;
+      ctx.globalAlpha = this.controlProfile === 'dual' && !recognized ? .28 : 1;
+      if (this.controlProfile === 'dual' && hand.physicalHand && hand.handednessScore >= .75) {
+        ctx.fillStyle = recognized ? roleGuide.color : '#a2aab6'; ctx.font = 'bold 24px sans-serif';
+        ctx.fillText(hand.physicalHand === 'left' ? 'L' : 'R', hand.center.x * 640 + 14, hand.center.y * height);
+      }
       if (hand === active) { ctx.fillStyle = '#66ffb3'; ctx.font = 'bold 18px sans-serif'; ctx.fillText('YOU', hand.center.x * 640 + 14, hand.center.y * height); }
-      ctx.strokeStyle = hand === active ? '#d0ed92' : '#faf4dc'; ctx.fillStyle = '#ec805c'; ctx.lineWidth = 2;
+      ctx.strokeStyle = recognized ? roleGuide.color : hand === active ? '#d0ed92' : '#faf4dc'; ctx.fillStyle = recognized ? roleGuide.color : '#ec805c'; ctx.lineWidth = 2;
       for (const [a,b] of LINKS) {
         ctx.beginPath(); ctx.moveTo((1-hand.landmarks[a].x)*640,hand.landmarks[a].y*height);
         ctx.lineTo((1-hand.landmarks[b].x)*640,hand.landmarks[b].y*height); ctx.stroke();
       }
       for (const p of hand.landmarks) { ctx.beginPath(); ctx.arc((1-p.x)*640,p.y*height,3,0,Math.PI*2); ctx.fill(); }
     }
+    ctx.globalAlpha = 1;
   }
 }

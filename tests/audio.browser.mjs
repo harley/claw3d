@@ -28,23 +28,19 @@ try {
     };
   });
   const open = async () => { await page.goto('http://127.0.0.1:4196/?setup=manual'); await page.waitForFunction(() => window.__littleCloud); };
-  const volume = value => page.locator('#sound-volume').evaluate((input, value) => { input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); }, value);
   const start = async () => {
     await page.locator('#play').click(); await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running);
     await page.locator('#play').click(); await page.locator('#name').press('Enter'); await assertScoredStart(page);
   };
   const starNotes = () => page.evaluate(() => window.audioCheck.notes.filter(n => Math.abs(n.stops[0] - n.start - .09) < .0001));
-  await open(); await volume('25');
-  assert.equal(await page.evaluate(() => window.audioCheck.contexts), 0, 'volume cannot activate audio');
+  await open(); assert.equal(await page.locator('#sound-volume').count(), 0);
+  assert.equal(await page.evaluate(() => window.audioCheck.contexts), 0, 'loading with manual setup does not activate audio');
   await page.locator('#sound').click();
-  assert.equal(await page.evaluate(() => window.audioCheck.gains[0].scheduledLevel), .25);
+  assert.equal(await page.evaluate(() => window.audioCheck.gains[0].scheduledLevel), .5);
   await page.evaluate(() => { document.getElementById('sound').click(); });
   await page.waitForFunction(() => window.audioCheck.gains[0].scheduledLevel === 0);
   assert.ok(await page.evaluate(() => window.audioCheck.notes.every(n => n.stops.length === 2)), 'mute cancels scheduled notes');
-  await page.locator('#sound').click(); await volume('0');
-  assert.equal(await page.locator('#sound').textContent(), 'MUTED');
-  await page.waitForFunction(() => window.audioCheck.gains[0].scheduledLevel === 0);
-  await volume('50'); await start();
+  await page.locator('#sound').click(); await start();
   const motorCount = () => page.evaluate(() => window.audioCheck.notes.filter(n => n.frequency === 130).length);
   await page.waitForTimeout(250); assert.equal(await motorCount(), 0, 'hand presence alone makes no movement sound');
   await cameraInput(page, { x: 1, z: 0 }); await page.waitForTimeout(450);
@@ -125,5 +121,5 @@ try {
   await page.waitForFunction(() => document.getElementById('sound').textContent === 'SOUND ON');
   assert.deepEqual(errors, []);
   await page.setViewportSize({ width: 390, height: 844 }); await page.screenshot({ path: '.screenshots/audio-mobile.png' });
-  console.log('PASS explicit activation, volume, queued-note mute, visible star cues, dialog/pause/hand-loss silence and audio refusal');
+  console.log('PASS explicit activation, device volume without slider, queued-note mute, visible star cues, dialog/pause/hand-loss silence and audio refusal');
 } finally { await browser.close(); }

@@ -1,5 +1,5 @@
 // Lazy camera adapter: the event state machine owns registration and turns.
-export async function createCameraControls({ video, overlay, select, onChange, canControl, onDrop, onGesture }) {
+export async function createCameraControls({ video, overlay, select, onChange, canControl, onDrop, onGesture, getControlProfile, getControlTarget }) {
   const { HandController } = await import('./vision.js');
   let input = { x: 0, z: 0 }, state = { kind: 'off', message: 'Start the camera to play' }, at = 0;
   let diagnostic = {};
@@ -19,7 +19,7 @@ export async function createCameraControls({ video, overlay, select, onChange, c
       if (import.meta.env?.DEV) diagnostic = { ...diagnostic, ...next };
       record(stats, next); record(adaptation, next);
     },
-    onGesture,
+    onGesture, getControlProfile, getControlTarget,
     onStart: () => {}, // A gesture must never register a player or advance a turn.
     onDrop: () => canControl() && onDrop() === true,
     onInput: next => { input = next; }, onState: notify,
