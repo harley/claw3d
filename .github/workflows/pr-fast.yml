@@ -40,6 +40,8 @@ jobs:
 
   unit:
     name: Unit tests and build (Linux)
+    # A title or description edit re-runs only the title check; a skipped job still satisfies the required check.
+    if: github.event_name != 'pull_request' || github.event.action != 'edited'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

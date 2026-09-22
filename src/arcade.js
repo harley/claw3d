@@ -60,6 +60,15 @@ let performanceFrames = [], performanceVisibleMs = 0, cameraReadyAt = null;
 let adaptationFrames = [], adaptationVisibleMs = 0;
 let holdSignalTurn = -1, holdSignalCount = 0;
 let nextTurnElapsed = 0, dropRemainingMs = 0, pendingSlam = null, contactFeedback = null;
+// Hit-stop: the world holds for a beat when the fingers meet the toy. Real time, not simulation time.
+const HIT_STOP_SECONDS = .08; let hitStop = 0;
+function showScorePop(points) {
+  if (!scene || !run) return;
+  const pose = clawPose(game), at = scene.screenPoint(pose.x, pose.y - .3, pose.z), origin = $('prize-tags').getBoundingClientRect();
+  const pop = document.createElement('span'); pop.className = 'score-pop'; pop.textContent = `+${points}`;
+  pop.style.transform = `translate(${Math.round(at.x - origin.left)}px, ${Math.round(at.y - origin.top)}px) translate(-50%, -50%)`;
+  $('prize-tags').append(pop); setTimeout(() => pop.remove(), 1400);
+}
 let cueLead = dualEnabled ? (HAND_ACQUIRE_MS + RIGHT_SLAM_MS) / 1000 : grabEnabled ? PRESS_MS / 1000 : holdMs ? holdMs / 1000 : undefined;
 const performanceGovernor = new PerformanceGovernor({ onChange: (mode, source) => {
   scene?.setQuality(mode === 'simple');
@@ -102,9 +111,9 @@ function phaseSound(phase, modal) {
   if (phase === lastSoundPhase) return;
   lastSoundPhase = phase;
   if (paused || document.hidden || modal) return;
-  if (phase === 'anticipate') { audio.note(880, .22, 0, 'square', 110); audio.fanfare('drop'); }
+  if (phase === 'anticipate') { audio.note(95, .2, 0, 'sine', 38, .06); audio.note(880, .22, 0, 'square', 110); audio.fanfare('drop'); }
   else if (phase === 'descend') [360, 280, 200].forEach((f, i) => audio.note(f, .1, i * .09, 'square', f / 2));
-  else if (phase === 'grip') { audio.note(120, .08, 0, 'square', 60); audio.note(180, .08, .09, 'square', 90); }
+  else if (phase === 'grip') { audio.note(64, .14, 0, 'triangle', 42, .05); audio.note(120, .08, 0, 'square', 60); audio.note(180, .08, .09, 'square', 90); }
   else if (phase === 'lift') {
     if (game.plan?.prize) [440, 554, 660].forEach((f, i) => audio.note(f, .13, i * .1, 'square', f * 1.5));
     else { audio.note(240, .16, 0, 'sawtooth', 180); audio.note(160, .2, .13, 'triangle', 65); }
@@ -411,7 +420,12 @@ function frame(time) {
       input.x = input.z = 0;
       if (game.phase === 'idle') moveCarousel(game, dt);
       if (game.phase === 'result' && run && !recovering && !modal) { homeClaw(game, dt); nextTurnElapsed += dt; if (nextTurnElapsed >= nextTurnSeconds(Boolean(game.plan?.prize))) beginTurn(); }
-      const before = game.phase; advance(game, dt); if (game.phase === 'result' && before !== 'result') finishTurn();
+      const before = game.phase;
+      if (hitStop > 0) hitStop -= dt;
+      advance(game, hitStop > 0 ? 0 : dt);
+      if (before === 'descend' && game.phase === 'grip' && !scene.reducedMotion) hitStop = HIT_STOP_SECONDS;
+      if (before !== 'lift' && game.phase === 'lift' && game.plan?.prize) showScorePop(scoreTurn(run?.rules || RULES, game.plan.prize.id, dropRemainingMs));
+      if (game.phase === 'result' && before !== 'result') finishTurn();
     }
   } else input.x = input.z = 0;
   try {

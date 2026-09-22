@@ -116,7 +116,7 @@ export class HandController {
       stream.getVideoTracks()[0]?.addEventListener('ended', () => {
         if (generation === this.generation) this.fail(new Error('Camera disconnected. Reconnect it, then start again.'), 'camera_disconnected');
       }, { once: true });
-      this.running = true; this.starting = false; this.lastFrame = -1; this.busy = false;
+      this.running = true; this.starting = false; this.lastFrame = -1; this.busy = false; this.lastSent = undefined; this.lastSupervise = undefined;
       this.lastResult = performance.now(); this.lastActivity = this.lastResult; this.lastCapture = -Infinity; this.lastResponseCapture = -Infinity; this.lastFreshReceipt = this.lastResult;
       await this.listCameras(stream.getVideoTracks()[0]?.getSettings().deviceId);
       if (generation !== this.generation || !this.running) return;
@@ -189,7 +189,13 @@ export class HandController {
       if (now - (this.lastFreshReceipt ?? this.lastResult) > CAPTURE_MAX_AGE) this.delayTracking();
       if (now - this.lastResult > OWNER_LOSS_GRACE) this.resetOwner();
     }
-    if (now - (this.lastActivity ?? this.lastResult) > 7000) { this.fail(new Error('Hand tracking stopped responding. Start the camera again.'), 'worker_timeout'); return false; }
+    // Liveness is judged on a frame that was sent and never answered. A stalled
+    // main thread (a material recompile, a tab pause) sent nothing meanwhile, so a
+    // long gap between our own ticks resets the clock instead of blaming the worker.
+    if (this.lastSupervise !== undefined && now - this.lastSupervise > 1000) { this.lastSent = now; this.lastActivity = now; }
+    this.lastSupervise = now;
+    const asked = this.lastSent ?? this.lastActivity ?? this.lastResult;
+    if (this.busy && now - asked > 7000) { this.fail(new Error('Hand tracking stopped responding. Start the camera again.'), 'worker_timeout'); return false; }
     return true;
   }
 
@@ -201,6 +207,7 @@ export class HandController {
     if (this.busy || this.video.readyState < 2 || this.video.currentTime === this.lastFrame) return;
     this.busy = true; this.lastFrame = this.video.currentTime;
     const generation = this.generation;
+    this.lastSent = now;
     if (this.worker.local) {
       this.worker.postMessage({ type: 'frame', video: this.video, now });
       return;
@@ -273,8 +280,8 @@ export class HandController {
       try { ({ value: frame } = await reader.read()); } catch { /* cancelled or track ended */ }
       if (!frame) return;
       if (!this.running || generation !== this.generation || this.busy || document.hidden) { frame.close(); continue; }
-      this.busy = true;
-      this.worker.postMessage({ type: 'frame', frame, now: performance.now() }, [frame]);
+      this.busy = true; this.lastSent = performance.now();
+      this.worker.postMessage({ type: 'frame', frame, now: this.lastSent }, [frame]);
     }
   }
 

@@ -143,7 +143,7 @@ test('continuously late results do not masquerade as a stopped camera or control
     const lastActivity=c.lastActivity;
     assert.equal(c.acceptResult({},1000,1,12000),false);
     assert.equal(c.lastActivity,lastActivity,'replayed results cannot keep the worker alive');
-    await c.frame(lastActivity+7001);assert.equal(failed,1,'a genuinely silent worker still stops');assert.equal(failureCode,'worker_timeout');
+    for(let t=lastActivity+65;t<=lastActivity+7001;t+=65)await c.frame(t);assert.equal(failed,1,'a genuinely silent worker still stops');assert.equal(failureCode,'worker_timeout');
   } finally {globalThis.document=originalDocument;}
 });
 
@@ -341,4 +341,22 @@ test('absolute steering maps the predicted hand offset onto the bed and carries 
   const relative = fixture();
   relative.setPhase('aim'); relative.frame([hand(.5)], 10); relative.frame([hand(.59)], 6);
   assert.equal(relative.read().input.target, undefined, 'the default profile never publishes a target');
+});
+
+test('a stalled main thread never counts against the worker; a frame left unanswered for 7 s still does', () => {
+  const originalDocument = globalThis.document; globalThis.document = { hidden: false };
+  const f = fixture(), c = f.controller; let failed = 0;
+  Object.assign(c, { running: true, busy: true, generation: 1, lastResult: 1000, lastActivity: 1000, lastSent: 1000, fail: () => { failed++; } });
+  c.supervise(1065);
+  // The tab froze for six seconds (material recompile): nothing was sent, so nothing is owed.
+  c.supervise(7100); assert.equal(failed, 0, 'a tick gap resets liveness');
+  for (let t = 7165; t < 14000; t += 65) c.supervise(t);
+  assert.equal(failed, 0, 'seven seconds since the stall is not yet a timeout');
+  for (let t = 14000; t < 14300; t += 65) c.supervise(t);
+  assert.equal(failed, 1, 'a frame in flight with no answer for 7 s of live ticks stops the camera');
+  const idle = fixture(), d = idle.controller; let idleFailed = 0;
+  Object.assign(d, { running: true, busy: false, generation: 1, lastResult: 1000, lastActivity: 1000, lastSent: 1000, fail: () => { idleFailed++; } });
+  for (let t = 1000; t < 20000; t += 65) d.supervise(t);
+  assert.equal(idleFailed, 0, 'with nothing in flight the worker owes nothing');
+  globalThis.document = originalDocument;
 });
