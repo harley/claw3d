@@ -5,7 +5,7 @@ import { HandController } from '../vision.js';
 export class GlideCamera extends HandController {
   constructor({ video, overlay, select, onEvidence, onStatus }) {
     let capturedAt = null;
-    super({ video, overlay, select, maxHands: 1, getPhase: () => 'recognizing',
+    super({ video, overlay, select, maxHands: 2, getPhase: () => 'recognizing',
       onInput: () => {}, onStart: () => {}, onDrop: () => false,
       onState: state => {
         onStatus(state);

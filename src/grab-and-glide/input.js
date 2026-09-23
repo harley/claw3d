@@ -4,8 +4,8 @@ import { RULES } from './game.js';
 // Timestamped recognition evidence is consumed separately from game outcomes.
 export class GlideInput {
   constructor(game, options = {}) { this.game = game; this.rules = { ...RULES, ...options }; this.filter = new OneEuroPoint(); this.reset(); }
-  reset() { this.lastAt = null; this.valid = false; this.armed = false; this.pending = null; this.pose = null; this.offset = { x: 0, y: 0 }; this.filter.reset(); }
-  lose() { this.valid = false; this.armed = false; this.pending = null; this.pose = null; this.filter.reset(); }
+  reset() { this.lastAt = null; this.valid = false; this.armed = false; this.pending = null; this.uncertainAt = null; this.pose = null; this.offset = { x: 0, y: 0 }; this.filter.reset(); }
+  lose() { this.valid = false; this.armed = false; this.pending = null; this.uncertainAt = null; this.pose = null; this.filter.reset(); }
   confirm(kind, at, duration) {
     if (this.pending?.kind !== kind) this.pending = { kind, start: at };
     return at - this.pending.start >= duration;
@@ -14,11 +14,25 @@ export class GlideInput {
     const { at, point, open, closed, valid } = evidence;
     const previousAt = this.lastAt;
     if (!valid || !Number.isFinite(at) || at > now || now - at > this.rules.maxGapMs ||
-        (previousAt !== null && at <= previousAt) || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y) || open === closed) {
+        (previousAt !== null && at <= previousAt) || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y) || (open && closed)) {
       this.lose(); return;
     }
     if (previousAt !== null && at - previousAt > this.rules.maxGapMs) this.lose();
-    this.lastAt = at; this.valid = true;
+    this.lastAt = at;
+    // Intermediate hand shapes are not loss of ownership. Brief uncertainty
+    // freezes pose/time and cancels confirmation without making a normal
+    // open-to-fist transition impossible. Sustained uncertainty must rearm.
+    if (!open && !closed) {
+      this.valid = false; this.pending = null; this.uncertainAt ??= at;
+      if (at - this.uncertainAt > this.rules.uncertainMs) this.lose();
+      return;
+    }
+    if (this.uncertainAt !== null && at - this.uncertainAt > this.rules.uncertainMs) this.lose();
+    if (this.uncertainAt !== null && this.armed) {
+      this.offset = { x: this.game.position.x - (point.x - .5) * 16, y: this.game.position.y - (.5 - point.y) * 10 };
+      this.filter.reset();
+    }
+    this.uncertainAt = null; this.valid = true;
     if (!['position', 'carry'].includes(this.game.phase)) { this.lose(); return; }
     const raw = { x: (point.x - .5) * 16, y: (.5 - point.y) * 10 };
     if (!this.armed) {

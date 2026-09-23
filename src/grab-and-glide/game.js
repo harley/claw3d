@@ -1,5 +1,5 @@
 // All outcomes use the same screen-plane geometry as the renderer. No scene or network dependencies.
-export const RULES = Object.freeze({ seconds: 15, attempts: 3, closeMs: 180, openMs: 220, rearmMs: 260, maxGapMs: 300 });
+export const RULES = Object.freeze({ seconds: 15, attempts: 3, closeMs: 180, openMs: 220, rearmMs: 260, maxGapMs: 300, uncertainMs: 180 });
 export const TRAY = Object.freeze({ x: 3.85, y: -.8, halfX: 1.05, halfY: 1.3 });
 export const GATE = Object.freeze({ x: .1, y: 1.7, halfX: .22, gap: .82, thickness: .18 });
 export const TOYS = Object.freeze([
@@ -8,16 +8,24 @@ export const TOYS = Object.freeze([
   { id: 'star', name: 'Little star', x: -3.65, y: -1.85, radius: .32, aperture: .46, value: 200, color: '#ffc65c' },
 ]);
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
-// Swept circle against each visible rail, conservatively expanded at its corners.
+// Exact swept circle against each visible rectangular rail, including corners.
 function intersects(a, b, box, radius) {
-  let lo = 0, hi = 1;
-  for (const axis of ['x', 'y']) {
-    const d = b[axis] - a[axis], min = box[axis] - box[axis === 'x' ? 'halfX' : 'halfY'] - radius;
-    const max = box[axis] + box[axis === 'x' ? 'halfX' : 'halfY'] + radius;
-    if (Math.abs(d) < 1e-9) { if (a[axis] < min || a[axis] > max) return false; }
-    else { const t1 = (min - a[axis]) / d, t2 = (max - a[axis]) / d; lo = Math.max(lo, Math.min(t1, t2)); hi = Math.min(hi, Math.max(t1, t2)); }
+  const minX=box.x-box.halfX,maxX=box.x+box.halfX,minY=box.y-box.halfY,maxY=box.y+box.halfY;
+  let lo=0,hi=1;
+  for(const [axis,min,max] of [['x',minX,maxX],['y',minY,maxY]]) {
+    const d=b[axis]-a[axis];
+    if(Math.abs(d)<1e-9){if(a[axis]<min||a[axis]>max)hi=-1;}
+    else{const t1=(min-a[axis])/d,t2=(max-a[axis])/d;lo=Math.max(lo,Math.min(t1,t2));hi=Math.min(hi,Math.max(t1,t2));}
   }
-  return lo <= hi;
+  if(lo<=hi)return true;
+  const pointToBox=p=>Math.hypot(p.x-clamp(p.x,minX,maxX),p.y-clamp(p.y,minY,maxY));
+  if(Math.min(pointToBox(a),pointToBox(b))<=radius)return true;
+  const dx=b.x-a.x,dy=b.y-a.y,length2=dx*dx+dy*dy;
+  for(const x of [minX,maxX])for(const y of [minY,maxY]) {
+    const t=length2?clamp(((x-a.x)*dx+(y-a.y)*dy)/length2,0,1):0;
+    if(Math.hypot(x-a.x-t*dx,y-a.y-t*dy)<=radius)return true;
+  }
+  return false;
 }
 export class GlideGame {
   constructor() { this.reset(); }
