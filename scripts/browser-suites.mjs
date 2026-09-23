@@ -2,6 +2,7 @@ export const browserSuites = Object.freeze([
   'play-modes',
   'dual-hand-controls',
   'grab-release',
+  'grab-and-glide',
   'hand-menu',
   'arcade-presentation',
   'audio',
@@ -19,7 +20,7 @@ export const browserSuites = Object.freeze([
 // those suites do not print completion markers. Each runner stays sequential.
 export const browserShards = Object.freeze({
   'shard-1': Object.freeze(['play-modes', 'dual-hand-controls', 'audio']),
-  'shard-2': Object.freeze(['grab-release', 'camera', 'gesture-feedback']),
+  'shard-2': Object.freeze(['grab-release', 'grab-and-glide', 'camera', 'gesture-feedback']),
   'shard-3': Object.freeze(['hand-menu', 'arcade-presentation', 'arcade']),
   'shard-4': Object.freeze(['movement-music', 'carousel', 'contact', 'delivery-clearance']),
 });

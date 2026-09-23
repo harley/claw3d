@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Grab & Glide · Cloud Claw experiment</title></head>
+<body>
+  <header><div class="brand">CoderPush <span>×</span> AWS</div><a href="/">Cloud Claw baseline ↗</a><button id="sound" aria-pressed="true">Sound on</button></header>
+  <main>
+    <div class="title-row"><div><p class="eyebrow">A CLOUD CLAW EXPERIMENT</p><h1>Grab <em>&</em> Glide</h1></div><div class="stats"><div>ATTEMPT<strong id="attempt">1 <small>/ 3</small></strong></div><div>TIME<strong id="timer">15<small>s</small></strong></div><div>SCORE<strong id="score">0</strong></div></div></div>
+    <section class="cabinet" aria-label="Grab and Glide play area"><canvas id="scene" aria-label="Three toys, an optional gate and a trophy tray"></canvas>
+      <div id="cue" role="status" aria-live="polite"></div>
+      <div id="menu" class="veil"><div class="menu-card"><p class="eyebrow">YOUR HAND. YOUR CLAW.</p><h2>Make the whole journey.</h2><p>Close to grab.<br>Open over the tray.</p><button id="play" class="primary">Play with camera <span>→</span></button><p class="small">One hand · Three attempts · 15 seconds each</p><p id="pointer-note" hidden>Development pointer: move, hold mouse to grab, let go to release.</p></div></div>
+      <div id="result" class="veil" hidden><div class="menu-card"><p class="eyebrow">THREE ATTEMPTS. ALL YOURS.</p><h2 id="result-score">0 points</h2><div id="results"></div><button id="replay" class="primary">Play again <span>↻</span></button></div></div>
+    </section>
+    <footer><div><p id="instruction">Close to grab. Open over the tray.</p><p class="small" id="local">Local experiment · No shared scores</p><details><summary>Build & controls</summary><p id="build"></p><p>Hold an open hand still to begin. Either hand works. If tracking pauses while holding a toy, show an open hand, then close to resume. Move back toward the camera centre if you reach the edge.</p><label><input id="reduce-motion" type="checkbox"> Reduce motion</label></details></div>
+    <div class="camera-panel"><div class="camera-image"><video id="camera-video" muted playsinline></video><canvas id="camera-overlay"></canvas></div><div><p id="camera-status">Camera off</p><select id="camera-select" aria-label="Camera"></select><button id="camera-restart">Start camera</button></div></div></footer>
+  </main><script type="module" src="/src/grab-and-glide/main.js"></script>
+</body></html>

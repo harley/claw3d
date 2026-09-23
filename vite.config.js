@@ -18,7 +18,7 @@ export default defineConfig(() => {
   return {
     // Prebundle the lazy camera dependency before play; discovering it at
     // camera startup otherwise reloads the page and interrupts acquisition.
-    build: { outDir: process.env.CLAW_BUILD_OUT_DIR || 'dist' },
+    build: { outDir: process.env.CLAW_BUILD_OUT_DIR || 'dist', rolldownOptions: { input: { main: 'index.html', grabAndGlide: 'grab-and-glide.html' } } },
     optimizeDeps: { include: ['@mediapipe/tasks-vision'] },
     define: { __BUILD_INFO__: JSON.stringify(build) },
     plugins: [{
