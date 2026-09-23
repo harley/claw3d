@@ -180,3 +180,88 @@ for (const acquired of [false, true]) test(`${acquired ? 'acquired' : 'fresh'} r
   for (let i=0;i<110;i++) advance(game,.01);
   assert.equal(game.plan.prize?.id, CAROUSEL.id);
 });
+
+test('brief missing or low-confidence left evidence stops actions then recovers the held grip', () => {
+  for (const uncertain of [[], [{ ...hand('left', 'closed'), handednessScore: .4 }]]) {
+    const f = fixture(); f.arm();
+    const moved = hand('left', 'closed', .30, .70);
+    const before = f.step([moved, hand('right', 'open', .65, .60)]);
+    assert.notDeepEqual(before.input, { x: 0, z: 0 });
+    const lost = f.step([...uncertain, hand('right', 'open', .65, .50)]);
+    assert.deepEqual(lost.input, { x: 0, z: 0 });
+    assert.equal(lost.dropEnabled, false); assert.equal(lost.fired, false);
+    assert.equal(lost.hands.left.ready, false);
+    const recovered = f.step([moved, hand('right', 'open', .65, .50)]);
+    assert.equal(recovered.hands.left.grab.stage, 'gripped');
+    assert.equal(recovered.dropEnabled, true);
+    assert.deepEqual(recovered.input, { x: 0, z: 0 }, 'recovery recentres steering');
+    assert.equal(recovered.fired, false, 'a raise during the interruption is not banked');
+    assert.ok(f.step([hand('left', 'closed', .20, .70), hand('right', 'open', .65, .50)]).input.x < 0);
+    assert.equal(f.step([hand('left', 'closed', .20, .70), hand('right', 'open', .65, .43)]).fired, true);
+  }
+});
+test('sustained loss expires the held grip and requires reopening', () => {
+  const f = fixture(); f.arm(); f.repeat([hand('right')], 4);
+  assert.equal(f.repeat([f.left, hand('right')]).dropEnabled, false);
+  f.repeat([hand('left'), hand('right')]);
+  assert.equal(f.repeat([f.left, hand('right')], 5).dropEnabled, true);
+});
+test('explicit open during recovery releases the stick', () => {
+  const f = fixture(); f.arm(); f.step([hand('right')]);
+  assert.equal(f.step([hand('left'), hand('right')]).dropEnabled, false);
+});
+test('workspace reacquisition recentres instead of remaining trapped at the old origin', () => {
+  const f = fixture(); f.arm();
+  f.step([f.left, hand('right', 'closed', .65, .72)]);
+  assert.equal(f.step([f.left, hand('right', 'closed', .65, .82)]).hands.right.outside, true);
+  // Reopen comfortably inside the absolute workspace, outside the old local range.
+  const s = f.repeat([hand('left'), hand('right', 'open', .65, .82)]);
+  assert.equal(s.hands.right.ready, true);
+  assert.deepEqual(f.controls.right.origin, { x: .65, y: .82 });
+  assert.equal(s.fired, false);
+});
+
+test('a returning sample after the grace deadline cannot revive a closed grip', () => {
+  const f = fixture(); f.arm(); f.step([hand('right')]);
+  assert.equal(f.step([f.left, hand('right')], 195).dropEnabled, false);
+});
+
+test('camera integration recovers a brief missing left hand without accepting a banked raise', () => {
+  const f = cameraFixture(); f.arm();
+  f.sample([hand('right', 'open', .65, .50)]);
+  assert.equal(f.c.state.dropEnabled, false); assert.equal(f.drops(), 0);
+  f.sample([hand('left', 'closed'), hand('right', 'open', .65, .50)]);
+  assert.equal(f.c.state.dropEnabled, true); assert.equal(f.drops(), 0);
+  f.sample([hand('left', 'closed'), hand('right', 'open', .65, .43)]);
+  assert.equal(f.drops(), 1);
+});
+
+test('low-confidence recovery uses the full held-joystick travel bounds', () => {
+  const f = fixture(); f.arm();
+  for (const [x,y] of [[.25,.70],[.12,.80],[.04,.90]]) f.step([hand('left','closed',x,y),hand('right')]);
+  const left = hand('left','closed',.04,.90);
+  const lost = f.step([{...left,handednessScore:.4},hand('right')]);
+  assert.equal(lost.dropEnabled,false); assert.deepEqual(lost.input,{x:0,z:0});
+  assert.equal(f.step([left,hand('right')]).dropEnabled,true);
+});
+test('duplicate right identities cannot preserve an absent left grip', () => {
+  const f = fixture(); f.arm();
+  f.step([hand('right'),hand('right','open',.80)]);
+  assert.equal(f.repeat([f.left,hand('right')]).dropEnabled,false);
+});
+
+test('duplicate left identities cancel the held grip even when one label is low confidence', () => {
+  const f = fixture(); f.arm();
+  const result = f.step([f.left, { ...hand('left', 'closed', .30, .60), handednessScore: .4 }]);
+  assert.equal(result.kind, 'lost');
+  assert.deepEqual(result.input, { x: 0, z: 0 }); assert.equal(Boolean(result.dropEnabled), false);
+  assert.equal(f.controls.left.owner, null); assert.equal(f.controls.right.owner, null);
+});
+
+test('duplicate right observations cancel the established left grip', () => {
+  const f = fixture(); f.arm();
+  const result = f.step([hand('right', 'open', .65, .60), hand('right', 'open', .80, .60)]);
+  assert.equal(result.kind, 'lost');
+  assert.deepEqual(result.input, { x: 0, z: 0 }); assert.equal(Boolean(result.dropEnabled), false);
+  assert.equal(f.controls.left.owner, null); assert.equal(f.controls.right.owner, null);
+});

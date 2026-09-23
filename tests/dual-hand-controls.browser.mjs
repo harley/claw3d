@@ -62,6 +62,14 @@ try {
   // The ready highlight follows live input freshness (700 ms); re-feed right before reading it on slow runners.
   await burst([left,right],1);await frame();
   assert.equal(await page.locator('#machine-drop').getAttribute('data-ready'),'true');
+  // A single missing detection holds the grip, but supplies no movement/drop permission.
+  await burst([right],1);
+  assert.equal(await page.evaluate(()=>controller.dualFeedback.dropEnabled),false);
+  assert.deepEqual(await page.evaluate(()=>controller.input),{x:0,z:0});
+  await burst([left,right],1);await frame();
+  assert.equal(await page.evaluate(()=>controller.dualFeedback.dropEnabled),true);
+  assert.equal(await page.evaluate(()=>window.__littleCloud.snapshot().phase),'aim','recovery cannot bank a right raise');
+  await page.screenshot({path:'.screenshots/dual-grip-recovered.png'});
   await burst([left]);await frame();
   assert.equal(await page.locator('#camera-overlay').getAttribute('data-left'),'active');
   assert.equal(await page.locator('#camera-overlay').getAttribute('data-right'),'open');
