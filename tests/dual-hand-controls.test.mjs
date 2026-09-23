@@ -200,6 +200,21 @@ test('brief missing or low-confidence left evidence stops actions then recovers 
     assert.equal(f.step([hand('left', 'closed', .20, .70), hand('right', 'open', .65, .43)]).fired, true);
   }
 });
+test('a right raise begun during left recovery needs fresh evidence after the grip returns', () => {
+  const f = fixture(); f.arm();
+  const lost = f.step([hand('right', 'open', .65, .72)]);
+  assert.equal(lost.hands.left.ready, false);
+  assert.equal(lost.hands.left.grab.steering, true);
+  assert.equal(lost.fired, false);
+
+  const recovered = f.step([f.left, hand('right', 'open', .65, .65)]);
+  assert.equal(recovered.hands.left.ready, true);
+  assert.equal(recovered.dropEnabled, true);
+  assert.equal(recovered.fired, false, 'the raise began while DROP was disabled');
+  assert.equal(f.step([f.left, hand('right', 'open', .65, .64)]).fired, false);
+  assert.equal(f.step([f.left, hand('right', 'open', .65, .58)]).fired, true,
+    'a new upward stroke after recovery can still drop');
+});
 test('sustained loss expires the held grip and requires reopening', () => {
   const f = fixture(); f.arm(); f.repeat([hand('right')], 4);
   assert.equal(f.repeat([f.left, hand('right')]).dropEnabled, false);

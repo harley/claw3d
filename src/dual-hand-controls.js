@@ -95,8 +95,10 @@ export class DualHandControls {
       clear(this.left); clear(this.right);
       return { kind: 'lost', message: 'SEPARATE YOUR HANDS', input: { x: 0, z: 0 }, hands: {}, fired: false };
     }
+    const leftWasInterrupted = this.left.interrupted;
     const left = this.track(this.left, 'left', hands, now);
     const right = this.track(this.right, 'right', hands, now);
+    const leftRecovered = leftWasInterrupted && left.ready;
     if (left.recovering && !right.ready) this.right.candidate = null;
     const leftTarget = left.ready ? getTarget(left.hand.center, 'left', this.left.origin) : {};
     const grip = left.recovering ? this.left.gesture.read() : this.left.gesture.update({ ...(left.hand?.fist || {}), visible: left.ready, overTarget: Boolean(leftTarget.overTarget) }, now);
@@ -104,7 +106,10 @@ export class DualHandControls {
     const dropEnabled = Boolean(leftClear && grip.steering);
     const rightTarget = right.ready ? getTarget(right.hand.center, 'right', this.right.origin) : {};
     const rightClear = right.ready && right.hand.fist.open && !right.hand.fist.closed;
-    const press = this.right.gesture.update(dropEnabled && rightClear, { acquired: right.acquired, y: right.ready ? right.hand.center.y : undefined });
+    // Re-enable DROP from a fresh right-hand baseline on the first confident
+    // left sample; a raise begun while left control was unavailable cannot fire.
+    const press = this.right.gesture.update(!leftRecovered && dropEnabled && rightClear,
+      { acquired: leftRecovered ? false : right.acquired, y: right.ready ? right.hand.center.y : undefined });
     let input = { x: 0, z: 0 };
     if (grip.grabbed) this.left.steer.release();
     if (grip.steering && leftClear && !press.fired) input = this.left.steer.update(left.hand.center, now);

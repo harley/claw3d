@@ -63,11 +63,12 @@ try {
   await burst([left,right],1);await frame();
   assert.equal(await page.locator('#machine-drop').getAttribute('data-ready'),'true');
   // A single missing detection holds the grip, but supplies no movement/drop permission.
-  await burst([right],1);
+  await burst([{...right,y:.60}],1);
   assert.equal(await page.evaluate(()=>controller.dualFeedback.dropEnabled),false);
   assert.deepEqual(await page.evaluate(()=>controller.input),{x:0,z:0});
-  await burst([left,right],1);await frame();
+  const recovered=await burst([left,{...right,y:.53}],1);await frame();
   assert.equal(await page.evaluate(()=>controller.dualFeedback.dropEnabled),true);
+  assert.equal(recovered.right.stage,'seeking','a right raise during left recovery is discarded');
   assert.equal(await page.evaluate(()=>window.__littleCloud.snapshot().phase),'aim','recovery cannot bank a right raise');
   await page.screenshot({path:'.screenshots/dual-grip-recovered.png'});
   await burst([left]);await frame();
