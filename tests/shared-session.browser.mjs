@@ -32,10 +32,10 @@ async function open(context) {
         tick() {
           const profile=this.getControlProfile?.() || 'hold-drop';
           this.onInput(this.visible ? this.input : {x:0,z:0});
-          this.onState({kind:this.visible ? 'tracking' : 'lost',profile,handCount:this.visible ? profile==='dual' ? 2 : 1 : 0,closed:false,
+          this.onState({kind:this.visible ? 'tracking' : 'lost',profile,handCount:this.visible ? profile==='dual' ? 2 : 1 : 0,open:true,closed:false,
             message:this.visible ? 'Camera fixture' : profile==='dual' ? 'Show both hands to continue' : 'Show one hand to continue',
             ...(profile==='grab-release' ? {grab:{stage:'seeking'}} : {}),
-            ...(profile==='dual' ? {hands:{left:{ready:this.visible,closed:false},right:{ready:this.visible,closed:false}}} : {})});
+            ...(profile==='dual' ? {hands:{left:{ready:this.visible,open:true,closed:false},right:{ready:this.visible,open:true,closed:false}}} : {})});
         }
         stop() { clearInterval(this.timer); this.running=false; }
         setPerformanceMode() { return false; }

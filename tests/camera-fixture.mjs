@@ -10,8 +10,8 @@ export async function installCameraFixture(page) {
         const profile = this.getControlProfile?.() || 'hold-drop';
         const common = { profile, kind: this.visible ? 'tracking' : 'lost', message: this.visible ? profile === 'dual' ? 'Both hands recognized' : 'One hand to steer · clench to drop' : profile === 'dual' ? 'Show both hands to continue' : 'Show one hand to continue', handCount: this.visible ? profile === 'dual' ? 2 : 1 : 0, controlEnabled: true };
         const modeFeedback = profile === 'dual'
-          ? { hands: { left: { ready: this.visible, closed: false }, right: { ready: this.visible, closed: false } }, dropEnabled: false }
-          : profile === 'grab-release' ? { grab: { stage: 'seeking' }, closed: false } : { closed: false };
+          ? { hands: { left: { ready: this.visible, open: true, closed: false }, right: { ready: this.visible, open: true, closed: false } }, dropEnabled: false }
+          : profile === 'grab-release' ? { grab: { stage: 'seeking' }, open: true, closed: false } : { open: true, closed: false };
         this.onInput(this.visible ? this.input : {x:0,z:0});
         this.onState({ ...common, ...modeFeedback, ...this.feedback });
       }

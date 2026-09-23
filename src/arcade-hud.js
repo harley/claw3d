@@ -53,7 +53,8 @@ export function firstTurnWaitingMessage(feedback = {}, dualEnabled = false) {
   if (feedback.kind === 'delayed') return 'TRACKING DELAYED';
   if (feedback.kind === 'error') return 'CAMERA ERROR';
   if (feedback.kind === 'loading') return 'STARTING CAMERA';
-  if (feedback.kind === 'clenching') return 'OPEN HAND TO READY';
+  if (feedback.kind === 'clenching' || (feedback.kind === 'ready' && feedback.closed === true) ||
+    (feedback.kind === 'tracking' && feedback.handCount === 1 && feedback.open !== true)) return 'OPEN HAND TO READY';
   return 'SHOW ONE HAND';
 }
 

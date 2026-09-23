@@ -30,6 +30,8 @@ test('waiting copy asks for the active controller without advancing the count', 
   assert.equal(firstTurnWaitingMessage({ kind: 'ready' }), 'SHOW ONE HAND');
   assert.equal(firstTurnWaitingMessage({ kind: 'calibrating' }), 'HOLD STILL');
   assert.equal(firstTurnWaitingMessage({ kind: 'delayed' }), 'TRACKING DELAYED');
+  assert.equal(firstTurnWaitingMessage({ kind: 'ready', closed: true, message: 'Open your hand to begin.' }), 'OPEN HAND TO READY');
+  assert.equal(firstTurnWaitingMessage({ kind: 'tracking', handCount: 1, open: false }), 'OPEN HAND TO READY');
   assert.equal(firstTurnWaitingMessage({ kind: 'tracking', message: 'Raise right hand open' }, true), 'RAISE RIGHT HAND OPEN');
   assert.equal(firstTurnWaitingMessage({ kind: 'clenching' }), 'OPEN HAND TO READY');
 });

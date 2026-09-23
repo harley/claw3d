@@ -95,6 +95,7 @@ test('recognition-only first prep acquires both roles without steering or accept
   const ready=f.repeat(bothOpen,10);
   assert.equal(ready.kind,'tracking');assert.equal(ready.profile,'dual');
   assert.equal(ready.hands.left.ready,true);assert.equal(ready.hands.right.ready,true);
+  assert.equal(ready.hands.left.open,true);assert.equal(ready.hands.right.open,true);
   assert.equal(ready.controlEnabled,false);assert.deepEqual(ready.input,{x:0,z:0});assert.equal(f.drops(),0);
 
   const left=hand('left','closed');

@@ -1,12 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { HandController } from '../src/vision.js';
+import { firstTurnControlReady, resolvePlayMode } from '../src/play-mode.js';
+import { firstTurnWaitingMessage } from '../src/arcade-hud.js';
 
 function hand(x, side = 'Left', gesture = 'Open_Palm') {
   const landmarks = Array.from({ length: 21 }, () => ({ x: 1 - x, y: .5, z: 0 }));
   landmarks[0].y = .56; landmarks[9].y = .44;
   landmarks[5].x -= .06; landmarks[17].x += .06;
   return { landmarks, side, gesture };
+}
+
+function ambiguousHand(x, side = 'Left') {
+  const value = hand(x, side, 'None'), landmarks = value.landmarks;
+  landmarks[9] = { ...landmarks[0] };
+  landmarks[17] = { ...landmarks[5] };
+  return value;
 }
 
 function fixture() {
@@ -82,6 +91,29 @@ test('a closed hand stays unready and asks to open during first-turn recognition
   assert.equal(f.read().state.message, 'Open your hand to begin.');
   assert.deepEqual(f.read().input, { x: 0, z: 0 });
   assert.equal(f.read().drops, 0);
+});
+
+test('a closed fist before acquisition reports actionable readiness guidance', () => {
+  const f = fixture(); f.setPhase('recognizing');
+  f.frame([hand(.4, 'Left', 'Closed_Fist')], 1);
+  const feedback = f.read().state;
+  assert.equal(feedback.kind, 'ready');
+  assert.equal(feedback.handCount, 1);
+  assert.equal(feedback.open, false);
+  assert.equal(feedback.closed, true);
+  assert.equal(firstTurnControlReady(resolvePlayMode('', false), feedback), false);
+  assert.equal(firstTurnWaitingMessage(feedback), 'OPEN HAND TO READY');
+});
+
+test('an ambiguous tracked pose does not count as open-hand readiness', () => {
+  const f = fixture(); f.setPhase('recognizing');
+  f.frame([hand(.4)], 10);
+  f.frame([ambiguousHand(.4)]);
+  const feedback = f.read().state;
+  assert.equal(feedback.kind, 'tracking');
+  assert.equal(feedback.closed, false);
+  assert.equal(feedback.open, false);
+  assert.equal(firstTurnControlReady(resolvePlayMode('', false), feedback), false);
 });
 
 

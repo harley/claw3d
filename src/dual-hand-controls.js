@@ -119,7 +119,7 @@ export class DualHandControls {
       outside: Boolean(observation.outside),
       kind: observation.ready ? gesture.stage === 'grabbing' ? 'clenching' : 'tracking' : 'calibrating',
       pointer: observation.hand ? { ...observation.hand.center } : null,
-      ready: observation.ready, closed: Boolean(observation.hand?.fist.closed),
+      ready: observation.ready, open: Boolean(observation.hand?.fist.open), closed: Boolean(observation.hand?.fist.closed),
       grab: gesture, progress: gesture.progress,
       target: target.overDrop ? 'drop' : target.overTarget ? 'stick' : '',
     });

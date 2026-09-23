@@ -42,9 +42,9 @@ export function firstTurnControlReady(mode, feedback = {}) {
   if (mode.dual) {
     const { left, right } = feedback.hands || {};
     return feedback.kind === 'tracking' && left?.ready === true && right?.ready === true &&
-      left.closed !== true && right.closed !== true;
+      left.open === true && right.open === true && left.closed !== true && right.closed !== true;
   }
   if (feedback.kind !== 'tracking' || feedback.handCount !== 1) return false;
   if (mode.grab && feedback.grab?.stage === 'gripped') return true;
-  return feedback.closed === false;
+  return feedback.open === true && feedback.closed !== true;
 }

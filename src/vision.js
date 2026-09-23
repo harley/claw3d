@@ -393,9 +393,14 @@ export class HandController {
           this.owner = { ...hand.center, handedness: hand.handedness };
           this.neutral = { ...hand.center };
           if (acceptsInput && phase !== 'aim') this.onStart('camera');
-          report({ kind: 'tracking', message: acceptsInput ? 'Move your hand to steer.' : 'Hand ready.', progress: 0 });
+          report({ kind: 'tracking', open: hand.fist.open, closed: hand.fist.closed,
+            message: acceptsInput ? 'Move your hand to steer.' : 'Hand ready.', progress: 0 });
         }
-      } else { this.pinchSince = 0; this.candidate = null; this.onState({ kind: 'ready', message: 'Open your hand to begin.' }); }
+      } else {
+        this.pinchSince = 0; this.candidate = null;
+        this.onState({ kind: 'ready', profile, handCount: hands.length, open: hand.fist.open,
+          closed: hand.fist.closed, message: 'Open your hand to begin.' });
+      }
       sendInput({ x: 0, z: 0 });
       this.draw(hands, this.owner ? hand : null); return;
     }
@@ -458,7 +463,7 @@ export class HandController {
     this.input = this.steer.update(hand.center, now);
     sendInput(this.input);
     const waitingForOpen = phase === 'recognizing' && hand.fist.closed;
-    report({ kind: waitingForOpen ? 'clenching' : 'tracking', closed: hand.fist.closed,
+    report({ kind: waitingForOpen ? 'clenching' : 'tracking', open: hand.fist.open, closed: hand.fist.closed,
       message: waitingForOpen ? 'Open your hand to begin.' : !acceptsInput ? 'Hand ready.' : 'Steer with an open hand. Clench your fist and hold to drop.', progress: 0 });
     this.draw(hands, hand);
   }
