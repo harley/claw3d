@@ -8,6 +8,10 @@ import { palette, material, group, mesh, ball, box, cylinder, line, rod, batch, 
 import { createBloom, BLOOM_LAYER, rimColorFor, marqueeGlowFor } from './arcade-fx.js';
 
 const v = (x, y, z) => new T.Vector3(x, y, z);
+const SHADOW_FRUSTUM = {
+  close: { left: -2.9, right: 2.9, top: 5.6, bottom: -2.2 },
+  wide: { left: -5, right: 3.2, top: 5.7, bottom: -3.5 },
+};
 
 export class ArcadeScene {
   constructor(canvas, { wideControls = false } = {}) {
@@ -16,6 +20,7 @@ export class ArcadeScene {
     this.renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
     this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = T.PCFShadowMap;
+    this.renderer.shadowMap.autoUpdate = false;
     this.renderer.toneMapping = T.ACESFilmicToneMapping; this.renderer.toneMappingExposure = .96;
     this.scene = new T.Scene(); this.scene.background = new T.Color('#080e1c');
     const room = new RoomEnvironment(), pmrem = new T.PMREMGenerator(this.renderer);
@@ -26,7 +31,7 @@ export class ArcadeScene {
     this.angledView = new URLSearchParams(location.search).get('view') === 'angle';
     this.scene.add(new T.HemisphereLight('#fff5e2', '#93a895', 1.15));
     const key = new T.DirectionalLight('#fff0d7', 2.35); key.position.set(-3.5, 8, 5); key.castShadow = true;
-    Object.assign(key.shadow.camera, { left: -6, right: 6, top: 7, bottom: -5, near: .1, far: 22 }); key.shadow.mapSize.set(2048, 2048); key.shadow.normalBias = .022; key.shadow.bias = -.00015; key.shadow.radius = 3; this.scene.add(key); this.key = key;
+    Object.assign(key.shadow.camera, { ...SHADOW_FRUSTUM.wide, near: .1, far: 22 }); key.shadow.camera.updateProjectionMatrix(); key.shadow.mapSize.set(2048, 2048); key.shadow.normalBias = .022; key.shadow.bias = -.00015; key.shadow.radius = 3; this.scene.add(key); this.key = key;
     const rim = new T.DirectionalLight('#dceee3', 1.65); rim.position.set(4, 5, -4); this.scene.add(rim); this.rim = rim; this.rimTarget = new T.Color('#dceee3');
     const front = new T.DirectionalLight('#ffe8df', .5); front.position.set(0, 3, 7); this.scene.add(front);
     this.mats = createArtMaterials(); this.toys = new Map(); this.buildWorld(); this.buildCabinet(); this.buildClaw();
@@ -36,6 +41,21 @@ export class ArcadeScene {
     this.buildCarousel();
     this.createTarget();
     this.buildEffects();
+    this.shadowTracked = []; this.shadowSnapshots = new WeakMap();
+    for (const object of [this.bridge, this.carriage, this.cable, this.claw, this.stick, this.button, this.courier, this.deliveryTray]) this.trackShadowCaster(object);
+    this.trackShadowCaster(this.carousel, object => {
+      for (let parent = object; parent && parent !== this.carousel; parent = parent.parent) if (parent === this.carouselDeck) return !object.material.transparent;
+      return false;
+    });
+    for (const toy of this.toys.values()) {
+      const { face, blink } = toy.userData;
+      this.trackShadowCaster(toy, object => {
+        for (let parent = object; parent && parent !== toy; parent = parent.parent) if (parent === face || parent === blink) return false;
+        return !object.material.transparent;
+      });
+    }
+    this.cabinetHands?.ready.then(() => { this.trackShadowCaster(this.cabinetHands.root); this.renderer.shadowMap.needsUpdate = true; });
+    this.renderer.shadowMap.needsUpdate = true;
     this.motionQuery = matchMedia('(prefers-reduced-motion: reduce)'); this.reducedMotion = this.motionQuery.matches;
     this.motionQuery.addEventListener('change', e => { this.reducedMotion = e.matches; });
     this.observer = new ResizeObserver(() => this.resize()); this.observer.observe(canvas.parentElement); this.observer.observe(canvas); this.resize();
@@ -98,7 +118,7 @@ export class ArcadeScene {
     // Stacked enamel shell, inset mint panels and champagne reveals.
     // Stop below the wooden outlet floor (y=.50). Coplanar top faces made
     // the red plinth flicker through the wood during delivery camera motion.
-    box(cab, m.red, [0, .415, 0], [3.70, .13, 2.70], .065);
+    box(cab, m.red, [0, .415, 0], [3.70, .13, 2.70], .065).castShadow = true;
     box(cab, m.ivory, [0, .96, -1.21], [3.55, .96, .15], .065);
     for (const x of [-1.71, 1.71]) box(cab, m.ivory, [x, .96, 0], [.14, .96, 2.55], .055);
     box(cab, m.ivory, [.67, .96, 1.20], [2.08, .96, .16], .075);
@@ -107,7 +127,7 @@ export class ArcadeScene {
     box(cab, m.red, [-1.15, 1.43, -.73], [1.12, .17, 1.19], .04);
     box(cab, m.brass, [.61, 1.535, .01], [2.32, .035, 2.55], .012);
     box(cab, m.mint, [0, 3.06, -1.24], [3.34, 3.07, .12], .03);
-    box(cab, m.paleMint, [0, 3.20, -1.155], [3.15, 2.61, .035], .08);
+    box(cab, m.paleMint, [0, 3.20, -1.155], [3.15, 2.61, .035], .08).castShadow = true;
     // Quiet scalloped interior wallpaper and small stars.
     const mural = material('#a9c6b6', .94);
     for (let row = 0; row < 5; row++) for (let col = 0; col < 8; col++) {
@@ -115,7 +135,7 @@ export class ArcadeScene {
       const star = mesh(cab, new T.CircleGeometry(.022, 4), mural, x, y, -1.13); star.rotation.z = .0;
     }
     for (const x of [-1.73, 1.73]) for (const z of [-1.25, 1.25]) {
-      box(cab, m.ivory, [x, 3.045, z], [.16, 3.02, .17], .047);
+      box(cab, m.ivory, [x, 3.045, z], [.16, 3.02, .17], .047).castShadow = true;
       box(cab, m.brass, [x, 3.00, z + (z > 0 ? .087 : -.087)], [.035, 2.80, .025], .01);
       for (const y of [1.67, 4.43]) { const screw = cylinder(cab, m.brass, [x, y, z + .10], .025, .013, 16); screw.rotation.x = Math.PI / 2; line(cab, m.darkMetal, [[x - .013, y, z + .11], [x + .013, y, z + .11]], .0025); }
     }
@@ -159,7 +179,7 @@ export class ArcadeScene {
     const aimLabel = label(cab, 'MOVE', .28, .075, [stickX + .33, 1.66, 1.47], { color: this.wideControls ? '#e1d6ba' : '#716b57', font: 'Arial', size: 30 }); aimLabel.rotation.x = -Math.PI / 2;
     if (!this.wideControls) { const dropLabel = label(cab, 'DROP', .28, .075, [dropX + (this.wideControls ? -.33 : .33), 1.66, 1.47], { color: '#a04540', font: 'Arial', size: 30 }); dropLabel.rotation.x = -Math.PI / 2; }
     // Lantern-like marquee and tiny edge bulbs.
-    box(cab, m.ivory, [0, 4.61, 0], [3.78, .24, 2.75], .12);
+    box(cab, m.ivory, [0, 4.61, 0], [3.78, .24, 2.75], .12).castShadow = true;
     box(cab, m.red, [0, 4.94, .00], [3.83, .57, 2.73], .15);
     box(cab, m.brass, [0, 4.946, 1.373], [3.39, .433, .022], .09);
     box(cab, m.ivory, [0, 4.946, 1.394], [3.32, .367, .018], .08);
@@ -374,8 +394,42 @@ export class ArcadeScene {
     this.lowQuality = low;
     this.renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, 1.5));
     const size = low ? 1024 : 2048;
-    if (this.key && this.key.shadow.mapSize.x !== size) { this.key.shadow.mapSize.set(size, size); this.key.shadow.map?.dispose(); this.key.shadow.map = null; }
+    if (this.key && this.key.shadow.mapSize.x !== size) { this.key.shadow.mapSize.set(size, size); this.key.shadow.map?.dispose(); this.key.shadow.map = null; this.renderer.shadowMap.needsUpdate = true; }
     this.resize();
+  }
+
+  // Gather casters, their transform ancestors and skinned hand bones once.
+  // Decorative face animation cannot invalidate an otherwise unchanged map.
+  trackShadowCaster(root, casts = object => !object.material.transparent) {
+    root.traverse(object => {
+      if (!object.isBone && !(object.isMesh && casts(object))) return;
+      if (object.isMesh) object.castShadow = true;
+      for (let part = object; part && part !== root.parent; part = part.parent) {
+        if (this.shadowSnapshots.has(part)) continue;
+        this.shadowTracked.push(part);
+        this.shadowSnapshots.set(part, { position: part.position.clone(), quaternion: part.quaternion.clone(), scale: part.scale.clone(), visible: part.visible });
+      }
+    });
+  }
+
+  updateShadowMap() {
+    let moved = false;
+    for (const object of this.shadowTracked) {
+      const prior = this.shadowSnapshots.get(object);
+      if (prior.visible === object.visible && prior.position.equals(object.position) && prior.quaternion.equals(object.quaternion) && prior.scale.equals(object.scale)) continue;
+      prior.position.copy(object.position); prior.quaternion.copy(object.quaternion); prior.scale.copy(object.scale); prior.visible = object.visible;
+      moved = true;
+    }
+    if (moved) this.renderer.shadowMap.needsUpdate = true;
+  }
+
+  setShadowFrustum(wide) {
+    const mode = wide ? 'wide' : 'close';
+    if (mode === this.shadowFrustum) return;
+    this.shadowFrustum = mode;
+    Object.assign(this.key.shadow.camera, SHADOW_FRUSTUM[mode]);
+    this.key.shadow.camera.updateProjectionMatrix();
+    this.renderer.shadowMap.needsUpdate = true;
   }
 
   controlTargets() {
@@ -525,6 +579,7 @@ export class ArcadeScene {
     this.courier.visible = this.deliveryTray.visible;
     if (this.courier.visible) { const p = this.deliveryTray.position; this.courier.scale.set(this.deliveryTray.scale.x, 1, this.deliveryTray.scale.z); this.courier.position.set(p.x, 0, 1.69); this.courierMast.scale.y = Math.max(.1, p.y - .44); this.courierMast.position.y = .44 + (p.y - .44) / 2; this.courierArm.scale.y = Math.max(.025, 1.69 - p.z); this.courierArm.position.set(0, p.y - .08, -(1.69 - p.z) / 2); }
     this.updateCamera(game, presentation, time);
+    this.updateShadowMap();
     this.draw(time, drawCapped);
   }
 
@@ -569,6 +624,7 @@ export class ArcadeScene {
       this.currentLook.lerp(pose.look, this.attractBlend);
       this.surroundings.visible = this.surroundings.visible || this.attractBlend < 1;
     }
+    this.setShadowFrustum(wide > 0 && this.attractBlend < 1);
     this.camera.lookAt(this.currentLook);
     const punch = this.punchOffset(time);
     if (punch) { this.camera.position.y += punch; this.camera.position.x += punch * .4; }

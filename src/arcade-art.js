@@ -5,7 +5,7 @@ import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometr
 export const palette = { ivory: '#e8edf4', cherry: '#e82447', mint: '#236eb7', ink: '#403c37', brass: '#c6a46a', wood: '#b77d54' };
 export const material = (color, roughness = .6, metalness = 0) => new T.MeshStandardMaterial({ color, roughness, metalness });
 export const group = (parent, x = 0, y = 0, z = 0) => { const g = new T.Group(); g.position.set(x, y, z); parent.add(g); return g; };
-export function mesh(parent, geometry, mat, x = 0, y = 0, z = 0) { const m = new T.Mesh(geometry, mat); m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; parent.add(m); return m; }
+export function mesh(parent, geometry, mat, x = 0, y = 0, z = 0) { const m = new T.Mesh(geometry, mat); m.position.set(x, y, z); m.receiveShadow = true; parent.add(m); return m; }
 const ballGeometry = new T.SphereGeometry(1, 24, 16);
 export function ball(parent, mat, pos, scale) { const m = mesh(parent, ballGeometry, mat, ...pos); m.scale.set(...scale); return m; }
 export function box(parent, mat, pos, size, radius = .035) { return mesh(parent, new RoundedBoxGeometry(...size, 3, Math.min(radius, ...size.map(s => s / 2))), mat, ...pos); }
@@ -17,9 +17,9 @@ export function rod(parent, mat, a, b, radius = .025) { const start = new T.Vect
 export function batch(root) {
   root.updateWorldMatrix(true, true);
   const inverse = root.matrixWorld.clone().invert(), buckets = new Map(), old = [];
-  root.traverse(m => { if (!m.isMesh) return; const key = m.material.uuid; if (!buckets.has(key)) buckets.set(key, { mat: m.material, parts: [] }); const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone(); g.applyMatrix4(inverse.clone().multiply(m.matrixWorld)); buckets.get(key).parts.push(g); old.push(m); });
+  root.traverse(m => { if (!m.isMesh) return; const key = `${m.material.uuid}:${m.castShadow}`; if (!buckets.has(key)) buckets.set(key, { mat: m.material, castShadow: m.castShadow, parts: [] }); const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone(); g.applyMatrix4(inverse.clone().multiply(m.matrixWorld)); buckets.get(key).parts.push(g); old.push(m); });
   for (const m of old) m.removeFromParent();
-  for (const { mat, parts } of buckets.values()) { const merged = mesh(root, mergeGeometries(parts, false), mat); merged.castShadow = !mat.transparent; parts.forEach(g => g.dispose()); }
+  for (const { mat, castShadow, parts } of buckets.values()) { mesh(root, mergeGeometries(parts, false), mat).castShadow = castShadow; parts.forEach(g => g.dispose()); }
 }
 
 function fabricTexture() {
