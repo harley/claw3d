@@ -27,8 +27,16 @@ async function open(context) {
       class HandController {
         constructor(options) { Object.assign(this, options); this.running=false; this.visible=true; this.input={x:0,z:0}; window.testCamera=this; }
         resetOwner() { this.input={x:0,z:0}; this.onInput(this.input); }
+        neutralizeInput() { this.input={x:0,z:0}; this.onInput(this.input); }
         async start() { if(this.failNextStart) { this.failNextStart=false; this.fail('camera_busy'); return; } this.running=true; this.tick(); this.timer=setInterval(()=>this.tick(),30); }
-        tick() { this.onInput(this.visible ? this.input : {x:0,z:0}); this.onState({kind:this.visible ? 'tracking' : 'lost',message:'Camera fixture'}); }
+        tick() {
+          const profile=this.getControlProfile?.() || 'hold-drop';
+          this.onInput(this.visible ? this.input : {x:0,z:0});
+          this.onState({kind:this.visible ? 'tracking' : 'lost',profile,handCount:this.visible ? profile==='dual' ? 2 : 1 : 0,closed:false,
+            message:this.visible ? 'Camera fixture' : profile==='dual' ? 'Show both hands to continue' : 'Show one hand to continue',
+            ...(profile==='grab-release' ? {grab:{stage:'seeking'}} : {}),
+            ...(profile==='dual' ? {hands:{left:{ready:this.visible,closed:false},right:{ready:this.visible,closed:false}}} : {})});
+        }
         stop() { clearInterval(this.timer); this.running=false; }
         setPerformanceMode() { return false; }
         fail(code='worker_timeout') { this.stop(); this.onState({kind:'error',code,message:'Synthetic camera failure. Restart camera.'}); }

@@ -7,16 +7,17 @@ import { ABSOLUTE_SPEED } from './steering.js';
 // telemetry, persistence, announcements); nothing here reads or writes the page.
 export const HIT_STOP_SECONDS = .08;
 export const nextTurnSeconds = caught => caught ? 2.5 : 1.2;
-export const FIRST_TURN_PREPARATION_SECONDS = nextTurnSeconds(true);
+export const FIRST_TURN_PREPARATION_SECONDS = 4;
+export const FIRST_TURN_CONTROL_LOSS_GRACE_SECONDS = .7;
 
 export function createTurnState(seconds) {
-  return { pendingSlam: null, remaining: seconds, hitStop: 0, nextTurnElapsed: 0, firstTurnPreparationElapsed: null, dropRemainingMs: 0, contactFeedback: null };
+  return { pendingSlam: null, remaining: seconds, hitStop: 0, nextTurnElapsed: 0, firstTurnPreparationElapsed: null, firstTurnControlReady: false, firstTurnControlLostElapsed: 0, dropRemainingMs: 0, contactFeedback: null };
 }
 export function beginTurnState(state, seconds) {
-  state.nextTurnElapsed = 0; state.firstTurnPreparationElapsed = null; state.dropRemainingMs = 0; state.contactFeedback = null; state.hitStop = 0; state.remaining = seconds;
+  state.nextTurnElapsed = 0; state.firstTurnPreparationElapsed = null; state.firstTurnControlReady = false; state.firstTurnControlLostElapsed = 0; state.dropRemainingMs = 0; state.contactFeedback = null; state.hitStop = 0; state.remaining = seconds;
 }
 export function beginFirstTurnPreparation(state, seconds) {
-  state.pendingSlam = null; state.nextTurnElapsed = 0; state.firstTurnPreparationElapsed = 0; state.dropRemainingMs = 0; state.contactFeedback = null; state.hitStop = 0; state.remaining = seconds;
+  state.pendingSlam = null; state.nextTurnElapsed = 0; state.firstTurnPreparationElapsed = 0; state.firstTurnControlReady = false; state.firstTurnControlLostElapsed = 0; state.dropRemainingMs = 0; state.contactFeedback = null; state.hitStop = 0; state.remaining = seconds;
 }
 
 // A drop request during aiming. The aiming time is locked at the request, so a
@@ -38,11 +39,24 @@ export function requestDrop(game, state, { dual = false, feedback = {} } = {}) {
 //  { type: 'nextTurn' }            the announcement finished; begin the next turn
 //  { type: 'scorePop', prizeId }   the lift confirmed a catch
 //  { type: 'finish' }              the turn reached its result
-export function stepTurn(game, state, input, dt, { preparing = false, reducedMotion = false, slamSeconds = .36 } = {}) {
+export function stepTurn(game, state, input, dt, { preparing = false, controlReady = false, reducedMotion = false, slamSeconds = .36 } = {}) {
   const effects = [];
   if (state.firstTurnPreparationElapsed !== null) {
     input.x = input.z = 0;
     if (!preparing) return effects;
+    if (!state.firstTurnControlReady) {
+      if (!controlReady) return effects;
+      state.firstTurnControlReady = true;
+      state.firstTurnControlLostElapsed = 0;
+    } else if (!controlReady) {
+      state.firstTurnControlLostElapsed += dt;
+      if (state.firstTurnControlLostElapsed >= FIRST_TURN_CONTROL_LOSS_GRACE_SECONDS) {
+        state.firstTurnControlReady = false;
+        state.firstTurnControlLostElapsed = 0;
+        state.firstTurnPreparationElapsed = 0;
+      }
+      return effects;
+    } else state.firstTurnControlLostElapsed = 0;
     state.firstTurnPreparationElapsed += dt;
     if (state.firstTurnPreparationElapsed >= FIRST_TURN_PREPARATION_SECONDS) {
       state.firstTurnPreparationElapsed = null;

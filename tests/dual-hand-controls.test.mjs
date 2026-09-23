@@ -89,6 +89,39 @@ test('real camera controller normalizes roles and accepts an upward right-hand g
   f.sample([hand('left','closed'),hand('right','open',.65,.50)]);assert.equal(f.drops(),1);
   f.repeat([hand('left','closed'),hand('right','open',.65,.50)],60);assert.equal(f.drops(),1);
 });
+test('recognition-only first prep acquires both roles without steering or accepting a raise',()=>{
+  const f=cameraFixture();f.phase('recognizing');
+  const bothOpen=[hand('left'),hand('right','open',.65,.72)];
+  const ready=f.repeat(bothOpen,10);
+  assert.equal(ready.kind,'tracking');assert.equal(ready.profile,'dual');
+  assert.equal(ready.hands.left.ready,true);assert.equal(ready.hands.right.ready,true);
+  assert.equal(ready.controlEnabled,false);assert.deepEqual(ready.input,{x:0,z:0});assert.equal(f.drops(),0);
+
+  const left=hand('left','closed');
+  f.repeat([left,bothOpen[1]],5);
+  assert.equal(f.c.state.hands.left.grab.stage,'gripped');
+  f.sample([left,hand('right','open',.65,.65)]);
+  assert.equal(f.drops(),0,'a valid dual raise during prep cannot accept a drop');
+  assert.deepEqual(f.c.input,{x:0,z:0});
+  f.phase('aim');
+  const aiming=f.sample([left,hand('right','open',.65,.65)]);
+  assert.equal(aiming.hands.left.ready,true);assert.equal(aiming.hands.right.ready,true,'recognized roles survive the START boundary');
+});
+test('START clears a partial dual raise while preserving recognized hand roles',()=>{
+  const f=cameraFixture();f.phase('recognizing');
+  const left=hand('left'),right=hand('right','open',.65,.72);
+  f.repeat([left,right],10);
+  const grippedLeft=hand('left','closed');
+  f.repeat([grippedLeft,right],5);
+  assert.equal(f.sample([grippedLeft,hand('right','open',.65,.68)]).hands.right.grab.armed,true);
+  assert.equal(f.drops(),0);
+
+  f.c.neutralizeInput();f.phase('aim');
+  const boundary=f.sample([grippedLeft,hand('right','open',.65,.64)]);
+  assert.equal(boundary.hands.left.ready,true);assert.equal(boundary.hands.right.ready,true);
+  assert.equal(boundary.fired,false,'movement begun before START cannot complete a drop across it');
+  assert.equal(f.sample([grippedLeft,hand('right','open',.65,.57)]).fired,true,'a fresh post-START raise still drops');
+});
 for(const boundary of ['pause','profile','delay'])test(`${boundary} clears real two-hand raise evidence`,()=>{
   const f=cameraFixture();f.arm();const hands=[hand('left','closed'),hand('right')];f.sample(hands);
   assert.equal(f.c.state.hands.right.grab.armed,true);assert.equal(f.drops(),0);

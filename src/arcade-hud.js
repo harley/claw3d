@@ -26,6 +26,37 @@ export function nextTurnCue(elapsed, round, caught = true) {
   return 'START!';
 }
 
+export function firstTurnCue(elapsed) {
+  if (elapsed < .7) return 'ROUND 1';
+  if (elapsed < 1.7) return '3';
+  if (elapsed < 2.7) return '2';
+  if (elapsed < 3.7) return '1';
+  return 'START!';
+}
+
+export function playFirstTurnCueTone(audio, cue, allowed = true) {
+  if (!allowed) return false;
+  const notes = {
+    '3': [[659, .12, 0]],
+    '2': [[784, .12, 0]],
+    '1': [[988, .14, 0]],
+    'START!': [[880, .12, 0], [1175, .18, .08]],
+  }[cue];
+  if (!notes) return false;
+  for (const [frequency, duration, delay] of notes) audio.note(frequency, duration, delay, 'sine', frequency, .022);
+  return true;
+}
+
+export function firstTurnWaitingMessage(feedback = {}, dualEnabled = false) {
+  if (dualEnabled) return String(feedback.message || 'SHOW BOTH HANDS').toUpperCase();
+  if (feedback.kind === 'calibrating') return 'HOLD STILL';
+  if (feedback.kind === 'delayed') return 'TRACKING DELAYED';
+  if (feedback.kind === 'error') return 'CAMERA ERROR';
+  if (feedback.kind === 'loading') return 'STARTING CAMERA';
+  if (feedback.kind === 'clenching') return 'OPEN HAND TO READY';
+  return 'SHOW ONE HAND';
+}
+
 export const TROPHY_ICONS = Object.freeze({ bunny: '🐰', capybara: '🐾', cloud: '☁️', star: '⭐', robot: '🤖' });
 // The finale headline reads the run: rank first, then how the three turns went.
 export function finaleHeadline(turns, rank, points = {}) {
@@ -65,16 +96,20 @@ function presentMessage(title, hint, key, duration = 0) {
 }
 
 export function createHud({ audio, phaseSound }) {
-  let lastCue = '', lastStatus = '';
+  let lastCue = '', lastStatus = '', lastFirstTurnCue = null;
   function update(view, feedback, modal) {
-    const { game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, firstTurnPreparationElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus, storageError, aligned } = view;
+    const { game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, firstTurnPreparationElapsed, firstTurnControlReady, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus, storageError, aligned } = view;
   const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
   const turns = run?.rules?.turns ?? completedRun?.rules?.turns ?? RULES.turns;
   const preparingFirstTurn = Boolean(run && firstTurnPreparationElapsed !== null);
   $('arcade').classList.toggle('first-turn-layout', Boolean(run && (preparingFirstTurn || turnNumber === 1)));
   let title = 'READY', hint = '', button = 'Play', kicker = 'CLAW';
   if (recovering) { title = `TURN ${turnNumber} OF ${turns}`; button = cameraLoading ? 'Starting…' : 'CONTINUE'; }
-  else if (phase === 'idle' && preparingFirstTurn) { kicker = `ROUND 1 OF ${turns}`; title = nextTurnCue(firstTurnPreparationElapsed, 1); button = ''; }
+  else if (phase === 'idle' && preparingFirstTurn) {
+    kicker = `ROUND 1 OF ${turns}`;
+    title = firstTurnControlReady ? firstTurnCue(firstTurnPreparationElapsed) : firstTurnWaitingMessage(feedback, dualEnabled);
+    button = '';
+  }
   else if (phase === 'aim') { kicker = turnNumber === turns ? 'LAST CLAW!' : `TURN ${turnNumber} OF ${turns}`; title = 'Clench & hold to drop'; hint = ''; button = '';  }
   else if (phase === 'result' && run) { kicker = `ROUND ${turnNumber + 1} OF ${turns}`; title = nextTurnCue(nextTurnElapsed, turnNumber + 1, Boolean(game.plan?.prize)); hint = title === 'MISSED' ? missCopy(game.plan, game.toys) : ''; button = ''; }
   else if (phase in phaseCopy) {
@@ -84,6 +119,11 @@ export function createHud({ audio, phaseSound }) {
     button = '';
   }
   phaseSound(phase, modal);
+  const initialCue = preparingFirstTurn && firstTurnControlReady ? firstTurnCue(firstTurnPreparationElapsed) : null;
+  if (initialCue !== lastFirstTurnCue) {
+    playFirstTurnCueTone(audio, initialCue, !paused && !modal && !document.hidden);
+    lastFirstTurnCue = initialCue;
+  }
   // Attract mode: the idle machine gently pulses its invitation until a hand
   // takes control. CSS disables the pulse under reduced motion.
   $('action-copy').classList.toggle('attract', phase === 'idle' && !run && !paused && !recovering && (!cameraControls?.running || cameraControls.waiting));

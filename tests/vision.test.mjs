@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { HandController } from '../src/vision.js';
 
-function hand(x, side = 'Left') {
+function hand(x, side = 'Left', gesture = 'Open_Palm') {
   const landmarks = Array.from({ length: 21 }, () => ({ x: 1 - x, y: .5, z: 0 }));
   landmarks[0].y = .56; landmarks[9].y = .44;
   landmarks[5].x -= .06; landmarks[17].x += .06;
-  return { landmarks, side };
+  return { landmarks, side, gesture };
 }
 
 function fixture() {
@@ -26,7 +26,7 @@ function fixture() {
     for (let i = 0; i < count; i++) {
       controller.handle({ landmarks: hands.map(h => h.landmarks),
         handedness: hands.map(h => [{ categoryName: h.side }]),
-        gestures: hands.map(() => [{ categoryName: 'Open_Palm', score: .99 }]),
+        gestures: hands.map(h => [{ categoryName: h.gesture, score: .99 }]),
       }, time);
       time += 65;
     }
@@ -49,6 +49,39 @@ test('setup recognises and highlights a hand without starting or steering the ga
   f.frame([]);
   assert.equal(f.read().state.kind, 'lost');
   assert.equal(f.read().active, null);
+});
+
+test('recognition-only prep acquires a hand without steering or carrying input into aim', () => {
+  const f = fixture(); f.setPhase('recognizing');
+  f.frame([hand(.4)], 10);
+  const owner = f.controller.owner;
+  assert.ok(owner);
+  assert.equal(f.read().state.kind, 'tracking');
+  assert.equal(f.read().state.controlEnabled, false);
+  assert.deepEqual(f.read().input, { x: 0, z: 0 });
+  assert.equal(f.read().starts, 0);
+  assert.equal(f.read().drops, 0);
+
+  f.setPhase('aim'); f.frame([hand(.42)], 1);
+  assert.equal(f.controller.owner, owner, 'the recognized hand survives the START boundary');
+  assert.deepEqual(f.read().input, { x: 0, z: 0 }, 'aim begins from a neutral steering sample');
+  assert.equal(f.read().starts, 0);
+  assert.equal(f.read().drops, 0);
+});
+
+test('a closed hand stays unready and asks to open during first-turn recognition', () => {
+  const f = fixture(); f.setPhase('recognizing');
+  f.frame([hand(.4)], 10);
+  assert.equal(f.read().state.kind, 'tracking');
+  assert.equal(f.read().state.closed, false);
+
+  f.frame([hand(.4, 'Left', 'Closed_Fist')]);
+  assert.equal(f.read().state.kind, 'clenching');
+  assert.equal(f.read().state.closed, true);
+  assert.equal(f.read().state.controlEnabled, false);
+  assert.equal(f.read().state.message, 'Open your hand to begin.');
+  assert.deepEqual(f.read().input, { x: 0, z: 0 });
+  assert.equal(f.read().drops, 0);
 });
 
 

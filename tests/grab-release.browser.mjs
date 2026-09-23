@@ -37,7 +37,14 @@ try {
   assert.equal(await page.evaluate(() => controller.getControlProfile()), 'hold-drop', 'menus retain hold selection');
   await page.locator('#play').click();
   await page.locator('#name').fill('Synthetic grab check'); await page.locator('#name').press('Enter');
+  await page.waitForFunction(() => window.__littleCloud.snapshot().event.firstTurnPreparationElapsed !== null && window.controller.getControlProfile() === 'grab-release');
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.evaluate(() => { for(let i=0;i<12;i++) sample('open'); });
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.waitForFunction(() => window.__littleCloud.snapshot().event.firstTurnControlReady);
+  await page.evaluate(() => { window.prepSamples = setInterval(() => sample('open'), 130); });
   await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
+  await page.evaluate(() => clearInterval(window.prepSamples));
   await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
   await page.evaluate(() => { for(let i=0;i<15;i++) sample(); });
   assert.equal(await page.evaluate(() => controller.getControlProfile()), 'grab-release');
@@ -105,7 +112,13 @@ try {
   assert.equal(completed.turns.filter(t=>t.prizeId==='sprout').length,1,'caught toy cannot score again');
   await page.locator('#next-player').click();
   await page.locator('#register-play').click();
+  await page.waitForFunction(() => window.__littleCloud.snapshot().event.firstTurnPreparationElapsed !== null);
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.evaluate(() => { for(let i=0;i<12;i++) sample('open'); });
+  await page.waitForFunction(() => window.__littleCloud.snapshot().event.firstTurnControlReady);
+  await page.evaluate(() => { window.prepSamples = setInterval(() => sample('open'), 130); });
   await page.waitForFunction(()=>window.__littleCloud.snapshot().phase==='aim');
+  await page.evaluate(() => clearInterval(window.prepSamples));
   assert.ok((await page.evaluate(()=>window.__littleCloud.snapshot().toys)).every(t=>!t.claimed),'new player restocks');
   assert.deepEqual(errors,[]);
   console.log('PASS cabinet controls, safe release, click/clench/slam drops, persistent caught toys and exactly three turns');
