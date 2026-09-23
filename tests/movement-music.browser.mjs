@@ -40,7 +40,7 @@ try {
   };
   await page.locator('#feedback-open').click(); await quiet();
   await page.locator('#feedback-dialog [aria-label="Close feedback"]').click();
-  const resumed = await count(); await page.waitForTimeout(350); assert.ok(await count() > resumed);
+  const resumed = await count(); await page.waitForFunction(previous => window.musicNotes.length > previous, resumed, { timeout: 3000 });
   await page.evaluate(() => { window.testCamera.visible = false; window.testCamera.tick(); }); await quiet();
   await page.evaluate(() => { window.testCamera.visible = true; window.testCamera.tick(); });
   await page.waitForTimeout(300);

@@ -59,8 +59,11 @@ try {
   assert.equal(await page.locator('#registration').isVisible(), false);
   await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
   assert.match((await snap()).event.run.name, /^(?:🦀|🦊|🐻|🐱|🐰|🦦|🐧|🐉) [A-Z][a-z]+$/u); assert.equal((await snap()).event.turn, 1);
-  await page.waitForTimeout(300); const before = (await snap()).event.remaining;
+  await page.evaluate(() => document.getElementById('camera-video').srcObject.getVideoTracks().forEach(track => { track.enabled = false; }));
+  await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.waiting);
+  const before = (await snap()).event.remaining;
   await page.waitForTimeout(700); assert.equal((await snap()).event.remaining, before); assert.equal((await snap()).event.handCamera.waiting, true);
+  await page.evaluate(() => document.getElementById('camera-video').srcObject.getVideoTracks().forEach(track => { track.enabled = true; }));
   const position = (await snap()).position;
   await page.keyboard.down('ArrowRight'); await page.waitForTimeout(350); await page.keyboard.up('ArrowRight');
   await page.keyboard.press('Space'); assert.deepEqual((await snap()).position, position); assert.equal((await snap()).phase, 'aim');
