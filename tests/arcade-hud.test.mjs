@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nextTurnSeconds, nextTurnCue, missCopy, finaleHeadline } from '../src/arcade-hud.js';
+import { nextTurnSeconds, nextTurnCue, firstTurnCue, playFirstTurnCueTone, firstTurnWaitingMessage, missCopy, finaleHeadline } from '../src/arcade-hud.js';
 
 test('after a catch the next round keeps every cue and returns control in 2.5 s', () => {
   assert.equal(nextTurnSeconds(true), 2.5);
@@ -9,10 +9,31 @@ test('after a catch the next round keeps every cue and returns control in 2.5 s'
   }
 });
 
-test('the first round shows the same 3–2–1 start count-in as later caught rounds', () => {
-  for (const [elapsed, cue] of [[0, 'ROUND 1'], [.699, 'ROUND 1'], [.7, '3'], [1.2, '2'], [1.7, '1'], [2.2, 'START!']]) {
-    assert.equal(nextTurnCue(elapsed, 1), cue);
+test('first-round prep gives each digit about one second and finishes with a short START cue', () => {
+  assert.equal(firstTurnCue(0), 'ROUND 1');
+  for (const [elapsed, cue] of [[.699, 'ROUND 1'], [.7, '3'], [1.699, '3'], [1.7, '2'], [2.699, '2'], [2.7, '1'], [3.699, '1'], [3.7, 'START!'], [3.999, 'START!']]) {
+    assert.equal(firstTurnCue(elapsed), cue);
   }
+});
+
+test('first-turn tones are finite cue notes and remain behind permission and pause gates', () => {
+  const notes = [], audio = { note: (...note) => notes.push(note) };
+  assert.equal(playFirstTurnCueTone(audio, 'ROUND 1'), false);
+  assert.equal(playFirstTurnCueTone(audio, '3', false), false);
+  assert.equal(notes.length, 0, 'no sound is scheduled before user activation or while blocked');
+  for (const cue of ['3', '2', '1', 'START!']) assert.equal(playFirstTurnCueTone(audio, cue), true);
+  assert.deepEqual(notes.map(note => note[0]), [659, 784, 988, 880, 1175]);
+  assert.ok(notes.every(note => note[1] <= .18), 'each synthesized note is short');
+});
+
+test('waiting copy asks for the active controller without advancing the count', () => {
+  assert.equal(firstTurnWaitingMessage({ kind: 'ready' }), 'SHOW ONE HAND');
+  assert.equal(firstTurnWaitingMessage({ kind: 'calibrating' }), 'HOLD STILL');
+  assert.equal(firstTurnWaitingMessage({ kind: 'delayed' }), 'TRACKING DELAYED');
+  assert.equal(firstTurnWaitingMessage({ kind: 'ready', closed: true, message: 'Open your hand to begin.' }), 'OPEN HAND TO READY');
+  assert.equal(firstTurnWaitingMessage({ kind: 'tracking', handCount: 1, open: false }), 'OPEN HAND TO READY');
+  assert.equal(firstTurnWaitingMessage({ kind: 'tracking', message: 'Raise right hand open' }, true), 'RAISE RIGHT HAND OPEN');
+  assert.equal(firstTurnWaitingMessage({ kind: 'clenching' }), 'OPEN HAND TO READY');
 });
 
 test('after a miss the next round names the outcome and starts within 1.2 s', () => {

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame, begin, PHASES, MISS_LIFT } from '../src/arcade-mechanics.js';
-import { createTurnState, beginTurnState, beginFirstTurnPreparation, requestDrop, stepTurn, nextTurnSeconds, FIRST_TURN_PREPARATION_SECONDS, HIT_STOP_SECONDS } from '../src/turn-controller.js';
+import { createTurnState, beginTurnState, beginFirstTurnPreparation, requestDrop, stepTurn, nextTurnSeconds, FIRST_TURN_PREPARATION_SECONDS, FIRST_TURN_CONTROL_LOSS_GRACE_SECONDS, HIT_STOP_SECONDS } from '../src/turn-controller.js';
 
 const step = (game, state, dt, options = {}, input = { x: 0, z: 0 }) => stepTurn(game, state, input, dt, options);
 const runTurn = (game, state, options = {}) => { const effects = []; for (let i = 0; i < 4000 && !effects.some(e => e.type === 'finish'); i++) effects.push(...step(game, state, 1 / 60, options)); return effects; };
@@ -63,19 +63,37 @@ test('the next turn is announced only while preparing, after the outcome-depende
   assert.ok(Math.abs(seconds - nextTurnSeconds(false)) < .05, `miss announce ends at ${nextTurnSeconds(false)} s (${seconds.toFixed(2)})`);
 });
 
-test('first-turn preparation holds input and the aiming clock until the count-in ends', () => {
+test('first-turn preparation waits for control and resets after sustained loss', () => {
   const game = createGame({ carousel: true }), state = createTurnState(9);
   beginFirstTurnPreparation(state, 15);
-  assert.equal(FIRST_TURN_PREPARATION_SECONDS, 2.5);
+  assert.equal(FIRST_TURN_PREPARATION_SECONDS, 4);
+  assert.equal(FIRST_TURN_CONTROL_LOSS_GRACE_SECONDS, .7);
   assert.equal(game.phase, 'idle');
   assert.equal(requestDrop(game, state), false, 'idle preparation cannot accept a drop');
 
   const carouselAtStart = game.carouselTime, input = { x: 1, z: -1 }, effects = [];
-  assert.deepEqual(step(game, state, 1 / 60, { preparing: false }, input), [], 'a blocking dialog holds preparation');
+  assert.deepEqual(step(game, state, 1 / 60, { preparing: false, controlReady: true }, input), [], 'a blocking dialog holds preparation');
   assert.equal(state.firstTurnPreparationElapsed, 0);
+  for (let i = 0; i < 90; i++) step(game, state, 1 / 60, { preparing: true, controlReady: false }, input);
+  assert.equal(state.firstTurnControlReady, false, 'hands must be recognized before countdown begins');
+  assert.equal(state.firstTurnPreparationElapsed, 0);
+
+  for (let i = 0; i < 30; i++) step(game, state, 1 / 60, { preparing: true, controlReady: true }, input);
+  const elapsedBeforeBriefLoss = state.firstTurnPreparationElapsed;
+  for (let i = 0; i < 24; i++) step(game, state, 1 / 60, { preparing: true, controlReady: false }, input);
+  assert.equal(state.firstTurnControlReady, true, 'brief camera gaps stay in the current count-in');
+  assert.equal(state.firstTurnPreparationElapsed, elapsedBeforeBriefLoss, 'the countdown freezes during a brief loss');
+  for (let i = 0; i < 18; i++) step(game, state, 1 / 60, { preparing: true, controlReady: true }, input);
+  assert.ok(state.firstTurnPreparationElapsed > elapsedBeforeBriefLoss);
+  for (let i = 0; i < 50; i++) step(game, state, 1 / 60, { preparing: true, controlReady: false }, input);
+  assert.equal(state.firstTurnControlReady, false, 'sustained control loss returns prep to waiting');
+  assert.equal(state.firstTurnPreparationElapsed, 0, 'reacquisition starts again from ROUND 1');
+  for (let i = 0; i < 90; i++) step(game, state, 1 / 60, { preparing: true, controlReady: false }, input);
+  assert.equal(state.firstTurnPreparationElapsed, 0, 'waiting itself never consumes count-in time');
+
   let elapsed = 0;
-  while (!effects.some(effect => effect.type === 'nextTurn') && elapsed < 4) {
-    effects.push(...step(game, state, 1 / 60, { preparing: true }, input));
+  while (!effects.some(effect => effect.type === 'nextTurn') && elapsed < 4.5) {
+    effects.push(...step(game, state, 1 / 60, { preparing: true, controlReady: true }, input));
     elapsed += 1 / 60;
     assert.equal(game.phase, 'idle', 'the first turn stays unstarted during preparation');
     assert.equal(game.carouselTime, carouselAtStart, 'the moving target starts from its existing timing origin');

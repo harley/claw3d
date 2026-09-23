@@ -3,10 +3,21 @@ import assert from 'node:assert/strict';
 export async function installCameraFixture(page) {
   await page.route('**/src/vision.js', route => route.fulfill({ contentType: 'application/javascript', body: `
     export class HandController {
-      constructor(options) { Object.assign(this, options); this.running = false; this.input = {x:0,z:0}; this.visible = true; window.testCamera = this; }
+      constructor(options) { Object.assign(this, options); this.running = false; this.input = {x:0,z:0}; this.visible = true; this.feedback = {}; window.testCamera = this; }
       resetOwner() { this.input = {x:0,z:0}; this.onInput(this.input); }
       async start() { this.running = true; this.tick(); this.timer = setInterval(() => this.tick(), 30); }
-      tick() { this.onInput(this.visible ? this.input : {x:0,z:0}); this.onState({kind: this.visible ? 'tracking' : 'lost', message: this.visible ? 'One hand to steer · clench to drop' : 'Show one hand to continue', ...this.feedback}); }
+      tick() {
+        const profile = this.getControlProfile?.() || 'hold-drop';
+        const common = { profile, kind: this.visible ? 'tracking' : 'lost', message: this.visible ? profile === 'dual' ? 'Both hands recognized' : 'One hand to steer · clench to drop' : profile === 'dual' ? 'Show both hands to continue' : 'Show one hand to continue', handCount: this.visible ? profile === 'dual' ? 2 : 1 : 0, controlEnabled: true };
+        const modeFeedback = profile === 'dual'
+          ? { hands: { left: { ready: this.visible, open: true, closed: false }, right: { ready: this.visible, open: true, closed: false } }, dropEnabled: false }
+          : profile === 'grab-release' ? { grab: { stage: 'seeking' }, open: true, closed: false } : { open: true, closed: false };
+        this.onInput(this.visible ? this.input : {x:0,z:0});
+        this.onState({ ...common, ...modeFeedback, ...this.feedback });
+      }
+      setFeedback(feedback) { this.feedback = feedback; this.tick(); }
+      clearFeedback() { this.feedback = {}; this.tick(); }
+      neutralizeInput() { this.input = {x:0,z:0}; this.onInput(this.input); }
       stop() { clearInterval(this.timer); this.running = false; this.onState({kind:'off',message:'Start the camera to play'}); }
       setPerformanceMode() { return false; }
       clench() { return this.onDrop(); }
@@ -16,7 +27,23 @@ export async function installCameraFixture(page) {
 export const cameraInput = (page, input) => page.evaluate(input => { window.testCamera.input = input; window.testCamera.tick(); }, input);
 export const cameraDrop = page => page.evaluate(() => window.testCamera.clench());
 
-export async function assertScoredStart(page, { captureScreenshots = false } = {}) {
+export async function assertScoredStart(page, { captureScreenshots = false, exerciseClosedReadiness = false } = {}) {
+  if (exerciseClosedReadiness) {
+    await page.evaluate(() => window.testCamera.setFeedback({ kind: 'clenching', closed: true }));
+    await page.waitForFunction(() => document.getElementById('status').textContent === 'OPEN HAND TO READY' &&
+      window.__littleCloud.snapshot().event.firstTurnControlReady === false &&
+      window.__littleCloud.snapshot().event.firstTurnPreparationElapsed === 0);
+    await page.waitForTimeout(250);
+    const waiting = await page.evaluate(() => ({
+      elapsed: window.__littleCloud.snapshot().event.firstTurnPreparationElapsed,
+      turn: window.__littleCloud.snapshot().event.turn,
+      remaining: window.__littleCloud.snapshot().event.remaining,
+    }));
+    assert.equal(waiting.elapsed, 0, 'a closed hand cannot advance the first count-in');
+    assert.equal(waiting.turn, 0, 'a closed hand cannot start a scored turn');
+    assert.equal(waiting.remaining, 15, 'a closed hand cannot consume aiming time');
+    await page.evaluate(() => window.testCamera.clearFeedback());
+  }
   await page.waitForFunction(() => {
     const state = window.__littleCloud.snapshot();
     return state.event.run && state.phase === 'idle' && document.getElementById('status').textContent === 'ROUND 1';
@@ -28,6 +55,7 @@ export async function assertScoredStart(page, { captureScreenshots = false } = {
     speed: document.getElementById('speed-bonus').textContent,
     score: document.getElementById('score').textContent,
     cue: document.getElementById('score-cue').textContent,
+    controlReady: window.__littleCloud.snapshot().event.firstTurnControlReady,
   }));
   assert.equal(prepared.state.event.run.turns.length, 0);
   assert.equal(prepared.state.event.turn, 0, 'no scored turn starts during preparation');
@@ -37,41 +65,67 @@ export async function assertScoredStart(page, { captureScreenshots = false } = {
   assert.equal(prepared.speed, 'SPEED +50');
   assert.equal(prepared.score, '000');
   assert.equal(prepared.cue, 'Catch faster. Earn more points.');
+  assert.equal(prepared.controlReady, true, 'the count-in starts only after the camera fixture recognizes the selected controller');
   const wideCamera = prepared.state.camera;
 
   const desktop = await page.evaluate(() => ({
     width: innerWidth,
     scoreSize: parseFloat(getComputedStyle(document.getElementById('score')).fontSize),
     timerSize: parseFloat(getComputedStyle(document.getElementById('timer')).fontSize),
+    cueSize: parseFloat(getComputedStyle(document.getElementById('score-cue')).fontSize),
     scoreColor: getComputedStyle(document.getElementById('score')).color,
     timerColor: getComputedStyle(document.getElementById('timer')).color,
   }));
   if (desktop.width > 1000) {
     assert.ok(desktop.scoreSize >= 40, `desktop score is large (${desktop.scoreSize}px)`);
+    assert.ok(desktop.cueSize >= 14, `desktop speed reminder is readable (${desktop.cueSize}px)`);
     assert.notEqual(desktop.scoreColor, desktop.timerColor, 'score and time have separate colors');
   }
   if (captureScreenshots) {
     const viewport = page.viewportSize() || { width: 1280, height: 720 };
-    await page.screenshot({ path: '.screenshots/issue-90-countdown-desktop.png' });
+    await page.screenshot({ path: '.screenshots/issue-93-countdown-desktop.png' });
     await page.setViewportSize({ width: 390, height: 844 });
     const narrow = await page.evaluate(() => {
       const rect = id => document.getElementById(id).getBoundingClientRect();
       const hud = document.querySelector('.player-hud').getBoundingClientRect();
       const score = rect('score'), timer = rect('timer'), cue = rect('score-cue');
-      return { width: innerWidth, scrollWidth: document.documentElement.scrollWidth, scoreSize: parseFloat(getComputedStyle(document.getElementById('score')).fontSize), hud, score, timer, cue };
+      return { width: innerWidth, scrollWidth: document.documentElement.scrollWidth, scoreSize: parseFloat(getComputedStyle(document.getElementById('score')).fontSize), cueSize: parseFloat(getComputedStyle(document.getElementById('score-cue')).fontSize), hud, score, timer, cue };
     });
     assert.ok(narrow.scoreSize >= 24, `narrow score remains readable (${narrow.scoreSize}px)`);
+    assert.ok(narrow.cueSize >= 11, `narrow speed reminder is readable (${narrow.cueSize}px)`);
     assert.ok(narrow.scrollWidth <= narrow.width, 'narrow HUD has no horizontal overflow');
     assert.ok(narrow.score.right <= narrow.hud.right && narrow.timer.right <= narrow.hud.right, 'score and timer stay inside the HUD');
     assert.ok(narrow.score.right < narrow.timer.left, 'score stays distinct from time left');
     assert.ok(narrow.cue.left >= narrow.hud.left && narrow.cue.right <= narrow.hud.right, 'speed cue stays inside the HUD');
-    await page.screenshot({ path: '.screenshots/issue-90-countdown-narrow.png' });
+    await page.screenshot({ path: '.screenshots/issue-93-countdown-narrow.png' });
     await page.setViewportSize(viewport);
   }
 
   assert.equal(await cameraDrop(page), false, 'no drop is accepted during the first-turn count-in');
-  for (const cue of ['3', '2', '1', 'START!']) {
+  await page.evaluate(() => { window.testCamera.visible = false; window.testCamera.tick(); });
+  await page.waitForFunction(() => {
+    const event = window.__littleCloud.snapshot().event;
+    return !event.firstTurnControlReady && event.firstTurnPreparationElapsed === 0;
+  }, null, { timeout: 2500 });
+  const waiting = await page.evaluate(() => ({ state: window.__littleCloud.snapshot(), title: document.getElementById('status').textContent }));
+  assert.equal(waiting.state.phase, 'idle');
+  assert.equal(waiting.state.event.remaining, 15);
+  assert.equal(waiting.state.event.turn, 0);
+  assert.equal(waiting.title, waiting.state.event.controlProfile === 'dual' ? 'SHOW BOTH HANDS TO CONTINUE' : 'SHOW ONE HAND');
+  assert.equal(await cameraDrop(page), false, 'control loss cannot turn unfinished first prep into a scored drop');
+
+  const reacquiredAt = await page.evaluate(() => performance.now());
+  await page.evaluate(() => { window.testCamera.visible = true; window.testCamera.tick(); });
+  await page.waitForFunction(() => window.__littleCloud.snapshot().event.firstTurnControlReady);
+  await page.waitForFunction(() => document.getElementById('status').textContent === '3');
+  const threeAt = await page.evaluate(() => performance.now());
+  assert.ok(threeAt - reacquiredAt >= 450 && threeAt - reacquiredAt <= 1250, `ROUND 1 precedes 3 for about 0.7 s (${Math.round(threeAt - reacquiredAt)} ms)`);
+  let priorDigitAt = threeAt;
+  for (const cue of ['2', '1', 'START!']) {
     await page.waitForFunction(expected => document.getElementById('status').textContent === expected, cue);
+    const cueAt = await page.evaluate(() => performance.now());
+    assert.ok(cueAt - priorDigitAt >= 800 && cueAt - priorDigitAt <= 1350, `${cue} follows its prior digit after about one second (${Math.round(cueAt - priorDigitAt)} ms)`);
+    priorDigitAt = cueAt;
     const state = await page.evaluate(() => window.__littleCloud.snapshot());
     assert.equal(state.phase, 'idle', `${cue} remains preparation`);
     assert.equal(state.event.remaining, 15, `${cue} does not consume aiming time`);
@@ -80,11 +134,14 @@ export async function assertScoredStart(page, { captureScreenshots = false } = {
   assert.equal(await cameraDrop(page), false, 'the START cue still rejects drops');
   const startCamera = await page.evaluate(() => window.__littleCloud.snapshot().camera);
   assert.ok(Math.hypot(...startCamera.map((value, i) => value - wideCamera[i])) > .1, 'the count-in moves the camera into the play view before START');
+  const startAt = await page.evaluate(() => performance.now());
   await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
+  const aimAt = await page.evaluate(() => performance.now());
+  assert.ok(aimAt - startAt >= 180 && aimAt - startAt <= 800, `START is a short cue before aim (${Math.round(aimAt - startAt)} ms)`);
   const scored = await page.evaluate(() => window.__littleCloud.snapshot());
   assert.equal(scored.phase, 'aim');
   assert.equal(scored.event.run.turns.length, 0); assert.equal(scored.event.turn, 1);
-  assert.equal(scored.event.remaining, 15, 'aiming begins with the full clock');
+  assert.ok(scored.event.remaining >= 14.9, `aiming begins with the full clock (${scored.event.remaining.toFixed(2)} s after the first aim frame)`);
   assert.ok(Math.hypot(...scored.camera.map((value, i) => value - startCamera[i])) < .001, 'the camera is settled before the first timed frame');
   assert.equal(await page.locator('#practice, #practice-marker, #rehearsal-exit').count(), 0);
 }

@@ -33,7 +33,7 @@ try {
   const open = async () => { await page.goto('http://127.0.0.1:4196/?setup=manual'); await page.waitForFunction(() => window.__littleCloud); };
   const start = async () => {
     await page.locator('#play').click(); await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running);
-    await page.locator('#play').click(); await page.locator('#name').press('Enter'); await assertScoredStart(page);
+    await page.locator('#play').click(); await page.locator('#name').press('Enter'); await assertScoredStart(page, { exerciseClosedReadiness: true });
   };
   const starNotes = () => page.evaluate(() => window.audioCheck.notes.filter(n => Math.abs(n.stops[0] - n.start - .09) < .0001));
   await open(); assert.equal(await page.locator('#sound-volume').count(), 0);
@@ -44,6 +44,9 @@ try {
   await page.waitForFunction(() => window.audioCheck.gains[0].scheduledLevel === 0);
   assert.ok(await page.evaluate(() => window.audioCheck.notes.every(n => n.stops.length === 2 || n.ended)), 'mute cancels every note still scheduled or sounding');
   await page.locator('#sound').click(); await start();
+  assert.ok(await page.evaluate(() => [659, 784, 988, 880, 1175].every(frequency =>
+    window.audioCheck.notes.some(note => note.phase === 'idle' && note.turn === 0 && note.frequency === frequency))),
+  'the first-turn 3-2-1-START count has a short synthesized tone at each cue');
   const motorCount = () => page.evaluate(() => window.audioCheck.notes.filter(n => n.frequency === 130).length);
   await page.waitForTimeout(250); assert.equal(await motorCount(), 0, 'hand presence alone makes no movement sound');
   await cameraInput(page, { x: 1, z: 0 });

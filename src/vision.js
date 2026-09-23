@@ -48,6 +48,14 @@ export class HandController {
     if (this.controlProfile === 'dual' && this.overlay) this.draw([], null);
   }
 
+  neutralizeInput() {
+    this.input = { x: 0, z: 0 };
+    this.onInput(this.input);
+    this.steer.release();
+    this.dual.left.steer.release();
+    this.dual.right.gesture.reset();
+  }
+
   async listCameras(selected) {
     const generation = this.generation;
     if (!navigator.mediaDevices?.enumerateDevices) return;
@@ -340,26 +348,28 @@ export class HandController {
     const phase = this.getPhase();
     const profile = this.getControlProfile?.() || 'hold-drop';
     const acceptsInput = ['idle', 'aim', 'result'].includes(phase);
-    // Recognition stays visible during setup and delivery. Only game permission
-    // enables actions; a held gesture cannot carry across that boundary.
-    if (this.acceptedInput !== acceptsInput || this.controlProfile !== profile) {
+    const recognizes = acceptsInput || phase === 'recognizing';
+    // Recognition can acquire the selected controller before first-turn prep.
+    // Crossing from recognition-only to aim preserves the hand, while leaving
+    // a recognized phase or changing profile discards all gesture evidence.
+    if (this.recognizes !== recognizes || this.controlProfile !== profile) {
       this.fist.reset(); this.grab.reset(); this.dual.reset(); this.controlProfile = profile;
       this.neutral = null; this.input = { x: 0, z: 0 };
-      this.acceptedInput = acceptsInput;
+      this.recognizes = recognizes;
     }
     if (profile === 'dual') {
-      if (!acceptsInput) {
+      if (!recognizes) {
         this.dual.reset(); this.input = { x: 0, z: 0 }; this.onInput(this.input);
         this.dualFeedback = { kind: 'blocked', profile, controlEnabled: false, hands: {} };
       } else {
         const state = this.dual.update(hands, now, (point, role, origin) => this.getControlTarget?.(point, role, origin) || {});
-        this.input = state.input; this.onInput(this.input);
+        this.input = acceptsInput ? state.input : { x: 0, z: 0 }; this.onInput(this.input);
         if (state.fired) {
-          const accepted = this.onDrop() !== false;
+          const accepted = acceptsInput && this.onDrop() !== false;
           state.kind = accepted ? 'accepted' : 'tracking';
           if (!accepted) this.dual.right.gesture.reset();
         }
-        this.dualFeedback = { ...state, profile, handCount: hands.length, controlEnabled: true };
+        this.dualFeedback = { ...state, profile, handCount: hands.length, controlEnabled: acceptsInput };
       }
       this.onState(this.dualFeedback);
       this.draw(hands, null); return;
@@ -383,9 +393,14 @@ export class HandController {
           this.owner = { ...hand.center, handedness: hand.handedness };
           this.neutral = { ...hand.center };
           if (acceptsInput && phase !== 'aim') this.onStart('camera');
-          report({ kind: 'tracking', message: acceptsInput ? 'Move your hand to steer.' : 'Hand ready.', progress: 0 });
+          report({ kind: 'tracking', open: hand.fist.open, closed: hand.fist.closed,
+            message: acceptsInput ? 'Move your hand to steer.' : 'Hand ready.', progress: 0 });
         }
-      } else { this.pinchSince = 0; this.candidate = null; this.onState({ kind: 'ready', message: 'Open your hand to begin.' }); }
+      } else {
+        this.pinchSince = 0; this.candidate = null;
+        this.onState({ kind: 'ready', profile, handCount: hands.length, open: hand.fist.open,
+          closed: hand.fist.closed, message: 'Open your hand to begin.' });
+      }
       sendInput({ x: 0, z: 0 });
       this.draw(hands, this.owner ? hand : null); return;
     }
@@ -447,7 +462,9 @@ export class HandController {
     this.steer.mode = this.steering === 'absolute' ? 'absolute' : 'relative';
     this.input = this.steer.update(hand.center, now);
     sendInput(this.input);
-    report({ kind: 'tracking', message: !acceptsInput ? 'Hand ready.' : 'Steer with an open hand. Clench your fist and hold to drop.', progress: 0 });
+    const waitingForOpen = phase === 'recognizing' && hand.fist.closed;
+    report({ kind: waitingForOpen ? 'clenching' : 'tracking', open: hand.fist.open, closed: hand.fist.closed,
+      message: waitingForOpen ? 'Open your hand to begin.' : !acceptsInput ? 'Hand ready.' : 'Steer with an open hand. Clench your fist and hold to drop.', progress: 0 });
     this.draw(hands, hand);
   }
 

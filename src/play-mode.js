@@ -33,3 +33,18 @@ export function cueLeadSeconds({ dual = false, grab = false, holdMs } = {}, feed
   if (grab) return PRESS_MS / 1000;
   return holdMs ? holdMs / 1000 : undefined;
 }
+
+// First-turn prep starts only after the selected input profile has a usable,
+// confidently acquired controller. Recognition can run during prep, but the
+// camera adapter keeps steering and drops disabled until START.
+export function firstTurnControlReady(mode, feedback = {}) {
+  if (!mode || feedback.profile !== mode.profile) return false;
+  if (mode.dual) {
+    const { left, right } = feedback.hands || {};
+    return feedback.kind === 'tracking' && left?.ready === true && right?.ready === true &&
+      left.open === true && right.open === true && left.closed !== true && right.closed !== true;
+  }
+  if (feedback.kind !== 'tracking' || feedback.handCount !== 1) return false;
+  if (mode.grab && feedback.grab?.stage === 'gripped') return true;
+  return feedback.open === true && feedback.closed !== true;
+}

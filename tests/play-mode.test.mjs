@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolvePlayMode, cueLeadSeconds } from '../src/play-mode.js';
+import { resolvePlayMode, cueLeadSeconds, firstTurnControlReady } from '../src/play-mode.js';
 import { STORAGE_KEY } from '../src/event-session.js';
 import { HAND_ACQUIRE_MS, RIGHT_SLAM_MS } from '../src/dual-hand-controls.js';
 import { PRESS_MS } from '../src/grab-release.js';
@@ -31,4 +31,24 @@ test('the cue lead is one helper for every surface', () => {
   assert.equal(cueLeadSeconds({ grab: true }), PRESS_MS / 1000);
   assert.equal(cueLeadSeconds({ dual: true }), (HAND_ACQUIRE_MS + RIGHT_SLAM_MS) / 1000, 'a right hand not yet acquired');
   assert.equal(cueLeadSeconds({ dual: true }, { hands: { right: { ready: true } } }), RIGHT_SLAM_MS / 1000, 'an acquired right hand only needs the strike');
+});
+
+test('first-turn readiness follows the selected profile and requires fresh usable hands', () => {
+  const oneHand = resolvePlayMode('', false), grab = resolvePlayMode('?controls=grab', false), dual = resolvePlayMode('?controls=dual', false);
+  assert.equal(firstTurnControlReady(oneHand, { profile: 'hold-drop', kind: 'tracking', handCount: 1, open: true, closed: false }), true);
+  assert.equal(firstTurnControlReady(oneHand, { profile: 'hold-drop', kind: 'tracking', handCount: 1, open: false, closed: false }), false, 'an ambiguous pose is not positive open-hand evidence');
+  assert.equal(firstTurnControlReady(oneHand, { profile: 'hold-drop', kind: 'tracking', handCount: 1 }), false, 'missing openness evidence cannot pass readiness');
+  assert.equal(firstTurnControlReady(oneHand, { profile: 'hold-drop', kind: 'tracking', handCount: 1, closed: true }), false, 'a closed fist cannot pass readiness');
+  assert.equal(firstTurnControlReady(oneHand, { profile: 'hold-drop', kind: 'tracking', handCount: 2, closed: false }), false);
+  assert.equal(firstTurnControlReady(oneHand, { profile: 'hold-drop', kind: 'clenching', handCount: 1 }), false);
+  assert.equal(firstTurnControlReady(oneHand, { profile: 'grab-release', kind: 'tracking', handCount: 1 }), false, 'a different effective profile cannot start prep');
+  assert.equal(firstTurnControlReady(grab, { profile: 'grab-release', kind: 'tracking', handCount: 1, grab: { stage: 'seeking' }, open: true, closed: false }), true);
+  assert.equal(firstTurnControlReady(grab, { profile: 'grab-release', kind: 'tracking', handCount: 1, grab: { stage: 'seeking' }, open: false, closed: false }), false);
+  assert.equal(firstTurnControlReady(grab, { profile: 'grab-release', kind: 'tracking', handCount: 1, grab: { stage: 'seeking' }, closed: true }), false);
+  assert.equal(firstTurnControlReady(grab, { profile: 'grab-release', kind: 'tracking', handCount: 1, grab: { stage: 'gripped' }, closed: true }), true, 'an acquired joystick grip is ready');
+  const hands = { left: { ready: true, open: true, closed: false }, right: { ready: true, open: true, closed: false } };
+  assert.equal(firstTurnControlReady(dual, { profile: 'dual', kind: 'tracking', hands }), true);
+  assert.equal(firstTurnControlReady(dual, { profile: 'dual', kind: 'tracking', hands: { ...hands, right: { ready: true, open: false, closed: false } } }), false, 'a tracked ambiguous pose is not ready');
+  assert.equal(firstTurnControlReady(dual, { profile: 'dual', kind: 'tracking', hands: { ...hands, right: { ready: false, closed: false } } }), false);
+  assert.equal(firstTurnControlReady(dual, { profile: 'dual', kind: 'tracking', hands: { ...hands, left: { ready: true, closed: true } } }), false);
 });
