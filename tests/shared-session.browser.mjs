@@ -20,9 +20,12 @@ async function open(context) {
   const page = await context.newPage(); activePage = page; page.on('pageerror', error => errors.push(error.message));
   await page.route('**/assets/vision-*.js', async route => {
     // Preserve the bundler's exported symbol, replacing only recognition with deterministic events.
-    const original = await (await route.fetch()).text();
+    const response = await route.fetch();
+    const original = await response.text();
     const alias = original.includes(' as HandController') ? 'HandController' : null;
-    assert.ok(alias, 'production vision export found');
+    // Multiple entries can split vision into a public facade and supporting
+    // chunks. Only replace the public controller; leave worker/shared exports intact.
+    if (!alias) { await route.fulfill({ response }); return; }
     await route.fulfill({ contentType: 'text/javascript', body: `
       class HandController {
         constructor(options) { Object.assign(this, options); this.running=false; this.visible=true; this.input={x:0,z:0}; window.testCamera=this; }
