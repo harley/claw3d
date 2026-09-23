@@ -50,7 +50,10 @@ export async function checkStarCue(browser) {
       await page.locator('#name').press('Enter');
       await page.waitForFunction(() => window.__littleCloud.snapshot().event.run);
       await page.evaluate(() => {
-        for (let i = 0; i < 100; i++) cueSample();
+        // The count-in now owns the turn start and resets the claw pose there.
+        // Finish it before positioning the synthetic star-cue fixture.
+        for (let i = 0; i < 1000 && cueGame.phase !== 'aim'; i++) cueSample();
+        if (cueGame.phase !== 'aim') throw new Error('first-turn preparation did not start aiming');
         cueGame.position = { x: .8, z: .22 }; cueGame.carouselTime = 2.4;
         window.readCue = () => {
           const state = __littleCloud.snapshot(), signal = document.getElementById('jackpot-signal');

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { browserOptions } from '../scripts/browser-options.mjs';
-import { installCameraFixture } from './camera-fixture.mjs';
+import { installCameraFixture, assertScoredStart } from './camera-fixture.mjs';
 const browser=await chromium.launch(browserOptions);
 try {
  const page=await browser.newPage({viewport:{width:1440,height:900}}), errors=[];
@@ -23,7 +23,7 @@ try {
  assert.equal(new URL(page.url()).searchParams.get('controls'),'dual');
  assert.equal(new URL(page.url()).searchParams.has('start'),false,'one-shot start is removed from URL');
  await page.locator('#register-play').click();
- await page.waitForFunction(()=>window.__littleCloud.snapshot().phase==='aim');
+ await assertScoredStart(page);
  assert.equal(await page.evaluate(()=>window.__littleCloud.snapshot().event.controlProfile),'dual');
  assert.equal(await page.locator('#mode-one').isDisabled(),true,'mode cannot change inside an active run');
  const id=await page.evaluate(()=>window.__littleCloud.snapshot().event.run.id);
@@ -34,7 +34,7 @@ try {
  await page.locator('#mode-one').click();await page.waitForFunction(()=>document.getElementById('mode-one').getAttribute('aria-pressed')==='true' && !document.getElementById('mode-one').disabled && window.testCamera?.running); await page.locator('#play').click();await page.locator('#registration').waitFor();
  assert.equal(new URL(page.url()).searchParams.has('controls'),false);
  await page.locator('#register-play').click();
- await page.waitForFunction(()=>window.__littleCloud.snapshot().phase==='aim');
+ await assertScoredStart(page);
  assert.equal(await page.evaluate(()=>window.__littleCloud.snapshot().event.controlProfile),'hold-drop');
  assert.equal(await page.locator('#control-deck').isVisible(),false);
  await page.locator('#machine-drop').waitFor({state:'visible',timeout:5000});

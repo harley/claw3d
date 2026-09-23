@@ -9,6 +9,12 @@ test('after a catch the next round keeps every cue and returns control in 2.5 s'
   }
 });
 
+test('the first round shows the same 3–2–1 start count-in as later caught rounds', () => {
+  for (const [elapsed, cue] of [[0, 'ROUND 1'], [.699, 'ROUND 1'], [.7, '3'], [1.2, '2'], [1.7, '1'], [2.2, 'START!']]) {
+    assert.equal(nextTurnCue(elapsed, 1), cue);
+  }
+});
+
 test('after a miss the next round names the outcome and starts within 1.2 s', () => {
   assert.equal(nextTurnSeconds(false), 1.2);
   for (const [elapsed, cue] of [[0, 'MISSED'], [.599, 'MISSED'], [.6, 'START!'], [1.199, 'START!']]) {

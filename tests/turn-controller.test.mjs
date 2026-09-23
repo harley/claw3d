@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createGame, begin, PHASES, MISS_LIFT } from '../src/arcade-mechanics.js';
-import { createTurnState, beginTurnState, requestDrop, stepTurn, nextTurnSeconds, HIT_STOP_SECONDS } from '../src/turn-controller.js';
+import { createTurnState, beginTurnState, beginFirstTurnPreparation, requestDrop, stepTurn, nextTurnSeconds, FIRST_TURN_PREPARATION_SECONDS, HIT_STOP_SECONDS } from '../src/turn-controller.js';
 
 const step = (game, state, dt, options = {}, input = { x: 0, z: 0 }) => stepTurn(game, state, input, dt, options);
 const runTurn = (game, state, options = {}) => { const effects = []; for (let i = 0; i < 4000 && !effects.some(e => e.type === 'finish'); i++) effects.push(...step(game, state, 1 / 60, options)); return effects; };
@@ -61,6 +61,36 @@ test('the next turn is announced only while preparing, after the outcome-depende
   state.nextTurnElapsed = 0; effects = []; let seconds = 0;
   while (!effects.some(e => e.type === 'nextTurn') && seconds < 5) { effects.push(...step(game, state, 1 / 60, { preparing: true })); seconds += 1 / 60; }
   assert.ok(Math.abs(seconds - nextTurnSeconds(false)) < .05, `miss announce ends at ${nextTurnSeconds(false)} s (${seconds.toFixed(2)})`);
+});
+
+test('first-turn preparation holds input and the aiming clock until the count-in ends', () => {
+  const game = createGame({ carousel: true }), state = createTurnState(9);
+  beginFirstTurnPreparation(state, 15);
+  assert.equal(FIRST_TURN_PREPARATION_SECONDS, 2.5);
+  assert.equal(game.phase, 'idle');
+  assert.equal(requestDrop(game, state), false, 'idle preparation cannot accept a drop');
+
+  const carouselAtStart = game.carouselTime, input = { x: 1, z: -1 }, effects = [];
+  assert.deepEqual(step(game, state, 1 / 60, { preparing: false }, input), [], 'a blocking dialog holds preparation');
+  assert.equal(state.firstTurnPreparationElapsed, 0);
+  let elapsed = 0;
+  while (!effects.some(effect => effect.type === 'nextTurn') && elapsed < 4) {
+    effects.push(...step(game, state, 1 / 60, { preparing: true }, input));
+    elapsed += 1 / 60;
+    assert.equal(game.phase, 'idle', 'the first turn stays unstarted during preparation');
+    assert.equal(game.carouselTime, carouselAtStart, 'the moving target starts from its existing timing origin');
+    assert.equal(state.remaining, 15, 'the full aiming time remains available');
+    assert.deepEqual(input, { x: 0, z: 0 }, 'steering input is ignored during preparation');
+    assert.equal(effects.some(effect => ['aim', 'drop', 'finish'].includes(effect.type)), false);
+  }
+  assert.ok(Math.abs(elapsed - FIRST_TURN_PREPARATION_SECONDS) < .02, `count-in ends after ${elapsed.toFixed(2)} s`);
+  assert.equal(effects.filter(effect => effect.type === 'nextTurn').length, 1);
+  assert.equal(effects.find(effect => effect.type === 'nextTurn').initial, true);
+  assert.equal(state.firstTurnPreparationElapsed, null);
+
+  beginTurnState(state, 15); assert.ok(begin(game));
+  step(game, state, .1);
+  assert.ok(Math.abs(state.remaining - 14.9) < 1e-9, 'aiming time starts only after the count-in');
 });
 
 test('a zero step changes nothing and a catch reports its score pop once', () => {

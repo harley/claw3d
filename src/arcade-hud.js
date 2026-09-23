@@ -67,11 +67,14 @@ function presentMessage(title, hint, key, duration = 0) {
 export function createHud({ audio, phaseSound }) {
   let lastCue = '', lastStatus = '';
   function update(view, feedback, modal) {
-    const { game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus, storageError, aligned } = view;
+    const { game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, firstTurnPreparationElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus, storageError, aligned } = view;
   const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
   const turns = run?.rules?.turns ?? completedRun?.rules?.turns ?? RULES.turns;
+  const preparingFirstTurn = Boolean(run && firstTurnPreparationElapsed !== null);
+  $('arcade').classList.toggle('first-turn-layout', Boolean(run && (preparingFirstTurn || turnNumber === 1)));
   let title = 'READY', hint = '', button = 'Play', kicker = 'CLAW';
   if (recovering) { title = `TURN ${turnNumber} OF ${turns}`; button = cameraLoading ? 'Starting…' : 'CONTINUE'; }
+  else if (phase === 'idle' && preparingFirstTurn) { kicker = `ROUND 1 OF ${turns}`; title = nextTurnCue(firstTurnPreparationElapsed, 1); button = ''; }
   else if (phase === 'aim') { kicker = turnNumber === turns ? 'LAST CLAW!' : `TURN ${turnNumber} OF ${turns}`; title = 'Clench & hold to drop'; hint = ''; button = '';  }
   else if (phase === 'result' && run) { kicker = `ROUND ${turnNumber + 1} OF ${turns}`; title = nextTurnCue(nextTurnElapsed, turnNumber + 1, Boolean(game.plan?.prize)); hint = title === 'MISSED' ? missCopy(game.plan, game.toys) : ''; button = ''; }
   else if (phase in phaseCopy) {
@@ -83,7 +86,7 @@ export function createHud({ audio, phaseSound }) {
   phaseSound(phase, modal);
   // Attract mode: the idle machine gently pulses its invitation until a hand
   // takes control. CSS disables the pulse under reduced motion.
-  $('action-copy').classList.toggle('attract', phase === 'idle' && !paused && !recovering && (!cameraControls?.running || cameraControls.waiting));
+  $('action-copy').classList.toggle('attract', phase === 'idle' && !run && !paused && !recovering && (!cameraControls?.running || cameraControls.waiting));
   const cue = carouselCue(game.carouselTime, cueLeadSeconds({ dual: dualEnabled, grab: grabEnabled, holdMs }, feedback)), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
   const gripStage = feedback.grab?.stage;
   const rider = carouselRider(game), starAvailable = Boolean(rider), riderPoints = rider ? (run?.rules || RULES).points[rider.id] : 0;
@@ -179,7 +182,7 @@ export function createHud({ audio, phaseSound }) {
   if ($('arcade').dataset.phase !== phase) $('arcade').dataset.phase = phase;
   const signature = [title, hint, button, kicker, total, run?.name, pendingPlayer?.name, completedRun?.id, paused].join('');
   if (signature === lastStatus) return; lastStatus = signature;
-  $('player-name').textContent = run?.name || pendingPlayer?.name || completedRun?.name || 'PLAYER'; $('score').textContent = String(total).padStart(3, '0'); $('turn').textContent = run ? `${turnNumber} / 3` : '— / 3';
+  $('player-name').textContent = run?.name || pendingPlayer?.name || completedRun?.name || 'PLAYER'; $('score').textContent = String(total).padStart(3, '0'); $('turn').textContent = run ? `${preparingFirstTurn ? 1 : turnNumber} / ${turns}` : `— / ${turns}`;
   $('phase-label').textContent = kicker; $('button-text').textContent = button;
   $('play').hidden = Boolean(startingRun || (run && !recovering && !cameraRecovery && !paused));
   $('play').disabled = cameraLoading;

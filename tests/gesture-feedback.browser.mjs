@@ -22,6 +22,7 @@ try {
   await page.locator('#name').fill('Gesture check');
   await page.locator('#name').press('Enter');
   await page.waitForFunction(() => window.__littleCloud.snapshot().joystick.mode === 'tracking');
+  await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
   assert.equal(await page.locator('#status').textContent(), 'Clench & hold to drop');
   await page.screenshot({ path: '.screenshots/gesture-tracking.png' });
 
