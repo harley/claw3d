@@ -12,7 +12,8 @@ await installCameraFixture(page);
 const snap=()=>page.evaluate(()=>window.__littleCloud.snapshot());
 const phase=state=>page.waitForFunction(state=>window.__littleCloud.snapshot().phase===state,state,{timeout:30000});
 const open=async()=>{await page.goto('http://127.0.0.1:4196/?setup=manual');await page.waitForFunction(()=>window.__littleCloud);};
-const register=async name=>{if(!(await snap()).event.handCamera.running){await page.locator('#play').click();await page.waitForFunction(()=>window.__littleCloud.snapshot().event.handCamera.running);}await page.locator('#play').click();assert.equal(await page.locator('#name').getAttribute('required'),null);await page.locator('#name').fill(name);await page.locator('#name').press('Enter');await assertScoredStart(page);await phase('aim');};
+let capturedPreparation=false;
+const register=async name=>{if(!(await snap()).event.handCamera.running){await page.locator('#play').click();await page.waitForFunction(()=>window.__littleCloud.snapshot().event.handCamera.running);}await page.locator('#play').click();assert.equal(await page.locator('#name').getAttribute('required'),null);await page.locator('#name').fill(name);await page.locator('#name').press('Enter');await assertScoredStart(page,{captureScreenshots:!capturedPreparation});capturedPreparation=true;await phase('aim');};
 async function aimToy(id='butter'){ for(const axis of ['x','z']) for(let i=0;i<6;i++){const delta=({butter:{x:-.38,z:.72},peach:{x:.20,z:.72}}[id])[axis]-(await snap()).position[axis];if(Math.abs(delta)<.025)break;const speed=Math.abs(delta)<.14?.25:1;await cameraInput(page,{x:0,z:0,[axis]:Math.sign(delta)*speed});await page.waitForTimeout(Math.abs(delta)/(.85*speed)*1000);await cameraInput(page,{x:0,z:0});} assert.equal((await snap()).aligned,id);}
 let checkedDelivery = false;
 async function catchTurn(){
@@ -50,6 +51,9 @@ async function catchTurn(){
   checkedDelivery = true;
   console.log('PASS drop completes through blur, lost hands and camera settings');
  } else await phase('result');
+ const resultState=await snap();
+ const cumulative=resultState.event.run?.turns.reduce((sum,turn)=>sum+turn.score,0)??resultState.event.complete?.total??0;
+ assert.equal(await page.locator('#score').textContent(),String(cumulative).padStart(3,'0'),'HUD score shows the cumulative total after each scored turn');
  if ((await snap()).event.run) {
   const next = (await snap()).event.turn + 1;
   assert.equal(await page.locator('#status').textContent(), caught ? `ROUND ${next}` : 'MISSED');
@@ -129,6 +133,14 @@ try {
  assert.equal(await page.locator('#button-text').textContent(),'CONTINUE');
  assert.equal(await page.locator('#hint').isVisible(),false);
  await page.locator('#play').click();await phase('aim');
+ assert.equal((await snap()).event.run.id,recoveredId);assert.equal((await snap()).event.run.turns.length,0);
+ await page.reload();await page.waitForFunction(()=>window.__littleCloud);
+ assert.equal((await snap()).event.run.id,recoveredId);assert.equal((await snap()).event.run.turns.length,0);
+ await page.locator('#camera-open').click();await page.locator('#camera-toggle').click();await page.locator('#camera-setup').waitFor({state:'hidden'});
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await page.locator('#operator-open').click();await page.locator('#pause').click();
+ await assertScoredStart(page);await phase('aim');
+ await page.emulateMedia({reducedMotion:'no-preference'});
  assert.equal((await snap()).event.run.id,recoveredId);assert.equal((await snap()).event.run.turns.length,0);
  assert.equal(await page.locator('#operator').isVisible(),false);
  await page.locator('#operator-open').click();await page.locator('#pause').click();

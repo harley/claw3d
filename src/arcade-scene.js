@@ -8,6 +8,7 @@ import { palette, material, group, mesh, ball, box, cylinder, line, rod, batch, 
 import { createBloom, BLOOM_LAYER, rimColorFor, marqueeGlowFor } from './arcade-fx.js';
 
 const v = (x, y, z) => new T.Vector3(x, y, z);
+const wideToClose = (elapsed, reducedMotion) => reducedMotion ? Number(elapsed < 2.2) : 1 - ease((elapsed - 1.6) / .6);
 const SHADOW_FRUSTUM = {
   close: { left: -2.9, right: 2.9, top: 5.6, bottom: -2.2 },
   wide: { left: -5, right: 3.2, top: 5.7, bottom: -3.5 },
@@ -597,14 +598,15 @@ export class ArcadeScene {
     if (!this.reducedMotion) { position.x += Math.sin(time * .21) * .9; position.y += Math.sin(time * .13) * .25 + .15; position.z += Math.cos(time * .17) * .4; }
     look.copy(this.playLook); look.y -= .15;
   }
-  updateCamera(game, { preparing = false, nextTurnElapsed = 0, machineControls = false, attract = false, dt = 0 } = {}, time = 0) {
+  updateCamera(game, { preparing = false, nextTurnElapsed = 0, firstTurnPreparationElapsed = null, machineControls = false, attract = false, dt = 0 } = {}, time = 0) {
     this.updateAttract(attract, dt, game.phase);
     // Stay on the contact through the entire lift. A held prize pulls the view
     // back for its shelf run; after a miss the claw stays put and so does the view.
     let wide = ['idle', 'release', 'deliver', 'reveal', 'result'].includes(game.phase) ? 1 : 0;
     if (game.phase === 'transfer') wide = this.reducedMotion ? 1 : ease(game.elapsed / .65);
+    if (game.phase === 'idle' && firstTurnPreparationElapsed !== null) wide = wideToClose(firstTurnPreparationElapsed, this.reducedMotion);
     if (game.phase === 'result' && preparing) {
-      wide = !game.plan?.prize ? 0 : this.reducedMotion ? Number(nextTurnElapsed < 2.2) : 1 - ease((nextTurnElapsed - 1.6) / .6);
+      wide = !game.plan?.prize ? 0 : wideToClose(nextTurnElapsed, this.reducedMotion);
     }
     this.surroundings.visible = wide > 0;
     for (const id of game.collection || []) {

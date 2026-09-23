@@ -7,18 +7,22 @@ import { ABSOLUTE_SPEED } from './steering.js';
 // telemetry, persistence, announcements); nothing here reads or writes the page.
 export const HIT_STOP_SECONDS = .08;
 export const nextTurnSeconds = caught => caught ? 2.5 : 1.2;
+export const FIRST_TURN_PREPARATION_SECONDS = nextTurnSeconds(true);
 
 export function createTurnState(seconds) {
-  return { pendingSlam: null, remaining: seconds, hitStop: 0, nextTurnElapsed: 0, dropRemainingMs: 0, contactFeedback: null };
+  return { pendingSlam: null, remaining: seconds, hitStop: 0, nextTurnElapsed: 0, firstTurnPreparationElapsed: null, dropRemainingMs: 0, contactFeedback: null };
 }
 export function beginTurnState(state, seconds) {
-  state.nextTurnElapsed = 0; state.dropRemainingMs = 0; state.contactFeedback = null; state.hitStop = 0; state.remaining = seconds;
+  state.nextTurnElapsed = 0; state.firstTurnPreparationElapsed = null; state.dropRemainingMs = 0; state.contactFeedback = null; state.hitStop = 0; state.remaining = seconds;
+}
+export function beginFirstTurnPreparation(state, seconds) {
+  state.pendingSlam = null; state.nextTurnElapsed = 0; state.firstTurnPreparationElapsed = 0; state.dropRemainingMs = 0; state.contactFeedback = null; state.hitStop = 0; state.remaining = seconds;
 }
 
 // A drop request during aiming. The aiming time is locked at the request, so a
 // dual strike's 360 ms cannot cost speed points. Returns 'dropped', 'slam' or false.
 export function requestDrop(game, state, { dual = false, feedback = {} } = {}) {
-  if (state.pendingSlam || game.phase !== 'aim') return false;
+  if (state.pendingSlam || state.firstTurnPreparationElapsed !== null || game.phase !== 'aim') return false;
   if (dual) { state.pendingSlam = { elapsed: 0, feedback }; state.dropRemainingMs = Math.floor(state.remaining * 1000); return 'slam'; }
   if (!drop(game)) return false;
   state.dropRemainingMs = Math.floor(state.remaining * 1000);
@@ -36,6 +40,16 @@ export function requestDrop(game, state, { dual = false, feedback = {} } = {}) {
 //  { type: 'finish' }              the turn reached its result
 export function stepTurn(game, state, input, dt, { preparing = false, reducedMotion = false, slamSeconds = .36 } = {}) {
   const effects = [];
+  if (state.firstTurnPreparationElapsed !== null) {
+    input.x = input.z = 0;
+    if (!preparing) return effects;
+    state.firstTurnPreparationElapsed += dt;
+    if (state.firstTurnPreparationElapsed >= FIRST_TURN_PREPARATION_SECONDS) {
+      state.firstTurnPreparationElapsed = null;
+      effects.push({ type: 'nextTurn', initial: true });
+    }
+    return effects;
+  }
   if (state.pendingSlam) {
     input.x = input.z = 0;
     state.pendingSlam.elapsed += dt;

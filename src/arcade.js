@@ -9,7 +9,7 @@ import { createSharedBoard } from './shared-board.js';
 import { createPlaytestClient } from './playtest-client.js';
 import { createArcadeAudio } from './arcade-audio.js';
 import { createHud, $, setText, setHidden, finaleHeadline, missCopy, TROPHY_ICONS } from './arcade-hud.js';
-import { createTurnState, beginTurnState, requestDrop, stepTurn } from './turn-controller.js';
+import { createTurnState, beginTurnState, beginFirstTurnPreparation, requestDrop, stepTurn } from './turn-controller.js';
 import { createMovementMusic } from './movement-music.js';
 import { PerformanceGovernor, PERFORMANCE_WINDOW_MS } from './performance-governor.js';
 const shared = globalThis.__SHARED_PILOT__ === true;
@@ -100,7 +100,7 @@ const audio = createArcadeAudio({ onChange: syncSoundUI, enabledByDefault: !manu
 const movementMusic = createMovementMusic(audio);
 const hud = createHud({ audio, phaseSound });
 function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ? 'loading' : 'off' }, modal = Boolean(document.querySelector('dialog[open]'))) {
-  hud.update({ game, run, completedRun, pendingPlayer, turnNumber, remaining: flow.remaining, nextTurnElapsed: flow.nextTurnElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus: pilot.status, storageError, aligned }, feedback, modal);
+  hud.update({ game, run, completedRun, pendingPlayer, turnNumber, remaining: flow.remaining, nextTurnElapsed: flow.nextTurnElapsed, firstTurnPreparationElapsed: flow.firstTurnPreparationElapsed, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus: pilot.status, storageError, aligned }, feedback, modal);
 }
 function syncSoundUI() {
   const label = !audio.enabled ? 'Sound off' : !audio.volume ? 'Muted' : audio.ready ? 'Sound on' : 'Tap for sound';
@@ -122,23 +122,31 @@ function phaseSound(phase, modal) {
   } else if (phase === 'deliver' && game.plan?.prize) audio.fanfare('shelf');
   else if (phase === 'release' && game.plan?.prize) { audio.note(740, .1, 0, 'sine'); audio.note(980, .14, .1, 'sine'); }
 }
-function freshGame() { flow.pendingSlam = flow.contactFeedback = null; cameraControls?.reset(); game = createGame({ carousel: true }); scene?.groundToys(game); aligned = null; hud.invalidate(); }
+function freshGame() { flow.pendingSlam = flow.contactFeedback = null; flow.firstTurnPreparationElapsed = null; turnNumber = 0; cameraControls?.reset(); game = createGame({ carousel: true }); scene?.groundToys(game); aligned = null; hud.invalidate(); }
 function restoreTrophies() {
   for (const turn of run?.turns || []) {
     const toy = game.toys.find(toy => toy.id === turn.prizeId);
     if (toy && !toy.claimed) { toy.claimed = true; game.collection.push(toy.id); }
   }
 }
-function beginTurn() {
+function beginTurn({ prepared = false } = {}) {
   if (run.turns.length && !recovering && game.phase === 'result') {
     cameraControls?.reset(); aligned = null; hud.invalidate();
   } else {
-    freshGame();
+    if (prepared) { cameraControls?.reset(); aligned = null; hud.invalidate(); }
+    else freshGame();
     restoreTrophies();
   }
   turnNumber = run.turns.length + 1; beginTurnState(flow, run.rules.seconds); begin(game); recovering = false;
   if (turnNumber === run.rules.turns) { [330, 440, 660].forEach((f, i) => audio.note(f, .16, i * .15)); }
   else { [523, 784].forEach((f, i) => audio.note(f, .12, i * .09)); }
+  updateUI();
+}
+function resumeRecoveredRun() {
+  if (!run || !recovering) return;
+  if (run.turns.length === 0) {
+    freshGame(); beginFirstTurnPreparation(flow, run.rules.seconds); recovering = false;
+  } else beginTurn();
   updateUI();
 }
 function openRegistration(name = $('name').value) {
@@ -188,7 +196,7 @@ async function play() {
     if (recovering && !cameraControls?.running) await startCamera();
     if ((recovering && !cameraControls?.running) || run !== currentRun || stopped || document.querySelector('dialog[open]')) return;
     cameraControls?.reset(); paused = false;
-    if (recovering) beginTurn();
+    if (recovering) resumeRecoveredRun();
     updateUI(); return;
   }
   if (!run) { if (!cameraControls?.running) return startCamera(); return openRegistration(); }
@@ -209,7 +217,7 @@ async function startScoredRun() {
     } else run = startRun(store, pendingPlayer.name);
     turnReasons = [];
     track('run_start', { steering, ...(holdMs ? { holdMs } : {}) }, run);
-    pendingPlayer = null; completedRun = null; persist(); beginTurn();
+    pendingPlayer = null; completedRun = null; persist(); freshGame(); beginFirstTurnPreparation(flow, run.rules.seconds);
     $('shared-start').close();
   } catch (error) {
     if (shared) {
@@ -268,7 +276,7 @@ for (const [id, dual] of [['mode-one', false], ['mode-two', true]]) $(id).addEve
   url.searchParams.delete('start'); location.assign(url);
 });
 $('operator-open').addEventListener('click', openOperator);
-$('pause').addEventListener('click', () => { if (recovering) { beginTurn(); paused = false; } else paused = !paused; $('operator').close(); $('scene').focus(); });
+$('pause').addEventListener('click', () => { if (recovering) { resumeRecoveredRun(); paused = false; } else paused = !paused; $('operator').close(); $('scene').focus(); updateUI(); });
 $('reset').addEventListener('click', () => { if (startingRun) return; if (shared && run) pilot.abandon(run); if (store.active) { store.active.abortedAt = new Date().toISOString(); store.active = null; } run = null; pendingPlayer = null; completedRun = null; recovering = paused = frozen = false; persist(); freshGame(); $('operator').close(); updateUI(); });
 $('new-board').addEventListener('click', async () => {
   if (shared) {
@@ -410,7 +418,7 @@ function frame(time) {
       else if (effect.type === 'moved') { if (time - lastMovementSound >= 140) { lastMovementSound = time; audio.note(130, .065, 0, 'triangle', 95, .008); } }
       else if (effect.type === 'tick') audio.note(effect.remaining < 1 ? 220 : 440, .08);
       else if (effect.type === 'drop') track('drop', { trigger: effect.trigger, phase: game.phase, turn: turnNumber });
-      else if (effect.type === 'nextTurn') beginTurn();
+      else if (effect.type === 'nextTurn') beginTurn({ prepared: effect.initial === true });
       else if (effect.type === 'scorePop') showScorePop(scoreTurn(run?.rules || RULES, turnContext(run?.turns || [], effect.prizeId, flow.dropRemainingMs)));
       else if (effect.type === 'finish') finishTurn();
     }
@@ -459,7 +467,7 @@ function frame(time) {
     // Attract: idle machine, nobody registered, no dialog, and no hand in view.
     const attract = game.phase === 'idle' && !run && !recovering && !paused && !modal && !startingRun && !document.hidden && !['calibrating', 'tracking', 'clenching', 'accepted'].includes(feedback.kind);
     if (attract !== document.body.classList.contains('attract')) document.body.classList.toggle('attract', attract);
-    scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, sceneFeedback, Boolean(cameraControls?.running || cameraControls?.starting) && performanceGovernor.mode === 'simple', { preparing: Boolean(run && !recovering), nextTurnElapsed: flow.nextTurnElapsed, machineControls: cabinetEnabled, cueLead, attract, dt }); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
+    scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, sceneFeedback, Boolean(cameraControls?.running || cameraControls?.starting) && performanceGovernor.mode === 'simple', { preparing: Boolean(run && !recovering), nextTurnElapsed: flow.nextTurnElapsed, firstTurnPreparationElapsed: flow.firstTurnPreparationElapsed, machineControls: cabinetEnabled, cueLead, attract, dt }); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
     glove.update(grabEnabled ? feedback : { ...feedback, pointer: null }, cabinetEnabled && (game.phase === 'aim' || (dualEnabled && flow.contactFeedback && game.phase === 'anticipate')) && !paused && !modal && !frozen && !document.hidden, dt);
     const tagged = game.phase === 'aim' && aligned ? game.toys.find(toy => toy.id === aligned.id) : null;
     const target = tagged ? scene.screenPoint(tagged.x, BED + (tagged.elevation || 0) + .08, tagged.z) : null;

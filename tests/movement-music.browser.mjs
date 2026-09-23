@@ -29,6 +29,7 @@ try {
   await page.waitForFunction(() => window.__littleCloud);
   await page.locator('#play').click(); await page.waitForFunction(() => window.testCamera?.running);
   await page.locator('#play').click(); await page.locator('#name').press('Enter');
+  await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
   const count = () => page.evaluate(() => window.musicNotes.length);
   await page.waitForTimeout(350); assert.equal(await count(), 0, 'audition cannot activate Sound');
   await page.locator('#sound').click(); await page.waitForFunction(() => window.musicNotes.length >= 2);

@@ -57,6 +57,7 @@ try {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.locator('#play').click(); await page.locator('#name').fill('   '); await page.locator('#name').press('Enter');
   assert.equal(await page.locator('#registration').isVisible(), false);
+  await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
   assert.match((await snap()).event.run.name, /^(?:🦀|🦊|🐻|🐱|🐰|🦦|🐧|🐉) [A-Z][a-z]+$/u); assert.equal((await snap()).event.turn, 1);
   await page.waitForTimeout(300); const before = (await snap()).event.remaining;
   await page.waitForTimeout(700); assert.equal((await snap()).event.remaining, before); assert.equal((await snap()).event.handCamera.waiting, true);

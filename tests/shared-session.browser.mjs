@@ -76,6 +76,11 @@ async function register(page, name) {
   assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM turns WHERE run_id=?').get(issued.id).n, 0);
   await page.evaluate(() => { window.testCamera.visible=true; window.testCamera.tick(); });
 }
+function activeTurnCount(name) {
+  const run = app.database.db.prepare("SELECT id FROM runs WHERE name=? AND status='active'").get(name);
+  assert.ok(run, `${name} has an active shared run`);
+  return app.database.db.prepare('SELECT COUNT(*) AS count FROM turns WHERE run_id=?').get(run.id).count;
+}
 async function finish(page, firstTurn = 1, stopCameraOnLastDrop = false) {
   for (const turn of [1, 2, 3].filter(turn => turn >= firstTurn)) {
     await page.waitForFunction(turn => document.getElementById('turn').textContent === `${turn} / 3` && !document.getElementById('phase-label').textContent.includes('COMPLETE'), turn);
@@ -100,8 +105,22 @@ async function scoredAndFeedback() {
   assert.equal(await page.locator('#name').getAttribute('required'), null);
   await page.locator('#name').fill('Player');
   await page.locator('#name').press('Enter');
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'ROUND 1');
   await page.waitForFunction(() => document.getElementById('turn').textContent === '1 / 3');
   assert.equal(await page.locator('#player-name').textContent(), 'Player');
+  const firstPreparation = await page.evaluate(() => ({
+    phase: document.getElementById('arcade').dataset.phase,
+    turn: document.getElementById('turn').textContent,
+    timer: document.getElementById('timer').textContent,
+    score: document.getElementById('score').textContent,
+    speed: document.getElementById('speed-bonus').textContent,
+  }));
+  assert.equal(firstPreparation.phase, 'idle'); assert.equal(firstPreparation.turn, '1 / 3');
+  assert.equal(firstPreparation.timer, '15', 'shared run keeps its full time before the first turn');
+  assert.equal(firstPreparation.score, '000'); assert.equal(firstPreparation.speed, 'SPEED +50');
+  assert.equal(activeTurnCount('Player'), 0, 'the shared service has not recorded a scored turn');
+  assert.equal(await page.evaluate(() => window.testCamera.clench()), false, 'shared run rejects a drop during preparation');
+  await page.waitForFunction(() => document.getElementById('arcade').dataset.phase === 'aim');
   assert.equal(await page.evaluate(() => window.testCamera.clench()), true);
   assert.equal(await page.evaluate(() => window.testCamera.clench()), false);
   await page.evaluate(() => { window.testCamera.visible = false; window.testCamera.tick(); });
@@ -218,7 +237,10 @@ async function scoredAndFeedback() {
   assert.equal(await page.locator('#final').isVisible(), false);
   assert.equal(await page.evaluate(() => window.testCamera.clench()), false);
   releaseReplay();
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'ROUND 1');
+  assert.equal(await page.locator('#arcade').getAttribute('data-phase'), 'idle', 'replay also counts in before aiming');
   await page.waitForFunction(() => document.getElementById('turn').textContent === '1 / 3');
+  assert.equal(activeTurnCount('Player'), 0, 'replay has no scored turn during preparation');
   assert.equal(starts, 2, 'submitted replay creates a new attempt');
   const replays = app.database.db.prepare("SELECT request_key FROM runs WHERE name='Player'").all();
   assert.equal(replays.length, 2); assert.notEqual(replays[0].request_key, replays[1].request_key);
