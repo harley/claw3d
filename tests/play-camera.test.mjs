@@ -8,6 +8,7 @@ function fixture() {
     playCamera: new T.Vector3(.45, 4.8, 6.4), playLook: new T.Vector3(0, 2.95, 0),
     home: new T.Vector3(7.25, 6.15, 11.6), look: new T.Vector3(-.4, 2.25, 0),
     currentLook: new T.Vector3(), surroundings: { visible: true }, punch: null, attractBlend: 0,
+    key: new T.DirectionalLight(), renderer: { shadowMap: { needsUpdate: false } },
   });
 }
 test('aim, accepted drop, contact and full lift retain exactly the same close viewpoint', () => {
