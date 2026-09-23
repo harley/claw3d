@@ -33,7 +33,21 @@ try {
   assert.equal(await page.evaluate(()=>controller.getControlProfile()),'hold-drop');
   await page.locator('#play').click();await page.locator('#name').fill('Synthetic dual check');await page.locator('#name').press('Enter');
   const frame=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
-  const aim=async()=>{await page.waitForFunction(()=>window.__littleCloud.snapshot().phase==='aim',{},{timeout:10000});await frame();};
+  const aim=async()=>{
+    const first=await page.evaluate(()=>window.__littleCloud.snapshot().event.turn===0);
+    if(first){
+      await page.waitForFunction(()=>window.__littleCloud.snapshot().event.firstTurnPreparationElapsed!==null);
+      const readyHands=[
+        {role:'left',kind:'open',x:.35,y:.55},{role:'right',kind:'open',x:.65,y:.55},
+      ];
+      await page.evaluate(async hands=>{for(let i=0;i<14;i++){sample(hands);await new Promise(requestAnimationFrame);}},readyHands);
+      await page.waitForFunction(()=>window.__littleCloud.snapshot().event.firstTurnControlReady);
+      await page.evaluate(hands=>{window.prepSamples=setInterval(()=>sample(hands),130);},readyHands);
+      await page.waitForFunction(()=>window.__littleCloud.snapshot().phase==='aim',{},{timeout:10000});
+      await page.evaluate(()=>clearInterval(window.prepSamples));
+    }else await page.waitForFunction(()=>window.__littleCloud.snapshot().phase==='aim',{},{timeout:10000});
+    await frame();
+  };
   await aim();
   assert.equal(await page.evaluate(()=>controller.getControlProfile()),'dual');
   const dome=await page.evaluate(()=>testDropShape());

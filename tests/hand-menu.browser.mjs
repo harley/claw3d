@@ -32,6 +32,8 @@ try {
   await point('register-play'); await hold();
   await page.screenshot({ path: '.screenshots/hand-menu-start.png' });
   assert.equal(await fire(), true);
+  await page.evaluate(() => window.testCamera.clearFeedback());
+  await page.waitForFunction(() => window.__littleCloud.snapshot().event.firstTurnControlReady);
   await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
   await page.waitForTimeout(100);
   assert.equal((await page.evaluate(() => window.__littleCloud.snapshot())).event.run.turns.length, 0);
@@ -76,7 +78,11 @@ try {
   await samples(playPosition, true, 10);
   assert.equal(await real.evaluate(() => window.__littleCloud.snapshot().event.run), null, 'held menu fist does not start another action');
   const startPosition = await select('register-play');
+  await samples(startPosition, false, 16);
+  await real.waitForFunction(() => window.__littleCloud.snapshot().event.firstTurnControlReady);
+  await real.evaluate(position => { window.prepSamples = setInterval(() => menuSample(position.x, position.y, false), 130); }, startPosition);
   await real.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
+  await real.evaluate(() => clearInterval(window.prepSamples));
   await samples(startPosition, true, 10);
   assert.equal(await real.evaluate(() => window.__littleCloud.snapshot().phase), 'aim', 'real recognizer requires open hand after START; no carried drop');
   await real.locator('#operator-open').click();await real.locator('#pause').click();

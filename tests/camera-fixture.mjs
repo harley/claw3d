@@ -141,7 +141,7 @@ export async function assertScoredStart(page, { captureScreenshots = false, exer
   const scored = await page.evaluate(() => window.__littleCloud.snapshot());
   assert.equal(scored.phase, 'aim');
   assert.equal(scored.event.run.turns.length, 0); assert.equal(scored.event.turn, 1);
-  assert.equal(scored.event.remaining, 15, 'aiming begins with the full clock');
+  assert.ok(scored.event.remaining >= 14.9, `aiming begins with the full clock (${scored.event.remaining.toFixed(2)} s after the first aim frame)`);
   assert.ok(Math.hypot(...scored.camera.map((value, i) => value - startCamera[i])) < .001, 'the camera is settled before the first timed frame');
   assert.equal(await page.locator('#practice, #practice-marker, #rehearsal-exit').count(), 0);
 }
