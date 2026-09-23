@@ -27,10 +27,30 @@ const handMenu = createHandMenu();
 document.body.classList.toggle('machine-controls', cabinetEnabled);
 document.body.classList.toggle('dual-controls', cabinetEnabled);
 document.body.classList.toggle('two-hand-mode', dualEnabled);
-if (dualEnabled) {
-  $('scene').setAttribute('aria-label', 'Clench your left hand to steer. Raise your open right hand to drop.');
-  $('camera-help').textContent = 'Show both open hands. Clench your left hand to grip and steer; raise your open right hand to drop. Open your left hand to release without dropping.';
-}
+const controlInstructions = {
+  'hold-drop': {
+    attractTitle: 'SHOW YOUR HAND',
+    scene: 'Steer with one open hand. Clench and hold your fist to drop.',
+    camera: 'Move one open hand to steer. Clench and hold your fist to drop; open to cancel.',
+    attract: 'OPEN HAND STEERS · FIST DROPS',
+  },
+  'grab-release': {
+    attractTitle: 'SHOW YOUR HAND',
+    scene: 'Clench on MOVE to grip and steer. Open to release without dropping. Click or clench DROP to drop.',
+    camera: 'Clench on MOVE to grip and steer. Open to release without dropping. Click, clench, or swipe down on DROP to drop.',
+    attract: 'GRIP MOVE · OPEN TO RELEASE · PRESS DROP',
+  },
+  dual: {
+    attractTitle: 'SHOW BOTH HANDS',
+    scene: 'Clench your left hand to grip and steer. Raise your open right hand to drop. Open your left hand to release.',
+    camera: 'Show both open hands. Clench your left hand to grip and steer; raise your open right hand to drop. Open your left hand to release without dropping.',
+    attract: 'LEFT HAND STEERS · RIGHT HAND DROPS',
+  },
+}[mode.profile];
+$('attract-title').textContent = controlInstructions.attractTitle;
+$('scene').setAttribute('aria-label', controlInstructions.scene);
+$('camera-help').textContent = controlInstructions.camera;
+$('attract-rule').textContent = controlInstructions.attract;
 const glove = createJoystickCursor(() => cabinetEnabled ? scene?.controlTargets() : null, () => { if (cabinetEnabled) gestureDrop(); });
 let previousMenuMode = '';
 function menuMode() {
@@ -538,6 +558,12 @@ const loadingTimeout = setTimeout(() => fail('The arcade took too long to open. 
 try {
   await new Promise(resolve => requestAnimationFrame(resolve));
   scene = new ArcadeScene($('scene'), { wideControls: cabinetEnabled && new URLSearchParams(location.search).get('controls') !== 'grab' });
+  scene.cabinetHands?.ready.then(() => {
+    if (dualEnabled && scene.cabinetHands.error) {
+      $('hand-art-status').textContent = 'One or more 3D hand models failed to load. Camera tracking and game controls remain available.';
+      $('hand-art-status').hidden = false;
+    }
+  });
   scene.groundToys(game);
   restoreTrophies();
   persist(); renderBoard();
@@ -556,4 +582,4 @@ try {
     audio.unlock();
     void startCamera().then(() => { if (autoPlay && cameraControls?.running && !run && !document.querySelector('dialog[open]')) openRegistration(); });
   }
-} catch (error) { clearTimeout(loadingTimeout); fail('The 3D renderer could not start. Try reloading in Chrome or Edge with WebGL enabled. All artwork is generated locally; no additional model downloads are required.', error); }
+} catch (error) { clearTimeout(loadingTimeout); fail('The 3D renderer could not start. Try reloading in Chrome or Edge with WebGL enabled.', error); }
