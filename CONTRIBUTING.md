@@ -14,7 +14,7 @@ Keep PRs focused and small enough to review in one sitting. Bundle related edits
 
 Run `npm run check` (unit tests and production build) before committing a coherent change. During editing, use targeted checks and add a regression for meaningful failures.
 
-For camera, phase, scoring, collision or rendering changes, also run the affected browser suites locally. For shared-session or server changes, run `npm run test:shared` after building. Run browser suites sequentially: concurrent WebGL instances distort timing tests. Documentation-only edits need link and policy checks, not browser or physical-camera tests.
+For camera, phase, scoring, collision or rendering changes, also run the affected browser suites locally. For shared-session or server changes, run `npm run test:shared` after building. Run browser suites sequentially on each machine because concurrent WebGL instances distort timing tests. Documentation-only edits need link and policy checks, not browser or physical-camera tests.
 
 ```sh
 npm run check
@@ -24,7 +24,7 @@ npm run test:camera
 npm run test:shared
 ```
 
-The full release gate runs in [CI](.github/workflows/release.yml): `npm run check:booth`, then `npm run test:shared`, plus the production Linux container/backup check. Full local `check:booth` is optional unless explicitly requested or needed to investigate a failure. It owns a temporary dev server on port 4196, so stop your dev server first. The [browser runner](scripts/check-browser.mjs) is the authoritative suite list; individual suites also run as `node tests/<suite>.browser.mjs` against the dev server.
+The release gate runs in [CI](.github/workflows/release.yml): one macOS job runs `npm run check`, four separate macOS runners each run a sequential group from the [browser runner](scripts/check-browser.mjs), and a separate build runs `npm run test:shared`; the production Linux container/backup check also remains required. The aggregate `Unit, build and browser checks` status passes only when the unit/build job, every browser shard and shared-session check succeed. Locally, `npm run check:booth` remains the all-suites sequential gate and is optional unless explicitly requested or needed to investigate a failure. It owns a temporary dev server on port 4196, so stop your dev server first. Use `node scripts/check-browser.mjs --only camera,arcade` to run a subset; individual suites also run as `node tests/<suite>.browser.mjs` against the dev server.
 
 Synthetic tests verify integration, not human recognition or booth-machine performance. Changes needing a physical decision stay behind a URL flag and carry `needs-physical-test`; record the decision, tested BUILD and hardware in PRODUCT. Screenshots belong in locally ignored `.screenshots/` and must not be committed.
 

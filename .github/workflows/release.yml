@@ -12,16 +12,34 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  check:
-    name: Unit, build and browser checks
+  unit:
+    name: Unit tests and build (macOS)
     runs-on: macos-15
-    timeout-minutes: 30
-    # A newer push to the same PR supersedes its running checks; main runs never cancel.
-    concurrency:
-      group: checks-${{ github.workflow }}-${{ github.ref }}
-      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-    # Merge-queue runs validate the group; deploy still requires a push to main.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+
+  browser:
+    name: Browser suites (${{ matrix.shard }})
+    runs-on: macos-15
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [shard-1, shard-2, shard-3, shard-4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -32,16 +50,63 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install chromium
-      # check:booth includes unit tests and build; WebGL suites must not overlap.
-      - run: npm run check:booth
+      - run: node scripts/check-browser.mjs --shard "${{ matrix.shard }}"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: synthetic-browser-failure-${{ github.run_id }}-${{ matrix.shard }}
+          path: .screenshots/
+          include-hidden-files: true
+          retention-days: 7
+
+  shared:
+    name: Shared-session browser check
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install chromium
       - run: npm run test:shared
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: failure()
         with:
-          name: synthetic-browser-failure-${{ github.run_id }}
+          name: synthetic-shared-browser-failure-${{ github.run_id }}
           path: .screenshots/
           include-hidden-files: true
           retention-days: 7
+
+  check:
+    name: Unit, build and browser checks
+    needs: [unit, browser, shared]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every unit, browser and shared check
+        env:
+          UNIT_RESULT: ${{ needs.unit.result }}
+          BROWSER_RESULT: ${{ needs.browser.result }}
+          SHARED_RESULT: ${{ needs.shared.result }}
+        run: |
+          failed=0
+          for check in "unit:$UNIT_RESULT" "browser:$BROWSER_RESULT" "shared:$SHARED_RESULT"; do
+            name=${check%%:*}
+            result=${check#*:}
+            echo "$name: $result" >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$result" != success ]]; then
+              echo "::error::$name check did not succeed ($result)."
+              failed=1
+            fi
+          done
+          exit "$failed"
 
   container:
     name: Production Linux container and backup checks
