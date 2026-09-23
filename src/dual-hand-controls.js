@@ -4,6 +4,7 @@ import { Steering } from './steering.js';
 
 
 export const HAND_ACQUIRE_MS = 300;
+export const LEFT_GRIP_GRACE_MS = 200;
 export const RIGHT_RAISE_DISTANCE = .06;
 export const RIGHT_SLAM_MS = 360;
 // Enter the right workspace open, or raise an already acquired open hand.
@@ -24,8 +25,9 @@ class RightRaise {
 
 const MAX_STEP = .18, SEPARATION = .065;
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-const role = () => ({ owner: null, origin: null, observed: null, candidate: null, gesture: new GrabRelease(), steer: new Steering() });
-const clear = state => { state.owner = state.origin = state.observed = state.candidate = null; state.gesture.reset(); state.steer.release(); };
+const inLeftGripZone = point => point.x >= .02 && point.x <= HAND_ZONES.left.maxX && point.y >= .02 && point.y <= .98;
+const role = () => ({ owner: null, origin: null, observed: null, candidate: null, lastSeen: null, interrupted: false, gesture: new GrabRelease(), steer: new Steering() });
+const clear = state => { state.owner = state.origin = state.observed = state.candidate = state.lastSeen = null; state.interrupted = false; state.gesture.reset(); state.steer.release(); };
 
 // A camera-controller helper: the scene supplies targets, mechanics accepts drops.
 // Each role has independent ownership and gesture evidence; neither can inherit
@@ -35,8 +37,20 @@ export class DualHandControls {
   reset() { this.left = role(); this.right = role(); this.right.gesture = new RightRaise(); this.last = null; }
 
   track(state, name, hands, now) {
-    const candidates = hands.filter(hand => hand.physicalHand === name && hand.handednessScore >= .75);
-    const hand = candidates.length === 1 ? candidates[0] : null;
+    if (state.interrupted && now - state.lastSeen > LEFT_GRIP_GRACE_MS) clear(state);
+    // Preserve only an established grip through a short detection dropout.
+    // Never steer or accept a drop without fresh, confident evidence.
+    const roleHands = hands.filter(hand => hand.physicalHand === name);
+    const candidates = roleHands.filter(hand => hand.handednessScore >= .75);
+    const hand = roleHands.length === 1 && candidates.length === 1 ? candidates[0] : null;
+    if (!hand && name === 'left' && state.owner && state.gesture.stage === 'gripped' &&
+      now - state.lastSeen <= LEFT_GRIP_GRACE_MS &&
+      (hands.length === 0 || (roleHands.length <= 1 && hands.filter(hand => hand.physicalHand === 'right').length <= 1 && hands.every(hand =>
+        hand.physicalHand === 'right' ? handInZone(hand.center, 'right') :
+          hand.physicalHand === 'left' && distance(hand.center, state.owner) <= MAX_STEP && inLeftGripZone(hand.center))))) {
+      state.interrupted = true;
+      return { hand: null, ready: false, recovering: true };
+    }
     if (!hand || (state.owner && distance(hand.center, state.owner) > MAX_STEP)) {
       clear(state); return { hand: null, ready: false };
     }
@@ -45,12 +59,13 @@ export class DualHandControls {
     // steering sensitivity, not ownership. Keep the centre gap and camera edge
     // guards, but allow comfortable overshoot without dropping the grip.
     const stickyGrip = name === 'left' && state.owner && state.gesture.stage === 'gripped' &&
-      hand.center.x >= .02 && hand.center.x <= HAND_ZONES.left.maxX && hand.center.y >= .02 && hand.center.y <= .98;
-    if (!stickyGrip && (!handInZone(hand.center, name) || !inHandRange(offset))) {
-      const origin = state.origin;
-      clear(state); state.origin = origin;
+      inLeftGripZone(hand.center);
+    if (!stickyGrip && (!handInZone(hand.center, name) || (state.owner && !inHandRange(offset)))) {
+      clear(state);
       return { hand, ready: false, outside: true };
     }
+    state.interrupted = false;
+    state.lastSeen = now;
     state.observed = { ...hand.center };
     if (state.owner) { state.owner = { ...hand.center }; return { hand, ready: true }; }
     if (!hand.fist.open || hand.fist.closed) {
@@ -67,7 +82,8 @@ export class DualHandControls {
   update(hands, now, getTarget) {
     if (this.last !== null && (now - this.last > 300 || now < this.last)) this.reset();
     this.last = now;
-    const ambiguous = hands.length > 2 || (hands.length === 2 && distance(hands[0].center, hands[1].center) < SEPARATION) ||
+    const duplicateRole = ['left', 'right'].some(name => hands.filter(hand => hand.physicalHand === name).length > 1);
+    const ambiguous = hands.length > 2 || duplicateRole || (hands.length === 2 && distance(hands[0].center, hands[1].center) < SEPARATION) ||
       // A detection closer to the other owner's previous position is an
       // ambiguous association, even when its handedness label looks confident.
       (this.left.observed && this.right.observed && hands.some(hand => {
@@ -79,15 +95,21 @@ export class DualHandControls {
       clear(this.left); clear(this.right);
       return { kind: 'lost', message: 'SEPARATE YOUR HANDS', input: { x: 0, z: 0 }, hands: {}, fired: false };
     }
+    const leftWasInterrupted = this.left.interrupted;
     const left = this.track(this.left, 'left', hands, now);
     const right = this.track(this.right, 'right', hands, now);
+    const leftRecovered = leftWasInterrupted && left.ready;
+    if (left.recovering && !right.ready) this.right.candidate = null;
     const leftTarget = left.ready ? getTarget(left.hand.center, 'left', this.left.origin) : {};
-    const grip = this.left.gesture.update({ ...(left.hand?.fist || {}), visible: left.ready, overTarget: Boolean(leftTarget.overTarget) }, now);
+    const grip = left.recovering ? this.left.gesture.read() : this.left.gesture.update({ ...(left.hand?.fist || {}), visible: left.ready, overTarget: Boolean(leftTarget.overTarget) }, now);
     const leftClear = left.ready && left.hand.fist.open !== left.hand.fist.closed;
     const dropEnabled = Boolean(leftClear && grip.steering);
     const rightTarget = right.ready ? getTarget(right.hand.center, 'right', this.right.origin) : {};
     const rightClear = right.ready && right.hand.fist.open && !right.hand.fist.closed;
-    const press = this.right.gesture.update(dropEnabled && rightClear, { acquired: right.acquired, y: right.ready ? right.hand.center.y : undefined });
+    // Re-enable DROP from a fresh right-hand baseline on the first confident
+    // left sample; a raise begun while left control was unavailable cannot fire.
+    const press = this.right.gesture.update(!leftRecovered && dropEnabled && rightClear,
+      { acquired: leftRecovered ? false : right.acquired, y: right.ready ? right.hand.center.y : undefined });
     let input = { x: 0, z: 0 };
     if (grip.grabbed) this.left.steer.release();
     if (grip.steering && leftClear && !press.fired) input = this.left.steer.update(left.hand.center, now);
@@ -109,6 +131,6 @@ export class DualHandControls {
       grab: grip,
       progress: grip.progress,
       pointer: leftView.pointer, target: rightView.target, closed: leftView.closed,
-      message: left.outside ? 'RETURN LEFT HAND TO ITS AREA' : !leftClear ? 'SHOW LEFT HAND OPEN' : !grip.steering ? 'LEFT HAND · GRAB JOYSTICK' : right.outside ? 'RETURN RIGHT HAND TO ITS AREA' : 'RAISE RIGHT HAND OPEN' };
+      message: left.recovering ? 'HOLD LEFT HAND STEADY' : left.outside ? 'RETURN LEFT HAND TO ITS AREA' : !leftClear ? 'SHOW LEFT HAND OPEN' : !grip.steering ? 'LEFT HAND · GRAB JOYSTICK' : right.outside ? 'RETURN RIGHT HAND TO ITS AREA' : 'RAISE RIGHT HAND OPEN' };
   }
 }
