@@ -15,6 +15,8 @@ const ENUMS = {
   cause: ['opened', 'uncertain_reset', 'hand_lost', 'frame_gap', 'blocked', 'stale'],
   outcome: ['supported', 'near', 'slipped', 'crowded', 'blocked', 'bumped', 'platform', 'empty'],
   steering: ['relative', 'absolute'],
+  controlMode: ['one-hand', 'two-hand'],
+  startGate: ['off', 'loading', 'error', 'delayed', 'blocked', 'show_both', 'show_left', 'show_right', 'return_left', 'return_right', 'open_left', 'open_right', 'hold_left', 'hold_right', 'hold_both', 'ready'],
   prizeId: [null, ...Object.keys(RULES.points)],
 };
 const NUMBERS = { acquisitionMs: 604800000, durationMs: 604800000, captureAgeMs: 604800000, sampleMs: 604800000, averageFps: 1000, p95FrameMs: 60000, framesOver33ms: 10000000, frames: 10000000, turn: 3, score: 750, total: 750, holdMs: 900, resultHz: 240, visionP50Ms: 60000, visionP95Ms: 60000, captureToReceiptP50Ms: 60000, captureToReceiptP95Ms: 60000, rejectOverAge: 10000000, rejectOutOfOrder: 10000000, rejectHidden: 10000000, rejectInvalid: 10000000 };
@@ -31,6 +33,7 @@ function eventData(value, type) {
   for (const key of Object.keys(value).sort()) {
     const field = value[key];
     if ((key === 'category' || key === 'comment') && type !== 'feedback') invalid();
+    if ((key === 'controlMode' || key === 'startGate') && type !== 'control_state') invalid();
     if (Object.hasOwn(ENUMS, key)) { if (!ENUMS[key].includes(field)) invalid(); }
     else if (Object.hasOwn(NUMBERS, key)) {
       if (typeof field !== 'number' || !Number.isFinite(field) || field < 0 || field > NUMBERS[key] || (integerFields.has(key) && !Number.isInteger(field))) invalid();

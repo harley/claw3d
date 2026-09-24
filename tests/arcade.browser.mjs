@@ -14,7 +14,7 @@ const phase=state=>page.waitForFunction(state=>window.__littleCloud.snapshot().p
 const open=async()=>{await page.goto('http://127.0.0.1:4196/?setup=manual');await page.waitForFunction(()=>window.__littleCloud);};
 async function assertInstructions({ profile, scene, camera, attractTitle, attractRule }) {
  assert.equal(await page.locator('#scene').getAttribute('aria-label'), scene, `${profile} scene description`);
- assert.equal(await page.locator('#camera-menu-help').textContent(), 'Use one open hand and hold a fist to select menu buttons.', `${profile} keeps menu help separate`);
+ assert.equal(await page.locator('#camera-menu-help').textContent(), profile === 'dual' ? 'Use your left hand and hold a fist to select menu buttons. Your right hand can stay visible.' : 'Use one open hand and hold a fist to select menu buttons.', `${profile} keeps menu help separate`);
  assert.equal(await page.locator('#camera-help').textContent(), camera, `${profile} camera gameplay help`);
  assert.equal(await page.locator('#attract-title').textContent(), attractTitle, `${profile} attract title`);
  assert.equal(await page.locator('#attract-rule').textContent(), attractRule, `${profile} attract rule`);

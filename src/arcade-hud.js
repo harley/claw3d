@@ -3,7 +3,7 @@ import { HAND_ACQUIRE_MS, RIGHT_SLAM_MS } from './dual-hand-controls.js';
 // labels. It reads a per-call view of game state and never mutates it; audio
 // and the phase-to-sound mapping are injected.
 import { PRESS_MS } from './grab-release.js';
-import { cueLeadSeconds } from './play-mode.js';
+import { cueLeadSeconds, dualStartReadiness } from './play-mode.js';
 import { ASSORTMENT, CAROUSEL, carouselCue, carouselRider } from './arcade-mechanics.js';
 import { RULES } from './event-session.js';
 
@@ -58,7 +58,13 @@ export function playFirstTurnCueTone(audio, cue, allowed = true) {
 }
 
 export function firstTurnWaitingMessage(feedback = {}, dualEnabled = false) {
-  if (dualEnabled) return String(feedback.message || 'SHOW BOTH HANDS').toUpperCase();
+  if (dualEnabled) return {
+    off: 'CAMERA OFF', loading: 'STARTING CAMERA', error: 'CAMERA ERROR', delayed: 'TRACKING DELAYED', blocked: 'SHOW BOTH HANDS OPEN',
+    show_both: 'SHOW BOTH HANDS OPEN', show_left: 'SHOW LEFT HAND OPEN', show_right: 'SHOW RIGHT HAND OPEN',
+    return_left: 'LEFT HAND INTO L WINDOW', return_right: 'RIGHT HAND INTO R WINDOW',
+    open_left: 'OPEN LEFT HAND', open_right: 'OPEN RIGHT HAND',
+    hold_left: 'HOLD LEFT HAND STILL', hold_right: 'HOLD RIGHT HAND STILL', hold_both: 'HOLD BOTH HANDS STILL', ready: 'HOLD BOTH HANDS OPEN',
+  }[dualStartReadiness(feedback)];
   if (feedback.kind === 'calibrating') return 'HOLD STILL';
   if (feedback.kind === 'delayed') return 'TRACKING DELAYED';
   if (feedback.kind === 'error') return 'CAMERA ERROR';
@@ -159,12 +165,12 @@ export function createHud({ audio, phaseSound }) {
   const learning = phase === 'aim' || (!run && !recovering && cameraControls?.running);
   if (learning) {
     if (feedback.kind === 'off') { title = 'CAMERA OFF'; hint = ''; }
-    else if (['ready', 'lost'].includes(feedback.kind)) { title = feedback.kind === 'lost' ? 'SHOW ONE HAND' : 'SHOW ONE HAND'; hint = ''; if (feedback.handCount > 1) title = 'ONE HAND ONLY'; }
+    else if (['ready', 'lost'].includes(feedback.kind)) { title = feedback.profile === 'menu-left' ? 'SHOW LEFT HAND OPEN' : feedback.handCount > 1 ? 'ONE HAND ONLY' : 'SHOW ONE HAND'; hint = ''; }
     else if (feedback.kind === 'delayed') { title = 'TRACKING DELAYED'; hint = ''; }
     else if (feedback.kind === 'calibrating') { title = 'HOLD STILL'; hint = ''; }
     else if (feedback.kind === 'clenching' && feedback.controlEnabled) { title = feedback.progress > 0 ? (phase === 'aim' ? 'Hold to drop' : 'HOLD TO SELECT') : 'OPEN HAND'; hint = ''; }
     else if (feedback.kind === 'tracking') {
-      if (phase === 'idle') { title = 'AIM AT PLAY · CLENCH'; hint = ''; }
+      if (phase === 'idle') { title = feedback.profile === 'menu-left' ? 'LEFT HAND · AIM AT PLAY · CLENCH' : 'AIM AT PLAY · CLENCH'; hint = ''; }
       else if (!nearPickup) { title = 'Clench & hold to drop'; hint = ''; }
     } else if (feedback.kind === 'error') { title = 'CAMERA ERROR'; hint = ''; }
     else if (feedback.kind === 'loading') { title = 'STARTING CAMERA'; hint = ''; }

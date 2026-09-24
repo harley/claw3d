@@ -39,12 +39,24 @@ export function cueLeadSeconds({ dual = false, grab = false, holdMs } = {}, feed
 // camera adapter keeps steering and drops disabled until START.
 export function firstTurnControlReady(mode, feedback = {}) {
   if (!mode || feedback.profile !== mode.profile) return false;
-  if (mode.dual) {
-    const { left, right } = feedback.hands || {};
-    return feedback.kind === 'tracking' && left?.ready === true && right?.ready === true &&
-      left.open === true && right.open === true && left.closed !== true && right.closed !== true;
-  }
+  if (mode.dual) return dualStartReadiness(feedback) === 'ready';
   if (feedback.kind !== 'tracking' || feedback.handCount !== 1) return false;
   if (mode.grab && feedback.grab?.stage === 'gripped') return true;
   return feedback.open === true && feedback.closed !== true;
+}
+
+// The gate, waiting copy and diagnostics share one reason. Gameplay grip/drop
+// messages are not valid instructions while both open hands are required.
+export function dualStartReadiness(feedback = {}) {
+  if (['off', 'loading', 'error', 'delayed', 'blocked'].includes(feedback.kind)) return feedback.kind;
+  if (feedback.profile !== 'dual') return 'show_both';
+  const { left, right } = feedback.hands || {};
+  if (!left?.ready && !left?.pointer && !right?.ready && !right?.pointer) return 'show_both';
+  for (const [role, hand] of [['left', left], ['right', right]]) {
+    if (hand?.outside) return `return_${role}`;
+    if (!hand?.ready && !hand?.pointer) return `show_${role}`;
+    if (hand.open !== true || hand.closed === true) return `open_${role}`;
+    if (hand.ready !== true) return `hold_${role}`;
+  }
+  return feedback.kind === 'tracking' ? 'ready' : 'hold_both';
 }

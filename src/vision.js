@@ -350,12 +350,14 @@ export class HandController {
     this.onDiagnostic?.({ count: hands.length, gesture: result.gestures[0]?.[0]?.categoryName || 'No hand', pinch: hands[0]?.ratio ?? null, milliseconds: performance.now() - now });
     const phase = this.getPhase();
     const profile = this.getControlProfile?.() || 'hold-drop';
+    const menuLeft = profile === 'menu-left';
     const acceptsInput = ['idle', 'aim', 'result'].includes(phase);
     const recognizes = acceptsInput || phase === 'recognizing';
     // Recognition can acquire the selected controller before first-turn prep.
     // Crossing from recognition-only to aim preserves the hand, while leaving
     // a recognized phase or changing profile discards all gesture evidence.
     if (this.recognizes !== recognizes || this.controlProfile !== profile) {
+      if (this.controlProfile !== profile) this.resetOwner();
       this.fist.reset(); this.grab.reset(); this.dual.reset(); this.controlProfile = profile;
       this.neutral = null; this.input = { x: 0, z: 0 };
       this.recognizes = recognizes;
@@ -372,21 +374,28 @@ export class HandController {
           state.kind = accepted ? 'accepted' : 'tracking';
           if (!accepted) this.dual.right.gesture.reset();
         }
-        this.dualFeedback = { ...state, profile, handCount: hands.length, controlEnabled: acceptsInput };
+        this.dualFeedback = { ...state, profile, handCount: hands.length, controlEnabled: acceptsInput, preparing: phase === 'recognizing' };
       }
       this.onState(this.dualFeedback);
       this.draw(hands, null); return;
     }
+    // Two-hand menus have one cursor owner: the anatomical left hand. The
+    // right hand can remain visible but cannot select or inherit a held fist.
+    const menuCandidates = hands.filter(hand => hand.physicalHand === 'left');
+    const menuHand = menuCandidates.length === 1 && menuCandidates[0].handednessScore >= .75 &&
+      !hands.some(hand => hand !== menuCandidates[0] && Math.hypot(hand.center.x - menuCandidates[0].center.x, hand.center.y - menuCandidates[0].center.y) < .065)
+      ? menuCandidates[0] : null;
+    const controlHands = menuLeft ? menuHand ? [menuHand] : [] : hands;
     const sendInput = input => this.onInput(acceptsInput ? input : { x: 0, z: 0 });
     const report = state => this.onState({ ...state, profile, handCount: hands.length, controlEnabled: acceptsInput,
-      pointer: hands.length === 1 && hand && this.owner && ['tracking', 'clenching'].includes(state.kind) ? { ...hand.center } : null });
+      pointer: controlHands.length === 1 && hand && this.owner && ['tracking', 'clenching'].includes(state.kind) ? { ...hand.center } : null });
     let hand;
     if (!this.owner) {
       // Only a single hand in the central play zone can claim the machine.
-      hand = hands.length === 1 ? hands[0] : null;
+      hand = controlHands.length === 1 ? controlHands[0] : null;
       if (!hand || hand.center.x < .12 || hand.center.x > .88 || hand.center.y < .12 || hand.center.y > .86) {
         this.pinchSince = 0; this.candidate = null;
-        report({ kind: 'ready', message: hands.length > 1 ? 'Lower one hand to begin.' : 'Show one hand inside the camera view.' });
+        report({ kind: 'ready', message: menuLeft ? 'Show your left hand open to select.' : hands.length > 1 ? 'Lower one hand to begin.' : 'Show one hand inside the camera view.' });
       } else if (!hand.fist.closed) {
         if (this.candidate && (this.candidate.handedness !== hand.handedness || Math.hypot(this.candidate.center.x-hand.center.x,this.candidate.center.y-hand.center.y) > .1)) { this.pinchSince = 0; this.candidate = null; }
         this.candidate ||= hand; this.pinchSince ||= now;
@@ -412,10 +421,16 @@ export class HandController {
       report({ kind: 'ready', message: 'Show one hand and hold still to regain control.' });
       this.draw(hands, null); return;
     }
-    hand = matchHand(hands, this.owner, this.owner.handedness);
+    hand = matchHand(controlHands, this.owner, this.owner.handedness);
+    // If labels swap, the detection nearest the old owner must not lend its
+    // confirmation time to the other physical hand.
+    if (menuLeft && hand) {
+      const distance = candidate => Math.hypot(candidate.center.x - this.owner.x, candidate.center.y - this.owner.y);
+      if (hands.some(other => other !== hand && distance(other) + .025 < distance(hand))) hand = null;
+    }
     // Handedness can flip when the wrist turns. An unambiguous, very close
     // continuation is still the same spatial track; an extra hand never is.
-    if (!hand && hands.length === 1 && Math.hypot(hands[0].center.x-this.owner.x,hands[0].center.y-this.owner.y) < .08) hand = hands[0];
+    if (!menuLeft && !hand && hands.length === 1 && Math.hypot(hands[0].center.x-this.owner.x,hands[0].center.y-this.owner.y) < .08) hand = hands[0];
     if (!hand) {
       this.lostSince ||= now; this.neutral = null; this.fist.reset('hand_lost'); this.grab.reset();
       sendInput({ x: 0, z: 0 });
@@ -447,7 +462,7 @@ export class HandController {
       this.draw(hands, hand); return;
     }
     if (phase === 'aim') {
-      const fist=this.fist.update({...hand.fist,visible:hands.length===1},now);
+      const fist=this.fist.update({...hand.fist,visible:controlHands.length===1},now);
       if(fist.active){
         this.input={x:0,z:0};sendInput(this.input);this.neutral=null;
         if (fist.fired) {

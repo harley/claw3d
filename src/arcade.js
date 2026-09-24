@@ -1,5 +1,5 @@
 import { RIGHT_SLAM_MS } from './dual-hand-controls.js';
-import { resolvePlayMode, cueLeadSeconds, firstTurnControlReady as isFirstTurnControlReady } from './play-mode.js';
+import { resolvePlayMode, cueLeadSeconds, dualStartReadiness, firstTurnControlReady as isFirstTurnControlReady } from './play-mode.js';
 import { ABSOLUTE_SPEED } from './steering.js';
 import './arcade.css';
 import { createJoystickCursor } from './joystick-cursor.js';
@@ -50,6 +50,7 @@ const controlInstructions = {
 $('attract-title').textContent = controlInstructions.attractTitle;
 $('scene').setAttribute('aria-label', controlInstructions.scene);
 $('camera-help').textContent = controlInstructions.camera;
+if (dualEnabled) $('camera-menu-help').textContent = 'Use your left hand and hold a fist to select menu buttons. Your right hand can stay visible.';
 $('attract-rule').textContent = controlInstructions.attract;
 const glove = createJoystickCursor(() => cabinetEnabled ? scene?.controlTargets() : null, () => { if (cabinetEnabled) gestureDrop(); });
 let previousMenuMode = '';
@@ -364,7 +365,7 @@ async function startCamera() {
     if (!cameraControls) {
       const { createCameraControls } = await import('./camera-controls.js');
       cameraControls = await createCameraControls({ video: $('camera-video'), overlay: $('camera-overlay'), select: $('camera-select'), maxHands: dualEnabled ? 2 : 1, holdMs, steering,
-        getControlProfile: () => grabEnabled && !menuMode() ? dualEnabled ? 'dual' : 'grab-release' : 'hold-drop',
+        getControlProfile: () => dualEnabled ? menuMode() ? 'menu-left' : 'dual' : grabEnabled && !menuMode() ? 'grab-release' : 'hold-drop',
         getControlTarget: (pointer, role, origin) => glove.targetAt(pointer, role, origin),
         canControl: () => Boolean(menuMode() || (!flow.pendingSlam && !startingRun && run && game.phase === 'aim' && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]'))),
         canPrepare: () => Boolean(run && !startingRun && !recovering && flow.firstTurnPreparationElapsed !== null && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]')),
@@ -448,7 +449,10 @@ function frame(time) {
     const feedback = flow.pendingSlam ? { ...flow.pendingSlam.feedback, profile: 'dual', kind: 'slamming', slamProgress: flow.pendingSlam.elapsed / (RIGHT_SLAM_MS / 1000), progress: 1, controlEnabled: false } : dualEnabled && flow.contactFeedback && game.phase === 'anticipate' ? { ...flow.contactFeedback, profile: 'dual', kind: 'slamming', slamProgress: 1, progress: 1, controlEnabled: false } : cameraControls?.feedback || { kind: 'off', progress: 0, controlEnabled: false };
     cueLead = cueLeadSeconds(mode, feedback);
     updateUI(feedback, modal);
-    if (feedback.kind !== observedControl) { observedControl = feedback.kind; track('control_state', { state: feedback.kind, phase: game.phase }); }
+    const controlEvent = { state: feedback.kind, phase: game.phase, controlMode: mode.controlMode,
+      ...(dualEnabled && run && flow.firstTurnPreparationElapsed !== null ? { startGate: dualStartReadiness(feedback) } : {}) };
+    const controlKey = JSON.stringify(controlEvent);
+    if (controlKey !== observedControl) { observedControl = controlKey; track('control_state', controlEvent); }
     if (cameraReadyAt !== null && feedback.kind === 'tracking') { track('time_to_control', { acquisitionMs: Math.min(604800000, performance.now() - cameraReadyAt) }); cameraReadyAt = null; }
     if (game.phase !== observedPhase) { observedPhase = game.phase; track('phase_change', { phase: game.phase }); }
     if (!document.hidden) {

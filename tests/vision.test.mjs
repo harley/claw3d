@@ -34,7 +34,7 @@ function fixture() {
   const frame = (hands, count = 1) => {
     for (let i = 0; i < count; i++) {
       controller.handle({ landmarks: hands.map(h => h.landmarks),
-        handedness: hands.map(h => [{ categoryName: h.side }]),
+        handedness: hands.map(h => [{ categoryName: h.side, score: h.score ?? .99 }]),
         gestures: hands.map(h => [{ categoryName: h.gesture, score: .99 }]),
       }, time);
       time += 65;
@@ -424,4 +424,61 @@ test('a stalled main thread never counts against the worker; a frame left unansw
   for (let t = 1000; t < 20000; t += 65) d.supervise(t);
   assert.equal(idleFailed, 0, 'with nothing in flight the worker owes nothing');
   globalThis.document = originalDocument;
+});
+
+
+test('two-hand menus select with the left hand while the right remains visible', () => {
+  const f = fixture(); f.controller.getControlProfile = () => 'menu-left'; f.setPhase('aim');
+  const left = hand(.35), right = hand(.7, 'Right');
+  f.frame([right, left], 14);
+  assert.equal(f.read().state.kind, 'tracking');
+  assert.equal(f.read().state.handCount, 2);
+  assert.deepEqual(f.read().state.pointer, { x: .35, y: .5 });
+  f.frame([hand(.7, 'Right', 'Closed_Fist'), left], 12);
+  assert.equal(f.read().drops, 0, 'the right fist cannot select');
+  f.frame([right, hand(.35, 'Left', 'Closed_Fist')], 12);
+  assert.equal(f.read().drops, 1, 'the left fist selects once with both hands visible');
+});
+
+test('two-hand menu loss and ambiguous labels cancel a pending selection', () => {
+  for (const interruption of [[hand(.35, 'Right', 'Closed_Fist')], [hand(.35), hand(.38, 'Right')],
+    [hand(.35), hand(.7)], [{ ...hand(.35), score: .5 }, hand(.7, 'Right')]]) {
+    const f = fixture(); f.controller.getControlProfile = () => 'menu-left'; f.setPhase('aim');
+    f.frame([hand(.35), hand(.7, 'Right')], 14);
+    f.frame([hand(.35, 'Left', 'Closed_Fist'), hand(.7, 'Right')], 3);
+    f.frame(interruption, 3);
+    assert.equal(f.read().state.pointer, null);
+    f.frame([hand(.35, 'Left', 'Closed_Fist'), hand(.7, 'Right')], 12);
+    assert.equal(f.read().drops, 0, 'lost selection cannot resume a held fist');
+  }
+});
+
+test('menu-to-dual transition discards a held selection and waits for both open hands', () => {
+  const f = fixture(); let profile = 'menu-left';
+  f.controller.getControlProfile = () => profile;
+  f.controller.getControlTarget = () => ({ overTarget: true });
+  f.setPhase('aim'); f.frame([hand(.35), hand(.7, 'Right')], 14);
+  f.frame([hand(.35, 'Left', 'Closed_Fist'), hand(.7, 'Right')], 12);
+  const selections = f.read().drops;
+  profile = 'dual'; f.setPhase('recognizing');
+  f.frame([hand(.35, 'Left', 'Closed_Fist'), hand(.7, 'Right')], 12);
+  assert.equal(firstTurnControlReady(resolvePlayMode('?controls=dual'), f.read().state), false);
+  assert.equal(firstTurnWaitingMessage(f.read().state, true), 'OPEN LEFT HAND');
+  f.frame([hand(.35)], 12);
+  assert.equal(firstTurnWaitingMessage(f.read().state, true), 'SHOW RIGHT HAND OPEN');
+  f.frame([hand(.35), hand(.7, 'Right')], 12);
+  assert.equal(firstTurnControlReady(resolvePlayMode('?controls=dual'), f.read().state), true);
+  assert.equal(f.read().state.preparing, true);
+  assert.deepEqual(f.read().input, { x: 0, z: 0 });
+  assert.equal(f.read().drops, selections, 'recognition does not select again or drop');
+});
+
+test('a menu label swap cannot transfer left-hand confirmation to the physical right fist', () => {
+  const f = fixture(); f.controller.getControlProfile = () => 'menu-left'; f.setPhase('aim');
+  f.frame([hand(.35), hand(.5, 'Right', 'Closed_Fist')], 14);
+  f.frame([hand(.35, 'Left', 'Closed_Fist'), hand(.5, 'Right', 'Closed_Fist')], 3);
+  // Physical left opens at its previous position, but both confident labels flip.
+  f.frame([hand(.35, 'Right'), hand(.5, 'Left', 'Closed_Fist')], 8);
+  assert.equal(f.read().drops, 0, 'the right fist cannot inherit the left menu hold');
+  assert.equal(f.read().state.pointer, null);
 });

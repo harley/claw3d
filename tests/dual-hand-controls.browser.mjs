@@ -30,7 +30,7 @@ try {
   await page.goto('http://127.0.0.1:4196/?setup=manual&controls=dual');
   await page.waitForFunction(()=>window.__littleCloud);
   await page.locator('#play').click();await page.waitForFunction(()=>window.controller);
-  assert.equal(await page.evaluate(()=>controller.getControlProfile()),'hold-drop');
+  assert.equal(await page.evaluate(()=>controller.getControlProfile()),'menu-left');
   await page.locator('#play').click();await page.locator('#name').fill('Synthetic dual check');await page.locator('#name').press('Enter');
   const frame=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
   const aim=async()=>{
