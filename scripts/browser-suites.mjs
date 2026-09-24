@@ -4,6 +4,7 @@ export const browserSuites = Object.freeze([
   'grab-release',
   'hand-menu',
   'arcade-presentation',
+  'target-label',
   'audio',
   'movement-music',
   'camera',
@@ -20,7 +21,7 @@ export const browserSuites = Object.freeze([
 export const browserShards = Object.freeze({
   'shard-1': Object.freeze(['play-modes', 'dual-hand-controls', 'audio']),
   'shard-2': Object.freeze(['grab-release', 'camera', 'gesture-feedback']),
-  'shard-3': Object.freeze(['hand-menu', 'arcade-presentation', 'arcade']),
+  'shard-3': Object.freeze(['hand-menu', 'arcade-presentation', 'target-label', 'arcade']),
   'shard-4': Object.freeze(['movement-music', 'carousel', 'contact', 'delivery-clearance']),
 });
 

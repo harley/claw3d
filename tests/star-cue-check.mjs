@@ -59,7 +59,7 @@ export async function checkStarCue(browser) {
           const state = __littleCloud.snapshot(), signal = document.getElementById('jackpot-signal');
           const tag = document.querySelector('.prize-tag[data-points="200"]'), rect = tag.getBoundingClientRect();
           const toy = state.toys.find(toy => toy.id === 'sprout');
-          const point = cueScene.screenPoint(toy.position[0], toy.position[1] + .08, toy.position[2]);
+          const point = cueScene.screenPoint(toy.position[0], cueScene.toyBounds(toy.id).max[1] + .28, toy.position[2]);
           return { orbit: state.event.carouselTime, phase: state.phase, held: cueController.fist.held,
             title: document.getElementById('status').textContent, text: document.getElementById('jackpot-cue').textContent,
             visible: !signal.hidden, go: signal.classList.contains('go'), caught: state.caught,
