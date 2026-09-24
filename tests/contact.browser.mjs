@@ -23,10 +23,43 @@ try {
    }
    results.push({name,impacts:game.toys.filter(t=>t.impact).map(t=>({id:t.id,...t.impact})),caught:game.plan.prize?.id||null,maxTilt,blocked,minGround:Number.isFinite(minGround)?minGround:null,peak});
   }
-  scene.renderer.render=render; if(peakGame){scene.update(peakGame,0,0,{x:0,z:0},null);scene.inspect('butter');} return results;
+  // Replay the three physical-test drop positions. Catch decisions were right,
+  // but mesh-constrained fingers snapped inward when grip changed to lift.
+  const transitions = [];
+  for (const fps of [60, 30, 10]) {
+   const game = createGame({ carousel: true }); scene.groundToys(game);
+   for (const [x, z] of [[-.8743454896599882, -.09096446216904708], [-.8689965941913619, .03224019320669446], [-.41070862716818013, .73]]) {
+    begin(game); game.position = { x, z }; drop(game);
+    let lastGrip, firstLift, gripTargets, targetsUnchanged = true;
+    for (let i = 0; i < 1000 && game.phase !== 'result'; i++) {
+     advance(game, 1 / fps);
+     if (game.phase === 'grip') gripTargets ??= [...game.plan.radii];
+     scene.update(game, 1 / fps, i / fps, { x: 0, z: 0 }, null);
+     const radii = scene.fingers.map(finger => finger.pad.position.x + .017);
+     if (game.phase === 'grip') {
+      lastGrip = radii;
+      targetsUnchanged &&= game.plan.radii.every((r, index) => r === gripTargets[index]);
+     }
+     if (game.phase === 'lift') firstLift ??= radii;
+    }
+    transitions.push({ fps, caught: game.plan.prize?.id || null, targetsUnchanged,
+     constrained: Math.max(...lastGrip.map((r, i) => r - gripTargets[i])),
+     snap: Math.max(...lastGrip.map((r, i) => Math.abs(r - firstLift[i]))) });
+   }
+  }
+  scene.renderer.render=render; if(peakGame){scene.update(peakGame,0,0,{x:0,z:0},null);scene.inspect('butter');} return { results, transitions };
  });
  console.log(JSON.stringify(report,null,2)); await page.screenshot({path:'.screenshots/toy-contact.png'});
- assert.equal(report.find(r=>r.name==='centred').caught,'butter'); assert.equal(report.find(r=>r.name==='jackpot').caught,'sprout');
- for(const name of ['side','front']) {const row=report.find(r=>r.name===name);assert.equal(row.caught,null);if(name==='front')assert.ok(row.maxTilt>.03,`${name} visible contact reaction`);assert.ok(row.blocked,`${name} mesh descent stop`);assert.ok(row.minGround>-.015);}
- assert.equal(report.find(r=>r.name==='empty').maxTilt,0);
+ assert.equal(report.results.find(r=>r.name==='centred').caught,'butter'); assert.equal(report.results.find(r=>r.name==='jackpot').caught,'sprout');
+ for(const name of ['side','front']) {const row=report.results.find(r=>r.name===name);assert.equal(row.caught,null);if(name==='front')assert.ok(row.maxTilt>.03,`${name} visible contact reaction`);assert.ok(row.blocked,`${name} mesh descent stop`);assert.ok(row.minGround>-.015);}
+ assert.equal(report.results.find(r=>r.name==='empty').maxTilt,0);
+ for (const fps of [60, 30, 10]) {
+  const rows = report.transitions.filter(row => row.fps === fps);
+  assert.deepEqual(rows.map(row => row.caught), [null, 'blue-hour', 'butter'], `${fps} FPS preserves the three outcomes`);
+  for (const row of rows) {
+   assert.ok(row.targetsUnchanged, 'resolved contacts do not feed back into the closing targets');
+   if (row.caught) assert.ok(row.constrained > .02, 'the rendered mesh actually limits the grip');
+   assert.ok(row.snap < 1e-8, `${fps} FPS ${row.caught || 'miss'} preserves contact at the lift boundary: ${row.snap}`);
+  }
+ }
 } finally {await browser.close();}

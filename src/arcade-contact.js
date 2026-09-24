@@ -77,8 +77,9 @@ export class ToyContacts {
           if (!game.plan.prize) this.impact(contact.toy, contact.point, 'grip');
         }
       }
-      // Preserve the contact radii into lifting, rather than snapping closed.
-      if (game.elapsed > .95) game.plan.radii = [...pose.radii];
+      // Carry the last resolved pose into lifting, even when a frame skips the
+      // end of grip. Keep closing targets separate so contacts cannot feed back.
+      game.plan.resolvedRadii = [...pose.radii];
     }
   }
   // A full setFromObject traversal per obstacle per frame is the rock() hot

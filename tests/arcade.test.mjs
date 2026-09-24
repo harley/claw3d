@@ -68,6 +68,26 @@ test('every one of eleven distinct toys has a supported centred grip with indepe
   }
 });
 
+test('resolved fingers stay on the toy through transport and open from that pose on release', () => {
+  const game = createGame(); begin(game); game.position = { x: -.38, z: .72 }; drop(game);
+  const targets = [...game.plan.radii], resolved = targets.map(r => r + .03);
+  game.plan.resolvedRadii = [...resolved];
+  for (const phase of ['lift', 'transfer', 'release']) {
+    game.phase = phase; game.elapsed = 0;
+    assert.deepEqual(clawPose(game).radii, resolved, `${phase} starts at the mesh contact`);
+  }
+  game.elapsed = PHASES.release;
+  assert.ok(clawPose(game).radii.every(r => Math.abs(r - OPEN_RADIUS) < 1e-10));
+  assert.deepEqual(game.plan.radii, targets, 'contact never changes the closing targets');
+  assert.deepEqual(game.plan.resolvedRadii, resolved, 'opening does not mutate saved contact');
+  game.plan.prize = null; game.phase = 'lift'; game.elapsed = 0;
+  assert.deepEqual(clawPose(game).radii, resolved, 'a miss starts opening from its contact pose');
+  game.elapsed = MISS_LIFT;
+  assert.ok(clawPose(game).radii.every(r => Math.abs(r - OPEN_RADIUS) < 1e-10));
+  game.phase = 'result'; begin(game);
+  assert.ok(clawPose(game).radii.every(r => r === OPEN_RADIUS), 'the next turn starts open');
+});
+
 test('an unsupported edge and an empty patch never turn into wins', () => {
   const game = createGame(), toy = game.toys.find(t => t.id === 'butter');
   assert.equal(planGrab({x:toy.x + .23,z:toy.z},game.toys).prize,null);

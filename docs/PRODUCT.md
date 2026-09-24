@@ -13,6 +13,7 @@ The wow moment is direct control followed by a believable grab, a tense lift and
 - Five stationary toys worth 100 base points; moving star worth 200. Successful catches add 0–50 speed points based on aiming time remaining when the drop is accepted. Higher reward requires visibly harder timing. Keep results skill-based and avoid hidden random losses.
 - Dark arcade presentation, clear CoderPush/AWS branding, an unobstructed close gameplay view and wide delivery view in the local experiment, brief state-dependent instructions.
 - A missed grab should make physical sense. Current contact stops and grounded rocking are constrained approximations, not full rigid-body toppling.
+- Mesh-resolved finger positions carry from grip into lift and transport; release opens from that held pose. Closing targets stay separate from visible contact stops, so a toy cannot make the fingers snap inward at lift. Catch judgement and the original toy offset remain unchanged. Automated replay covers the reported Blue Hour and Butter grabs at 60, 30 and 10 FPS; the corrected animation still needs physical review.
 - Standalone preview scores stay in the browser. The protected shared staff pilot stores names and results centrally; client-reported catches remain trusted, so it is not a verified competition backend.
 - The leaderboard is for fun and comparison only; rank earns no additional prize. Physical giveaway rules are separate. Min's ball artwork and 20/30/50-point proposal still need alignment with the game before adoption or printing.
 
