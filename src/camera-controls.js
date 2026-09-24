@@ -3,14 +3,15 @@ export async function createCameraControls({ video, overlay, select, onChange, c
   const { HandController } = await import('./vision.js');
   let input = { x: 0, z: 0 }, state = { kind: 'off', message: 'Start the camera to play' }, at = 0;
   let diagnostic = {};
-  // Production vision telemetry: per-result capture-to-control latency and
-  // reject counts, drained by the caller's periodic rollup.
-  const emptyStats = () => ({ latencies: [], results: 0, rejected: {} });
+  // Keep the accepted-only capture-to-handler metric separate from the new
+  // capture-to-receipt metric, which also includes live over-age replies.
+  const emptyStats = () => ({ latencies: [], receiptDelays: [], results: 0, rejected: {} });
   let stats = emptyStats(), adaptation = emptyStats();
   const record = (target, next) => {
     if (next.rejected) target.rejected[next.rejected] = (target.rejected[next.rejected] || 0) + 1;
     else if (next.captureAge !== undefined) target.results++;
     if (next.milliseconds !== undefined && target.latencies.length < 2000) target.latencies.push(next.milliseconds);
+    if (Number.isFinite(next.captureToReceiptMs) && next.captureToReceiptMs >= 0 && target.receiptDelays.length < 2000) target.receiptDelays.push(next.captureToReceiptMs);
   };
   const notify = next => { state = next; at = performance.now(); onChange(next); };
   const controller = new HandController({ video, overlay, select, maxHands, holdMs, steering,
@@ -26,11 +27,12 @@ export async function createCameraControls({ video, overlay, select, onChange, c
   });
   const reset = () => { controller.resetOwner(); if (controller.running) notify({ kind: 'ready', message: 'Hold one open hand still to steer.' }); };
   const drain = target => {
-    const { latencies, results, rejected } = target;
-    const sorted = latencies.sort((a, b) => a - b);
+    const { latencies, receiptDelays, results, rejected } = target;
+    latencies.sort((a, b) => a - b); receiptDelays.sort((a, b) => a - b);
     // Nearest-rank keeps p95 honest for small samples (n=2 must report the max).
-    const pct = p => sorted.length ? Math.min(60000, sorted[Math.max(0, Math.ceil(sorted.length * p) - 1)]) : null;
-    return { results, rejected, latencyP50Ms: pct(.5), latencyP95Ms: pct(.95) };
+    const pct = (samples, p) => samples.length ? Math.min(60000, samples[Math.max(0, Math.ceil(samples.length * p) - 1)]) : null;
+    return { results, rejected, latencyP50Ms: pct(latencies, .5), latencyP95Ms: pct(latencies, .95),
+      captureToReceiptP50Ms: pct(receiptDelays, .5), captureToReceiptP95Ms: pct(receiptDelays, .95) };
   };
   const visionStats = () => { const sample = drain(stats); stats = emptyStats(); return sample; };
   const adaptationStats = () => { const sample = drain(adaptation); adaptation = emptyStats(); return sample; };

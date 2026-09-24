@@ -175,8 +175,9 @@ test('gesture funnel and vision telemetry are allowlisted, bounded and aggregate
       event('turn_complete', { turn: 1, score: 0, prizeId: null, outcome: 'near' }),
       event('run_start', { holdMs: 300, steering: 'absolute' }),
       event('performance', { averageFps: 60, p95FrameMs: 17, frames: 1800, framesOver33ms: 0,
-        resultHz: 19.7, visionP50Ms: 9.8, visionP95Ms: 21.6,
+        resultHz: 19.7, visionP50Ms: 9.8, visionP95Ms: 21.6, captureToReceiptP50Ms: 20, captureToReceiptP95Ms: 800,
         rejectOverAge: 1, rejectOutOfOrder: 0, rejectHidden: 0, rejectInvalid: 0 }),
+      event('performance', { resultHz: 0, captureToReceiptP50Ms: 900, captureToReceiptP95Ms: 900, rejectOverAge: 1 }),
     );
     assert.deepEqual(store.ingest(good).accepted, good.events.map(e => e.id));
     for (const bad of [
@@ -187,6 +188,7 @@ test('gesture funnel and vision telemetry are allowlisted, bounded and aggregate
       batch(event('run_start', { steering: 'sideways' })),
       batch(event('performance', { resultHz: 241 })),
       batch(event('performance', { visionP95Ms: 60001 })),
+      batch(event('performance', { captureToReceiptP95Ms: 60001 })),
       batch(event('performance', { rejectOverAge: 1.5 })),
       batch(event('time_to_control', { acquisitionMs: -1 })),
     ]) reject(() => store.ingest(bad));
@@ -195,7 +197,15 @@ test('gesture funnel and vision telemetry are allowlisted, bounded and aggregate
     assert.equal(cohort.byType.hold_cancelled, 1);
     assert.equal(cohort.visionP50Ms, 9.8);
     assert.equal(cohort.worstVisionP95Ms, 21.6);
+    assert.equal(cohort.captureToReceiptP50Ms, 460);
+    assert.equal(cohort.worstCaptureToReceiptP95Ms, 900);
     assert.equal(cohort.averageAcquisitionMs, 4200);
     assert.equal(cohort.worstAcquisitionMs, 4200);
+    const historical = { ...batch(event('performance', { visionP50Ms: 10, visionP95Ms: 25 })), build: 'bbbbbbb' };
+    store.ingest(historical);
+    const oldCohort = store.read().summary.cohorts.find(row => row.build === 'bbbbbbb');
+    assert.equal(oldCohort.visionP50Ms, 10);
+    assert.equal(oldCohort.captureToReceiptP50Ms, null, 'older build is not silently mixed into new delay metric');
+    assert.equal(oldCohort.worstCaptureToReceiptP95Ms, null);
   } finally { database.close(); }
 });
