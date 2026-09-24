@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nextTurnSeconds, nextTurnCue, firstTurnCue, playFirstTurnCueTone, firstTurnWaitingMessage, missCopy, finaleHeadline } from '../src/arcade-hud.js';
+import { nextTurnSeconds, nextTurnCue, firstTurnCue, playFirstTurnCueTone, firstTurnWaitingMessage, missCopy, finaleHeadline, clampOverlayPoint } from '../src/arcade-hud.js';
+
+test('aimed point plaques stay inside the overlay at every screen edge', () => {
+  const container = { left: 20, top: 40, right: 410, bottom: 884 };
+  const label = { width: 80, height: 42 };
+  assert.deepEqual(clampOverlayPoint({ x: 20, y: 40 }, container, label), { x: 70, y: 71 });
+  assert.deepEqual(clampOverlayPoint({ x: 410, y: 884 }, container, label), { x: 360, y: 853 });
+  assert.deepEqual(clampOverlayPoint({ x: 220, y: 450 }, container, label), { x: 220, y: 450 });
+});
 
 test('after a catch the next round keeps every cue and returns control in 2.5 s', () => {
   assert.equal(nextTurnSeconds(true), 2.5);

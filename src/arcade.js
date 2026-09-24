@@ -8,7 +8,7 @@ const manualSetup = new URLSearchParams(location.search).get('setup') === 'manua
 import { createSharedBoard } from './shared-board.js';
 import { createPlaytestClient } from './playtest-client.js';
 import { createArcadeAudio } from './arcade-audio.js';
-import { createHud, $, setText, setHidden, finaleHeadline, missCopy, TROPHY_ICONS } from './arcade-hud.js';
+import { createHud, $, setText, setHidden, finaleHeadline, missCopy, TROPHY_ICONS, clampOverlayPoint } from './arcade-hud.js';
 import { createTurnState, beginTurnState, beginFirstTurnPreparation, requestDrop, stepTurn } from './turn-controller.js';
 import { createMovementMusic } from './movement-music.js';
 import { PerformanceGovernor, PERFORMANCE_WINDOW_MS } from './performance-governor.js';
@@ -491,14 +491,17 @@ function frame(time) {
     scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, sceneFeedback, Boolean(cameraControls?.running || cameraControls?.starting) && performanceGovernor.mode === 'simple', { preparing: Boolean(run && !recovering), nextTurnElapsed: flow.nextTurnElapsed, firstTurnPreparationElapsed: flow.firstTurnPreparationElapsed, machineControls: cabinetEnabled, cueLead, attract, dt }); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
     glove.update(grabEnabled ? feedback : { ...feedback, pointer: null }, cabinetEnabled && (game.phase === 'aim' || (dualEnabled && flow.contactFeedback && game.phase === 'anticipate')) && !paused && !modal && !frozen && !document.hidden, dt);
     const tagged = game.phase === 'aim' && aligned ? game.toys.find(toy => toy.id === aligned.id) : null;
-    const target = tagged ? scene.screenPoint(tagged.x, BED + (tagged.elevation || 0) + .08, tagged.z) : null;
+    const toyHeight = tagged ? scene.toys.get(tagged.id).userData.height * tagged.scale : 0;
+    const target = tagged ? scene.screenPoint(tagged.x, BED + (tagged.elevation || 0) + toyHeight + .28, tagged.z) : null;
     const tagOrigin = target ? $('prize-tags').getBoundingClientRect() : null;
     for (const { toy, element } of tags) {
-      setHidden(element, !target || aligned.id !== toy.id);
-      if (element.hidden) continue;
-      element.style.transform = `translate(${Math.round(target.x - tagOrigin.left)}px, ${Math.round(target.y - tagOrigin.top)}px) translate(-50%, -50%)`;
-      element.classList.add('targeted');
+      const isTarget = Boolean(target && aligned.id === toy.id);
+      setHidden(element, !isTarget);
+      element.classList.toggle('targeted', isTarget);
+      if (!isTarget) continue;
       element.textContent = scoreTurn(run?.rules || RULES, turnContext(run?.turns || [], toy.id, Math.floor(flow.remaining * 1000)));
+      const position = clampOverlayPoint(target, tagOrigin, element.getBoundingClientRect());
+      element.style.transform = `translate(${Math.round(position.x - tagOrigin.left)}px, ${Math.round(position.y - tagOrigin.top)}px) translate(-50%, -50%)`;
     }
   } catch (error) { fail('The game stopped unexpectedly. Reload to recover this player.', error); return; }
   requestAnimationFrame(frame);

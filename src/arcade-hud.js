@@ -12,6 +12,16 @@ const $ = id => { if (!elements.has(id)) elements.set(id, document.getElementByI
 const setText = (id, value) => { const text = String(value); if ($(id).textContent !== text) $(id).textContent = text; };
 const setHidden = (element, hidden) => { if (element.hidden !== hidden) element.hidden = hidden; };
 
+export function clampOverlayPoint(point, container, label, inset = 10) {
+  const halfWidth = label.width / 2, halfHeight = label.height / 2;
+  const minX = container.left + inset + halfWidth, maxX = container.right - inset - halfWidth;
+  const minY = container.top + inset + halfHeight, maxY = container.bottom - inset - halfHeight;
+  return {
+    x: Math.max(minX, Math.min(maxX, point.x)),
+    y: Math.max(minY, Math.min(maxY, point.y)),
+  };
+}
+
 const deliveryPhases = new Set(['anticipate', 'descend', 'grip', 'lift', 'transfer', 'release', 'deliver', 'reveal']);
 // After a catch the machine pulls back to the shelf, so the next round gets a
 // full count-in. After a miss the view never left the claw: name it, then go.
