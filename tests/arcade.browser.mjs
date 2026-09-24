@@ -12,6 +12,18 @@ await installCameraFixture(page);
 const snap=()=>page.evaluate(()=>window.__littleCloud.snapshot());
 const phase=state=>page.waitForFunction(state=>window.__littleCloud.snapshot().phase===state,state,{timeout:30000});
 const open=async()=>{await page.goto('http://127.0.0.1:4196/?setup=manual');await page.waitForFunction(()=>window.__littleCloud);};
+async function assertInstructions({ profile, scene, camera, attractTitle, attractRule }) {
+ assert.equal(await page.locator('#scene').getAttribute('aria-label'), scene, `${profile} scene description`);
+ assert.equal(await page.locator('#camera-menu-help').textContent(), 'Use one open hand and hold a fist to select menu buttons.', `${profile} keeps menu help separate`);
+ assert.equal(await page.locator('#camera-help').textContent(), camera, `${profile} camera gameplay help`);
+ assert.equal(await page.locator('#attract-title').textContent(), attractTitle, `${profile} attract title`);
+ assert.equal(await page.locator('#attract-rule').textContent(), attractRule, `${profile} attract rule`);
+}
+const instructions = {
+ holdDrop: { profile: 'one-hand', scene: 'Steer with one open hand. Clench and hold your fist to drop.', camera: 'Move one open hand to steer. Clench and hold your fist to drop; open to cancel.', attractTitle: 'SHOW YOUR HAND', attractRule: 'OPEN HAND STEERS · FIST DROPS' },
+ grab: { profile: 'grab-release', scene: 'Clench on MOVE to grip and steer. Open to release without dropping. Click or clench DROP to drop.', camera: 'Clench on MOVE to grip and steer. Open to release without dropping. Click, clench, or swipe down on DROP to drop.', attractTitle: 'SHOW YOUR HAND', attractRule: 'GRIP MOVE · OPEN TO RELEASE · PRESS DROP' },
+ dual: { profile: 'dual', scene: 'Clench your left hand to grip and steer. Raise your open right hand to drop. Open your left hand to release.', camera: 'Show both open hands. Clench your left hand to grip and steer; raise your open right hand to drop. Open your left hand to release without dropping.', attractTitle: 'SHOW BOTH HANDS', attractRule: 'LEFT HAND STEERS · RIGHT HAND DROPS' },
+};
 let capturedPreparation=false;
 const register=async name=>{if(!(await snap()).event.handCamera.running){await page.locator('#play').click();await page.waitForFunction(()=>window.__littleCloud.snapshot().event.handCamera.running);}await page.locator('#play').click();assert.equal(await page.locator('#name').getAttribute('required'),null);await page.locator('#name').fill(name);await page.locator('#name').press('Enter');await assertScoredStart(page,{captureScreenshots:!capturedPreparation});capturedPreparation=true;await phase('aim');};
 async function aimToy(id='butter'){ for(const axis of ['x','z']) for(let i=0;i<6;i++){const delta=({butter:{x:-.38,z:.72},peach:{x:.20,z:.72}}[id])[axis]-(await snap()).position[axis];if(Math.abs(delta)<.025)break;const speed=Math.abs(delta)<.14?.25:1;await cameraInput(page,{x:0,z:0,[axis]:Math.sign(delta)*speed});await page.waitForTimeout(Math.abs(delta)/(.85*speed)*1000);await cameraInput(page,{x:0,z:0});} assert.equal((await snap()).aligned,id);}
@@ -63,7 +75,40 @@ async function catchTurn(){
  }
 }
 try {
- await open();await page.screenshot({path:'.screenshots/event-hero.png'});
+ await open();
+ await assertInstructions(instructions.holdDrop);
+ await page.waitForFunction(() => document.body.classList.contains('attract'));
+ await page.screenshot({path:'.screenshots/control-help-one-hand.png'});
+ await page.locator('#mode-two').click();
+ await page.waitForFunction(() => location.search.includes('controls=dual') && document.documentElement.dataset.arcadeReady === 'true');
+ await assertInstructions(instructions.dual);
+ await page.waitForFunction(() => document.body.classList.contains('attract'));
+ await page.screenshot({path:'.screenshots/control-help-dual.png'});
+ await page.locator('#mode-one').click();
+ await page.waitForFunction(() => !location.search.includes('controls=') && document.documentElement.dataset.arcadeReady === 'true');
+ await assertInstructions(instructions.holdDrop);
+ await page.goto('http://127.0.0.1:4196/?setup=manual&controls=grab');
+ await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+ await assertInstructions(instructions.grab);
+ await page.waitForFunction(() => document.body.classList.contains('attract'));
+ await page.screenshot({path:'.screenshots/control-help-grab-release.png'});
+ await page.route('**/models/hands/*.glb', route => route.abort());
+ await page.goto('http://127.0.0.1:4196/?setup=manual&controls=dual');
+ await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+ await page.waitForFunction(() => !document.getElementById('hand-art-status').hidden);
+ assert.equal(await page.locator('#hand-art-status').textContent(), 'One or more 3D hand models failed to load. Camera tracking and game controls remain available.');
+ assert.equal(await page.locator('#error').isVisible(), false, 'missing hand artwork does not block the game renderer');
+ await page.locator('#camera-open').click();
+ assert.equal(await page.locator('#hand-art-status').isVisible(), true, 'camera setup explains the missing 3D artwork');
+ await page.locator('#camera-setup [aria-label="Close camera setup"]').click();
+ await page.locator('#play').click();
+ await page.waitForFunction(() => window.testCamera?.running);
+ assert.equal(await page.evaluate(() => window.testCamera.maxHands), 2, 'camera recognition remains available after model failure');
+ await page.unroute('**/models/hands/*.glb');
+ await page.goto('http://127.0.0.1:4196/?setup=manual');
+ await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+ await assertInstructions(instructions.holdDrop);
+ await page.screenshot({path:'.screenshots/event-hero.png'});
  const idleWrites = await page.evaluate(async () => {
   let writes = 0;
   const observer = new MutationObserver(records => { writes += records.length; });

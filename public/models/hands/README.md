@@ -14,8 +14,10 @@ vertex are exported and normalized for standard glTF skinning.
 At runtime `src/cabinet-hands.js` normalizes the wrist, reconstructs articulated
 finger chains, adds navy sleeve geometry, and applies the grip/strike poses.
 It does not use WebXR input or change webcam recognition. Assets are served locally;
-there are no runtime third-party model requests. A model load failure leaves the
-ordinary joystick and click/gesture controls available and reports a console error.
+there are no runtime third-party model requests. A model load failure removes only
+that model's 3D visual. Camera recognition and game controls remain available;
+dual-mode camera setup reports the failed model load, and the console records the
+error.
 
 Design reference: generated three-direction board (human skin, leather gloves,
 robot hands), selected human skin with navy sleeves. Prompt: premium first-person

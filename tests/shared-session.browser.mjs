@@ -106,6 +106,20 @@ async function scoredAndFeedback() {
     for (let turn = 1; turn <= 3; turn++) app.database.record(run.id, 'rank-owner', { turn, prizeId: 'butter' });
   }
   const page = await open(context), boardBefore = app.database.board();
+  assert.equal(await page.locator('#mode-one').getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.locator('#camera-help').textContent(), 'Move one open hand to steer. Clench and hold your fist to drop; open to cancel.', 'shared default gives one-hand gameplay help');
+  assert.equal(await page.locator('#scene').getAttribute('aria-label'), 'Steer with one open hand. Clench and hold your fist to drop.');
+  await page.goto(`${origin}/?setup=manual&controls=dual`);
+  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+  assert.equal(await page.locator('#mode-two').getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.locator('#camera-help').textContent(), 'Show both open hands. Clench your left hand to grip and steer; raise your open right hand to drop. Open your left hand to release without dropping.', 'shared dual mode gives dual-hand gameplay help');
+  assert.equal(await page.locator('#scene').getAttribute('aria-label'), 'Clench your left hand to grip and steer. Raise your open right hand to drop. Open your left hand to release.');
+  await page.goto(`${origin}/?setup=manual&controls=grab&hold=300&steer=absolute`);
+  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+  assert.equal(await page.locator('#mode-one').getAttribute('aria-pressed'), 'true');
+  assert.equal(await page.locator('#camera-help').textContent(), 'Move one open hand to steer. Clench and hold your fist to drop; open to cancel.', 'shared mode ignores local grab, hold and steering experiments');
+  await page.goto(`${origin}/?setup=manual`);
+  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
   let starts = 0;
   page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/runs') starts++; });
   assert.equal(await page.locator('#practice, #shared-practice, #rehearsal-exit').count(), 0);
@@ -286,6 +300,7 @@ try {
   });
   await page.locator('#mode-two').click();
   await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true' && document.getElementById('mode-two').getAttribute('aria-pressed') === 'true');
+  assert.equal(await page.locator('#camera-help').textContent(), 'Show both open hands. Clench your left hand to grip and steer; raise your open right hand to drop. Open your left hand to release without dropping.', 'shared mode switch updates gameplay help');
   assert.equal(await page.locator('#camera-open').textContent(), '📷');
   await register(page, 'Browser A');
   assert.equal(await page.evaluate(() => window.testCamera.maxHands), 2);
