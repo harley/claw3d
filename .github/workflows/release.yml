@@ -8,6 +8,11 @@ on:
   # The merge queue validates one merged group of PRs per run before it lands on main.
   merge_group:
   workflow_dispatch:
+    inputs:
+      camera_diagnostic:
+        description: Compare PR 100 and its base on one macOS runner
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -19,6 +24,7 @@ concurrency:
 jobs:
   unit:
     name: Unit tests and build (macOS)
+    if: ${{ !inputs.camera_diagnostic }}
     runs-on: macos-15
     timeout-minutes: 15
     steps:
@@ -34,6 +40,7 @@ jobs:
 
   browser:
     name: Browser suites (${{ matrix.shard }})
+    if: ${{ !inputs.camera_diagnostic }}
     runs-on: macos-15
     timeout-minutes: 20
     strategy:
@@ -61,6 +68,7 @@ jobs:
 
   shared:
     name: Shared-session browser check
+    if: ${{ !inputs.camera_diagnostic }}
     runs-on: macos-15
     timeout-minutes: 20
     steps:
@@ -86,7 +94,7 @@ jobs:
   check:
     name: Unit, build and browser checks
     needs: [unit, browser, shared]
-    if: ${{ always() }}
+    if: ${{ always() && !inputs.camera_diagnostic }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -110,6 +118,7 @@ jobs:
 
   container:
     name: Production Linux container and backup checks
+    if: ${{ !inputs.camera_diagnostic }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -117,6 +126,40 @@ jobs:
         with:
           persist-credentials: false
       - run: bash scripts/check-release-container.sh
+
+  camera_diagnostic:
+    name: Compare camera lifecycle on PR 100 and base
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.camera_diagnostic }}
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 7373b71ba2c9acd852f62ba7d02a7c6158f770c4
+          path: cases/base
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 398da0f1e65530ce1740215f652cdd2545f13c68
+          path: cases/pr
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      - run: npm ci --prefix cases/base && npm ci --prefix cases/pr
+      - run: npx playwright install chromium
+        working-directory: cases/base
+      - run: node scripts/compare-camera-ci.mjs
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: camera-comparison-${{ github.run_id }}
+          path: .screenshots/camera-ci-comparison/
+          include-hidden-files: true
+          retention-days: 7
 
   deploy:
     name: Deploy and verify live BUILD
