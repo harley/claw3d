@@ -298,11 +298,14 @@ export class HandController {
   acceptResult(result, capturedAt, generation, receivedAt = performance.now()) {
     if (!this.running || generation !== this.generation) return false;
     const age = receivedAt - capturedAt;
-    const reason = !Number.isFinite(capturedAt) || age < 0 ? 'invalid capture'
+    const reason = !Number.isFinite(capturedAt) || !Number.isFinite(receivedAt) || !Number.isFinite(age) || age < 0 ? 'invalid capture'
       : capturedAt <= (this.visibilityCutoff ?? -Infinity) ? 'hidden capture'
       : capturedAt <= (this.lastResponseCapture ?? this.lastCapture ?? -Infinity) ? 'out of order'
       : age > CAPTURE_MAX_AGE ? 'over age' : null;
-    this.onDiagnostic?.({ captureAge: age, rejected: reason });
+    // Accepted and over-age replies are live, ordered samples. Hidden and
+    // replayed replies would distort the capture-to-receipt distribution.
+    this.onDiagnostic?.({ captureAge: age, rejected: reason,
+      ...(!reason || reason === 'over age' ? { captureToReceiptMs: age } : {}) });
     // A late response proves the worker is alive, but cannot control the game.
     if (!reason || reason === 'over age') {
       this.lastActivity = receivedAt; this.lastResponseCapture = capturedAt;

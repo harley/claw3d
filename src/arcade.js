@@ -478,6 +478,7 @@ function frame(time) {
           ...(vision?.results || rejected ? {
             resultHz,
             ...(vision.latencyP50Ms !== null ? { visionP50Ms: vision.latencyP50Ms, visionP95Ms: vision.latencyP95Ms } : {}),
+            ...(vision.captureToReceiptP50Ms !== null ? { captureToReceiptP50Ms: vision.captureToReceiptP50Ms, captureToReceiptP95Ms: vision.captureToReceiptP95Ms } : {}),
             rejectOverAge: vision.rejected['over age'] || 0, rejectOutOfOrder: vision.rejected['out of order'] || 0,
             rejectHidden: vision.rejected['hidden capture'] || 0, rejectInvalid: vision.rejected['invalid capture'] || 0,
           } : {}) });

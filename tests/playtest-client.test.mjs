@@ -164,7 +164,7 @@ test('gesture funnel and vision rollup fields survive the client allowlist', asy
   client.track('hold_cancelled', { phase: 'aim', cause: 'uncertain_reset' });
   client.track('time_to_control', { acquisitionMs: 4200 });
   client.track('performance', { averageFps: 60, p95FrameMs: 17, frames: 1800, framesOver33ms: 0,
-    resultHz: 19.7, visionP50Ms: 9.8, visionP95Ms: 21.6,
+    resultHz: 19.7, visionP50Ms: 9.8, visionP95Ms: 21.6, captureToReceiptP50Ms: 20, captureToReceiptP95Ms: 800,
     rejectOverAge: 1.4, rejectOutOfOrder: 0, rejectHidden: 0, rejectInvalid: 0 });
   // A cause-less or invalid-cause cancellation must be refused client-side:
   // a malformed event in a batch would 400-reject every co-batched event.
@@ -177,7 +177,7 @@ test('gesture funnel and vision rollup fields survive the client allowlist', asy
   assert.deepEqual(holdCancelled.data, { phase: 'aim', cause: 'uncertain_reset' });
   assert.deepEqual(acquisition.data, { acquisitionMs: 4200 });
   assert.deepEqual(performance.data, { averageFps: 60, p95FrameMs: 17, frames: 1800, framesOver33ms: 0,
-    resultHz: 19.7, visionP50Ms: 9.8, visionP95Ms: 21.6,
+    resultHz: 19.7, visionP50Ms: 9.8, visionP95Ms: 21.6, captureToReceiptP50Ms: 20, captureToReceiptP95Ms: 800,
     rejectOverAge: 1, rejectOutOfOrder: 0, rejectHidden: 0, rejectInvalid: 0 });
   assert.equal(batches[0].events.length, 4);
   client.dispose();
