@@ -15,11 +15,12 @@ try {
   await page.evaluate(async () => {
     const T = await import('/node_modules/three/build/three.module.js');
     window.checkStarTag = state => {
-      const position = state.toys.find(toy => toy.id === 'sprout').position;
+      const toy = state.toys.find(toy => toy.id === 'sprout');
+      const position = toy.position;
       const viewport = document.querySelector('#scene').getBoundingClientRect();
       const camera = new T.PerspectiveCamera(35, viewport.width / viewport.height, .1, 70);
       camera.position.fromArray(state.camera); camera.lookAt(...state.cameraLook); camera.updateMatrixWorld();
-      const point = new T.Vector3(position[0], position[1] + .08, position[2]).project(camera);
+      const point = new T.Vector3(position[0], toy.bounds.max[1] + .28, position[2]).project(camera);
       const tag = document.querySelector('.prize-tag[data-points="200"]'), rect = tag.getBoundingClientRect();
       return { visible: !tag.hidden, distance: Math.hypot(rect.x + rect.width / 2 - (viewport.x + (point.x + 1) / 2 * viewport.width), rect.y + rect.height / 2 - (viewport.y + (1 - point.y) / 2 * viewport.height)) };
     };
@@ -45,7 +46,7 @@ try {
       return false;
     }
     if (state.event.carouselTime - window.starHoldStarted < .55) return false;
-    window.starTagCheck = window.checkStarTag(state);
+    window.starTagCheck = window.checkStarTag(window.__littleCloud.snapshot(true));
     window.starBeforeDrop = state.toys.find(toy => toy.id === 'sprout').position;
     window.testCamera.clench(); return true;
   });
