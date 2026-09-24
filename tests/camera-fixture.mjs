@@ -111,7 +111,7 @@ export async function assertScoredStart(page, { captureScreenshots = false, exer
   assert.equal(waiting.state.phase, 'idle');
   assert.equal(waiting.state.event.remaining, 15);
   assert.equal(waiting.state.event.turn, 0);
-  assert.equal(waiting.title, waiting.state.event.controlProfile === 'dual' ? 'SHOW BOTH HANDS TO CONTINUE' : 'SHOW ONE HAND');
+  assert.equal(waiting.title, waiting.state.event.controlProfile === 'dual' ? 'SHOW BOTH HANDS OPEN' : 'SHOW ONE HAND');
   assert.equal(await cameraDrop(page), false, 'control loss cannot turn unfinished first prep into a scored drop');
 
   const reacquiredAt = await page.evaluate(() => performance.now());

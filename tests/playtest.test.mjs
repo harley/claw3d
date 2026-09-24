@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { openDatabase } from '../server/database.js';
 import { createPlaytestStore, PLAYTEST_RETENTION_MS } from '../server/playtest.js';
 import { createPilotServer } from '../server/index.js';
+import { createPlaytestClient } from '../src/playtest-client.js';
 import { playtestReport } from '../server/playtest-report.js';
 
 const event = (type = 'page_open', data = {}) => ({ id: randomUUID(), type, mode: 'practice', elapsedMs: 123, data });
@@ -208,4 +209,28 @@ test('gesture funnel and vision telemetry are allowlisted, bounded and aggregate
     assert.equal(oldCohort.captureToReceiptP50Ms, null, 'older build is not silently mixed into new delay metric');
     assert.equal(oldCohort.worstCaptureToReceiptP95Ms, null);
   } finally { database.close(); }
+});
+
+
+test('readiness reasons survive client sanitization and server storage without hand data', async () => {
+  const database = openDatabase(':memory:'), store = createPlaytestStore(database.db);
+  const client = createPlaytestClient({ build: '123abcd', enabled: true, fetcher: async (_url, options) => {
+    const result = store.ingest(JSON.parse(options.body));
+    return { ok: true, json: async () => result };
+  } });
+  try {
+    for (const startGate of ['show_both', 'show_left', 'show_right', 'open_left', 'open_right', 'hold_left', 'hold_right', 'return_left', 'return_right', 'hold_both', 'off', 'loading', 'error', 'delayed', 'blocked', 'ready']) {
+      client.track('control_state', { phase: 'idle', state: 'tracking', controlMode: 'two-hand', startGate,
+        hands: { left: { x: .3 } }, landmarks: [1, 2], message: 'private' });
+    }
+    await client.flush();
+    const rows = store.read().events;
+    assert.equal(rows.length, 16);
+    assert.deepEqual(rows[2].data, { controlMode: 'two-hand', phase: 'idle', startGate: 'show_right', state: 'tracking' });
+    assert.ok(rows.every(row => Object.keys(row.data).length === 4));
+    reject(() => store.ingest(batch(event('control_state', { startGate: 'arbitrary text' }))));
+    reject(() => store.ingest(batch(event('control_state', { controlMode: 'invalid' }))));
+    reject(() => store.ingest(batch(event('drop', { startGate: 'ready' }))));
+    assert.equal(database.board().runs.length, 0);
+  } finally { client.dispose(); database.close(); }
 });

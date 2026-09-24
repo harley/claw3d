@@ -31,3 +31,19 @@ test('guide bounds match sticky left travel and right local movement limits', ()
   const outside = handCameraGuide('right', { ...feedback, hands: { right: { outside: true } } }, { x: .75, y: .48 });
   assert.equal(outside.state, 'return'); assert.equal(outside.icon, 'palm'); assert.deepEqual(outside.zone, guide.zone);
 });
+
+
+test('first-turn preview asks for open hands and confirms each ready role without grip or raise cues', () => {
+  for (const role of ['left', 'right']) {
+    const prep = { ...feedback, preparing: true, controlEnabled: false };
+    for (const [hand, label] of [
+      [{ ready: false, open: false, closed: true }, 'OPEN'],
+      [{ ready: false, open: true, closed: false }, 'HOLD'],
+      [{ ready: true, open: true, closed: false }, 'READY'],
+    ]) {
+      const guide = handCameraGuide(role, { ...prep, hands: { [role]: hand } });
+      assert.equal(guide.label, label); assert.equal(guide.icon, 'palm');
+    }
+    assert.equal(handCameraGuide(role, { ...prep, kind: 'delayed' }).state, 'inactive');
+  }
+});

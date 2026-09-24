@@ -49,12 +49,19 @@ try {
   const source = await readFile(new URL('../src/vision.js', import.meta.url), 'utf8');
   await real.route('**/src/vision.js*', route => route.fulfill({ contentType: 'application/javascript', body: source + `
     HandController.prototype.start = async function() { this.running = true; window.menuController = this; this.onState({kind:'ready'}); };
-    HandController.prototype.draw = function() {};
+    const drawHands = HandController.prototype.draw;
+    HandController.prototype.draw = function(...args) { if (window.menuDual) drawHands.apply(this, args); };
     window.menuSample = (x, y, closed) => {
       window.sampleTime = (window.sampleTime || performance.now()) + 100;
       const lm = Array.from({length:21}, () => ({x:1-x,y,z:0}));
       lm[0].y += .06; lm[9].y -= .06; lm[5].x -= .06; lm[17].x += .06;
-      menuController.handle({landmarks:[lm],handedness:[[{categoryName:'Left'}]],gestures:[[{categoryName:closed?'Closed_Fist':'Open_Palm',score:.99}]]}, sampleTime);
+      const result = {landmarks:[lm],handedness:[[{categoryName:'Left',score:.99}]],gestures:[[{categoryName:closed?'Closed_Fist':'Open_Palm',score:.99}]]};
+      if (window.menuDual && window.menuRightVisible !== false) {
+        const right = lm.map(point => ({...point, x: point.x + x - .75}));
+        result.landmarks.push(right); result.handedness.push([{categoryName:'Right',score:.99}]);
+        result.gestures.push([{categoryName:'Open_Palm',score:.99}]);
+      }
+      menuController.handle(result, sampleTime);
     };
   ` }));
   await real.goto('http://127.0.0.1:4196/');
@@ -91,6 +98,32 @@ try {
   await real.waitForFunction(()=>!window.__littleCloud.snapshot().event.paused);
   await samples(resumePosition,true,10);
   assert.equal(await real.evaluate(()=>window.__littleCloud.snapshot().phase),'aim','held RESUME gesture cannot drop');
+  // Use the real recognition/menu path with both hands visible from entry.
+  await real.goto('http://127.0.0.1:4196/?controls=dual');
+  await real.waitForFunction(() => window.menuController?.running);
+  await real.evaluate(() => { window.menuDual = true; });
+  await select('play');
+  await real.locator('#registration').waitFor();
+  await select('register-play');
+  const resting = { x: .3, y: .5 };
+  await samples(resting, true, 12);
+  await real.waitForFunction(() => document.getElementById('status').textContent === 'OPEN LEFT HAND');
+  assert.equal(await real.evaluate(() => window.__littleCloud.snapshot().event.turn), 0);
+  await real.evaluate(() => { window.menuRightVisible = false; });
+  await samples(resting, false, 12);
+  await real.waitForFunction(() => document.getElementById('status').textContent === 'SHOW RIGHT HAND OPEN');
+  assert.equal(await real.locator('#camera-overlay').getAttribute('data-left'), 'active');
+  assert.equal(await real.locator('#camera-overlay').getAttribute('data-right'), 'open');
+  assert.equal(await real.evaluate(() => window.__littleCloud.snapshot().event.firstTurnPreparationElapsed), 0);
+  await real.screenshot({ path: '.screenshots/issue-103-right-hand-readiness.png' });
+  await real.evaluate(() => { window.menuRightVisible = true; });
+  await samples(resting, false, 12);
+  await real.waitForFunction(() => window.__littleCloud.snapshot().event.firstTurnControlReady);
+  await real.evaluate(position => { window.prepSamples = setInterval(() => menuSample(position.x, position.y, false), 130); }, resting);
+  await real.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
+  await real.evaluate(() => clearInterval(window.prepSamples));
+  assert.equal(await real.evaluate(() => window.__littleCloud.snapshot().event.turn), 1);
+  assert.equal(await real.evaluate(() => window.__littleCloud.snapshot().event.run.turns.length), 0);
   await real.close();
   console.log('PASS automatic camera/audio preference, generated name, hand menu selection, lost-hand cancellation and gameplay/host isolation');
 } finally { await browser.close(); }

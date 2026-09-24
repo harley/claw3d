@@ -40,7 +40,7 @@ test('waiting copy asks for the active controller without advancing the count', 
   assert.equal(firstTurnWaitingMessage({ kind: 'delayed' }), 'TRACKING DELAYED');
   assert.equal(firstTurnWaitingMessage({ kind: 'ready', closed: true, message: 'Open your hand to begin.' }), 'OPEN HAND TO READY');
   assert.equal(firstTurnWaitingMessage({ kind: 'tracking', handCount: 1, open: false }), 'OPEN HAND TO READY');
-  assert.equal(firstTurnWaitingMessage({ kind: 'tracking', message: 'Raise right hand open' }, true), 'RAISE RIGHT HAND OPEN');
+  assert.equal(firstTurnWaitingMessage({ kind: 'tracking', message: 'Raise right hand open' }, true), 'SHOW BOTH HANDS OPEN');
   assert.equal(firstTurnWaitingMessage({ kind: 'clenching' }), 'OPEN HAND TO READY');
 });
 
@@ -72,4 +72,19 @@ test('the finale headline reads the run', () => {
   assert.equal(finaleHeadline([butter, butter, butter], 2, points), 'CLEAN SWEEP!');
   assert.equal(finaleHeadline([butter, miss, miss], 1, points), 'TOP OF THE BOARD!');
   assert.equal(finaleHeadline([miss, miss, miss], undefined, points), 'THE CLAW WINS THIS ONE', 'shared mode before the rank arrives');
+});
+
+
+test('dual waiting instructions describe the actual readiness gate, never a gameplay grip', () => {
+  const ready = { ready: true, open: true, closed: false, pointer: { x: .3, y: .5 } };
+  const feedback = { profile: 'dual', kind: 'tracking', message: 'LEFT HAND · GRAB JOYSTICK', hands: { left: ready } };
+  assert.equal(firstTurnWaitingMessage(feedback, true), 'SHOW RIGHT HAND OPEN');
+  for (const role of ['left', 'right']) {
+    for (const [hand, expected] of [
+      [{ ...ready, closed: true, open: false }, `OPEN ${role.toUpperCase()} HAND`],
+      [{ ...ready, ready: false }, `HOLD ${role.toUpperCase()} HAND STILL`],
+      [{ ...ready, outside: true }, `${role.toUpperCase()} HAND INTO ${role[0].toUpperCase()} WINDOW`],
+    ]) assert.equal(firstTurnWaitingMessage({ ...feedback, hands: { left: ready, right: ready, [role]: hand } }, true), expected);
+  }
+  assert.equal(firstTurnWaitingMessage({ ...feedback, kind: 'delayed' }, true), 'TRACKING DELAYED');
 });

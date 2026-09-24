@@ -4,8 +4,9 @@ import { HAND_ZONES, HAND_RANGE } from './hand-workspace.js';
 // claim that a control is ready. Windows follow the actual control workspace.
 export function handCameraGuide(role, feedback, origin) {
   const hand = feedback?.hands?.[role], stage = hand?.grab?.stage;
-  const enabled = feedback?.controlEnabled && !['delayed', 'blocked', 'off', 'error'].includes(feedback.kind);
-  const held = role === 'left' && stage === 'gripped';
+  const preparing = feedback?.preparing === true;
+  const enabled = (feedback?.controlEnabled || preparing) && !['delayed', 'blocked', 'off', 'loading', 'error'].includes(feedback.kind);
+  const held = !preparing && role === 'left' && stage === 'gripped';
   const zone = { ...HAND_ZONES[role], minY: .12, maxY: .88 };
   if (held) { zone.minX = .02; zone.minY = .02; zone.maxY = .98; }
   else if (origin) {
@@ -17,6 +18,11 @@ export function handCameraGuide(role, feedback, origin) {
   let state = 'open', label = 'OPEN', icon = 'palm';
   if (!enabled) { state = 'inactive'; label = ''; icon = ''; }
   else if (hand?.outside) { state = 'return'; label = 'RETURN'; }
+  else if (preparing) {
+    if (hand?.open && !hand.closed) {
+      state = hand.ready ? 'active' : 'open'; label = hand.ready ? 'READY' : 'HOLD';
+    }
+  }
   else if (!hand?.ready) { if (hand?.pointer && !hand.closed) label = role === 'right' ? 'RAISE' : 'HOLD'; }
   else if (role === 'left') {
     if (feedback.dropEnabled) { state = 'active'; label = 'MOVE'; icon = 'move'; }
