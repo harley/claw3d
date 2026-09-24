@@ -228,8 +228,9 @@ export function clawPose(game) {
   if (phase === 'descend') pose.y = plan.blockedDescent || mix(HIGH, plan.low, ease(t));
   if (phase === 'grip') { pose.y = plan.low; pose.radii = plan.radii.map((r, i) => mix(OPEN_RADIUS, r, ease((t - i * .075) / .67))); }
   if (['lift', 'transfer', 'release', 'deliver', 'reveal', 'result'].includes(phase)) {
+    const radii = plan.resolvedRadii || plan.radii;
     pose.y = phase === 'lift' ? mix(plan.low, HIGH, ease(t)) : HIGH;
-    pose.radii = plan.prize ? [...plan.radii] : phase === 'lift' ? plan.radii.map(r => mix(r, OPEN_RADIUS, ease(t * 4))) : [OPEN_RADIUS, OPEN_RADIUS, OPEN_RADIUS];
+    pose.radii = plan.prize ? [...radii] : phase === 'lift' ? radii.map(r => mix(r, OPEN_RADIUS, ease(t * 4))) : [OPEN_RADIUS, OPEN_RADIUS, OPEN_RADIUS];
   }
   // Only a held prize travels to the chute; an empty claw stays over its drop.
   if (plan.prize && ['transfer', 'release', 'deliver', 'reveal', 'result'].includes(phase)) {
