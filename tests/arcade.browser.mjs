@@ -177,6 +177,8 @@ try {
  await page.locator('#final-leaderboard').click(); await page.locator('#result-open').click();
  assert.equal(await page.locator('#final-score').textContent(),String((await snap()).event.complete.total),'reopening restores the full score after interrupted count-up');
  await page.screenshot({path:'.screenshots/event-result.png'});
+ assert.equal(await page.locator('#final-rank').textContent(),'LOCAL PREVIEW · 1 HAND · RANK #1');
+ assert.equal(await page.locator('#mode-label').textContent(),'LOCAL PREVIEW · 1 HAND');
  assert.equal(await page.locator('#final-turns .catch-card').count(),3);
  assert.deepEqual(await page.locator('#final-turns .catch-name').allTextContents(),['BUTTER','MISS','PEACH']);
  const completed=(await snap()).event.complete;
@@ -241,7 +243,7 @@ try {
  assert.equal((await snap()).event.run.turns.length,2);assert.equal((await snap()).event.turn,3);
  await page.waitForFunction(()=>!window.__littleCloud.snapshot().event.handCamera.waiting);
  await cameraDrop(page); await page.locator('#final').waitFor({timeout:30000});
- assert.equal(await page.locator('#final-rank').textContent(),'LOCAL PREVIEW');
+ assert.equal(await page.locator('#final-rank').textContent(),'LOCAL PREVIEW · 1 HAND');
  assert.deepEqual(await page.locator('#final-turns .catch-name').allTextContents(),['MISS','MISS','MISS']);
  assert.equal(await page.locator('#final-kicker').textContent(),'THE CLAW WINS THIS ONE');
  assert.deepEqual((await page.locator('#final-turns .catch-detail').allTextContents()).slice(0,2),['TURN 1','TURN 2'],'recovered misses do not inherit another run reason');

@@ -210,7 +210,7 @@ export function createHud({ audio, phaseSound }) {
   setText('timer', String(Math.ceil(remaining)).padStart(2, '0'));
   setText('speed-bonus', `SPEED +${Math.floor((run?.rules.speedBonus ?? 50) * remaining / (run?.rules.seconds || 15))}`);
   $('arcade').classList.toggle('last-claw', Boolean(run && turnNumber === turns)); $('arcade').classList.toggle('urgent', phase === 'aim' && remaining <= 5);
-  setText('mode-label', shared ? sharedStatus : storageError ? 'LOCAL PREVIEW · UNSAVED' : `LOCAL · ${dualEnabled ? '2 HANDS' : '1 HAND'}`);
+  setText('mode-label', shared ? sharedStatus : `LOCAL PREVIEW · ${dualEnabled ? '2 HANDS' : '1 HAND'}${storageError ? ' · UNSAVED' : ''}`);
   setHidden($('mode-label'), !$('mode-label').textContent);
   setHidden($('result-open'), !completedRun || startingRun || Boolean(run) || cameraLoading);
   if (!run && !recovering) button = cameraLoading ? 'Starting…' : !shared ? (dualEnabled ? 'PLAY · 2 HANDS' : 'PLAY · 1 HAND') : cameraControls?.running ? 'Play' : 'Start camera';
