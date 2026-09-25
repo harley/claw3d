@@ -140,6 +140,32 @@ try {
  const trophyBox=await page.locator('#turn-chips').boundingBox(),sceneBox=await page.locator('#scene').boundingBox();
  assert.ok(trophyBox&&trophyBox.y+trophyBox.height<=sceneBox.y,'trophies stay visible above the chamber on phones');
  await page.screenshot({path:'.screenshots/persistent-trophy-mobile.png'});
+ // Rendering contract: emoji fallback fonts must not push the recovered trophies
+ // into the chamber. Reuse this real catch/reload; vary only the rendered label.
+ for (const width of [390, 320]) {
+  await page.setViewportSize({width,height:844});
+  const layouts = await page.evaluate(() => {
+   const label = document.getElementById('player-name'), original = label.textContent;
+   const names = ['🦀 Coral', '🦀 Pebble', '🦀 Cove', '🦊 Ember', '🦊 Rusty', '🦊 Maple',
+    '🐻 Kuma', '🐻 Chestnut', '🐻 Cocoa', '🐱 Miso', '🐱 Sesame', '🐱 Socks',
+    '🐰 Mochi', '🐰 Clover', '🐰 Taro', '🦦 Ripple', '🦦 River', '🦦 Nori',
+    '🐧 Pip', '🐧 Waddle', '🐧 Pogo', '🐉 Jade', '🐉 Flint', '🐉 Ash'];
+   try {
+    return names.map(name => {
+     label.textContent = name;
+     const trophies = document.getElementById('turn-chips').getBoundingClientRect();
+     const scene = document.getElementById('scene').getBoundingClientRect();
+     return {name, trophyBottom:trophies.bottom, trophyHeight:trophies.height, sceneTop:scene.top};
+    });
+   } finally { label.textContent = original; }
+  });
+  for (const layout of layouts) {
+   assert.ok(layout.trophyHeight > 0 && layout.trophyBottom <= layout.sceneTop,
+    `emoji trophies stay above the chamber at ${width}px: ${JSON.stringify(layout)}`);
+  }
+  console.log(`PASS emoji trophy layout ${width} × 844`, JSON.stringify(layouts.find(({name}) => name === '🦀 Pebble')));
+ }
+
  await page.setViewportSize({width:1440,height:900});
  // A clear miss at the far left: no consolation or hidden points.
  await cameraInput(page,{x:-1,z:0});await page.waitForTimeout(1800);await cameraInput(page,{x:0,z:0});await catchTurn();
