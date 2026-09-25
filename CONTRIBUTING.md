@@ -12,7 +12,7 @@ Keep PRs focused and small enough to review in one sitting. Bundle related edits
 
 ## Testing policy
 
-Run `npm run check` (unit tests and production build) before committing a coherent change. During editing, use targeted checks and add a regression for meaningful failures.
+Run `npm run check` (unit tests and production build) before committing a coherent change. During editing, use targeted checks and add a regression for meaningful failures. Before adding or expanding a test, name its observable contract, a credible regression, why existing tests do not already catch it, and whether it requires unnecessary production scaffolding. Keep each contract at its strongest owner boundary; an additional browser journey must cover a distinct wiring, rendering or lifecycle risk.
 
 For camera, phase, scoring, collision or rendering changes, also run the affected browser suites locally. For shared-session or server changes, run `npm run test:shared` after building. Run browser suites sequentially on each machine because concurrent WebGL instances distort timing tests. Documentation-only edits need link and policy checks, not browser or physical-camera tests.
 

@@ -63,11 +63,19 @@ export async function checkCameraTiming(browser, origin) {
     return page;
   }
 
-  // Capture times are deterministic; receipt times stay chronological even for
-  // late results. No inference or camera recognition accuracy is asserted.
-  for (const kind of ['stale', 'silence', 'missing', 'second']) {
-    const page = await setup();
-    try {
+  const page = await setup();
+  const acquire = async () => {
+    assert.equal(await page.evaluate(() => {
+      timingController.resetOwner();
+      for (let i = 0; i < 14; i++) timingSample();
+      return window.__littleCloud.snapshot().phase;
+    }), 'aim', 'each timing case starts in the same active turn');
+  };
+  try {
+    // Capture times are deterministic; receipt times stay chronological even for
+    // late results. No inference or camera recognition accuracy is asserted.
+    for (const kind of ['stale', 'silence', 'missing', 'second']) {
+      await acquire();
       const result = await page.evaluate(kind => {
         for (let i = 0; i < 5; i++) timingSample('open', 65, .6);
         timingSample('closed', 65, .6);
@@ -77,8 +85,9 @@ export async function checkCameraTiming(browser, origin) {
         else if (kind === 'silence') timingController.supervise(captureTime + 350);
         else timingSample(kind, 65, .6);
         const cancelled = { held: timingController.fist.held, armed: timingController.fist.armed };
-        // A returning fist must not fire; open again to re-arm.
-        const returning = timingSample('closed', 400, .65);
+        // Fresh captures and chronological receipts prevent a long frame gap
+        // from masking failed cancellation. Open again to re-arm.
+        const returning = timingSample('closed', 200, .65, 200);
         for (let i = 0; i < 4; i++) timingSample('closed', 200, .65);
         const unarmedPhase = window.__littleCloud.snapshot().phase;
         const resumed = timingSample('open', 65, .65);
@@ -90,14 +99,12 @@ export async function checkCameraTiming(browser, origin) {
       assert.equal(result.unarmedPhase, 'aim', `${kind} cannot fire a returning fist`);
       assert.deepEqual(result.resumed.input, { x: 0, z: 0 });
       measurements.push({ kind, heldBeforeCancel: 400, heldAfterCancel: 0, drop: false });
-    } finally { await page.close(); }
-  }
+    }
 
-  // Test open-hand recovery separately: a closed hand itself clears neutral and
-  // would conceal a stale-result steering jump.
-  for (const kind of ['stale', 'silence', 'missing']) {
-    const page = await setup();
-    try {
+    // Test open-hand recovery separately: a closed hand itself clears neutral and
+    // would conceal a stale-result steering jump.
+    for (const kind of ['stale', 'silence', 'missing']) {
+      await acquire();
       const resumed = await page.evaluate(kind => {
         for (let i = 0; i < 6; i++) timingSample('open', 65, .6);
         if (kind === 'stale') timingSample('open', 65, .6, 350);
@@ -112,27 +119,24 @@ export async function checkCameraTiming(browser, origin) {
       assert.deepEqual(await page.evaluate(() => window.__littleCloud.snapshot().position), position,
         'rendered claw stays still when tracking resumes');
       if (kind === 'stale') await page.screenshot({ path: '.screenshots/camera-stale-recovery.png' });
-    } finally { await page.close(); }
-  }
+    }
 
-  for (const intervals of [Array(17).fill(33), Array(9).fill(65), [33, 90, 120, 45, 200, 61, 1], [275, 275]]) {
-    const page = await setup();
-    try {
-      const samples = await page.evaluate(intervals => {
-        timingSample('closed');
-        return intervals.map(gap => timingSample('closed', gap));
-      }, intervals);
-      for (const sample of samples.slice(0, -1)) assert.equal(sample.phase, 'aim', 'less than 550ms never fires');
-      const last = samples.at(-1);
-      assert.equal(last.phase, 'anticipate');
-      assert.ok(last.held >= 550);
-      measurements.push({ intervals, acceptedClosedMs: last.held });
-      if (intervals.length === 2) {
-        await page.evaluate(() => timingSample('missing'));
-        await page.waitForFunction(() => window.__littleCloud.snapshot().event.run.turns.length === 1, {}, { timeout: 30000 });
-        assert.equal(await page.evaluate(() => window.__littleCloud.snapshot().event.run.turns.length), 1);
-      }
-    } finally { await page.close(); }
-  }
-  console.log('PASS real camera adapter timing and recovery', JSON.stringify(measurements));
+    // FistDrop owns the exhaustive rate table (fist.test.mjs). This slow pair
+    // retains real recognition → adapter → game wiring and hand-loss delivery.
+    const intervals = [275, 275];
+    await acquire();
+    const samples = await page.evaluate(intervals => {
+      timingSample('closed');
+      return intervals.map(gap => timingSample('closed', gap));
+    }, intervals);
+    for (const sample of samples.slice(0, -1)) assert.equal(sample.phase, 'aim', 'less than 550ms never fires');
+    const last = samples.at(-1);
+    assert.equal(last.phase, 'anticipate');
+    assert.ok(last.held >= 550);
+    measurements.push({ intervals, acceptedClosedMs: last.held });
+    await page.evaluate(() => timingSample('missing'));
+    await page.waitForFunction(() => window.__littleCloud.snapshot().event.run.turns.length === 1, {}, { timeout: 30000 });
+    assert.equal(await page.evaluate(() => window.__littleCloud.snapshot().event.run.turns.length), 1);
+    console.log('PASS real camera adapter timing and recovery', JSON.stringify(measurements));
+  } finally { await page.close(); }
 }
