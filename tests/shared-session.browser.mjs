@@ -91,8 +91,8 @@ function activeTurnCount(name) {
 }
 async function finish(page, firstTurn = 1, stopCameraOnLastDrop = false) {
   for (const turn of [1, 2, 3].filter(turn => turn >= firstTurn)) {
-    await page.waitForFunction(turn => document.getElementById('turn').textContent === `${turn} / 3` && !document.getElementById('phase-label').textContent.includes('COMPLETE'), turn);
-    await page.evaluate(() => window.testCamera.clench());
+    await page.waitForFunction(turn => document.getElementById('turn').textContent === `${turn} / 3` && document.getElementById('arcade').dataset.phase === 'aim' && !document.getElementById('phase-label').textContent.includes('COMPLETE'), turn);
+    assert.equal(await page.evaluate(() => window.testCamera.clench()), true, `shared turn ${turn} accepts its drop`);
     if (turn === 3 && stopCameraOnLastDrop) await page.evaluate(() => window.testCamera.fail('camera_disconnected'));
     if (turn < 3) await page.waitForFunction(turn => document.getElementById('turn').textContent === `${turn + 1} / 3`, turn, { timeout: 30000 });
   }
@@ -378,7 +378,8 @@ try {
   await page.close();
   page = await open(b); await register(page, 'Interrupted');
   const interrupted = app.database.db.prepare("SELECT id FROM runs WHERE name='Interrupted'").get();
-  await page.evaluate(() => window.testCamera.clench());
+  await page.waitForFunction(() => document.getElementById('turn').textContent === '1 / 3' && document.getElementById('arcade').dataset.phase === 'aim');
+  assert.equal(await page.evaluate(() => window.testCamera.clench()), true, 'interrupted run accepts its first drop');
   await page.waitForFunction(() => document.getElementById('turn').textContent === '2 / 3', {}, { timeout: 30000 });
   await page.reload(); await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
   await page.waitForTimeout(2500);
