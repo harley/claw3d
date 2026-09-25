@@ -26,12 +26,19 @@ test('folded fingers recognize a fist without requiring a particular thumb pose'
   assert.equal(fistEvidence(landmarks(2),'Closed_Fist',.3).closed,false);
 });
 test('a fist needs an open hand first and a sustained hold, and fires only once',()=>{
-  const g=new FistDrop();for(let t=100;t<1000;t+=65)assert.equal(g.update(closed,t).fired,false);
-  g.reset();arm(g);
-  for(let t=1325;t<=1780;t+=65)assert.equal(g.update(closed,t).fired,false);
-  assert.equal(g.update(closed,1845).fired,false);
-  assert.equal(g.update(closed,1910).fired,true);
-  for(let t=1975;t<3000;t+=65)assert.equal(g.update(closed,t).fired,false);
+  for (const intervals of [Array(17).fill(33), Array(9).fill(65), [33, 90, 120, 45, 200, 61, 1], [275, 275]]) {
+    const g = new FistDrop();
+    for (let t = 100; t < 1000; t += 65) assert.equal(g.update(closed, t).fired, false);
+    g.reset(); arm(g);
+    let time = 1325;
+    assert.equal(g.update(closed, time).fired, false, 'open-to-closed time earns no hold credit');
+    for (const [index, gap] of intervals.entries()) {
+      time += gap;
+      assert.equal(g.update(closed, time).fired, index === intervals.length - 1,
+        `hold at ${time - 1325} ms with intervals ${intervals}`);
+    }
+    for (let i = 0; i < 16; i++) assert.equal(g.update(closed, time += 65).fired, false, 'one drop per hold');
+  }
 });
 test('opening cancels a pending fist without carrying hold time into the next attempt',()=>{
   const g=new FistDrop();arm(g);
