@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { recordStartCue, assertStartCueDuration } from './start-cue-observation.mjs';
 // Deterministic camera events for game-flow tests; hardware/model smoke is separate.
 export async function installCameraFixture(page) {
   await page.route('**/src/vision.js', route => route.fulfill({ contentType: 'application/javascript', body: `
@@ -114,34 +115,44 @@ export async function assertScoredStart(page, { captureScreenshots = false, exer
   assert.equal(waiting.title, waiting.state.event.controlProfile === 'dual' ? 'SHOW BOTH HANDS OPEN' : 'SHOW ONE HAND');
   assert.equal(await cameraDrop(page), false, 'control loss cannot turn unfinished first prep into a scored drop');
 
-  const reacquiredAt = await page.evaluate(() => performance.now());
-  await page.evaluate(() => { window.testCamera.visible = true; window.testCamera.tick(); });
-  await page.waitForFunction(() => window.__littleCloud.snapshot().event.firstTurnControlReady);
-  await page.waitForFunction(() => document.getElementById('status').textContent === '3');
-  const threeAt = await page.evaluate(() => performance.now());
-  assert.ok(threeAt - reacquiredAt >= 450 && threeAt - reacquiredAt <= 1250, `ROUND 1 precedes 3 for about 0.7 s (${Math.round(threeAt - reacquiredAt)} ms)`);
-  let priorDigitAt = threeAt;
-  for (const cue of ['2', '1', 'START!']) {
-    await page.waitForFunction(expected => document.getElementById('status').textContent === expected, cue);
-    const cueAt = await page.evaluate(() => performance.now());
-    assert.ok(cueAt - priorDigitAt >= 800 && cueAt - priorDigitAt <= 1350, `${cue} follows its prior digit after about one second (${Math.round(cueAt - priorDigitAt)} ms)`);
-    priorDigitAt = cueAt;
-    const state = await page.evaluate(() => window.__littleCloud.snapshot());
-    assert.equal(state.phase, 'idle', `${cue} remains preparation`);
-    assert.equal(state.event.remaining, 15, `${cue} does not consume aiming time`);
-    assert.equal(state.event.turn, 0, `${cue} does not start a scored turn`);
+  const observation = await page.evaluateHandle(recordStartCue);
+  try {
+    const reacquiredAt = await page.evaluate(() => performance.now());
+    await page.evaluate(() => { window.testCamera.visible = true; window.testCamera.tick(); });
+    await page.waitForFunction(() => window.__littleCloud.snapshot().event.firstTurnControlReady);
+    await page.waitForFunction(() => document.getElementById('status').textContent === '3');
+    const threeAt = await page.evaluate(() => performance.now());
+    assert.ok(threeAt - reacquiredAt >= 450 && threeAt - reacquiredAt <= 1250, `ROUND 1 precedes 3 for about 0.7 s (${Math.round(threeAt - reacquiredAt)} ms)`);
+    let priorDigitAt = threeAt;
+    for (const cue of ['2', '1']) {
+      await page.waitForFunction(expected => document.getElementById('status').textContent === expected, cue);
+      const cueAt = await page.evaluate(() => performance.now());
+      assert.ok(cueAt - priorDigitAt >= 800 && cueAt - priorDigitAt <= 1350, `${cue} follows its prior digit after about one second (${Math.round(cueAt - priorDigitAt)} ms)`);
+      priorDigitAt = cueAt;
+      const state = await page.evaluate(() => window.__littleCloud.snapshot());
+      assert.equal(state.phase, 'idle', `${cue} remains preparation`);
+      assert.equal(state.event.remaining, 15, `${cue} does not consume aiming time`);
+      assert.equal(state.event.turn, 0, `${cue} does not start a scored turn`);
+    }
+    await page.waitForFunction(record => record.start && record.aim, observation);
+    const { start, aim } = await observation.jsonValue();
+    assert.ok(start.at - priorDigitAt >= 800 && start.at - priorDigitAt <= 1350,
+      `START! follows its prior digit after about one second (${Math.round(start.at - priorDigitAt)} ms)`);
+    assert.equal(start.state.phase, 'idle', 'START! remains preparation');
+    assert.equal(start.state.event.remaining, 15, 'START! does not consume aiming time');
+    assert.equal(start.state.event.turn, 0, 'START! does not start a scored turn');
+    assert.equal(start.dropAccepted, false, 'the START cue still rejects drops');
+    const startCamera = start.state.camera;
+    assert.ok(Math.hypot(...startCamera.map((value, i) => value - wideCamera[i])) > .1, 'the count-in moves the camera into the play view before START');
+    assertStartCueDuration({ start, aim });
+    const scored = aim.state;
+    assert.equal(scored.phase, 'aim');
+    assert.equal(scored.event.run.turns.length, 0); assert.equal(scored.event.turn, 1);
+    assert.ok(scored.event.remaining >= 14.9, `aiming begins with the full clock (${scored.event.remaining.toFixed(2)} s after the first aim frame)`);
+    assert.ok(Math.hypot(...scored.camera.map((value, i) => value - startCamera[i])) < .001, 'the camera is settled before the first timed frame');
+    assert.equal(await page.locator('#practice, #practice-marker, #rehearsal-exit').count(), 0);
+  } finally {
+    await observation.evaluate(record => cancelAnimationFrame(record.frame));
+    await observation.dispose();
   }
-  assert.equal(await cameraDrop(page), false, 'the START cue still rejects drops');
-  const startCamera = await page.evaluate(() => window.__littleCloud.snapshot().camera);
-  assert.ok(Math.hypot(...startCamera.map((value, i) => value - wideCamera[i])) > .1, 'the count-in moves the camera into the play view before START');
-  const startAt = await page.evaluate(() => performance.now());
-  await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
-  const aimAt = await page.evaluate(() => performance.now());
-  assert.ok(aimAt - startAt >= 180 && aimAt - startAt <= 800, `START is a short cue before aim (${Math.round(aimAt - startAt)} ms)`);
-  const scored = await page.evaluate(() => window.__littleCloud.snapshot());
-  assert.equal(scored.phase, 'aim');
-  assert.equal(scored.event.run.turns.length, 0); assert.equal(scored.event.turn, 1);
-  assert.ok(scored.event.remaining >= 14.9, `aiming begins with the full clock (${scored.event.remaining.toFixed(2)} s after the first aim frame)`);
-  assert.ok(Math.hypot(...scored.camera.map((value, i) => value - startCamera[i])) < .001, 'the camera is settled before the first timed frame');
-  assert.equal(await page.locator('#practice, #practice-marker, #rehearsal-exit').count(), 0);
 }
