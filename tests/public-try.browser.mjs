@@ -21,7 +21,7 @@ try {
   page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/')) requests.push(new URL(request.url()).pathname); });
   await installCameraFixture(page, { built: true, cameraRequest: true });
   await page.addInitScript(() => {
-    window.noticePainted = false; window.ordering = []; window.mediaCalls = 0;
+    window.noticePainted = false; window.ordering = []; window.mediaCalls = 0; window.scoreStorageCalls = 0;
     function observe() {
       const notice = document.getElementById('try-notice');
       if (notice?.open && !notice.hidden && notice.getBoundingClientRect().height > 0) window.noticePainted = true;
@@ -39,7 +39,7 @@ try {
       return originalFetch(...args);
     };
     // Practice must not depend on storage or touch an existing staff outbox.
-    Storage.prototype.getItem = Storage.prototype.setItem = () => { throw Error('Storage denied'); };
+    Storage.prototype.getItem = Storage.prototype.setItem = () => { window.scoreStorageCalls++; throw Error('Storage denied'); };
   });
   await page.goto(origin);
   await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true' && window.mediaCalls === 1);
@@ -85,20 +85,26 @@ try {
   const ordering = await page.evaluate(() => window.ordering);
   assert.ok(ordering.some(row => row.type === 'diagnostics'));
   assert.ok(ordering.every(row => row.notice), JSON.stringify(ordering));
+  assert.equal(await page.evaluate(() => window.scoreStorageCalls), 0, 'practice never reads or writes existing browser score storage');
   assert.ok(requests.every(path => path.startsWith('/api/public/')), requests.join(', '));
   for (const table of ['owners', 'runs', 'turns']) assert.equal(app.database.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n, 0, table);
-  const observations = app.database.db.prepare('SELECT data FROM public_playtest_events').all();
+  const observations = app.database.db.prepare('SELECT mode,run_id,data FROM public_playtest_events').all();
   assert.ok(observations.length > 0, 'enabled public diagnostics persisted');
+  assert.ok(observations.every(row => row.mode === 'practice' && row.run_id === null && !Object.hasOwn(JSON.parse(row.data), 'comment')));
   assert.deepEqual(errors, []);
   await page.screenshot({ path: '.screenshots/public-try-complete.png' });
   // Disabled/unavailable diagnostics with an otherwise working public entry.
   await page.close(); page = await browser.newPage();
   await page.route('**/api/public/**', route => route.fulfill({ status: 404, contentType: 'application/json', body: '{"error":"disabled"}' }));
   await installCameraFixture(page, { built: true });
+  const unavailable = page.waitForResponse(response => response.url().endsWith('/api/public/session') && response.status() === 404);
   await page.goto(`${origin}/?setup=manual`);
   await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+  await unavailable;
   await page.locator('#play').click();
   await page.waitForFunction(() => window.testCamera?.running);
+  await page.locator('#play').click();
+  await page.waitForFunction(() => document.getElementById('turn').textContent === '1 / 3');
   assert.equal(await page.locator('#registration').isVisible(), false);
   console.log('Public Try: notice precedes camera/diagnostics, denial retry, 2 × 3 hand-controlled turns, offline replay, zero owners/scores, storage denied, unavailable diagnostics passed.');
 } catch (error) {
