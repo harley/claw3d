@@ -57,18 +57,26 @@ function batch(input) {
 }
 
 // Independent observational data: no player names, ownership IDs or score writes.
-export function createPlaytestStore(db, { now = Date.now, maxEvents = PLAYTEST_MAX_EVENTS } = {}) {
+export function createPlaytestStore(db, { now = Date.now, maxEvents = PLAYTEST_MAX_EVENTS, publicOnly = false } = {}) {
+  const table = publicOnly ? 'public_playtest_events' : 'playtest_events';
   if (!Number.isInteger(maxEvents) || maxEvents < 20 || maxEvents > PLAYTEST_MAX_EVENTS) throw new Error('Invalid playtest capacity.');
-  db.exec(`CREATE TABLE IF NOT EXISTS playtest_events (
+  db.exec(`CREATE TABLE IF NOT EXISTS ${table} (
     id TEXT PRIMARY KEY, session_id TEXT NOT NULL, build TEXT NOT NULL, mode TEXT NOT NULL,
     type TEXT NOT NULL, elapsed_ms REAL NOT NULL, run_id TEXT, data TEXT NOT NULL, received_at TEXT NOT NULL);
-    CREATE INDEX IF NOT EXISTS playtest_received ON playtest_events(received_at);`);
-  const insert = db.prepare('INSERT INTO playtest_events VALUES (?,?,?,?,?,?,?,?,?)');
-  const lookup = db.prepare('SELECT session_id,build,mode,type,elapsed_ms,run_id,data FROM playtest_events WHERE id=?');
+    CREATE INDEX IF NOT EXISTS ${publicOnly ? 'public_playtest_received' : 'playtest_received'} ON ${table}(received_at);`);
+  const insert = db.prepare(`INSERT INTO ${table} VALUES (?,?,?,?,?,?,?,?,?)`);
+  const lookup = db.prepare(`SELECT session_id,build,mode,type,elapsed_ms,run_id,data FROM ${table} WHERE id=?`);
   function prune() {
-    db.prepare('DELETE FROM playtest_events WHERE received_at<?').run(new Date(now() - PLAYTEST_RETENTION_MS).toISOString());
+    db.prepare(`DELETE FROM ${table} WHERE received_at<?`).run(new Date(now() - PLAYTEST_RETENTION_MS).toISOString());
     // Keep the newest rows, including deterministic order for one batch's timestamp.
-    db.prepare('DELETE FROM playtest_events WHERE rowid IN (SELECT rowid FROM playtest_events ORDER BY received_at DESC,rowid DESC LIMIT -1 OFFSET ?)').run(maxEvents);
+    db.prepare(`DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} ORDER BY received_at DESC,rowid DESC LIMIT -1 OFFSET ?)`).run(maxEvents);
+    // Public observations use only spare capacity; never evict legacy/staff rows.
+    if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='public_playtest_events'").get()) {
+      const staffCount = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='playtest_events'").get()
+        ? db.prepare('SELECT COUNT(*) AS n FROM playtest_events').get().n : 0;
+      db.prepare('DELETE FROM public_playtest_events WHERE rowid IN (SELECT rowid FROM public_playtest_events ORDER BY received_at DESC,rowid DESC LIMIT -1 OFFSET ?)')
+        .run(Math.max(0, Math.min(20_000, PLAYTEST_MAX_EVENTS - staffCount)));
+    }
   }
   function ingest(input) {
     const events = batch(input), timestamp = new Date(now()).toISOString();
@@ -87,25 +95,26 @@ export function createPlaytestStore(db, { now = Date.now, maxEvents = PLAYTEST_M
       return { accepted: [...new Set(events.map(event => event.id))] };
     } catch (error) { db.exec('ROLLBACK'); throw error; }
   }
-  const read = since => { prune(); return readPlaytestReport(db, since, { now, maxEvents }); };
+  const read = since => { prune(); return readPlaytestReport(db, since, { now, maxEvents, publicOnly }); };
   prune();
   return { ingest, read, prune };
 }
 
-export function readPlaytestReport(db, since, { now = Date.now, maxEvents = PLAYTEST_MAX_EVENTS } = {}) {
+export function readPlaytestReport(db, since, { now = Date.now, maxEvents = PLAYTEST_MAX_EVENTS, publicOnly = false } = {}) {
+    const table = publicOnly ? 'public_playtest_events' : 'playtest_events';
     if (since === undefined || since === null) since = new Date(now() - 86400_000).toISOString();
     if (typeof since !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(since) || !Number.isFinite(Date.parse(since))) throw new ApiError(400, 'Use an ISO UTC timestamp for since.');
     since = new Date(Date.parse(since)).toISOString();
     since = new Date(Math.max(Date.parse(since), now() - PLAYTEST_RETENTION_MS)).toISOString();
-    const counts = db.prepare('SELECT COUNT(*) AS events,COUNT(DISTINCT session_id) AS sessions,MIN(received_at) AS firstReceivedAt,MAX(received_at) AS lastReceivedAt FROM playtest_events WHERE received_at>=?').get(since);
+    const counts = db.prepare(`SELECT COUNT(*) AS events,COUNT(DISTINCT session_id) AS sessions,MIN(received_at) AS firstReceivedAt,MAX(received_at) AS lastReceivedAt FROM ${table} WHERE received_at>=?`).get(since);
     // Older clients emitted runtime failures only as control states. Count affected
     // page sessions across both signals, without double-counting newer clients.
     const cameraFailure = "(type='camera_error' OR (type='control_state' AND json_extract(data,'$.state')='error'))";
     const cameraFailureCounts = `COUNT(DISTINCT CASE WHEN ${cameraFailure} THEN session_id END) AS cameraFailureSessions`;
-    const cameraFailures = db.prepare(`SELECT ${cameraFailureCounts} FROM playtest_events WHERE received_at>=?`).get(since);
-    const grouped = column => Object.fromEntries(db.prepare(`SELECT ${column} AS key,COUNT(*) AS count FROM playtest_events WHERE received_at>=? GROUP BY ${column}`).all(since).map(row => [row.key, row.count]));
-    const feedback = Object.fromEntries(db.prepare("SELECT json_extract(data,'$.category') AS category,COUNT(*) AS count FROM playtest_events WHERE received_at>=? AND type='feedback' GROUP BY category").all(since).map(row => [row.category, row.count]));
-    const builds = db.prepare('SELECT build,COUNT(*) AS events FROM playtest_events WHERE received_at>=? GROUP BY build ORDER BY events DESC,build LIMIT 20').all(since);
+    const cameraFailures = db.prepare(`SELECT ${cameraFailureCounts} FROM ${table} WHERE received_at>=?`).get(since);
+    const grouped = column => Object.fromEntries(db.prepare(`SELECT ${column} AS key,COUNT(*) AS count FROM ${table} WHERE received_at>=? GROUP BY ${column}`).all(since).map(row => [row.key, row.count]));
+    const feedback = Object.fromEntries(db.prepare(`SELECT json_extract(data,'$.category') AS category,COUNT(*) AS count FROM ${table} WHERE received_at>=? AND type='feedback' GROUP BY category`).all(since).map(row => [row.category, row.count]));
+    const builds = db.prepare(`SELECT build,COUNT(*) AS events FROM ${table} WHERE received_at>=? GROUP BY build ORDER BY events DESC,build LIMIT 20`).all(since);
     const typeCounts = [...TYPES].map(type => `SUM(type='${type}') AS "${type}"`).join(',');
     const feedbackCounts = ENUMS.category.map(category => `SUM(type='feedback' AND json_extract(data,'$.category')='${category}') AS feedback_${category}`).join(',');
     const cohorts = db.prepare(`SELECT build,mode,COUNT(*) AS events,COUNT(DISTINCT session_id) AS sessions,
@@ -117,7 +126,7 @@ export function readPlaytestReport(db, since, { now = Date.now, maxEvents = PLAY
       MAX(CASE WHEN type='performance' THEN json_extract(data,'$.captureToReceiptP95Ms') END) AS worstCaptureToReceiptP95Ms,
       AVG(CASE WHEN type='time_to_control' THEN json_extract(data,'$.acquisitionMs') END) AS averageAcquisitionMs,
       MAX(CASE WHEN type='time_to_control' THEN json_extract(data,'$.acquisitionMs') END) AS worstAcquisitionMs
-      FROM playtest_events WHERE received_at>=? GROUP BY build,mode ORDER BY events DESC,build,mode LIMIT 40`).all(since).map(row => ({
+      FROM ${table} WHERE received_at>=? GROUP BY build,mode ORDER BY events DESC,build,mode LIMIT 40`).all(since).map(row => ({
         build: row.build, mode: row.mode, events: row.events, sessions: row.sessions,
         runStarts: row.run_start, runCompletes: row.run_complete,
         cameraFailureSessions: row.cameraFailureSessions,
@@ -128,9 +137,9 @@ export function readPlaytestReport(db, since, { now = Date.now, maxEvents = PLAY
         captureToReceiptP50Ms: row.captureToReceiptP50Ms, worstCaptureToReceiptP95Ms: row.worstCaptureToReceiptP95Ms,
         averageAcquisitionMs: row.averageAcquisitionMs, worstAcquisitionMs: row.worstAcquisitionMs,
       }));
-    const cohortCount = db.prepare("SELECT COUNT(DISTINCT build || ':' || mode) AS count FROM playtest_events WHERE received_at>=?").get(since).count;
-    const rows = db.prepare('SELECT * FROM playtest_events WHERE received_at>=? ORDER BY received_at DESC,rowid DESC LIMIT 500').all(since);
-    const feedbackRows = db.prepare("SELECT * FROM playtest_events WHERE received_at>=? AND type='feedback' ORDER BY received_at DESC,rowid DESC LIMIT 100").all(since);
+    const cohortCount = db.prepare(`SELECT COUNT(DISTINCT build || ':' || mode) AS count FROM ${table} WHERE received_at>=?`).get(since).count;
+    const rows = db.prepare(`SELECT * FROM ${table} WHERE received_at>=? ORDER BY received_at DESC,rowid DESC LIMIT 500`).all(since);
+    const feedbackRows = db.prepare(`SELECT * FROM ${table} WHERE received_at>=? AND type='feedback' ORDER BY received_at DESC,rowid DESC LIMIT 100`).all(since);
     const project = row => ({ id: row.id, sessionId: row.session_id, build: row.build, mode: row.mode, type: row.type, elapsedMs: row.elapsed_ms, ...(row.run_id ? { runId: row.run_id } : {}), data: JSON.parse(row.data), receivedAt: row.received_at });
     return { since, generatedAt: new Date(now()).toISOString(), retentionDays: 30, maxEvents, truncated: counts.events > rows.length,
       feedbackEvents: feedbackRows.reverse().map(project), feedbackTruncated: Object.values(feedback).reduce((sum, count) => sum + count, 0) > feedbackRows.length,

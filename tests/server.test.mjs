@@ -93,11 +93,11 @@ test('protected shared runs: ownership, ordered idempotency, ties, rotation, rea
   } finally { await stop(); await rm(dir, { recursive: true, force: true }); }
 });
 
-test('secure Railway login buckets use validated client addresses and secure cookies', async () => {
+test('explicit trusted proxy login buckets use validated client addresses and secure cookies', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cloud-claw-proxy-'));
   await writeFile(join(dir, 'index.html'), '<head></head>');
   const origin = 'https://pilot.example';
-  const app = await createPilotServer({ filename: ':memory:', origin, staffCode, hostCode, dist: dir, secure: true });
+  const app = await createPilotServer({ filename: ':memory:', origin, staffCode, hostCode, dist: dir, secure: true, trustedProxyPeers: ['127.0.0.1'] });
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
   const login = (ip, code = 'wrong', xff = '192.0.2.99') => fetch(`http://127.0.0.1:${app.server.address().port}/api/login`, {
     method: 'POST', headers: { origin, 'content-type': 'application/json', 'x-real-ip': ip, 'x-forwarded-for': xff }, body: JSON.stringify({ code }),
