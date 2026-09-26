@@ -109,6 +109,24 @@ export async function assertMenuGuidance(browser) {
     await page.screenshot({ path: '.screenshots/clp81-narrow-hover.png' });
     await page.evaluate(() => menu.clear());
     assert.equal(await page.locator('#hand-cursor').isVisible(), false, 'hidden-page clear removes demo and progress');
+    await show('final');
+    await page.evaluate(() => {
+      document.getElementById('final-name').textContent = '🦀 PEBBLE';
+      document.getElementById('final-score').textContent = '420';
+      document.getElementById('final-rank').textContent = 'LOCAL PREVIEW · 2 HANDS · RANK #1';
+      document.getElementById('final-board').textContent = 'Board: AWS Cloud Day · Session 1';
+      for (let i = 0; i < 3; i++) {
+        const card = document.createElement('span'); card.className = 'turn-chip scored catch-card';
+        card.innerHTML = '<span class="catch-icon">⭐</span><span class="catch-name">BUTTER</span><span class="catch-points">140</span><span class="catch-detail">100 + 40 SPEED</span>';
+        document.getElementById('final-turns').append(card);
+      }
+    });
+    const resultBox = await page.locator('#final').boundingBox();
+    for (const id of ['menu-guide', 'play-again', 'next-player', 'final-leaderboard']) {
+      const box = await page.locator(`#${id}`).boundingBox();
+      assert.ok(box.y >= resultBox.y && box.y + box.height <= resultBox.y + resultBox.height, `${id} is reachable without scrolling the result dialog`);
+    }
+    await page.screenshot({ path: '.screenshots/clp81-results-narrow.png' });
     console.log('PASS menu teaching, eligible targets, cancellation, static reduced motion and narrow layout');
   } finally { await page.close(); }
 }
