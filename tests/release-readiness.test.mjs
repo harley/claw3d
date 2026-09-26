@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { waitForRelease } from '../scripts/release-readiness.mjs';
+import { expectedPublicTry } from '../scripts/release-browser.mjs';
+
+test('release entry expectation defaults private and rejects ambiguous flag values', () => {
+  assert.equal(expectedPublicTry(), false);
+  assert.equal(expectedPublicTry('false'), false);
+  assert.equal(expectedPublicTry('true'), true);
+  for (const value of ['', 'TRUE', '1', true]) assert.throws(() => expectedPublicTry(value), /must be true or false/);
+});
 
 const expected = '123abcd'.padEnd(40, '0');
 const ready = { sourceCommit: expected, commit: '123abcd', branch: 'main', dirty: false };

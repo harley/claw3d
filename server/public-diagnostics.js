@@ -29,8 +29,9 @@ export function createPublicDiagnostics({ db, body, json, cookies, cookie, clien
       // Charge before reading a body, even for invalid/missing credentials or Origin.
       const issuance = path === '/api/public/session';
       const prefix = issuance ? 'issue' : 'telemetry';
-      budget.take(`${prefix}:global`, issuance ? PUBLIC_BUDGETS.issuanceGlobal : PUBLIC_BUDGETS.telemetryGlobal);
       budget.take(`${prefix}:ip:${ip}`, issuance ? PUBLIC_BUDGETS.issuanceIp : PUBLIC_BUDGETS.telemetryIp);
+      // A caller already denied locally must not drain every other IP's budget.
+      budget.take(`${prefix}:global`, issuance ? PUBLIC_BUDGETS.issuanceGlobal : PUBLIC_BUDGETS.telemetryGlobal);
       const auth = session(req);
       if (issuance) {
         const input = await body(req);

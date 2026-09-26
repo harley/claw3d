@@ -15,8 +15,9 @@ import { createTurnState, beginTurnState, beginFirstTurnPreparation, requestDrop
 import { createMovementMusic } from './movement-music.js';
 import { PerformanceGovernor, PERFORMANCE_WINDOW_MS } from './performance-governor.js';
 const publicTry = globalThis.__PUBLIC_TRY__ === true;
-const shared = !publicTry && globalThis.__SHARED_PILOT__ === true;
-const official = shared && globalThis.__OFFICIAL_EVENTS__ === true && new URLSearchParams(location.search).get('play') === 'official';
+const publicOfficial = globalThis.__PUBLIC_OFFICIAL__ === true;
+const shared = !publicTry && (publicOfficial || globalThis.__SHARED_PILOT__ === true);
+const official = publicOfficial || shared && globalThis.__OFFICIAL_EVENTS__ === true && new URLSearchParams(location.search).get('play') === 'official';
 let officialBlocked = false;
 let noticeReady = !publicTry;
 // One resolution of the play mode: input profile, storage namespace, experiment flags.
@@ -279,7 +280,7 @@ function gestureDrop() {
   return Boolean(result);
 }
 function fail(message, error) { track('client_error', { reason: 'renderer' }); stopped = true; cameraControls?.stop(); clearTimeout(window.__arcadeBootTimer); errors.push(String(error || message)); $('loading').hidden = true; $('error').hidden = false; $('error-message').textContent = message; console.error('Cloud Claw:', error || message); }
-function openOperator() { if (publicTry) return; if (shared && pilot.role !== 'host') { $('host-access').showModal(); return; } renderBoard(); $('operator').showModal(); void hostEvents?.open(); $('pause').textContent = recovering ? 'RESUME INTERRUPTED TURN' : paused ? 'RESUME GAME' : 'PAUSE GAME'; }
+function openOperator() { if (publicTry || publicOfficial) return; if (shared && pilot.role !== 'host') { $('host-access').showModal(); return; } renderBoard(); $('operator').showModal(); void hostEvents?.open(); $('pause').textContent = recovering ? 'RESUME INTERRUPTED TURN' : paused ? 'RESUME GAME' : 'PAUSE GAME'; }
 document.addEventListener('visibilitychange', () => { previous = 0; if (document.hidden) { audio.silence(); handMenu.clear(); cameraControls?.reset(); } });
 $('player-form').addEventListener('submit', event => { event.preventDefault(); if (!scene || stopped || !cameraControls?.running) return;
   if (startingRun || run) return;
@@ -292,9 +293,9 @@ $('player-form').addEventListener('submit', event => { event.preventDefault(); i
 $('name').addEventListener('input', () => $('name').setCustomValidity(''));
 $('register-cancel').addEventListener('click', () => $('registration').close());
 async function replay(samePlayer) {
-  if (startingRun || run || cameraLoading) return;
+  if (startingRun || ((run || cameraLoading) && !(official && officialPlayer.state().canHandoff))) return;
   if (official) {
-    try { await officialPlayer.handoff(); location.replace('/staff'); }
+    try { await officialPlayer.handoff(); location.replace(publicOfficial ? '/official' : '/staff'); }
     catch (error) { setText('final-sync', error.message); }
     return;
   }
@@ -576,11 +577,16 @@ function renderOfficialResult(saved) {
   if (recovered && !document.querySelector('dialog[open]')) $('final').showModal();
 }
 const officialPlayer = official ? createOfficialPlayer({
+  publicScope: publicOfficial,
   onResult: renderOfficialResult,
   onChange: state => {
     officialBlocked = state.blocked;
-    $('official-signout').hidden = !state.handingOff;
+    $('official-signout').hidden = !state.canHandoff;
+    $('official-signout').textContent = state.handingOff ? 'Finish sign-out' : 'Finish · next player';
     if (officialBlocked && run) paused = true;
+    if (state.canHandoff && state.blocked && !state.result) {
+      for (const id of ['registration', 'official-ticket', 'camera-setup']) if ($(id).open) $(id).close();
+    }
     const message = state.error || (state.intent?.recoveryRequired ? 'Recovery only. Completed turns can sync; ask the host about unfinished play.' : state.canActivate ? 'Ticket admitted. Select PLAY, then START when ready.' : 'Enter a host-issued ticket.');
     setText('official-message', message); setText('sync-message', message);
     $('official-redeem').disabled = !state.ready || state.busy || Boolean(state.intent?.receipt && !state.intent.recoveryRequired);
@@ -626,8 +632,17 @@ const pilot = official ? {
   },
   onConnectError: error => { $('sync-message').textContent = error.message; $('shared-reauth').hidden = error.status !== 401; renderBoard(); },
 });
-const hostEvents = shared && globalThis.__OFFICIAL_EVENTS__ === true ? createHostEvents($('host-events'), { onUnauthorized: () => { $('operator').close(); $('host-access').showModal(); $('host-message').textContent = 'Host access expired. Sign in again.'; } }) : null;
-if (shared && globalThis.__OFFICIAL_EVENTS__ === true && !official) $('official-entry').hidden = false;
+const hostEvents = !publicOfficial && shared && globalThis.__OFFICIAL_EVENTS__ === true ? createHostEvents($('host-events'), { onUnauthorized: () => { $('operator').close(); $('host-access').showModal(); $('host-message').textContent = 'Host access expired. Sign in again.'; } }) : null;
+if ((shared || publicTry) && globalThis.__OFFICIAL_EVENTS__ === true && !official) {
+  $('shared-access').hidden = false; $('official-entry').hidden = false;
+  if (publicTry) $('official-entry').href = '/official';
+}
+if (publicOfficial) {
+  document.body.classList.add('public-official');
+  $('operator-open').hidden = true;
+  $('official-try').hidden = false;
+  $('official-ticket').querySelector('.eyebrow').textContent = 'OFFICIAL EVENT';
+}
 if (official) {
   $('official-status-open').hidden = false;
   for (const id of ['mode-one', 'mode-two', 'new-board', 'session-name', 'export', 'play-again', 'feedback-open', 'final-feedback', 'error-feedback']) $(id).hidden = true;

@@ -15,7 +15,7 @@ async function fingerprint(code) {
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export function createOfficialAdmission({ storage = browserStorage, fetcher = fetch } = {}) {
+export function createOfficialAdmission({ storage = browserStorage, fetcher = fetch, publicScope = false } = {}) {
   const fresh = new Set(), busy = new Set();
   function read(requestKey) {
     if (!UUID.test(requestKey)) throw new Error('Invalid admission identifier.');
@@ -31,7 +31,7 @@ export function createOfficialAdmission({ storage = browserStorage, fetcher = fe
   }
   function view(record) {
     return { requestKey: record.requestKey, nonce: record.nonce, receipt: record.receipt,
-      submitted: record.submitted, recoveryRequired: !fresh.has(record.requestKey) || Boolean(record.receipt && record.receipt.status !== 'accepted') };
+      publicScope: record.publicScope === true, submitted: record.submitted, recoveryRequired: !fresh.has(record.requestKey) || Boolean(record.receipt && record.receipt.status !== 'accepted') };
   }
   async function request(path, data) {
     let response;
@@ -42,7 +42,12 @@ export function createOfficialAdmission({ storage = browserStorage, fetcher = fe
     // Do not surface arbitrary transport/server text that could echo a secret.
     if (!response.ok) {
       const error = new Error('Admission unavailable. Keep browser data and ask the host.');
-      error.status = response.status; throw error;
+      error.status = response.status;
+      if (publicScope) {
+        const proof = await response.json().catch(() => null);
+        error.neverAdmitted = proof?.neverAdmitted === true && proof.requestKey === data?.requestKey;
+      }
+      throw error;
     }
     let run;
     try { run = await response.json(); } catch { /* Retain the pending intent. */ }
@@ -60,7 +65,7 @@ export function createOfficialAdmission({ storage = browserStorage, fetcher = fe
     // Creation and reads never send requests. A new intent is an explicit action,
     // never an automatic response to a failure, reload or rejected ticket.
     async prepare(code) {
-      const record = { requestKey: crypto.randomUUID(), nonce: crypto.randomUUID(), ticketHash: await fingerprint(code), submitted: false, receipt: null };
+      const record = { requestKey: crypto.randomUUID(), nonce: crypto.randomUUID(), ticketHash: await fingerprint(code), publicScope, submitted: false, receipt: null };
       write(record); fresh.add(record.requestKey); return view(record);
     },
     read: requestKey => view(read(requestKey)),
@@ -78,14 +83,25 @@ export function createOfficialAdmission({ storage = browserStorage, fetcher = fe
         if (await fingerprint(code) !== record.ticketHash) throw new Error('Re-enter the original ticket for this admission.');
         // Verify the actual record, not just a tiny probe, before every POST.
         record.submitted = true; write(record);
-        const run = await request('redeem', { code, requestKey, nonce: record.nonce });
+        let run;
+        try { run = await request('redeem', { code, requestKey, nonce: record.nonce }); }
+        catch (error) {
+          if (publicScope && error.neverAdmitted && !record.receipt) {
+            record.submitted = false; write(record);
+            storage.removeItem(PREFIX + requestKey);
+            if (storage.getItem(PREFIX + requestKey) !== null) throw new Error('Admission storage unavailable.');
+          }
+          throw error;
+        }
         if (record.receipt && record.receipt.id !== run.id) throw new Error('Admission receipt conflict. Ask the host.');
         record.receipt = run; write(record); return view(record);
       });
     },
     discard(requestKey) {
       if (busy.has(requestKey) || read(requestKey).submitted) throw new Error('Submitted admission must be retained for recovery.');
-      storage.removeItem(PREFIX + requestKey); fresh.delete(requestKey);
+      storage.removeItem(PREFIX + requestKey);
+      if (storage.getItem(PREFIX + requestKey) !== null) throw new Error('Admission storage unavailable.');
+      fresh.delete(requestKey);
     },
     acknowledge(requestKey) {
       return exclusive(requestKey, async () => {
@@ -93,7 +109,9 @@ export function createOfficialAdmission({ storage = browserStorage, fetcher = fe
         if (!record.receipt || run.id !== record.receipt.id || !terminal(run)) throw new Error('Only a confirmed terminal admission can be cleared.');
         // This removes only admission metadata. Score outboxes have their own
         // acknowledgement protocol and must never be cleared here.
-        storage.removeItem(PREFIX + requestKey); fresh.delete(requestKey);
+        storage.removeItem(PREFIX + requestKey);
+      if (storage.getItem(PREFIX + requestKey) !== null) throw new Error('Admission storage unavailable.');
+      fresh.delete(requestKey);
       });
     },
   };

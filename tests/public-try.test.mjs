@@ -33,7 +33,7 @@ test('enabled Try exposes only its entry and required assets, without owners or 
   for (const path of ['/', '/try']) {
     const response = await request(path); assert.equal(response.status, 200);
     assert.equal(response.headers.get('set-cookie'), null);
-    const html = await response.text(); assert.match(html, /__PUBLIC_TRY__=true/); assert.match(html, /__PUBLIC_DIAGNOSTICS__=false/); assert.doesNotMatch(html, /__SHARED_PILOT__|__OFFICIAL_EVENTS__/);
+    const html = await response.text(); assert.match(html, /__PUBLIC_TRY__=true/); assert.match(html, /__PUBLIC_DIAGNOSTICS__=false/); assert.doesNotMatch(html, /__SHARED_PILOT__|__PUBLIC_OFFICIAL__/);
   }
   for (const path of ['/assets/game.js', '/assets/game.css', '/models/hands/left.glb', '/vision/gesture_recognizer.task', '/vision/wasm/runtime.wasm']) {
     assert.equal((await request(path)).status, 200);
@@ -65,6 +65,18 @@ test('disabled official API cannot advertise host event controls', async t => {
   const login = await request('/api/login', { data: { code: 'public-try-staff-secret' } });
   const cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
   assert.match(await (await request('/staff', { cookie })).text(), /__OFFICIAL_EVENTS__=false/);
+});
+
+
+test('public official entry requires both flags and never changes default practice', async t => {
+  for (const [publicTry, events] of [[false, true], [true, false], [true, true]]) {
+    const { request } = await fixture(t, publicTry, events);
+    const official = await request('/official');
+    assert.equal(official.status, publicTry && events ? 200 : 401);
+    if (publicTry && events) assert.match(await official.text(), /__PUBLIC_OFFICIAL__=true/);
+    if (publicTry) assert.match(await (await request('/?play=official')).text(), /__PUBLIC_TRY__=true/);
+    if (!(publicTry && events)) assert.equal((await request('/api/official/public/redeem', { data: {} })).status, 404);
+  }
 });
 
 // A worker uses the policy on its own script response, not the document's.

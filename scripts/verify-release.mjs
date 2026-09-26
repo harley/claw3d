@@ -6,11 +6,15 @@ import { chromium } from 'playwright';
 import { browserOptions } from './browser-options.mjs';
 import { waitForRelease } from './release-readiness.mjs';
 import { createSecretRedactor } from './release-secrets.mjs';
+import { expectedPublicTry, expectedOfficialEvents, expectedPublicDiagnostics, verifyReleaseBrowser } from './release-browser.mjs';
 
 const secrets = createSecretRedactor();
 async function main() {
 const origin = 'https://claw.coderpush.com';
 const expected = process.env.EXPECTED_BUILD;
+const publicTry = expectedPublicTry(process.env.EXPECTED_PUBLIC_TRY);
+const officialEvents = expectedOfficialEvents(process.env.EXPECTED_OFFICIAL_EVENTS);
+const publicDiagnostics = expectedPublicDiagnostics(process.env.EXPECTED_PUBLIC_DIAGNOSTICS);
 assert.match(expected ?? '', /^[a-f0-9]{40}$/, 'EXPECTED_BUILD must be the checked full commit SHA');
 let credentials;
 try {
@@ -28,51 +32,12 @@ for (const cookie of cookies) secrets.add(cookie.split(';')[0].slice(cookie.inde
 
 const browser = await chromium.launch(browserOptions);
 try {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  await context.addCookies(cookies.map(value => {
-    const [pair] = value.split(';'), separator = pair.indexOf('=');
-    return { name: pair.slice(0, separator), value: pair.slice(separator + 1), url: origin, httpOnly: true, secure: true };
-  }));
-  let cameraCalls = 0;
-  await context.exposeBinding('releaseCameraAttempt', () => { cameraCalls++; });
-  await context.addInitScript(() => {
-    navigator.mediaDevices.getUserMedia = async () => {
-      await window.releaseCameraAttempt();
-      throw new Error('Release verification must not start the camera.');
-    };
+  const { operatorBuild, anonymousEntry } = await verifyReleaseBrowser({
+    browser, origin, expected, cookies, hostCode: credentials.HOST_CODE, publicTry, officialEvents, publicDiagnostics,
   });
-  const unexpectedWrites = [];
-  await context.route('**/api/**', route => {
-    const request = route.request(), path = new URL(request.url()).pathname;
-    // Keep release probes out of real-player telemetry, and prevent accidental
-    // score/board writes even if a future UI regression tries to issue one.
-    if (path === '/api/playtest' && request.method() === 'POST') {
-      const events = request.postDataJSON()?.events ?? [];
-      return route.fulfill({ json: { accepted: events.map(event => event.id) } });
-    }
-    if (!['GET', 'HEAD'].includes(request.method()) && !(path === '/api/host/login' && request.method() === 'POST')) {
-      unexpectedWrites.push(`${request.method()} ${path}`);
-      return route.abort();
-    }
-    return route.continue();
-  });
-  const page = await context.newPage(), errors = [];
-  page.on('pageerror', error => errors.push(error.message));
-  await page.goto(`${origin}/?setup=manual`);
-  await page.waitForFunction(() => document.documentElement?.dataset.arcadeReady === 'true');
-  await page.locator('#operator-open').click();
-  await page.locator('#host-code').fill(credentials.HOST_CODE);
-  await page.locator('#host-form button').click();
-  await page.locator('#operator').waitFor();
-  const operatorBuild = await page.locator('#build-info').textContent();
-  assert.equal(operatorBuild, `BUILD ${expected.slice(0, 7)} · main`);
-  assert.equal(await page.locator('#camera-video').evaluate(video => video.srcObject === null), true);
-  assert.equal(cameraCalls, 0, 'Release probe attempted camera access');
-  assert.deepEqual(unexpectedWrites, [], 'Release probe attempted a data mutation');
-  assert.deepEqual(errors, [], 'Live page errors');
-  console.log(JSON.stringify({ build, operatorBuild, cameraStarted: false, scoreSubmitted: false }));
+  console.log(JSON.stringify({ build, operatorBuild, anonymousEntry, officialEvents, publicDiagnostics, cameraStarted: false, scoreSubmitted: false }));
   if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY,
-    `Verified [Cloud Claw](${origin}) at \`${expected}\`: authenticated BUILD, rendered operator panel and no page errors. No camera or scores used. Physical playtesting remains required.\n`);
+    `Verified [Cloud Claw](${origin}) at \`${expected}\`: authenticated BUILD, rendered staff operator panel, anonymous ${anonymousEntry} entry, official entry ${officialEvents ? 'enabled' : 'disabled'}, public diagnostics ${publicDiagnostics ? 'enabled' : 'disabled'} and no page errors. No camera or scores used. Physical playtesting remains required.\n`);
 } finally { await browser.close(); }
 }
 
