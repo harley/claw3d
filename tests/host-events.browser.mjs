@@ -98,9 +98,41 @@ try {
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.locator('#ticket-copy').click();
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), issuedCode);
+  // Recovery wiring uses a real admitted attempt; no synthetic gameplay loop.
+  const nonce = crypto.randomUUID();
+  const admitted = await page.request.post(`${origin}/api/official/redeem`, { headers: { origin }, data: { code: issuedCode, nonce, requestKey: crypto.randomUUID() } });
+  assert.equal(admitted.status(), 200); const attempt = await admitted.json();
+  await page.locator('#event-refresh').click();
+  await page.locator('#recovery-attempt').selectOption(attempt.id);
+  await page.waitForFunction(id => document.getElementById('recovery-summary').textContent.includes(id), firstParticipant);
+  assert.equal(await page.locator('#recovery-submit').isDisabled(), true);
+  await page.locator('#recovery-reason').selectOption('camera_failure');
+  await page.locator('#recovery-confirm').check();
+  const recoveryBodies = [];
+  await page.route('**/api/host/event-runs/*/recover', async route => {
+    recoveryBodies.push(route.request().postDataJSON()); const response = await route.fetch();
+    if (recoveryBodies.length === 1) await route.abort('failed'); else await route.fulfill({ response });
+  });
+  await page.locator('#recovery-submit').click();
+  await page.waitForFunction(() => document.getElementById('recovery-message').textContent.includes('Could not confirm'));
+  await Promise.all([page.waitForResponse(r => r.url().endsWith('/api/session')), page.reload()]);
+  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+  await page.locator('#operator-open').click(); await page.locator('#recovery-retry').click();
+  await page.waitForFunction(() => document.getElementById('recovery-message').textContent.includes('receipt recovered'));
+  assert.deepEqual(recoveryBodies[0], recoveryBodies[1]);
+  assert.equal(app.database.db.prepare("SELECT COUNT(*) AS n FROM official_actions WHERE kind='recover'").get().n, 1);
+  assert.equal(await page.locator('#recovery-secret').isVisible(), false);
+  assert.match(await page.locator('#recovery-summary').textContent(), /VOID/);
+  assert.equal((await page.request.post(`${origin}/api/official/runs/${attempt.id}/activate`, { headers: { origin }, data: { nonce } })).status(), 409);
+  await page.locator('#recovery-reissue-confirm').check(); await page.locator('#recovery-reissue').click();
+  await page.locator('#recovery-secret').waitFor();
+  const replacementCode = await page.locator('#recovery-code').inputValue();
+  assert.match(replacementCode, /^T-[A-Fa-f0-9]{32}$/);
+  assert.equal(await page.evaluate(code => JSON.stringify(sessionStorage).includes(code), replacementCode), false);
+  await page.locator('#recovery-copy').click(); assert.equal(await page.evaluate(() => navigator.clipboard.readText()), replacementCode);
   // Never include the secret in screenshots. Refresh clears the memory-only code.
   await page.locator('#event-refresh').click();
-  await page.waitForFunction(() => document.getElementById('ticket-secret').hidden);
+  await page.waitForFunction(() => document.getElementById('ticket-secret').hidden && document.getElementById('recovery-secret').hidden);
   assert.equal(await page.locator('#event-close').isDisabled(), true);
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
@@ -111,6 +143,8 @@ try {
   await page.waitForFunction(() => document.getElementById('event-state').textContent.includes('CLOSED'));
   assert.equal(await page.locator('#event-open').isVisible(), false);
   assert.equal(await page.locator('#ticket-issue').isDisabled(), true);
+  assert.equal(await page.locator('#recovery-submit').isDisabled(), true);
+  assert.equal(await page.locator('#recovery-reissue').isDisabled(), true);
   const closedAt = app.database.db.prepare('SELECT closed_at FROM official_events').get().closed_at;
   await page.locator('#event-refresh').click();
   assert.equal(app.database.db.prepare('SELECT closed_at FROM official_events').get().closed_at, closedAt);
@@ -124,5 +158,5 @@ try {
   await page.locator('#host-access').waitFor();
   assert.equal(await page.locator('#host-events').isVisible(), false);
   assert.deepEqual(errors, []);
-  console.log('Host UI: protected login, one event after lost response/reload, open/confirmed close, participant IDs, lost ticket/reload/reissue/copy, expiry/auth errors; no gameplay or score mutations.');
+  console.log('Host UI: protected login, one event after lost response/reload, open/confirmed close, participant IDs, lost ticket/reload/reissue/copy, confirmed recovery/reload/replacement reissue/late activation rejection, expiry/auth errors; no gameplay or score mutations.');
 } finally { await browser.close(); await new Promise(resolve => app.server.close(resolve)); app.database.close(); }

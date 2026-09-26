@@ -69,6 +69,9 @@ export async function createPilotServer(options) {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
+    // Apply to worker scripts as well as documents: each gets its own CSP.
+    // Local inference/assets and first-party APIs need no external connections.
+    res.setHeader('Content-Security-Policy', "connect-src 'self'");
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()');
     if (secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000');

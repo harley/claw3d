@@ -78,3 +78,13 @@ test('public official entry requires both flags and never changes default practi
     if (!(publicTry && events)) assert.equal((await request('/api/official/public/redeem', { data: {} })).status, 404);
   }
 });
+
+// A worker uses the policy on its own script response, not the document's.
+test('same-origin connection policy covers public entry, worker assets and staff gate', async t => {
+  const { request } = await fixture(t, true);
+  for (const path of ['/', '/try', '/staff', '/assets/game.js', '/vision/wasm/runtime.wasm', '/healthz']) {
+    const response = await request(path);
+    assert.equal(response.status, 200, path);
+    assert.equal(response.headers.get('content-security-policy'), "connect-src 'self'", path);
+  }
+});

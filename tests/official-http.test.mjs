@@ -1032,3 +1032,101 @@ test('public handoff rejects missing or mismatched successful retirement receipt
   await p.flow.handoff();
   assert.equal(p.local.getItem('cloud-claw:official-player:v1:handoff'), null);
 });
+
+// Real HTTP owns recovery races and secret-free replay. The controller must
+// retain the original key across storage/transport failures, not mint a grant.
+async function recoveryClient(t) {
+  const { createHostRecoveryApi } = await import('../src/host-recovery.js');
+  const f = await fixture(t), s = await f.setup(), attempt = await s.admit(), local = storage(), calls = [];
+  let lose = '', transport = s.host, beforeWrite, beforeRead;
+  const fetcher = async (url, options) => {
+    calls.push({ url, body: options.body });
+    if (!options.body && beforeRead) { const fn = beforeRead; beforeRead = null; await fn(); }
+    if (options.body && beforeWrite) { const fn = beforeWrite; beforeWrite = null; await fn(); }
+    const response = await transport.request(url, options.body ? JSON.parse(options.body) : undefined);
+    if (lose && url.endsWith(lose)) { lose = ''; throw Error('Response lost'); }
+    return Response.json(response.data, { status: response.status });
+  };
+  const client = () => createHostRecoveryApi({ storage: local, fetcher });
+  const api = client(); await api.open(s.eventId); await api.select(attempt.run.id);
+  return { f, s, attempt, local, calls, api, client, set lose(value) { lose = value; }, set transport(value) { transport = value; }, set beforeWrite(value) { beforeWrite = value; }, set beforeRead(value) { beforeRead = value; } };
+}
+test('host recovery refuses missing intent storage before any consuming HTTP request', async t => {
+  const h = await recoveryClient(t), set = h.local.setItem;
+  for (const refuse of [() => { throw Error('quota'); }, () => {}]) {
+    h.local.setItem = refuse; await h.api.recover('camera_failure');
+    assert.equal(h.calls.filter(row => row.body).length, 0);
+    assert.equal((await h.attempt.official.request('/api/official/session')).data.status, 'active');
+    h.local.setItem = set; await h.api.open(h.s.eventId);
+  }
+});
+test('lost recovery/reissue responses reload with exact keys, one replacement and no durable secrets', async t => {
+  const h = await recoveryClient(t); h.lose = '/recover'; await h.api.recover('camera_failure');
+  assert.equal(h.api.state().pending, true);
+  const next = h.client(); await next.open(h.s.eventId); await next.retry();
+  assert.equal(next.state().selected.status, 'void'); assert.equal(next.state().code, '');
+  assert.equal(next.state().replacement.participantId, h.s.participant.participantId);
+  assert.equal(h.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_tickets').get().n, 2);
+  assert.equal(h.calls.filter(row => row.url.endsWith('/recover'))[0].body, h.calls.filter(row => row.url.endsWith('/recover'))[1].body);
+  assert.equal((await h.attempt.official.request(turnsPath(h.attempt.run.id), { turn: 1, prizeId: null })).status, 409);
+  assert.equal((await h.attempt.official.request(`/api/official/runs/${h.attempt.run.id}/activate`, { nonce: h.attempt.input.nonce })).status, 409);
+  h.lose = '/reissue'; await next.reissue();
+  const again = h.client(); await again.open(h.s.eventId); await again.retry();
+  assert.equal(again.state().code, '');
+  const reissues = h.calls.filter(row => row.url.endsWith('/reissue')); assert.equal(reissues[0].body, reissues[1].body);
+  assert.equal(h.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_tickets').get().n, 3);
+  await again.reissue(); const code = again.state().code; assert.match(code, /^T-/);
+  assert.equal(Array.from({ length: h.local.length }, (_, i) => h.local.getItem(h.local.key(i))).join('').includes(code), false);
+  assert.ok(h.calls.every(row => !row.url.includes(code)));
+  assert.equal((await h.s.staff.request('/api/official/redeem', { code, requestKey: key(), nonce: key() })).status, 200);
+  await again.reissue(); assert.match(again.state().message, /Server refused/);
+  assert.equal(h.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_tickets').get().n, 4);
+});
+test('host recovery withholds code after receipt-storage refusal and retries the original committed action', async t => {
+  const h = await recoveryClient(t), set = h.local.setItem;
+  h.local.setItem = (key, value) => { if (JSON.parse(value).operations.some(row => row.receipt)) throw Error('receipt quota'); set(key, value); };
+  await h.api.recover('browser_failure'); assert.equal(h.api.state().pending, true); assert.equal(h.api.state().code, '');
+  h.local.setItem = set; const next = h.client(); await next.open(h.s.eventId); await next.retry();
+  assert.equal(next.state().code, ''); assert.ok(next.state().replacement);
+  assert.equal(h.f.app.database.db.prepare("SELECT COUNT(*) AS n FROM official_actions WHERE kind='recover'").get().n, 1);
+});
+test('host recovery preserves completed attempts and best scores when completion wins the race', async t => {
+  const h = await recoveryClient(t);
+  h.beforeWrite = () => complete(h.attempt.official, h.attempt.run.id);
+  await h.api.recover('connection_failure'); assert.match(h.api.state().message, /Server refused/);
+  const best = await h.attempt.official.request(`/api/official/runs/${h.attempt.run.id}/best`);
+  assert.equal(best.data.attempt.status, 'complete'); assert.ok(best.data.best.total > 0);
+  await h.api.open(h.s.eventId); const writes = h.calls.filter(row => row.body).length;
+  await h.api.recover('camera_failure'); assert.equal(h.calls.filter(row => row.body).length, writes);
+  assert.equal(h.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_tickets').get().n, 1);
+  const other = await h.s.admit(); await h.api.open(h.s.eventId); await h.api.select(other.run.id); await h.api.recover('camera_failure');
+  assert.equal(h.api.state().replacement.participantId, h.s.participant.participantId);
+  assert.deepEqual((await h.attempt.official.request(`/api/official/runs/${h.attempt.run.id}/best`)).data.best, best.data.best);
+});
+test('host recovery disables on auth/closure/expiry and can reconcile a committed receipt after close', async t => {
+  const h = await recoveryClient(t); h.transport = h.s.staff;
+  await h.api.recover('camera_failure'); assert.equal(h.api.state().canMutate, false); assert.match(h.api.state().message, /Host access expired/);
+  h.transport = h.s.host; await h.api.open(h.s.eventId);
+  h.lose = '/recover'; await h.api.recover('camera_failure');
+  await h.s.host.request(`/api/host/events/${h.s.eventId}/state`, { state: 'closed', requestKey: key() });
+  const next = h.client(); await next.open(h.s.eventId); await next.retry();
+  assert.ok(next.state().replacement); assert.equal(next.state().canMutate, false); assert.equal(next.state().code, '');
+  await next.reissue(); assert.equal(h.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_tickets').get().n, 2);
+  h.f.app.database.db.prepare('UPDATE official_events SET retain_until=0').run();
+  await next.open(h.s.eventId); assert.equal(next.state().canMutate, false); assert.match(next.state().message, /expired/);
+});
+test('closure before recovery commit cannot void an attempt or mint a replacement', async t => {
+  const h = await recoveryClient(t);
+  h.beforeWrite = () => h.s.host.request(`/api/host/events/${h.s.eventId}/state`, { state: 'closed', requestKey: key() });
+  await h.api.recover('camera_failure'); assert.match(h.api.state().message, /Server refused/);
+  assert.equal(h.f.app.database.db.prepare('SELECT state FROM official_runs WHERE id=?').get(h.attempt.run.id).state, 'active');
+  assert.equal(h.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_tickets').get().n, 1);
+});
+
+test('closing the host panel during recovery does not repopulate a replacement secret', async t => {
+  const h = await recoveryClient(t);
+  h.beforeRead = () => h.api.clearCode();
+  await h.api.recover('camera_failure');
+  assert.ok(h.api.state().replacement); assert.equal(h.api.state().code, '');
+  assert.equal(h.api.state().selected.status, 'void');
+});
