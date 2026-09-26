@@ -48,7 +48,7 @@ For shared-server setup, exports, score recovery, backup, restore and release ve
 
 ## Privacy and limitations
 
-Camera frames and landmarks stay in the browser and are not recorded. The shared pilot stores display names, results, bounded playtest observations and voluntary feedback; see [collection and retention](docs/OPERATIONS.md#playtest-observations-and-feedback).
+Camera frames and landmarks stay in the browser and are not recorded. The bundled MediaPipe dependency separately discloses performance/utilization metrics sent to Google; see its [runtime provenance and privacy notice](public/vision/README.md). Local model hosting does not establish the absence of vendor metrics. The shared pilot stores display names, results, bounded playtest observations and voluntary feedback; see [collection and retention](docs/OPERATIONS.md#playtest-observations-and-feedback).
 
 Names are display labels. Client-reported catches are trusted, so server scoring is not anti-cheat. Badge enforcement, physical-prize inventory and the event-day one-play/one-gift policy are not implemented. The shared pilot is a testing environment; physical recognition, comfort and first-time usability remain open acceptance checks.
 
@@ -58,4 +58,9 @@ Follow [CONTRIBUTING](CONTRIBUTING.md) for branches, pull requests and the testi
 
 ## License and asset credits
 
-See [LICENSE](LICENSE) for the project license. Third-party hand models retain their own [license and provenance](public/models/hands/README.md). [Audio provenance](docs/archive/2026-09-11-arcade-presentation.md) records the source review and original synthesis decision.
+Project code is licensed under [MIT](LICENSE). The CoderPush/AWS names and event presentation identify this project's booth context; the code license does not grant trademark rights or imply endorsement of forks. This project retains its existing event presentation. Reusers should use their own branding unless separately authorized by the relevant owner. This repository does not contain an AWS trademark authorization record.
+
+Third-party hand meshes retain their [MIT license and provenance](public/models/hands/README.md). The [MediaPipe runtime and recognition model notice](public/vision/README.md) records the exact distributed versions, sources and verification limits. [Audio provenance](docs/archive/2026-09-11-arcade-presentation.md) records the original synthesis decision.
+
+
+Public documentation retains dated technical evidence, public source links and upstream copyright credits. Staff identities, production test nicknames and internal document links are not needed to explain that evidence. Historical records are dated snapshots, not current deployment or acceptance claims.
