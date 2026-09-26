@@ -115,5 +115,86 @@ try {
   assert.equal(app.database.db.prepare("SELECT COUNT(*) AS n FROM official_runs WHERE state='accepted'").get().n, 1);
   assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM official_turns').get().n, 3);
   assert.deepEqual(errors, []);
-  console.log('Official production UI: explicit admission/activation, three turns, hand loss, pending/result reload, separate board, anonymous handoff and host-void replacement passed.');
+  await page.close();
+
+  // Two real tabs share origin storage/cookies and the browser's actual Web
+  // Locks queue. Holding that queue makes simultaneous different-ticket
+  // submissions deterministic; delaying an HTTP response alone is too late,
+  // since the first admission would already be persisted before the request.
+  const station = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const a = await station.newPage(), b = await station.newPage();
+  const lockName = 'cloud-claw:public-official-transition:v1';
+  const selectedKey = 'cloud-claw:official-player:v1', handoffKey = `${selectedKey}:handoff`;
+  let admissions = 0;
+  station.on('request', request => { if (new URL(request.url()).pathname === '/api/official/public/redeem') admissions++; });
+  const pair = await Promise.all([1, 2].map(() => post(host, `/api/host/events/${event.eventId}/tickets`, { participantId: person.participantId, requestKey: randomUUID() })));
+  for (const [tab, issued] of [[a, pair[0]], [b, pair[1]]]) {
+    tab.on('pageerror', error => errors.push(error.message));
+    await installCameraFixture(tab, { built: true });
+    if (tab === b) {
+      await tab.goto(`${origin}/?setup=manual`);
+      await tab.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+      await Promise.all([tab.waitForURL(`${origin}/official`), tab.locator('#official-entry').click()]);
+    } else await tab.goto(`${origin}/official?setup=manual`);
+    await tab.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+    await tab.locator('#official-status-open').click();
+    await tab.locator('#official-code').fill(issued.code);
+  }
+  await a.evaluate(async name => {
+    let acquired;
+    const ready = new Promise(resolve => { acquired = resolve; });
+    const release = new Promise(resolve => { window.releaseAdmissionGate = resolve; });
+    window.admissionGate = navigator.locks.request(name, async () => { acquired(); await release; });
+    await ready;
+  }, lockName);
+  await a.locator('#official-redeem').click();
+  await a.waitForFunction(async name => (await navigator.locks.query()).pending.filter(lock => lock.name === name).length === 1, lockName, { timeout: 10000 });
+  await b.locator('#official-redeem').click();
+  await a.waitForFunction(async name => (await navigator.locks.query()).pending.filter(lock => lock.name === name).length === 2, lockName, { timeout: 10000 });
+  assert.equal(admissions, 0, 'neither application transition bypasses the held native lock');
+  await a.evaluate(async () => { window.releaseAdmissionGate(); await window.admissionGate; });
+  await a.waitForFunction(() => !document.getElementById('official-ticket').open);
+  await b.waitForFunction(() => document.getElementById('official-message').textContent.includes('Another attempt needs recovery'));
+  assert.equal(admissions, 1, 'only one consuming request leaves the two tabs');
+  const firstRun = app.database.db.prepare('SELECT id FROM official_runs WHERE ticket_id=?').get(pair[0].ticketId);
+  assert.ok(firstRun);
+  assert.equal(app.database.db.prepare('SELECT state FROM official_tickets WHERE id=?').get(pair[1].ticketId).state, 'issued', 'second ticket remains unconsumed');
+  const selected = await a.evaluate(key => sessionStorage.getItem(key), selectedKey);
+  assert.ok((await station.cookies()).some(cookie => cookie.name === `cc_official_${firstRun.id}`), 'same browser retains its scoped official capability');
+  await b.goto(`${origin}/?setup=manual`);
+  await b.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+  assert.deepEqual(await b.evaluate(() => ({ practice: window.__PUBLIC_TRY__ === true, official: window.__PUBLIC_OFFICIAL__ === true })), { practice: true, official: false });
+  assert.equal(await b.locator('#try-notice').isVisible(), true, 'root remains practice while the official cookie exists');
+  await b.goto(`${origin}/official?setup=manual`);
+  await b.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+
+  // A leaves a durable logout journal after the host voids its attempt. B
+  // completes the same handoff; A's sessionStorage still has its old selection
+  // until a real reload reconciles the shared completion acknowledgement.
+  await post(host, `/api/host/event-runs/${firstRun.id}/recover`, { reason: 'browser_failure', requestKey: randomUUID() });
+  await a.locator('#official-signout').waitFor();
+  await a.route('**/api/official/public/runs/*/logout', route => route.abort('internetdisconnected'));
+  await a.locator('#official-signout').click();
+  await a.waitForFunction(key => JSON.parse(localStorage.getItem(key) || 'null')?.phase === 'logout', handoffKey);
+  await a.waitForFunction(() => document.getElementById('sync-message').textContent.includes('Official service unavailable'));
+  await b.reload();
+  await b.locator('#official-signout').waitFor();
+  await Promise.all([b.waitForEvent('framenavigated', frame => frame === b.mainFrame()), b.locator('#official-signout').click()]);
+  await b.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+  assert.equal(await b.evaluate(key => localStorage.getItem(key), handoffKey), null);
+  assert.equal(await a.evaluate(key => sessionStorage.getItem(key), selectedKey), selected, 'B cannot directly erase A tab storage');
+  assert.equal((await station.request.get(`${origin}/api/official/public/runs/${firstRun.id}`)).status(), 401, 'handoff retires the old capability');
+  await a.unroute('**/api/official/public/runs/*/logout');
+  await a.reload();
+  await a.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true' && !document.getElementById('official-redeem').disabled);
+  assert.equal(await a.evaluate(key => sessionStorage.getItem(key), selectedKey), null, 'original tab reconciles completed shared handoff');
+  await a.locator('#official-status-open').click();
+  await a.locator('#official-code').fill(pair[1].code); await a.locator('#official-redeem').click();
+  await a.waitForFunction(() => !document.getElementById('official-ticket').open);
+  assert.equal(admissions, 2);
+  assert.equal(app.database.db.prepare('SELECT state FROM official_runs WHERE ticket_id=?').get(pair[1].ticketId).state, 'accepted');
+  assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM official_turns').get().n, 3, 'cross-tab admission and handoff never start gameplay');
+  assert.deepEqual(errors, []);
+  await station.close();
+  console.log('Official production UI: explicit admission/activation, three turns, hand loss, pending/result reload, separate board, anonymous handoff, host-void replacement and native two-tab admission/handoff passed.');
 } finally { await browser.close(); await new Promise(resolve => app.server.close(resolve)); app.database.close(); }
