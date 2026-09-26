@@ -89,6 +89,15 @@ function activeTurnCount(name) {
   assert.ok(run, `${name} has an active shared run`);
   return app.database.db.prepare('SELECT COUNT(*) AS count FROM turns WHERE run_id=?').get(run.id).count;
 }
+function waitForCameraErrorAcknowledgement(page, code) {
+  return page.waitForResponse(async response => {
+    if (new URL(response.url()).pathname !== '/api/playtest' || !response.ok()) return false;
+    const event = response.request().postDataJSON()?.events.find(event => event.type === 'camera_error' && event.data.code === code);
+    if (!event) return false;
+    const { accepted } = await response.json();
+    return Array.isArray(accepted) && accepted.includes(event.id);
+  });
+}
 async function finish(page, firstTurn = 1, stopCameraOnLastDrop = false) {
   for (const turn of [1, 2, 3].filter(turn => turn >= firstTurn)) {
     await page.waitForFunction(turn => document.getElementById('turn').textContent === `${turn} / 3` && document.getElementById('arcade').dataset.phase === 'aim' && !document.getElementById('phase-label').textContent.includes('COMPLETE'), turn);
@@ -155,20 +164,23 @@ async function scoredAndFeedback() {
 
   // A runtime failure must preserve the current run, score and remaining time.
   await page.waitForFunction(() => Number(document.getElementById('timer').textContent) <= 13);
+  const runtimeErrorSaved = waitForCameraErrorAcknowledgement(page, 'worker_timeout');
   await page.evaluate(() => window.testCamera.fail());
   await page.getByRole('button', { name: 'Restart camera', exact: true }).waitFor();
   const beforeRecovery = await page.locator('#timer').textContent();
   await page.waitForTimeout(1800);
   assert.equal(await page.locator('#timer').textContent(), beforeRecovery);
+  await runtimeErrorSaved;
   const cameraFailures = () => app.database.db.prepare("SELECT * FROM playtest_events WHERE type='camera_error'").all();
   assert.equal(cameraFailures().length, 1, 'runtime error is persisted once');
   assert.equal(JSON.parse(cameraFailures()[0].data).code, 'worker_timeout');
   assert.equal(app.playtest.read().summary.cameraFailureSessions, 1);
   await page.screenshot({ path: '.screenshots/camera-recovery.png' });
+  const restartErrorSaved = waitForCameraErrorAcknowledgement(page, 'camera_busy');
   await page.evaluate(() => { window.testCamera.failNextStart = true; });
   await page.getByRole('button', { name: 'Restart camera', exact: true }).click();
   await page.locator('#camera-setup').waitFor();
-  await page.waitForTimeout(1800);
+  await restartErrorSaved;
   assert.equal(cameraFailures().length, 2, 'failed restart is counted once despite startup fallback');
   assert.equal(JSON.parse(cameraFailures()[1].data).code, 'camera_busy');
   await page.locator('#camera-toggle').click();
