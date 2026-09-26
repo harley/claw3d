@@ -17,8 +17,11 @@ self.onmessage = async ({ data }) => {
       base = data.base; maxHands = data.maxHands === 2 ? 2 : 1;
       // ES module workers need the module-aware WASM loader, not importScripts.
       files = await FilesetResolver.forVisionTasks(base + '/vision/wasm', true);
-      try { recognizer = await create('GPU'); delegate = 'GPU'; }
-      catch { recognizer = await create('CPU'); delegate = 'CPU'; }
+      if (data.delegate === 'CPU') { recognizer = await create('CPU'); delegate = 'CPU'; }
+      else {
+        try { recognizer = await create('GPU'); delegate = 'GPU'; }
+        catch { recognizer = await create('CPU'); delegate = 'CPU'; }
+      }
       self.postMessage({ type: 'ready', delegate });
     } catch (error) { self.postMessage({ type: 'error', message: error.message }); }
   } else if (data.type === 'frame') {
