@@ -658,3 +658,94 @@ test('player storage denial is visible before admission and expiry retains a blo
   assert.ok(p.local.length > 0);
   assert.equal(p.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_turns').get().n, 0);
 });
+
+// Host controller boundary: real HTTP + storage, including secrets returned
+// only once. Domain tests alone cannot catch replacement client request keys.
+async function hostTickets(t) {
+  const { createHostTicketApi } = await import('../src/host-tickets.js');
+  const f = await fixture(t), s = await f.setup(), local = storage(), calls = [];
+  let lose = '', transport = s.host;
+  const fetcher = async (url, options) => {
+    calls.push({ url, body: options.body });
+    const response = await transport.request(url, options.body ? JSON.parse(options.body) : undefined);
+    if (lose && url.endsWith(lose)) { lose = ''; throw Error('lost'); }
+    return Response.json(response.data, { status: response.status });
+  };
+  const client = () => createHostTicketApi({ storage: local, fetcher });
+  const api = client(); await api.open(s.eventId);
+  return { f, s, local, calls, api, client, set lose(value) { lose = value; }, set transport(value) { transport = value; } };
+}
+test('host participant response loss reload retries one durable identity; equal names stay distinct', async t => {
+  const h = await hostTickets(t); h.lose = '/participants';
+  await h.api.create('Same name'); assert.equal(h.api.state().pending, true);
+  const reloaded = h.client(); await reloaded.open(h.s.eventId); await reloaded.retry();
+  const first = reloaded.state().participantId;
+  await reloaded.create('Same name'); const second = reloaded.state().participantId;
+  assert.notEqual(first, second);
+  await reloaded.select(first); await reloaded.issue();
+  assert.equal(reloaded.state().ticket.participantId, first);
+  await reloaded.issue(); assert.equal(reloaded.state().tickets.length, 2, 'explicit extra attempt retains selected identity');
+  assert.equal(h.f.app.database.db.prepare("SELECT COUNT(*) AS n FROM official_participants WHERE name='Same name'").get().n, 2);
+  const posts = h.calls.filter(row => row.url.endsWith('/participants'));
+  assert.equal(posts[0].body, posts[1].body);
+});
+test('host storage refusal prevents consuming writes, including silently dropped intent', async t => {
+  const h = await hostTickets(t), set = h.local.setItem;
+  for (const refusal of [() => { throw Error('quota'); }, () => {}]) {
+    h.local.setItem = refusal;
+    await h.api.create('Refused');
+    assert.equal(h.calls.filter(row => row.body).length, 0);
+    h.local.setItem = set; await h.api.open(h.s.eventId);
+  }
+});
+test('lost ticket and reissue responses recover IDs, never duplicate grants or recover redeemed tickets', async t => {
+  const h = await hostTickets(t); await h.api.select(h.s.participant.participantId);
+  h.lose = '/tickets'; await h.api.issue();
+  const reloaded = h.client(); await reloaded.open(h.s.eventId); await reloaded.retry();
+  const first = reloaded.state().ticket.ticketId;
+  assert.equal(reloaded.state().code, ''); assert.match(reloaded.state().message, /not returned again/);
+  assert.equal(h.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_tickets').get().n, 1);
+  h.lose = '/reissue'; await reloaded.reissue();
+  const again = h.client(); await again.open(h.s.eventId); await again.retry();
+  const second = again.state().ticket.ticketId;
+  assert.notEqual(first, second); assert.equal(again.state().code, '');
+  assert.equal(h.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_tickets').get().n, 2);
+  await again.reissue(); const code = again.state().code, ticket = again.state().ticket;
+  assert.match(code, /^T-/);
+  const records = Array.from({ length: h.local.length }, (_, i) => h.local.getItem(h.local.key(i))).join('');
+  assert.equal(records.includes(code), false);
+  assert.ok(h.calls.every(row => !row.url.includes(code)));
+  assert.equal((await h.s.staff.request('/api/official/redeem', { code, requestKey: key(), nonce: key() })).status, 200);
+  await again.reissue(); assert.match(again.state().message, /does not recover a redeemed/);
+  assert.equal(again.state().code, ''); assert.equal(again.state().pending, false, 'confirmed rejection retained without blocking a new explicit action');
+  assert.equal(h.f.app.database.db.prepare('SELECT state FROM official_tickets WHERE id=?').get(ticket.ticketId).state, 'redeemed');
+  assert.equal(h.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_tickets').get().n, 3);
+});
+test('host console refresh confirms closure, expiry and auth loss before further ticket writes', async t => {
+  const h = await hostTickets(t); await h.api.select(h.s.participant.participantId);
+  await h.api.issue(); assert.ok(h.api.state().code);
+  h.transport = h.s.staff;
+  await h.api.open(h.s.eventId); assert.equal(h.api.state().canMutate, false); assert.equal(h.api.state().code, '');
+  assert.match(h.api.state().message, /Host access expired/);
+  h.transport = h.s.host; await h.api.open(h.s.eventId);
+  await h.s.host.request(`/api/host/events/${h.s.eventId}/state`, { state: 'closed', requestKey: key() });
+  await h.api.issue(); assert.equal(h.api.state().canMutate, false); assert.match(h.api.state().message, /Event is closed/);
+  assert.equal(h.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_tickets').get().n, 1);
+  h.f.app.database.db.prepare('UPDATE official_events SET retain_until=0').run();
+  await h.api.open(h.s.eventId); assert.equal(h.api.state().canMutate, false); assert.match(h.api.state().message, /expired/);
+});
+test('host receipt storage failure withholds the secret and preserves the consuming request key', async t => {
+  const h = await hostTickets(t); await h.api.select(h.s.participant.participantId);
+  const set = h.local.setItem;
+  h.local.setItem = (key, value) => {
+    if (JSON.parse(value).operations.some(row => row.receipt?.ticketId)) throw Error('quota after response');
+    set(key, value);
+  };
+  await h.api.issue(); assert.equal(h.api.state().pending, true); assert.equal(h.api.state().code, '');
+  h.local.setItem = set;
+  const next = h.client(); await next.open(h.s.eventId); await next.retry();
+  assert.equal(next.state().code, ''); assert.ok(next.state().ticket.ticketId);
+  assert.equal(h.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_tickets').get().n, 1);
+  const posts = h.calls.filter(row => row.url.endsWith('/tickets'));
+  assert.equal(posts[0].body, posts[1].body);
+});
