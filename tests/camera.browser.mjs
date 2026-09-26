@@ -2,13 +2,17 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { browserOptions } from '../scripts/browser-options.mjs';
+import { cameraDiagnostics, traceController } from './camera-diagnostics.mjs';
 const browser = await chromium.launch({ ...browserOptions, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
+let reportDiagnostics = async () => {};
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, permissions: ['camera'] });
   const page = await context.newPage(), errors = [];
+  reportDiagnostics = await cameraDiagnostics(page);
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(() => { window.mediaCalls = 0; const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); navigator.mediaDevices.getUserMedia = options => { window.mediaCalls++; return original(options); }; });
   await page.goto('http://127.0.0.1:4196/?setup=manual'); await page.waitForFunction(() => window.__littleCloud);
+  await traceController(page);
   await page.evaluate(async () => {
     const { ArcadeScene } = await import('/src/arcade-scene.js');
     const draw = ArcadeScene.prototype.draw;
@@ -74,6 +78,10 @@ try {
   await page.keyboard.down('ArrowRight'); await page.waitForTimeout(350); await page.keyboard.up('ArrowRight');
   await page.keyboard.press('Space'); assert.deepEqual((await snap()).position, position); assert.equal((await snap()).phase, 'idle');
   await page.evaluate(() => window.dispatchEvent(new Event('blur'))); assert.equal((await snap()).event.paused, false);
+  await page.waitForFunction(() => {
+    const diagnostic = window.__littleCloud.snapshot().event.handCamera.diagnostic;
+    return Number.isFinite(diagnostic.captureAge) && diagnostic.rejected === null;
+  });
   await page.locator('#camera-open').click(); assert.equal(await page.locator('#operator').isVisible(), false);
   await page.locator('#camera-toggle').click(); assert.equal((await snap()).event.handCamera.running, false);
   await page.waitForFunction(() => window.cameraRenderBudget === false);
@@ -82,7 +90,38 @@ try {
   await page.screenshot({ path: '.screenshots/camera-only.png' });
   assert.deepEqual(errors, []);
   console.log('PASS opt-in real worker/model with synthetic camera; camera-only input; hand-loss timer hold; blur does not latch pause; separate camera setup; shutdown');
+  await reportDiagnostics(); reportDiagnostics = async () => {};
   await context.close();
+  // A synchronous GPU call cannot receive a recovery message. Force that exact
+  // failure in a real worker, then require fresh CPU output on the same camera.
+  const stalled = await browser.newContext({ permissions: ['camera'] }); const sp = await stalled.newPage();
+  reportDiagnostics = await cameraDiagnostics(sp, { stallGPU: true });
+  await sp.goto('http://127.0.0.1:4196/?setup=manual'); await sp.waitForFunction(() => window.__littleCloud);
+  await traceController(sp);
+  await sp.locator('#play').click();
+  await sp.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running, {}, { timeout: 35000 });
+  await sp.evaluate(() => { window.originalCameraStream = document.getElementById('camera-video').srcObject; });
+  const fresh = await sp.waitForFunction(() => {
+    const diagnostic = window.__littleCloud.snapshot().event.handCamera.diagnostic;
+    return diagnostic.delegate === 'CPU' && Number.isFinite(diagnostic.captureAge) && diagnostic.rejected === null && { captureAge: diagnostic.captureAge };
+  }, {}, { timeout: 35000 });
+  const freshCapture = await fresh.jsonValue();
+  assert.ok(freshCapture.captureAge >= 0 && freshCapture.captureAge <= 300);
+  const recovery = await sp.evaluate(() => ({ events: window.cameraLifecycle,
+    sameStream: window.originalCameraStream === document.getElementById('camera-video').srcObject,
+    camera: window.__littleCloud.snapshot().event.handCamera,
+    run: window.__littleCloud.snapshot().event.run }));
+  assert.equal(recovery.sameStream, true);
+  assert.equal(recovery.camera.running, true);
+  assert.equal(recovery.camera.diagnostic.delegate, 'CPU');
+  assert.notEqual(recovery.camera.diagnostic.driver, 'stream');
+  assert.equal(recovery.run, null, 'startup recovery cannot create or spend a turn');
+  assert.equal(recovery.events.filter(event => event.stage === 'worker-create').length, 2);
+  assert.equal(recovery.events.filter(event => event.stage === 'worker-terminate').length, 1);
+  assert.ok(recovery.events.some(event => event.stage === 'worker-receive' && event.type === 'ready' && event.delegate === 'GPU'));
+  console.log('PASS blocked first GPU inference is replaced once by a CPU worker with fresh results and the same camera', freshCapture);
+  await reportDiagnostics(); reportDiagnostics = async () => {};
+  await stalled.close();
   const denied = await browser.newContext(); const dp = await denied.newPage();
   await dp.addInitScript(() => { const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); let first = true; navigator.mediaDevices.getUserMedia = async options => { if (first) { first = false; throw new DOMException('Denied', 'NotAllowedError'); } return original(options); }; });
   await dp.goto('http://127.0.0.1:4196/?setup=manual'); await dp.waitForFunction(() => window.__littleCloud); await dp.locator('#camera-open').click(); await dp.locator('#camera-toggle').click();
@@ -114,4 +153,4 @@ try {
   assert.equal(await fp.locator('#camera-preview').isVisible(), true);
   console.log(`PASS worker-canvas fallback starts the real model on ${fallbackCamera.diagnostic.delegate} with timer-paced video input`);
   await fallback.close();
-} finally { await browser.close(); }
+} finally { await reportDiagnostics(); await browser.close(); }
