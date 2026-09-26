@@ -12,10 +12,17 @@ const joints = ['metacarpal', 'phalanx-proximal', 'phalanx-intermediate', 'phala
 export class CabinetHands {
   constructor(scene, loader = new GLTFLoader()) {
     this.root = new T.Group(); scene.add(this.root); this.root.visible = false;
-    this.hands = {}; this.error = null;
+    this.hands = {}; this.error = null; this.state = 'loading';
     this.ready = Promise.all(['left', 'right'].map(async role => {
       const gltf = await loader.loadAsync(`/models/hands/${role}.glb`);
-      const model = gltf.scene, wrist = model.getObjectByName('wrist');
+      const model = gltf.scene;
+      if (this.state === 'error') { disposeModel(model); return; }
+      // Attach before validation so every partial model is owned by cleanup.
+      this.root.add(model);
+      const required = ['wrist', 'thumb-metacarpal', 'thumb-phalanx-proximal',
+        ...fingers.flatMap(finger => joints.slice(1, 4).map(joint => `${finger}-${joint}`))];
+      for (const name of required) if (!model.getObjectByName(name)) throw new Error(`Hand model is missing ${name}`);
+      const wrist = model.getObjectByName('wrist');
       model.updateMatrixWorld(true);
       const inverse = wrist.matrixWorld.clone().invert();
       const normalization = new T.Group(); normalization.applyMatrix4(inverse); normalization.add(model);
@@ -44,7 +51,9 @@ export class CabinetHands {
       const thumbProxRest = thumbProx.quaternion.clone();
       const thumbProxAxis = new T.Vector3(0, 1, 0).applyQuaternion(thumbProx.getWorldQuaternion(new T.Quaternion()).invert());
       const skin = new T.MeshPhysicalMaterial({ color: '#c88f6e', roughness: .57, metalness: 0, clearcoat: .08, clearcoatRoughness: .7 });
-      model.traverse(o => { if (o.isMesh) { o.material = skin; o.castShadow = o.receiveShadow = true; o.frustumCulled = false; } });
+      const oldMaterials = new Set();
+      model.traverse(o => { if (o.isMesh) { for (const m of [].concat(o.material)) oldMaterials.add(m); o.material = skin; o.castShadow = o.receiveShadow = true; o.frustumCulled = false; } });
+      disposeMaterials(oldMaterials);
       // A continuous tapered forearm, curved toward the player, with cuff ribs.
       const sleeve = new T.MeshStandardMaterial({ color: '#162e43', roughness: .94 });
       const points = [new T.Vector3(0,0,.005),new T.Vector3(role==='left'?-.012:.012,-.01,.09),new T.Vector3(role==='left'?-.055:.055,-.06,.23),new T.Vector3(role==='left'?-.11:.11,-.14,.42)];
@@ -66,11 +75,15 @@ export class CabinetHands {
         cuff.position.z = .008 + i*.003; cuff.castShadow = true; pivot.add(cuff);
       }
       this.hands[role] = { pivot, bends, thumb, thumbAxis, thumbRest, thumbLiftAxis, thumbProx, thumbProxRest, thumbProxAxis, curl: 0 };
-    })).catch(error => { this.error = error.message; console.error('Cabinet hand assets failed to load', error); });
+    })).then(() => { this.state = 'ready'; }).catch(error => {
+      this.state = 'error'; this.error = error.message;
+      disposeModel(this.root); this.root.clear(); this.hands = {};
+      console.error('Cabinet hand assets failed to load', error);
+    });
   }
 
   update(phase, elapsed, dt, feedback, enabled, stick, button, reduced) {
-    this.root.visible = enabled && feedback.profile === 'dual';
+    this.root.visible = this.state === 'ready' && enabled && feedback.profile === 'dual';
     // A paused/modal frame preserves the committed progress but changes kind.
     const slam = Number.isFinite(feedback.slamProgress);
     const contact = phase === 'anticipate' || (phase === 'descend' && elapsed < .16);
@@ -108,4 +121,25 @@ export class CabinetHands {
       }
     }
   }
+}
+
+function disposeMaterials(materials) {
+  const textures = new Set();
+  for (const material of materials) {
+    for (const value of Object.values(material)) if (value?.isTexture) textures.add(value);
+    material.dispose();
+  }
+  for (const texture of textures) texture.dispose();
+}
+
+function disposeModel(root) {
+  const geometries = new Set(), materials = new Set(), skeletons = new Set();
+  root.traverse(object => {
+    if (object.geometry) geometries.add(object.geometry);
+    if (object.material) for (const material of [].concat(object.material)) materials.add(material);
+    if (object.skeleton) skeletons.add(object.skeleton);
+  });
+  for (const geometry of geometries) geometry.dispose();
+  for (const skeleton of skeletons) skeleton.dispose();
+  disposeMaterials(materials);
 }

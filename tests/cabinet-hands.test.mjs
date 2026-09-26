@@ -95,3 +95,47 @@ test('reduced motion keeps the palm stationary throughout committed strike', asy
   const { update } = await rig();
   assert.deepEqual(update(.1, true), update(.9, true));
 });
+
+// Loader ownership is independent of WebGL: invalid/partial assets must never
+// leave a visible half-rig or retain disposable resources after failure.
+function disposableModel() {
+  const scene = new T.Group(), geometry = new T.BoxGeometry(), material = new T.MeshBasicMaterial();
+  const disposed = [];
+  geometry.addEventListener('dispose', () => disposed.push('geometry'));
+  material.addEventListener('dispose', () => disposed.push('material'));
+  scene.add(new T.Mesh(geometry, material));
+  return { scene, disposed };
+}
+
+test('an invalid rig reports an error and disposes both it and a late sibling', async () => {
+  const invalid = disposableModel(), late = disposableModel();
+  let finishRight;
+  const hands = new CabinetHands(new T.Scene(), { loadAsync(url) {
+    return url.includes('left') ? Promise.resolve(invalid) : new Promise(resolve => { finishRight = resolve; });
+  } });
+  assert.equal(hands.state, 'loading');
+  await hands.ready;
+  assert.equal(hands.state, 'error'); assert.match(hands.error, /missing wrist/);
+  assert.deepEqual(invalid.disposed.sort(), ['geometry', 'material']);
+  finishRight(late); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(late.disposed.sort(), ['geometry', 'material']);
+  assert.equal(hands.root.children.length, 0); assert.deepEqual(hands.hands, {});
+  assert.equal(hands.state, 'error', 'a late request cannot reverse failure');
+});
+
+test('a failed sibling disposes an already initialized hand without exposing it', { timeout: 5000 }, async () => {
+  let rejectRight, left;
+  const hands = new CabinetHands(new T.Scene(), { async loadAsync(url) {
+    if (url.includes('right')) return new Promise((resolve, reject) => { rejectRight = reject; });
+    const bytes = await readFile(new URL(`../public${url}`, import.meta.url));
+    left = await new GLTFLoader().parseAsync(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), '');
+    return left;
+  } });
+  while (!hands.hands.left) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(hands.state, 'loading'); assert.equal(hands.root.visible, false);
+  let disposed = 0;
+  left.scene.getObjectByProperty('type', 'SkinnedMesh').geometry.addEventListener('dispose', () => { disposed++; });
+  rejectRight(new Error('Network unavailable')); await hands.ready;
+  assert.equal(hands.state, 'error'); assert.equal(disposed, 1);
+  assert.equal(hands.root.children.length, 0); assert.deepEqual(hands.hands, {});
+});
