@@ -5,9 +5,20 @@ export function expectedPublicTry(value = 'false') {
   return value === 'true';
 }
 
+export function expectedOfficialEvents(value = 'false') {
+  assert.ok(['true', 'false'].includes(value), 'EXPECTED_OFFICIAL_EVENTS must be true or false');
+  return value === 'true';
+}
+
+export function expectedPublicDiagnostics(value = 'false') {
+  assert.ok(['true', 'false'].includes(value), 'EXPECTED_PUBLIC_DIAGNOSTICS must be true or false');
+  return value === 'true';
+}
+
 // The expectation comes from reviewed release configuration, never from the
 // page being checked. These contexts cannot start cameras or write player data.
-export async function verifyReleaseBrowser({ browser, origin, expected, cookies, hostCode, publicTry }) {
+export async function verifyReleaseBrowser({ browser, origin, expected, cookies, hostCode, publicTry, officialEvents = false, publicDiagnostics = false }) {
+  assert.ok(!officialEvents || publicTry, 'Public official entry requires EXPECTED_PUBLIC_TRY');
   const contexts = [], errors = [], unexpectedWrites = [];
   let cameraCalls = 0;
   async function context(authenticated) {
@@ -50,6 +61,25 @@ export async function verifyReleaseBrowser({ browser, origin, expected, cookies,
       await anonymous.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
       assert.equal(await anonymous.locator('#try-notice').isVisible(), true, 'Public Try notice missing');
       assert.equal(await anonymous.locator('#login').count(), 0, 'Public Try unexpectedly requires staff sign-in');
+      assert.equal(await anonymous.evaluate(() => window.__PUBLIC_DIAGNOSTICS__ === true), publicDiagnostics, 'Public diagnostics differs from EXPECTED_PUBLIC_DIAGNOSTICS');
+      const notice = await anonymous.locator('#try-diagnostics-notice').textContent();
+      assert.equal(await anonymous.locator('#try-diagnostics-notice').isVisible(), true, 'Diagnostics notice missing');
+      assert.match(notice, publicDiagnostics ? /Limited gameplay and performance data.*30 days/ : /Gameplay diagnostics are off/);
+      assert.equal(await anonymous.evaluate(() => window.__OFFICIAL_EVENTS__ === true), officialEvents, 'Official entry differs from EXPECTED_OFFICIAL_EVENTS');
+      if (officialEvents) {
+        const entry = anonymous.locator('#official-entry');
+        assert.equal(await entry.isVisible(), true, 'Deliberate official entry missing');
+        assert.equal(await entry.getAttribute('href'), '/official');
+        // Inspect the ticket entry only. Never redeem or activate a ticket.
+        await anonymous.goto(`${origin}/official?setup=manual`);
+        await anonymous.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+        assert.equal(await anonymous.evaluate(() => window.__PUBLIC_OFFICIAL__ === true), true, 'Public official bootstrap missing');
+        assert.equal(await anonymous.locator('#login').count(), 0, 'Official entry unexpectedly requires staff sign-in');
+        await anonymous.locator('#official-status-open').click();
+        assert.equal(await anonymous.locator('#official-ticket-form').isVisible(), true, 'Official ticket form missing');
+        assert.equal(await anonymous.locator('#official-code').isVisible(), true);
+        assert.equal(await anonymous.locator('#official-redeem').isVisible(), true);
+      }
     } else {
       assert.equal(await anonymous.locator('#login #code').isVisible(), true, 'Private entry must show the staff gate');
     }

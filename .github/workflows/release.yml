@@ -179,6 +179,9 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           EXPECTED_BUILD: ${{ github.sha }}
+          EXPECTED_PUBLIC_TRY: 'true'
+          EXPECTED_OFFICIAL_EVENTS: 'true'
+          EXPECTED_PUBLIC_DIAGNOSTICS: 'true'
         run: node scripts/verify-release.mjs
       - name: Publish production release notes
         if: steps.release.outputs.current == 'true'

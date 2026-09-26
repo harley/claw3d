@@ -11,6 +11,7 @@ RUN test -n "$BUILD_COMMIT" && npm run build
 FROM node:24-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production
+ENV PUBLIC_TRY_ENABLED=true OFFICIAL_EVENTS_ENABLED=true OFFICIAL_EVENT_ADMISSIONS=enabled PUBLIC_DIAGNOSTICS_ENABLED=true
 COPY --from=build /app/dist ./dist
 COPY server ./server
 COPY src/event-session.js ./src/event-session.js
