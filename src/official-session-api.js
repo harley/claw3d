@@ -52,9 +52,12 @@ export function createOfficialSessionApi({ storage = browserStorage('localStorag
     if (tabStorage.getItem(ACTIVE) === id) tabStorage.removeItem(ACTIVE);
   }
   function clear(id) {
-    // Remove the marker first so late acknowledgements cannot resurrect it.
-    for (const part of ['run', 'interrupted', 'interruptAck', 'terminal', ...[1, 2, 3].flatMap(n => [`turn:${n}`, `ack:${n}`])]) {
-      storage.removeItem(key(id, part)); unsaved.delete(key(id, part));
+    // Flush and acknowledgement are serialized. Keep the marker until every
+    // removal is confirmed, so storage refusal remains recoverable.
+    for (const part of ['interrupted', 'interruptAck', ...[1, 2, 3].flatMap(n => [`turn:${n}`, `ack:${n}`]), 'terminal', 'run']) {
+      storage.removeItem(key(id, part));
+      if (storage.getItem(key(id, part)) !== null) throw new Error('Attempt storage unavailable. Keep this page.');
+      unsaved.delete(key(id, part));
     }
     stop(id);
   }
@@ -71,6 +74,7 @@ export function createOfficialSessionApi({ storage = browserStorage('localStorag
         const current = await request('/session'), id = current.id;
         if (!read(id, 'run')) return current;
         if (terminal(current)) { retainTerminal(current); return current; }
+        if (current.status === 'complete') { clear(id); onChange({ saved: current }); return current; }
         if (read(id, 'terminal')) return current;
         for (const n of [1, 2, 3]) {
           if (!read(id, 'run')) break;

@@ -1,5 +1,5 @@
 // Production wiring contract: ticket -> explicit activation -> existing camera
-// loop -> pending versus server result -> reload -> both capability logouts.
+// loop -> pending versus server result -> reload -> public capability handoff.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
@@ -23,12 +23,11 @@ try {
   await post(host, `/api/host/events/${event.eventId}/state`, { state: 'open', requestKey: randomUUID() });
   const person = await post(host, `/api/host/events/${event.eventId}/participants`, { name: 'Synthetic player', requestKey: randomUUID() });
   const ticket = await post(host, `/api/host/events/${event.eventId}/tickets`, { participantId: person.participantId, requestKey: randomUUID() });
-  await post(player, '/api/login', { code: staffCode });
   const page = await player.newPage(), errors = [], requests = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/')) requests.push(new URL(request.url()).pathname); });
   await installCameraFixture(page, { built: true });
-  await page.goto(`${origin}/staff?play=official&controls=dual&setup=manual`);
+  await page.goto(`${origin}/official?setup=manual`);
   await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
   await page.locator('#official-status-open').click();
   await page.locator('#official-code').fill(ticket.code);
@@ -47,7 +46,7 @@ try {
   await page.locator('#register-play').click();
   let holdThird = true, thirdCommitted;
   const committed = new Promise(resolve => { thirdCommitted = resolve; });
-  await page.route('**/api/official/runs/*/turns', async route => {
+  await page.route('**/api/official/public/runs/*/turns', async route => {
     const response = await route.fetch();
     if (route.request().postDataJSON().turn === 3 && holdThird) {
       thirdCommitted(); await route.abort('internetdisconnected');
@@ -55,7 +54,7 @@ try {
   });
   // Hide reads after the third commit too: the result remains unknown until
   // reconnect. No timing sleep or fabricated total is used as the assertion.
-  await page.route('**/api/official/runs/*', async route => {
+  await page.route('**/api/official/public/runs/*', async route => {
     if (holdThird && app.database.db.prepare('SELECT state FROM official_runs WHERE id=?').get(run.id).state === 'complete') return route.abort('internetdisconnected');
     return route.continue();
   });
@@ -84,10 +83,29 @@ try {
   assert.ok(requests.every(path => path.startsWith('/api/official/')), 'official flow never uses legacy scoring/board or telemetry');
   await mkdir('.screenshots', { recursive: true });
   await page.screenshot({ path: '.screenshots/official-result.png' });
-  await Promise.all([page.waitForURL(`${origin}/staff`), page.locator('#next-player').click()]);
-  await page.locator('#login').waitFor();
+  await Promise.all([page.waitForURL(`${origin}/official`), page.locator('#next-player').click()]);
+  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+  assert.equal(await page.locator('#operator-open').isVisible(), false);
+  assert.equal(await page.locator('#official-try').isVisible(), true);
   assert.equal((await player.request.get(`${origin}/api/official/session`)).status(), 401);
   assert.equal((await player.request.get(`${origin}/api/session`)).status(), 401);
+  // A host can void a failed run; the same anonymous station explicitly
+  // clears only that terminal attempt, then admits its replacement.
+  const second = await post(host, `/api/host/events/${event.eventId}/tickets`, { participantId: person.participantId, requestKey: randomUUID() });
+  await page.locator('#official-status-open').click();
+  await page.locator('#official-code').fill(second.code); await page.locator('#official-redeem').click();
+  await page.waitForFunction(() => !document.getElementById('official-ticket').open);
+  const unfinished = app.database.db.prepare("SELECT id FROM official_runs WHERE state='accepted'").get();
+  const replacement = await post(host, `/api/host/event-runs/${unfinished.id}/recover`, { reason: 'camera_failure', requestKey: randomUUID() });
+  await page.locator('#official-signout').waitFor();
+  await page.screenshot({ path: '.screenshots/official-void.png' });
+  await Promise.all([page.waitForURL(`${origin}/official`), page.locator('#official-signout').click()]);
+  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+  await page.locator('#official-status-open').click();
+  await page.locator('#official-code').fill(replacement.code); await page.locator('#official-redeem').click();
+  await page.waitForFunction(() => !document.getElementById('official-ticket').open);
+  assert.equal(app.database.db.prepare("SELECT COUNT(*) AS n FROM official_runs WHERE state='accepted'").get().n, 1);
+  assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM official_turns').get().n, 3);
   assert.deepEqual(errors, []);
-  console.log('Official production UI: explicit admission/activation, three turns, hand loss, pending/result reload, separate board and dual logout passed.');
+  console.log('Official production UI: explicit admission/activation, three turns, hand loss, pending/result reload, separate board, anonymous handoff and host-void replacement passed.');
 } finally { await browser.close(); await new Promise(resolve => app.server.close(resolve)); app.database.close(); }

@@ -640,7 +640,7 @@ test('acknowledged result recovers after reload and handoff retries a lost logou
   assert.equal(p.s.staff.jar.has('cc_session'), false);
 });
 
-test('player storage denial is visible before admission and expiry retains a blocked attempt', async t => {
+test('player storage denial prevents admission and server-confirmed expiry permits explicit handoff', async t => {
   const p = await player(t), get = p.tabStorage.getItem;
   p.tabStorage.getItem = () => { throw Error('denied'); };
   const denied = p.client(); await denied.initialize();
@@ -654,8 +654,8 @@ test('player storage denial is visible before admission and expiry retains a blo
   await p.flow.refresh();
   assert.equal(p.flow.state().blocked, true);
   assert.match(p.flow.state().error, /expired/);
-  await assert.rejects(p.flow.handoff(), /Resolve retained/);
-  assert.ok(p.local.length > 0);
+  await p.flow.handoff();
+  assert.equal(p.local.length, 0);
   assert.equal(p.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_turns').get().n, 0);
 });
 
@@ -748,4 +748,169 @@ test('host receipt storage failure withholds the secret and preserves the consum
   assert.equal(h.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_tickets').get().n, 1);
   const posts = h.calls.filter(row => row.url.endsWith('/tickets'));
   assert.equal(posts[0].body, posts[1].body);
+});
+
+const publicPath = (id, operation = 'session') => `/api/official/public/runs/${id}/${operation}`;
+const admissionInput = ticket => ({ code: ticket.code, requestKey: key(), nonce: key() });
+async function publicFixture(t) {
+  const f = await fixture(t, { publicTryEnabled: true }), s = await f.setup(), c = f.client();
+  return { f, s, c, async admit() {
+    const input = admissionInput(await s.ticket());
+    const response = await c.request('/api/official/public/redeem', input);
+    assert.equal(response.status, 200, response.text); return { input, run: response.data, response };
+  } };
+}
+async function completePublic(c, run, input) {
+  assert.equal((await c.request(publicPath(run.id, 'activate'), { nonce: input.nonce })).status, 200);
+  for (const turn of [1, 2, 3]) assert.equal((await c.request(publicPath(run.id, 'turns'), { turn, prizeId: null })).status, 200);
+}
+function applyCookies(c, response) {
+  for (const cookie of response.headers.getSetCookie()) {
+    const [name, value] = cookie.split(';')[0].split('=');
+    if (value) c.jar.set(name, value); else c.jar.delete(name);
+  }
+}
+test('public admission is anonymous, exact-run scoped, non-overwriting and retires against delayed replay across restart', async t => {
+  const p = await publicFixture(t), { f, s, c } = p;
+  const before = f.app.database.db.prepare('SELECT COUNT(*) AS n FROM owners').get().n;
+  const a = await p.admit(), name = `cc_official_${a.run.id}`;
+  assert.match(a.response.headers.getSetCookie()[0], /Path=\/api\/official; HttpOnly; SameSite=Strict; Max-Age=\d+; Secure/);
+  assert.deepEqual([...c.jar.keys()], [name]);
+  assert.equal(f.app.database.db.prepare('SELECT COUNT(*) AS n FROM owners').get().n, before);
+  assert.equal((await c.request('/api/session')).status, 401);
+  assert.equal((await c.request('/api/host/events', { name: 'forged', requestKey: key() })).status, 401);
+  assert.equal((await c.request('/api/official/session')).status, 401);
+  assert.equal((await c.request(publicPath(key()))).status, 401);
+  const bInput = admissionInput(await s.ticket());
+  assert.equal((await c.request('/api/official/public/redeem', bInput)).status, 409);
+  const delayedRedeem = await c.request('/api/official/public/redeem', a.input, { saveCookies: false });
+  assert.equal(delayedRedeem.status, 200);
+  await completePublic(c, a.run, a.input);
+  assert.equal((await c.request(publicPath(a.run.id, 'logout'), { nonce: key() })).status, 409);
+  const delayedLogout = await c.request(publicPath(a.run.id, 'logout'), { nonce: a.input.nonce }, { saveCookies: false });
+  assert.equal(delayedLogout.status, 200);
+  await f.restart();
+  assert.equal((await c.request('/api/official/public/redeem', a.input)).status, 409, 'retirement survives process restart');
+  const b = await c.request('/api/official/public/redeem', bInput); assert.equal(b.status, 200);
+  const bCookie = c.jar.get(`cc_official_${b.data.id}`);
+  applyCookies(c, delayedRedeem); applyCookies(c, delayedLogout);
+  assert.equal(c.jar.get(`cc_official_${b.data.id}`), bCookie, 'late A responses cannot change B');
+  assert.equal((await c.request(publicPath(a.run.id, 'logout'), { nonce: a.input.nonce })).status, 401);
+  assert.equal((await c.request(publicPath(b.data.id))).data.id, b.data.id);
+  assert.equal((await c.request('/api/official/public/redeem', a.input)).status, 409);
+});
+test('public admission validates fields, proves never-admitted rejection, preserves exact paused retry and budgets immediate peers', async t => {
+  const p = await publicFixture(t), { f, c } = p, input = admissionInput(await p.s.ticket());
+  assert.equal((await c.request('/api/official/public/redeem', { ...input, ownerId: 'forged' })).status, 400);
+  assert.equal((await c.request('/api/official/public/redeem', input, { headers: { origin: 'https://elsewhere.example' } })).status, 403);
+  assert.equal((await c.request('/api/official/public/redeem', input, { headers: { 'content-type': 'text/plain' } })).status, 415);
+  const invalid = admissionInput({ code: 'T-' + '0'.repeat(32) });
+  const rejected = await c.request('/api/official/public/redeem', invalid);
+  assert.equal(rejected.data.neverAdmitted, true); assert.equal(rejected.data.requestKey, invalid.requestKey);
+  const accepted = await c.request('/api/official/public/redeem', input, { saveCookies: false }); assert.equal(accepted.status, 200);
+  const fresh = admissionInput(await p.s.ticket());
+  await f.restart({ officialAdmissionsEnabled: false });
+  const retry = await c.request('/api/official/public/redeem', input); assert.equal(retry.data.id, accepted.data.id);
+  assert.equal((await f.client().request('/api/official/public/redeem', fresh)).status, 503);
+  await completePublic(c, retry.data, input);
+  assert.equal((await c.request(publicPath(retry.data.id))).data.status, 'complete');
+});
+test('public admission budgets malformed traffic before parsing and ignores spoofed forwarding', async t => {
+  const f = await fixture(t, { publicTryEnabled: true }), c = f.client();
+  for (let i = 0; i < 60; i++) {
+    const r = await c.request('/api/official/public/redeem', {}, { headers: { 'x-real-ip': `192.0.2.${i + 1}`, 'x-forwarded-for': `198.51.100.${i + 1}` } });
+    assert.equal(r.status, 400);
+  }
+  assert.equal((await c.request('/api/official/public/redeem', {})).status, 429);
+  assert.equal(f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_run_sessions').get().n, 0);
+});
+function webLocks() {
+  let tail = Promise.resolve();
+  return { request(_name, action) { const next = tail.then(action); tail = next.catch(() => {}); return next; } };
+}
+async function publicPlayer(t) {
+  const p = await publicFixture(t), { createOfficialPlayer } = await import('../src/official-player.js');
+  const local = storage(), locks = webLocks(), tab = storage(); let hook = async () => {};
+  const fetcher = async (path, options = {}) => {
+    const response = await p.c.request(path, options.body ? JSON.parse(options.body) : undefined);
+    await hook(path, response);
+    return { ok: response.status < 400, status: response.status, json: async () => response.data };
+  };
+  const client = (tabStorage = tab, overrides = {}) => createOfficialPlayer({ storage: local, tabStorage, fetcher, publicScope: true, locks, ...overrides });
+  const flow = client(); await flow.initialize();
+  return { ...p, local, tab, client, flow, set hook(value) { hook = value; } };
+}
+test('public two-tab transitions block unresolved admission; never-admitted proof frees only rejected intent', async t => {
+  const p = await publicPlayer(t), b = p.client(storage()); await b.initialize();
+  await assert.rejects(p.flow.redeem('T-' + '0'.repeat(32)), /unavailable/);
+  assert.equal(p.local.length, 0);
+  const aTicket = await p.s.ticket(), bTicket = await p.s.ticket();
+  let release, entered;
+  const started = new Promise(resolve => { entered = resolve; });
+  const paused = new Promise(resolve => { release = resolve; });
+  p.hook = async path => { if (path.endsWith('/redeem')) { entered(); await paused; } };
+  const aPending = p.flow.redeem(aTicket.code); await started;
+  const bPending = b.redeem(bTicket.code); release();
+  await aPending; await assert.rejects(bPending, /Another attempt/);
+  assert.equal(p.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_runs').get().n, 1);
+  const noLocks = p.client(storage(), { locks: null }); await noLocks.initialize();
+  assert.equal(noLocks.state().ready, false);
+});
+test('public void handoff is server-confirmed, origin-shared, retryable after logout loss and preserves staff auth', async t => {
+  const p = await publicPlayer(t), ticket = await p.s.ticket();
+  await p.flow.redeem(ticket.code); const run = await p.flow.activate();
+  await assert.rejects(p.flow.handoff(), /Resolve retained/);
+  const replacement = await p.s.host.request(`/api/host/event-runs/${run.id}/recover`, { reason: 'camera_failure', requestKey: key() });
+  assert.equal(replacement.status, 200, replacement.text);
+  await p.flow.refresh(); assert.equal(p.flow.state().canHandoff, true);
+  // Unrelated legacy storage and staff authority are not public-handoff scope.
+  p.local.setItem('unrelated-history', 'keep');
+  const staffToken = p.s.staff.jar.get('cc_session'); p.c.jar.set('cc_session', staffToken);
+  let lost = true;
+  p.hook = async path => { if (path.endsWith('/logout') && lost) { lost = false; throw Error('lost'); } };
+  await assert.rejects(p.flow.handoff(), /unavailable/);
+  assert.ok(p.local.getItem('cloud-claw:official-player:v1:handoff'));
+  const b = p.client(storage()); await b.initialize();
+  await assert.rejects(b.redeem(replacement.data.code), /Finish this attempt/);
+  await b.handoff();
+  assert.equal(p.local.getItem('cloud-claw:official-player:v1:handoff'), null);
+  assert.equal(p.local.getItem('unrelated-history'), 'keep');
+  assert.equal(p.c.jar.get('cc_session'), staffToken);
+  assert.equal((await p.c.request('/api/session')).status, 200);
+  const fresh = p.client(storage()); await fresh.initialize();
+  await fresh.redeem(replacement.data.code); assert.equal(fresh.state().canActivate, true);
+});
+test('public lost admission response survives restart without new owner, nonce or activation', async t => {
+  const p = await publicPlayer(t), ticket = await p.s.ticket(); let lost = true;
+  p.hook = async path => { if (path.endsWith('/redeem') && lost) { lost = false; throw Error('lost'); } };
+  await assert.rejects(p.flow.redeem(ticket.code), /response unavailable/);
+  const intent = p.flow.state().intent;
+  await p.f.restart();
+  const recovered = p.client(); await recovered.initialize(); await recovered.redeem(ticket.code);
+  assert.equal(recovered.state().intent.nonce, intent.nonce);
+  assert.equal(recovered.state().intent.requestKey, intent.requestKey);
+  assert.equal(recovered.state().canActivate, false);
+  const thief = p.f.client();
+  assert.equal((await thief.request('/api/official/public/redeem', { code: ticket.code, requestKey: key(), nonce: key() })).status, 409);
+  assert.equal(p.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_runs').get().n, 1);
+  assert.equal(p.f.app.database.db.prepare('SELECT state FROM official_runs').get().state, 'accepted');
+});
+test('public terminal cleanup detects silent storage refusal and handoff holds admission lock through logout', async t => {
+  const p = await publicPlayer(t); await p.flow.redeem((await p.s.ticket()).code); const run = await p.flow.activate();
+  await p.flow.queue({ ...run, turns: [1, 2, 3].map(turn => ({ turn, prizeId: null })) });
+  const remove = p.local.removeItem;
+  p.local.removeItem = name => { if (!name.startsWith('cloud-claw:admission:')) remove(name); };
+  await assert.rejects(p.flow.handoff(), /storage unavailable/);
+  assert.ok(p.local.getItem('cloud-claw:official-player:v1:handoff'));
+  assert.equal((await p.c.request(publicPath(run.id))).status, 200, 'cookie is not revoked before durable cleanup');
+  p.local.removeItem = remove;
+  const second = await p.s.ticket(), b = p.client(storage()); await b.initialize();
+  let release, entered;
+  const started = new Promise(resolve => { entered = resolve; }), pause = new Promise(resolve => { release = resolve; });
+  p.hook = async path => { if (path.endsWith('/logout')) { entered(); await pause; } };
+  const aEnding = p.flow.handoff(); await started;
+  const bStarting = b.redeem(second.code); release(); await aEnding; await bStarting;
+  assert.equal(b.state().intent.receipt.status, 'accepted');
+  assert.notEqual(b.state().intent.receipt.id, run.id);
+  assert.equal((await p.c.request(publicPath(b.state().intent.receipt.id))).status, 200);
 });

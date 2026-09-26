@@ -63,7 +63,7 @@ export async function createPilotServer(options) {
     catch { throw new ApiError(400, 'Invalid request.'); }
   }
   function json(res, status, data) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); }
-  const official = officialEventsEnabled ? createOfficialHttp({ db, body, json, cookies, cookie, limit, admissionsEnabled: officialAdmissionsEnabled }) : null;
+  const official = officialEventsEnabled ? createOfficialHttp({ db, body, json, cookies, cookie, limit, admissionsEnabled: officialAdmissionsEnabled, publicEnabled: publicTryEnabled, clientAddress }) : null;
   const diagnostics = publicDiagnosticsEnabled ? createPublicDiagnostics({ db, body, json, cookies, cookie, clientAddress }) : null;
   const server = createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -97,8 +97,9 @@ export async function createPilotServer(options) {
         res.setHeader('Set-Cookie', [res.getHeader('Set-Cookie'), cookie('cc_owner', ownerToken, 90 * 86400)]);
         return json(res, 200, { ok: true });
       }
+      const publicOfficial = publicTryEnabled && officialEventsEnabled && path === '/official';
       const publicPage = publicTryEnabled && ['/', '/try'].includes(path);
-      const publicRead = publicTryEnabled && ['GET', 'HEAD'].includes(req.method) && (publicPage || publicAsset(path));
+      const publicRead = publicTryEnabled && ['GET', 'HEAD'].includes(req.method) && (publicPage || publicOfficial || publicAsset(path));
       if (!auth && !publicRead) {
         if (['/', '/staff'].includes(path) && req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(gate); }
         throw new ApiError(401, 'Sign in with the staff code to continue.');
@@ -151,15 +152,16 @@ export async function createPilotServer(options) {
       if (!['GET', 'HEAD'].includes(req.method)) throw new ApiError(405, 'Method not allowed.');
       let relative;
       try { relative = decodeURIComponent(path); } catch { throw new ApiError(400, 'Invalid path.'); }
-      const file = resolve(root, `.${['/', '/staff'].includes(relative) || publicPage ? '/index.html' : relative}`);
+      const file = resolve(root, `.${['/', '/staff'].includes(relative) || publicPage || publicOfficial ? '/index.html' : relative}`);
       if (!file.startsWith(root + sep)) throw new ApiError(404, 'File not found.');
       let actual;
       try { actual = await realpath(file); if (!actual.startsWith(root + sep) || !(await stat(actual)).isFile()) throw Error(); }
       catch { throw new ApiError(404, 'File not found.'); }
-      if (!auth && !publicPage && !publicAsset('/' + actual.slice(root.length + 1).split(sep).join('/'))) throw new ApiError(404, 'File not found.');
+      if (!auth && !publicPage && !publicOfficial && !publicAsset('/' + actual.slice(root.length + 1).split(sep).join('/'))) throw new ApiError(404, 'File not found.');
       let content = await readFile(actual);
       if (actual === resolve(root, 'index.html')) content = Buffer.from(content.toString().replace('<head>', publicPage
-        ? `<head><script>window.__PUBLIC_TRY__=true;window.__PUBLIC_DIAGNOSTICS__=${publicDiagnosticsEnabled};</script>`
+        ? `<head><script>window.__PUBLIC_TRY__=true;window.__OFFICIAL_EVENTS__=${officialEventsEnabled};window.__PUBLIC_DIAGNOSTICS__=${publicDiagnosticsEnabled};</script>`
+        : publicOfficial ? `<head><script>window.__PUBLIC_OFFICIAL__=true;window.__OFFICIAL_EVENTS__=true;</script>`
         : `<head><script>window.__SHARED_PILOT__=true;window.__OFFICIAL_EVENTS__=${officialEventsEnabled};</script>`));
       res.writeHead(200, { 'Content-Type': mime[extname(actual)] || 'application/octet-stream', 'Content-Length': content.length });
       res.end(req.method === 'HEAD' ? undefined : content);
