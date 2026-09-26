@@ -179,9 +179,15 @@ Anh's report that it never seemed to enter the aiming circle is unresolved. Curr
 
 ## Shared scoring, observations and operations
 
-### Event admission API (staged, public play not enabled)
+### Public Try (staged, default off)
 
-The event domain in `server/official-events.js` now has an opt-in HTTP adapter. Both the API and new admissions default off. When enabled for staff testing, hosts create events, participants and tickets; redemption still requires a staff session. A separate secure cookie then grants access only to the admitted run and its event board, without staff or host privileges. The current staff pilot and player journey remain unchanged. Anonymous admission, public Try mode and event/host UI remain subsequent delivery slices.
+The separate `PUBLIC_TRY_ENABLED` switch serves password-free practice at `/` and `/try`; `/staff` retains the protected staff pilot. Try uses the same camera, menu guidance, scoring and three-turn game loop. PLAY starts without a name form; Play again begins another three turns without a ticket or account. Practice stays in memory for the page, does not enter any leaderboard, and never creates an owner, shared run or official score. Reload starts fresh. Existing local scores and staff outboxes remain untouched.
+
+A concise notice is shown before the first camera request or diagnostic bootstrap/upload, then collapses to a privacy summary when play starts. The camera remains browser-permission controlled. Public diagnostics use the separate collection switch and bounded practice-only adapter; denied permission can be retried, and diagnostics/storage failure cannot block play. Public feedback accepts category only. Gesture thresholds, host pause and accepted-drop behavior are unchanged. Synthetic tests cover the access and integration contracts; five-first-time-player physical acceptance and production enablement remain open.
+
+### Event admission API (staged)
+
+The event domain in `server/official-events.js` now has an opt-in HTTP adapter. Both the API and new admissions default off. When enabled for staff testing, hosts create events, participants and tickets; redemption still requires a staff session. A separate secure cookie then grants access only to the admitted run and its event board, without staff or host privileges. The current staff pilot and player journey remain unchanged. Anonymous official admission and event/host UI remain subsequent delivery slices. Public Try is staged separately above.
 
 The intended event contract is three scored turns per single-use ticket, with host-issued repeat tickets retaining an opaque participant identity and one best completed score per participant. Display names never identify participants. Events have immutable scoring rules; a closed event cannot reopen. Unused tickets expire after 24 hours or at event close. Already admitted attempts may finish within ten minutes of closure, then expire unscored. Only admitted participants and hosts can read the bounded official board. Practice scores never enter it, and no automated prize awards are introduced.
 

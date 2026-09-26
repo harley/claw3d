@@ -6,19 +6,34 @@ import { createJoystickCursor } from './joystick-cursor.js';
 import { createHandMenu, generatedName } from './hand-menu.js';
 const manualSetup = new URLSearchParams(location.search).get('setup') === 'manual';
 import { createSharedBoard } from './shared-board.js';
-import { createPlaytestClient } from './playtest-client.js';
+import { createPlaytestClient, createPublicPlaytestClient } from './playtest-client.js';
 import { createArcadeAudio } from './arcade-audio.js';
 import { createHud, $, setText, setHidden, finaleHeadline, missCopy, TROPHY_ICONS, clampOverlayPoint } from './arcade-hud.js';
 import { createTurnState, beginTurnState, beginFirstTurnPreparation, requestDrop, stepTurn } from './turn-controller.js';
 import { createMovementMusic } from './movement-music.js';
 import { PerformanceGovernor, PERFORMANCE_WINDOW_MS } from './performance-governor.js';
-const shared = globalThis.__SHARED_PILOT__ === true;
+const publicTry = globalThis.__PUBLIC_TRY__ === true;
+const shared = !publicTry && globalThis.__SHARED_PILOT__ === true;
+let noticeReady = !publicTry;
 // One resolution of the play mode: input profile, storage namespace, experiment flags.
-const mode = resolvePlayMode(location.search, shared);
+const mode = resolvePlayMode(location.search, shared || publicTry);
 const { dual: dualEnabled, grab: grabEnabled, cabinet: cabinetEnabled, holdMs, steering, storageKey: scoreKey } = mode;
 import { ArcadeScene } from './arcade-scene.js';
 import { createGame, begin, drop, advance, move, moveToward, homeClaw, planGrab, clawPose, PHASES, MAX_FRAME_DELTA, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
 import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, scoreTurn, turnContext } from './event-session.js';
+
+if (publicTry) {
+  $('try-notice').hidden = false;
+  if (globalThis.__PUBLIC_DIAGNOSTICS__ !== true) $('try-diagnostics-notice').textContent = 'Gameplay diagnostics are off.';
+  document.querySelector('.leaderboard .eyebrow').textContent = 'PRACTICE';
+  $('final-leaderboard').hidden = true;
+  $('next-player').hidden = true;
+  $('operator-open').hidden = true;
+  $('staff-link').hidden = false;
+  $('feedback-comment').hidden = true;
+  document.querySelector('label[for="feedback-comment"]').hidden = true;
+  document.querySelector('#feedback-form .playtest-notice').textContent = 'Category and limited gameplay diagnostics only. No video or names.';
+}
 
 $('build-info').textContent = `BUILD ${__BUILD_INFO__.commit}${__BUILD_INFO__.dirty ? ' · uncommitted changes' : ''} · ${__BUILD_INFO__.branch}`;
 let game = createGame({ carousel: true }), scene, previous = 0, stopped = false, frozen = false;
@@ -59,11 +74,11 @@ let scoreAnimation;
 let lastSoundPhase = '', lastMovementSound = -Infinity;
 let aligned = null, paused = false;
 let store, storageError = '', storageBlocked = false;
-try { store = shared ? newStore() : loadStore({ getItem: () => localStorage.getItem(scoreKey) }); } catch (error) { store = newStore(); storageError = error.message; storageBlocked = true; }
+try { store = shared || publicTry ? newStore() : loadStore({ getItem: () => localStorage.getItem(scoreKey) }); } catch (error) { store = newStore(); storageError = error.message; storageBlocked = true; }
 let run = store.active, completedRun = null, turnNumber = run ? run.turns.length + 1 : 0;
 let recovering = Boolean(run);
 const frames = [], errors = [];
-const playtest = createPlaytestClient({ build: __BUILD_INFO__.commit, enabled: shared });
+let playtest = createPlaytestClient({ build: __BUILD_INFO__.commit, enabled: shared });
 const track = (type, data = {}, subject = run || pendingPlayer || completedRun) => playtest.track(type, data, { mode: 'event', ...(subject?.id ? { runId: subject.id } : {}) });
 track('page_open');
 let observedControl = '', observedPhase = '', observedSaveError = false, cameraFailureReported = false;
@@ -91,14 +106,15 @@ const tags = game.toys.map(toy => {
   const element = document.createElement('span'); element.className = 'prize-tag'; element.dataset.points = RULES.points[toy.id]; element.textContent = RULES.points[toy.id]; $('prize-tags').append(element); return { toy, element };
 });
 function persist() {
-  if (shared) return;
+  if (shared || publicTry) return;
   if (storageBlocked) return;
   try { localStorage.setItem(scoreKey, JSON.stringify(store)); storageError = ''; }
   catch { storageError = 'Storage unavailable. Results are in memory only. Export before closing.'; }
   $('storage-status').textContent = shared ? pilot.status : storageError || store.notice || 'Scores saved on this browser.';
 }
 function renderBoard() {
-  const board = shared ? pilot.board || { name: 'Shared staff leaderboard', runs: [] } : currentBoard(store); $('board-name').textContent = board.name; $('leaders').replaceChildren();
+  const board = shared ? pilot.board || { name: 'Shared staff leaderboard', runs: [] } : currentBoard(store); $('board-name').textContent = publicTry ? 'TRY · THREE TURNS' : board.name; $('leaders').replaceChildren();
+  if (publicTry) $('board-empty').textContent = 'Play again as often as you like.';
   const leaders = shared ? board.runs : leaderboard(board); $('board-empty').hidden = leaders.length > 0;
   for (const row of leaders.slice(0, 5)) {
     const li = document.createElement('li'); li.classList.toggle('current', row.id === completedRun?.id);
@@ -113,7 +129,7 @@ const audio = createArcadeAudio({ onChange: syncSoundUI, enabledByDefault: !manu
 const movementMusic = createMovementMusic(audio);
 const hud = createHud({ audio, phaseSound });
 function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ? 'loading' : 'off' }, modal = Boolean(document.querySelector('dialog[open]'))) {
-  hud.update({ game, run, completedRun, pendingPlayer, turnNumber, remaining: flow.remaining, nextTurnElapsed: flow.nextTurnElapsed, firstTurnPreparationElapsed: flow.firstTurnPreparationElapsed, firstTurnControlReady: flow.firstTurnControlReady, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus: pilot.status, storageError, aligned }, feedback, modal);
+  hud.update({ game, run, completedRun, pendingPlayer, turnNumber, remaining: flow.remaining, nextTurnElapsed: flow.nextTurnElapsed, firstTurnPreparationElapsed: flow.firstTurnPreparationElapsed, firstTurnControlReady: flow.firstTurnControlReady, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, publicTry, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus: pilot.status, storageError, aligned }, feedback, modal);
 }
 function syncSoundUI() {
   const label = !audio.enabled ? 'Sound off' : !audio.volume ? 'Muted' : audio.ready ? 'Sound on' : 'Tap for sound';
@@ -164,6 +180,7 @@ function resumeRecoveredRun() {
 }
 function openRegistration(name = $('name').value) {
   if (stopped || !scene || startingRun) return;
+  if (publicTry) { pendingPlayer = { name: 'Try' }; void startScoredRun(); return; }
   $('name').setCustomValidity(''); $('name').value = name.trim() || generatedName();
   $('registration').showModal(); $('register-play').focus();
 }
@@ -183,8 +200,8 @@ function finishTurn() {
     $('final-name').textContent = completedRun.name.toUpperCase(); $('final-score').textContent = String(completedRun.total).padStart(3, '0');
     const rank = shared ? undefined : leaderboard(currentBoard(store)).find(r => r.id === completedRun.id)?.rank;
     $('final-kicker').textContent = finaleHeadline(completedRun.turns, rank, completedRun.rules.points);
-    $('final-rank').textContent = shared ? 'Score waiting to sync' : `LOCAL PREVIEW · ${dualEnabled ? '2 HANDS' : '1 HAND'}${rank ? ` · RANK #${rank}` : ''}`;
-    setText('final-board', `Board: ${completedRun.boardName || store.boards.find(board => board.id === completedRun.boardId)?.name || completedRun.boardId}`);
+    $('final-rank').textContent = shared ? 'Score waiting to sync' : publicTry ? 'PRACTICE · NO EVENT RANKING' : `LOCAL PREVIEW · ${dualEnabled ? '2 HANDS' : '1 HAND'}${rank ? ` · RANK #${rank}` : ''}`;
+    setText('final-board', publicTry ? 'Three turns · play again anytime' : `Board: ${completedRun.boardName || store.boards.find(board => board.id === completedRun.boardId)?.name || completedRun.boardId}`);
     $('final-turns').replaceChildren();
     completedRun.turns.forEach((turn, i) => {
       const toy = turn.prizeId ? game.toys.find(t => t.id === turn.prizeId) : null;
@@ -227,7 +244,10 @@ async function startScoredRun() {
       store = { version: 1, current: issued.boardId, boards: [{ id: issued.boardId, name: pilot.board?.id === issued.boardId ? pilot.board.name : issued.boardId, rules: issued.rules, runs: [] }], active: issued };
       run = issued;
       run.boardName = store.boards[0].name;
-    } else run = startRun(store, pendingPlayer.name);
+    } else {
+      if (publicTry) { store = newStore(); $('try-notice').open = false; }
+      run = startRun(store, pendingPlayer.name, publicTry);
+    }
     turnReasons = [];
     track('run_start', { steering, ...(holdMs ? { holdMs } : {}) }, run);
     pendingPlayer = null; completedRun = null; persist(); freshGame(); beginFirstTurnPreparation(flow, run.rules.seconds);
@@ -313,8 +333,8 @@ document.addEventListener('keydown', event => { if (!event.target.closest('#soun
 let feedbackSubmission = null, feedbackContext = null;
 function openFeedback() {
   feedbackContext = { phase: game.phase, turn: Math.min(3, turnNumber) };
-  if (!feedbackSubmission) setText('feedback-status', shared ? '' : 'Feedback is available on the shared playtest site.');
-  $('feedback-send').disabled = !shared;
+  if (!feedbackSubmission) setText('feedback-status', shared || (publicTry && playtest.status().enabled) ? '' : publicTry ? 'Feedback is unavailable. You can keep playing.' : 'Feedback is available on the shared playtest site.');
+  $('feedback-send').disabled = !shared && !(publicTry && playtest.status().enabled);
   $('feedback-dialog').showModal();
 }
 $('feedback-open').addEventListener('click', openFeedback);
@@ -322,9 +342,9 @@ $('final-feedback').addEventListener('click', openFeedback);
 $('error-feedback').addEventListener('click', openFeedback);
 $('feedback-form').addEventListener('submit', async event => {
   event.preventDefault();
-  if (!shared) return;
+  if (!shared && !publicTry) return;
   if (feedbackSubmission) { void playtest.flush(); return; }
-  const data = { ...feedbackContext, category: $('feedback-category').value, comment: $('feedback-comment').value.trim() };
+  const data = { ...feedbackContext, category: $('feedback-category').value, ...(publicTry ? {} : { comment: $('feedback-comment').value.trim() }) };
   const submission = track('feedback', data);
   feedbackSubmission = submission;
   $('feedback-send').textContent = 'Retry sending';
@@ -348,7 +368,7 @@ function reportCameraFailure(code) {
   track('camera_error', { code, phase: game.phase, turn: turnNumber });
 }
 async function startCamera() {
-  if (cameraLoading) return;
+  if (cameraLoading || !noticeReady) return;
   cameraFailureReported = false;
   track('camera_start');
   cameraLoading = true; $('camera-toggle').disabled = true; $('camera-status').textContent = 'Starting camera…';
@@ -578,6 +598,14 @@ try {
   syncSoundUI();
   const autoPlay = new URLSearchParams(location.search).get('start') === '1';
   if (autoPlay) { const url = new URL(location.href); url.searchParams.delete('start'); history.replaceState(null, '', url); }
+  if (publicTry) {
+    // Two frames ensure the notice has painted before any camera/diagnostics work.
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    noticeReady = true;
+    playtest.dispose();
+    playtest = createPublicPlaytestClient({ build: __BUILD_INFO__.commit, enabled: globalThis.__PUBLIC_DIAGNOSTICS__ === true, noticeAcknowledged: true });
+    track('page_open');
+  }
   if ((!manualSetup || autoPlay) && !frozen) {
     audio.unlock();
     void startCamera().then(() => { if (autoPlay && cameraControls?.running && !run && !document.querySelector('dialog[open]')) openRegistration(); });
