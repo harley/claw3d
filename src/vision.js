@@ -90,43 +90,20 @@ export class HandController {
       if (generation !== this.generation) return;
       failureCode = 'tracking_init_error';
       this.onState({ kind: 'loading', message: 'Waking up hand tracking…' });
-      this.worker = new Worker(new URL('./vision-worker.js', import.meta.url), { type: 'module' });
-      const workerResult = await new Promise((resolve, reject) => {
-        this.initReject = reject;
-        const timeout = setTimeout(() => reject(new Error('Hand tracking took too long to load. Try again.')), 25000);
-        this.worker.onmessage = ({ data }) => {
-          if (data.type === 'ready') { clearTimeout(timeout); this.initReject = null; this.delegate = data.delegate; resolve(); }
-          else if (data.type === 'main_thread_required') { clearTimeout(timeout); this.initReject = null; resolve(data.type); }
-          // A worker can expose OffscreenCanvas yet still fail while MediaPipe
-          // constructs its internal canvas (observed as `document is not
-          // defined` on affected WebKit). The page runtime is the compatibility
-          // recovery for any completed worker-initialization failure.
-          else if (data.type === 'error') { clearTimeout(timeout); this.initReject = null; resolve('main_thread_required'); }
-        };
-        this.worker.onerror = () => { clearTimeout(timeout); this.initReject = null; resolve('main_thread_required'); };
-        this.worker.postMessage({ type: 'init', base: location.origin, maxHands: this.maxHands });
-      });
+      const workerResult = await this.initializeWorker();
+      if (generation !== this.generation) return;
       if (workerResult === 'main_thread_required') {
         this.worker.terminate();
         this.worker = null;
         if (!await this.useMainThreadVision(generation, location.origin)) return;
       }
       if (generation !== this.generation) return;
-      this.worker.onmessage = ({ data }) => {
-        if (generation !== this.generation) return;
-        // Rebuild notices keep the liveness watchdog fed without releasing the
-        // busy latch: the retried frame is still in flight inside the worker.
-        if (data.type === 'progress') { this.lastActivity = performance.now(); return; }
-        if (data.type === 'delegate') { this.lastActivity = performance.now(); this.demoteCapture(generation, data.delegate); return; }
-        this.busy = false;
-        if (data.type === 'result') this.acceptResult(data.result, data.now, generation);
-        if (data.type === 'error') this.fail(new Error(data.message), 'worker_error');
-      };
-      this.worker.onerror = () => { if (generation === this.generation) this.fail(new Error('Hand tracking stopped. Start the camera again.'), 'worker_error'); };
+      this.bindWorker(generation);
       stream.getVideoTracks()[0]?.addEventListener('ended', () => {
         if (generation === this.generation) this.fail(new Error('Camera disconnected. Reconnect it, then start again.'), 'camera_disconnected');
       }, { once: true });
       this.running = true; this.starting = false; this.lastFrame = -1; this.busy = false; this.lastSent = undefined; this.lastSupervise = undefined;
+      this.receivedResult = false; this.startupRecoveryUsed = false; this.recovering = false;
       this.lastResult = performance.now(); this.lastActivity = this.lastResult; this.lastCapture = -Infinity; this.lastResponseCapture = -Infinity; this.lastFreshReceipt = this.lastResult;
       await this.listCameras(stream.getVideoTracks()[0]?.getSettings().deviceId);
       if (generation !== this.generation || !this.running) return;
@@ -149,6 +126,74 @@ export class HandController {
     } catch (error) {
       if (generation === this.generation) this.fail(error, failureCode);
       else stream?.getTracks().forEach(t => t.stop());
+    }
+  }
+
+  initializeWorker(delegate) {
+    const worker = this.worker = new Worker(new URL('./vision-worker.js', import.meta.url), { type: 'module' });
+    return new Promise((resolve, reject) => {
+      const finish = (value, error) => {
+        clearTimeout(timeout);
+        if (this.initReject === cancel) this.initReject = null;
+        if (error) reject(error); else resolve(value);
+      };
+      const cancel = error => finish(null, error);
+      this.initReject = cancel;
+      const timeout = setTimeout(() => cancel(new Error('Hand tracking took too long to load. Try again.')), 25000);
+      worker.onmessage = ({ data }) => {
+        if (worker !== this.worker) return;
+        if (data.type === 'ready') { this.delegate = data.delegate; finish(); }
+        // Completed canvas/init failures retain the WebKit compatibility path.
+        // Recovery explicitly requests CPU and must fail rather than retry GPU.
+        else if (data.type === 'main_thread_required' || data.type === 'error') {
+          finish('main_thread_required', delegate ? new Error('Hand tracking recovery failed. Start the camera again.') : null);
+        }
+      };
+      worker.onerror = () => finish('main_thread_required', delegate ? new Error('Hand tracking recovery failed. Start the camera again.') : null);
+      try { worker.postMessage({ type: 'init', base: location.origin, maxHands: this.maxHands, delegate }); }
+      catch (error) { cancel(error); }
+    });
+  }
+
+  bindWorker(generation) {
+    const worker = this.worker;
+    worker.onmessage = ({ data }) => {
+      // A terminated startup worker can have a queued reply. Camera generation
+      // alone cannot distinguish it from its replacement on the same stream.
+      if (generation !== this.generation || worker !== this.worker) return;
+      if (data.type === 'progress') { this.lastActivity = performance.now(); return; }
+      if (data.type === 'delegate') { this.lastActivity = performance.now(); this.demoteCapture(generation, data.delegate); return; }
+      if (data.type === 'result') {
+        this.busy = false; this.receivedResult = true;
+        this.acceptResult(data.result, data.now, generation);
+      }
+      if (data.type === 'error') this.fail(new Error(data.message), 'worker_error');
+    };
+    worker.onerror = () => {
+      if (generation === this.generation && worker === this.worker) this.fail(new Error('Hand tracking stopped. Start the camera again.'), 'worker_error');
+    };
+  }
+
+  async recoverStartup() {
+    const generation = this.generation;
+    this.startupRecoveryUsed = true; this.recovering = true;
+    this.resetOwner();
+    // GPU inference is synchronous: a wedged call cannot process a fallback
+    // message. Terminate it and create one fresh CPU worker, retaining camera,
+    // run and turn. Never replay the stale transferred frame.
+    this.frameReader?.cancel().catch(() => {}); this.frameReader = null;
+    this.paceToken = {}; this.captureDriver = null;
+    this.worker.terminate(); this.worker = null;
+    this.onDiagnostic?.({ recovery: 'startup_cpu' });
+    try {
+      await this.initializeWorker('CPU');
+      if (generation !== this.generation) return;
+      this.bindWorker(generation);
+      this.recovering = false; this.busy = false; this.lastSent = undefined;
+      this.lastActivity = performance.now(); this.lastSupervise = undefined; this.lastFrame = -1;
+      this.configureCapture(generation);
+    } catch (error) {
+      if (generation === this.generation) this.fail(error, 'worker_timeout');
     }
   }
 
@@ -178,6 +223,7 @@ export class HandController {
   stop(announce = true) {
     this.generation++;
     this.running = false; this.starting = false;
+    this.recovering = false;
     clearInterval(this.timer);
     this.initReject?.(new Error('Camera start cancelled.')); this.initReject = null;
     this.frameReader?.cancel().catch(() => {}); this.frameReader = null; this.captureDriver = null;
@@ -199,13 +245,21 @@ export class HandController {
       if (now - (this.lastFreshReceipt ?? this.lastResult) > CAPTURE_MAX_AGE) this.delayTracking();
       if (now - this.lastResult > OWNER_LOSS_GRACE) this.resetOwner();
     }
+    // Initialization has its own finite 25s deadline; do not queue captures or
+    // another recovery while the replacement loads.
+    if (this.recovering) return false;
     // Liveness is judged on a frame that was sent and never answered. A stalled
     // main thread (a material recompile, a tab pause) sent nothing meanwhile, so a
     // long gap between our own ticks resets the clock instead of blaming the worker.
     if (this.lastSupervise !== undefined && now - this.lastSupervise > 1000) { this.lastSent = now; this.lastActivity = now; }
     this.lastSupervise = now;
     const asked = this.lastSent ?? this.lastActivity ?? this.lastResult;
-    if (this.busy && now - asked > 7000) { this.fail(new Error('Hand tracking stopped responding. Start the camera again.'), 'worker_timeout'); return false; }
+    if (this.busy && now - asked > 7000) {
+      if (!this.receivedResult && !this.startupRecoveryUsed && this.delegate === 'GPU' && this.worker && !this.worker.local) {
+        this.recoverStartup();
+      } else this.fail(new Error('Hand tracking stopped responding. Start the camera again.'), 'worker_timeout');
+      return false;
+    }
     return true;
   }
 
@@ -217,6 +271,7 @@ export class HandController {
     if (this.busy || this.video.readyState < 2 || this.video.currentTime === this.lastFrame) return;
     this.busy = true; this.lastFrame = this.video.currentTime;
     const generation = this.generation;
+    const worker = this.worker;
     this.lastSent = now;
     if (this.worker.local) {
       this.worker.postMessage({ type: 'frame', video: this.video, now });
@@ -225,9 +280,9 @@ export class HandController {
     const width = this.captureWidth || 640;
     try {
       const bitmap = await createImageBitmap(this.video, { resizeWidth: width, resizeHeight: Math.round(width * this.video.videoHeight / this.video.videoWidth) });
-      if (!this.running || generation !== this.generation) { bitmap.close(); return; }
+      if (!this.running || generation !== this.generation || worker !== this.worker) { bitmap.close(); return; }
       this.worker.postMessage({ type: 'frame', bitmap, now }, [bitmap]);
-    } catch (error) { if (generation === this.generation) this.fail(error, 'capture_error'); }
+    } catch (error) { if (generation === this.generation && worker === this.worker) this.fail(error, 'capture_error'); }
   }
 
   paceVideoFrames(generation) {
@@ -289,7 +344,7 @@ export class HandController {
       let frame = null;
       try { ({ value: frame } = await reader.read()); } catch { /* cancelled or track ended */ }
       if (!frame) return;
-      if (!this.running || generation !== this.generation || this.busy || document.hidden) { frame.close(); continue; }
+      if (!this.running || generation !== this.generation || reader !== this.frameReader || this.busy || document.hidden) { frame.close(); continue; }
       this.busy = true; this.lastSent = performance.now();
       this.worker.postMessage({ type: 'frame', frame, now: this.lastSent }, [frame]);
     }

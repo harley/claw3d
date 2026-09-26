@@ -65,6 +65,14 @@ If a release fails, inspect the Actions run and Railway deployment before retryi
 
 ## Export, backup, restore and removal
 
+### Prospective event data (foundation only)
+
+`server/official-events.js` is an opt-in domain module, currently unused by server startup or HTTP routing. This slice does not create event tables on production, change access codes, or enable public play. Its migration adds only `official_*` tables. Legacy scores, sessions and outboxes retain their existing schema and behavior; official attempts cannot appear in legacy queries.
+
+When the later integration enables events, new event/participant/ticket/attempt/audit records have a 30-day lifetime from event creation. Access expires at that deadline. Explicit host maintenance removes expired events and their dependent official records atomically; it never removes legacy data or backups. The event host owns running the future protected maintenance operation and managing private exports/backups under their retention policy. No production purge is authorized by this code. Ticket and participant bearer codes are stored as hashes and returned once. An issuance retry returns the same ticket identity without the secret; a host can revoke/reissue an unused ticket after a lost response. A redeemed ticket requires the technical-failure recovery path instead.
+
+Disposable tests cover repeated migration, unknown-version refusal, committed-WAL backup/restore, legacy reads/writes with official tables present, and event-only expiry/removal. This establishes data compatibility for the inactive foundation. It does not establish rollback availability for a future active event service: before public enablement, retain a compatible release that can drain admitted official attempts while new admissions are disabled. Never restore an old backup over newer accepted attempts or manually downgrade/drop official tables.
+
 Host controls export all boards and interrupted runs as JSON. This export omits authentication material. Treat exports as staff data and store them privately. There is no browser import of local scores.
 
 Each production deployment creates an integrity-checked SQLite snapshot in `/data/release-backups/<commit>-<deployment>.sqlite` before opening the database. The first deployment has no database to back up. Restarts of that deployment reuse the same verified snapshot; a redeploy or rollback gets a fresh snapshot (a fresh startup snapshot is used if Railway supplies no deployment ID); a failed backup stops startup. Snapshots preserve committed WAL data and are never overwritten or automatically deleted. They contain private authentication records as well as scores; include them in the pilot's retention/deletion process and monitor volume usage. They protect application rollback, not loss of the volume itself.
