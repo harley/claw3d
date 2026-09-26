@@ -1,10 +1,11 @@
 import { createHostTickets } from './host-tickets.js';
-// Current-event host console. No scoring, technical recovery or purge actions.
+import { createHostRecovery } from './host-recovery.js';
+// Current-event host console. Server-owned recovery; no scoring or purge actions.
 const KEY = 'cloud-claw:host-event:v1';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const browserStorage = { getItem: key => globalThis.sessionStorage.getItem(key), setItem: (key, value) => globalThis.sessionStorage.setItem(key, value) };
 export function createHostEvents(root, { onUnauthorized, storage = browserStorage, fetcher = fetch } = {}) {
-  let current = null, saved = { eventId: null, pending: null }, busy = false, readable = true, ticketBusy = false;
+  let current = null, saved = { eventId: null, pending: null }, busy = false, readable = true, ticketBusy = false, recoveryBusy = false;
   root.innerHTML = `<h3>OFFICIAL EVENT</h3>
     <p id="event-state" role="status">No event selected in this tab.</p>
     <form id="event-create"><label for="event-name">Event name</label><input id="event-name" maxlength="60" required>
@@ -12,9 +13,10 @@ export function createHostEvents(root, { onUnauthorized, storage = browserStorag
     <div class="event-actions"><button id="event-refresh">REFRESH STATE</button><button id="event-open">OPEN EVENT</button>
       <button id="event-close">CLOSE EVENT</button><button id="event-retry">RETRY PENDING ACTION</button><button id="event-new">CREATE ANOTHER EVENT</button></div>
     <label id="event-close-confirm"><input id="event-close-check" type="checkbox"> Close permanently: unused tickets expire; admitted runs have 10 minutes to finish, then expire unscored.</label>
-    <p id="event-message" role="status"></p><section id="host-tickets" hidden></section>`;
+    <p id="event-message" role="status"></p><fieldset id="host-ticket-actions" class="host-workflow"><section id="host-tickets" hidden></section></fieldset><fieldset id="host-recovery-actions" class="host-workflow"><section id="host-recovery" hidden></section></fieldset>`;
   const $ = id => root.querySelector(`#${id}`);
   const tickets = createHostTickets($('host-tickets'), { onUnauthorized, storage, fetcher, onEvent: value => { current = value; }, onBusy: value => { ticketBusy = value; render(); } });
+  const recovery = createHostRecovery($('host-recovery'), { onUnauthorized, storage, fetcher, onEvent: value => { current = value; }, onBusy: value => { recoveryBusy = value; render(); } });
   function persist(next) {
     const text = JSON.stringify(next); storage.setItem(KEY, text);
     if (storage.getItem(KEY) !== text) throw new Error('Browser storage unavailable. Keep this tab for recovery.');
@@ -25,7 +27,10 @@ export function createHostEvents(root, { onUnauthorized, storage = browserStorag
     $('event-create').hidden = Boolean(saved.eventId);
     $('event-name').value = saved.pending?.payload?.name ?? $('event-name').value;
     $('event-name').disabled = !readable || busy || Boolean(saved.pending);
-    for (const button of root.querySelectorAll('button')) if (!button.closest('#host-tickets')) button.disabled = busy || ticketBusy || !readable;
+    for (const button of root.querySelectorAll('button')) if (!button.closest('.host-workflow')) button.disabled = busy || ticketBusy || recoveryBusy || !readable;
+    $('host-ticket-actions').disabled = busy || recoveryBusy || !current || current.state !== 'open';
+    $('host-recovery-actions').disabled = busy || ticketBusy || !current;
+    if (current?.state !== 'open') for (const id of ['recovery-submit', 'recovery-reissue', 'recovery-reason', 'recovery-confirm', 'recovery-reissue-confirm']) $(id).disabled = true;
     $('event-create-button').disabled ||= Boolean(saved.pending);
     $('event-refresh').hidden = !saved.eventId || Boolean(saved.pending);
     $('event-open').hidden = current?.state !== 'draft' || Boolean(saved.pending);
@@ -51,8 +56,8 @@ export function createHostEvents(root, { onUnauthorized, storage = browserStorag
     current = result.event;
   }
   async function perform(action) {
-    if (busy || ticketBusy) return;
-    tickets.suspend();
+    if (busy || ticketBusy || recoveryBusy) return;
+    tickets.suspend(); recovery.suspend();
     busy = true; $('event-message').textContent = ''; render();
     try { await action(); }
     catch (error) {
@@ -60,7 +65,7 @@ export function createHostEvents(root, { onUnauthorized, storage = browserStorag
       $('event-message').textContent = error.status === 404 ? 'Event unavailable: it may have expired or been removed, or event controls are disabled.'
         : error.status ? error.message : 'Could not confirm the action. Keep this tab and retry; do not create a replacement event.';
       if ([401, 403].includes(error.status)) { root.hidden = true; onUnauthorized(); }
-    } finally { await tickets.open(saved.pending ? null : current); busy = false; render(); }
+    } finally { await tickets.open(saved.pending ? null : current); await recovery.open(saved.pending ? null : current); busy = false; render(); }
   }
   async function sendPending() {
     const { path, payload } = saved.pending;
