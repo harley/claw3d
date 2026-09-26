@@ -175,6 +175,14 @@ Anh's report that it never seemed to enter the aiming circle is unresolved. Curr
 
 ## Shared scoring, observations and operations
 
+### Event admission foundation (not enabled)
+
+The server has a separately tested event domain in `server/official-events.js`; it is not connected to HTTP routes or production startup yet. The current staff pilot and player journey remain unchanged. Public Try mode and the event UI are subsequent delivery slices.
+
+The intended event contract is three scored turns per single-use ticket, with host-issued repeat tickets retaining an opaque participant identity and one best completed score per participant. Display names never identify participants. Events have immutable scoring rules; a closed event cannot reopen. Unused tickets expire after 24 hours or at event close. Already admitted attempts may finish within ten minutes of closure, then expire unscored. Only admitted participants and hosts can read the bounded official board. Practice scores never enter it, and no automated prize awards are introduced.
+
+Technical-failure recovery explicitly voids and replaces an unfinished attempt in one transaction. Completed results cannot be voided by this path. Old delayed submissions cannot revive a void attempt. A reloaded page can retrieve results and drain completed turns; it cannot reactivate an interrupted physical attempt. Staff observation remains necessary for official prize eligibility; ticket and score idempotency do not verify client-reported catches. Domain tests establish these storage contracts, not HTTP protection, public usability or physical-camera acceptance.
+
 The protected pilot stores names and results centrally. Names are display labels, not verified badge identities, and client-reported catches remain trusted. Each run retains its board and rules through host rotation. Completed turns enter a durable browser outbox and retry without duplicate scores; rank appears only after server acknowledgement. Reload drains completed results and abandons the unfinished physical scene. Existing local boards are never imported.
 
 The staff code grants game/leaderboard access; a separate host code protects rotation and export. Persistent SQLite storage uses one service and one mounted volume. Existing rotation preserves history, but a combined verified-backup/reset workflow is not implemented. See [OPERATIONS](OPERATIONS.md#export-backup-restore-and-removal) for backup, restore and deletion. Do not treat a proposal or test against disposable data as authorization to reset the live board.
