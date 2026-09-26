@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { isIP } from 'node:net';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile, stat, mkdir, realpath } from 'node:fs/promises';
 import { resolve, extname, sep } from 'node:path';
@@ -39,7 +40,11 @@ export async function createPilotServer(options) {
     res.setHeader('Set-Cookie', cookie('cc_session', value, 12 * 3600));
   }
   function limit(req, auth, login = false, telemetry = false) {
-    const key = login ? `login:${clientAddress(req)}` : `${telemetry ? 'playtest' : 'write'}:${auth.owner_id}`;
+    // Preserve the existing staff-pilot ingress contract; proxy migration is separate
+    // from the default-off public diagnostics routes below.
+    const forwarded = req.headers['x-real-ip'];
+    const loginIp = secure ? typeof forwarded === 'string' && isIP(forwarded) ? forwarded : 'unknown-proxy-client' : req.socket.remoteAddress;
+    const key = login ? `login:${loginIp}` : `${telemetry ? 'playtest' : 'write'}:${auth.owner_id}`;
     attempts.take(key, login ? 12 : telemetry ? 60 : 120);
   }
 

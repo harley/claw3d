@@ -72,6 +72,8 @@ export function createPlaytestStore(db, { now = Date.now, maxEvents = PLAYTEST_M
     db.prepare(`DELETE FROM ${table} WHERE rowid IN (SELECT rowid FROM ${table} ORDER BY received_at DESC,rowid DESC LIMIT -1 OFFSET ?)`).run(maxEvents);
     // Public observations use only spare capacity; never evict legacy/staff rows.
     if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='public_playtest_events'").get()) {
+      // Existing public data still expires when collection is disabled.
+      if (!publicOnly) db.prepare('DELETE FROM public_playtest_events WHERE received_at<?').run(new Date(now() - PLAYTEST_RETENTION_MS).toISOString());
       const staffCount = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='playtest_events'").get()
         ? db.prepare('SELECT COUNT(*) AS n FROM playtest_events').get().n : 0;
       db.prepare('DELETE FROM public_playtest_events WHERE rowid IN (SELECT rowid FROM public_playtest_events ORDER BY received_at DESC,rowid DESC LIMIT -1 OFFSET ?)')

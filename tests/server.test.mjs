@@ -93,11 +93,11 @@ test('protected shared runs: ownership, ordered idempotency, ties, rotation, rea
   } finally { await stop(); await rm(dir, { recursive: true, force: true }); }
 });
 
-test('explicit trusted proxy login buckets use validated client addresses and secure cookies', async () => {
+test('legacy secure ingress preserves distinct staff clients and abuse limits with diagnostics off', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cloud-claw-proxy-'));
   await writeFile(join(dir, 'index.html'), '<head></head>');
   const origin = 'https://pilot.example';
-  const app = await createPilotServer({ filename: ':memory:', origin, staffCode, hostCode, dist: dir, secure: true, trustedProxyPeers: ['127.0.0.1'] });
+  const app = await createPilotServer({ filename: ':memory:', origin, staffCode, hostCode, dist: dir, secure: true });
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
   const login = (ip, code = 'wrong', xff = '192.0.2.99') => fetch(`http://127.0.0.1:${app.server.address().port}/api/login`, {
     method: 'POST', headers: { origin, 'content-type': 'application/json', 'x-real-ip': ip, 'x-forwarded-for': xff }, body: JSON.stringify({ code }),
@@ -105,6 +105,7 @@ test('explicit trusted proxy login buckets use validated client addresses and se
   try {
     for (let i = 0; i < 12; i++) assert.equal((await login('192.0.2.1')).status, 401);
     assert.equal((await login('192.0.2.1', staffCode, '198.51.100.1')).status, 429);
+    for (let i = 3; i <= 21; i++) assert.equal((await login(`192.0.2.${i}`, staffCode)).status, 200, 'distinct legitimate clients must not share the proxy peer budget');
     const success = await login('192.0.2.2', staffCode); assert.equal(success.status, 200);
     assert.ok(success.headers.getSetCookie().every(cookie => /HttpOnly/.test(cookie) && /SameSite=Strict/.test(cookie) && /; Secure/.test(cookie)));
     for (let i = 0; i < 12; i++) await login('not-an-ip-' + i);

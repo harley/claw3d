@@ -74,6 +74,10 @@ test('staged HTTP diagnostics preserve staff/host boundaries, body limits, retry
     await stop(); await start(true);
     assert.equal((await request('/api/public/playtest', valid, cookie)).status, 401, 'ephemeral diagnostics credentials expire at restart');
     assert.equal(JSON.parse((await request('/api/host/public-playtest', undefined, staffCookie)).text).summary.events, 2);
+    app.database.db.prepare('UPDATE public_playtest_events SET received_at=?').run(new Date(Date.now() - 31 * 86400_000).toISOString());
+    await stop(); await start(false);
+    assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM public_playtest_events').get().n, 0, 'disabled startup expires existing public observations');
+    assert.equal((await request('/api/host/export', undefined, staffCookie)).status, 200);
   } finally { if (app?.server.listening) await stop(); await rm(dir, { recursive: true, force: true }); }
 });
 
@@ -158,5 +162,21 @@ test('combined observation cap evicts public rows first, including when staff fi
     assert.equal(count('playtest_events'), 100_000); assert.equal(count('public_playtest_events'), 0);
     publicStore.ingest(batch());
     assert.equal(count('playtest_events'), 100_000); assert.equal(count('public_playtest_events'), 0);
+  } finally { database.close(); }
+});
+
+
+test('staff maintenance expires an existing public table with collection off, without creating one on fresh startup', () => {
+  const database = openDatabase(':memory:'); let time = Date.now();
+  try {
+    const staff = createPlaytestStore(database.db, { now: () => time });
+    assert.equal(database.db.prepare("SELECT 1 FROM sqlite_master WHERE name='public_playtest_events'").get(), undefined);
+    const publicStore = createPlaytestStore(database.db, { now: () => time, publicOnly: true });
+    publicStore.ingest(batch());
+    time += 31 * 86400_000;
+    staff.ingest(batch());
+    staff.prune(); // Same maintenance entry used by the server with collection disabled.
+    assert.equal(database.db.prepare('SELECT COUNT(*) AS n FROM public_playtest_events').get().n, 0);
+    assert.equal(staff.read().summary.events, 1);
   } finally { database.close(); }
 });
