@@ -9,7 +9,7 @@ function scenario(duration) {
   let now = 0, cue = '1', phase = 'idle', nextFrame, drops = 0;
   const record = runInNewContext(`(${recordStartCue.toString()})()`, {
     performance: { now: () => now },
-    document: { getElementById: () => ({ textContent: cue }) },
+    document: { getElementById: () => ({ textContent: cue, dataset: { phase } }) },
     window: {
       __littleCloud: { snapshot: () => ({ phase, event: { remaining: phase === 'idle' ? 15 : 14.99 } }) },
       testCamera: { clench: () => { drops++; return false; } },
@@ -48,13 +48,17 @@ for (const duration of [100, 900]) {
 }
 
 // A complete observable count-in, with Node-side reads intentionally delayed.
-function countIn({ digits = [1000, 1000, 1000], round = 700, omit = null } = {}) {
-  let now = 1000, cue = 'ROUND 1', phase = 'idle', nextFrame;
+function countIn({ digits = [1000, 1000, 1000], round = 700, omit = null, snapshotDelay = 0 } = {}) {
+  let now = 1000, cue = 'ROUND 1', phase = 'idle', nextFrame, snapshots = 0;
   const record = runInNewContext(`(${recordStartCue.toString()})()`, {
     performance: { now: () => now },
-    document: { getElementById: () => ({ textContent: cue }) },
+    document: { getElementById: () => ({ textContent: cue, dataset: { phase } }) },
     window: {
-      __littleCloud: { snapshot: () => ({ phase, event: { turn: phase === 'idle' ? 0 : 1, remaining: phase === 'idle' ? 15 : 14.99 } }) },
+      __littleCloud: { snapshot: () => {
+        snapshots++;
+        if (cue === '2') now += snapshotDelay;
+        return { phase, event: { turn: phase === 'idle' ? 0 : 1, remaining: phase === 'idle' ? 15 : 14.99 } };
+      } },
       testCamera: { clench: () => false },
     },
     requestAnimationFrame: callback => { nextFrame = callback; return 1; },
@@ -66,6 +70,7 @@ function countIn({ digits = [1000, 1000, 1000], round = 700, omit = null } = {})
   // The old fixture reads performance.now in a separate RPC after seeing 3.
   now += 250;
   const delayedThreeAt = now;
+  nextFrame(); // No new cue: do not build another scene snapshot.
   let transitionAt = threeAt;
   for (const [index, nextCue] of ['2', '1', 'START!'].entries()) {
     transitionAt += digits[index]; now = transitionAt; cue = nextCue;
@@ -73,8 +78,20 @@ function countIn({ digits = [1000, 1000, 1000], round = 700, omit = null } = {})
   }
   now += 300; cue = 'AIM'; phase = 'aim'; nextFrame();
   now += 500; // Even late reads retain preparation/first-aim boundary state.
-  return { record: JSON.parse(JSON.stringify(record)), delayedThreeAt };
+  return { record: JSON.parse(JSON.stringify(record)), delayedThreeAt, snapshots };
 }
+
+test('snapshot work cannot shift a captured cue boundary or run on unchanged frames', () => {
+  const { record, snapshots } = countIn({ snapshotDelay: 400 });
+  assertPreparationTiming(record);
+  assertStartCueDuration(record);
+  assert.equal(record.cues[2].at - record.cues[1].at, 1000);
+  assert.equal(record.diagnostics.maxSnapshotMs, 400);
+  assert.equal(snapshots, 6, 'five cue boundaries plus the first aim state');
+  assert.equal(record.diagnostics.snapshots, snapshots);
+  assert.equal(record.aim.state.phase, 'aim');
+  assert.equal(record.start.dropAccepted, false);
+});
 
 test('every count-in boundary survives a delayed digit RPC and late result read', () => {
   const { record, delayedThreeAt } = countIn();
