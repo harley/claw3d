@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createPilotServer } from '../server/index.js';
-import { createPublicDiagnostics } from '../server/public-diagnostics.js';
+import { createPublicDiagnostics, PUBLIC_BUDGETS } from '../server/public-diagnostics.js';
 import { createPlaytestStore } from '../server/playtest.js';
 import { openDatabase } from '../server/database.js';
 
@@ -131,6 +131,22 @@ test('global budgets hold across address/cookie resets through a full session li
       for (let i = 0; i < 200; i++) assert.equal((await f.call('session', `ip:${i}`)).status, 200);
     }
     assert.equal(f.database.db.prepare('SELECT COUNT(*) AS n FROM owners').get().n, 0);
+  } finally { f.database.close(); }
+});
+
+test('one IP already denied by its limit cannot consume other IPs global allowance', async () => {
+  const f = fixture();
+  try {
+    for (let i = 0; i < PUBLIC_BUDGETS.issuanceGlobal + 10; i++) {
+      assert.equal((await f.call('session', 'flood')).status, i < PUBLIC_BUDGETS.issuanceIp ? 200 : 429);
+    }
+    const other = await f.call('session', 'other');
+    assert.equal(other.status, 200, 'another IP can still bootstrap after denied issuance flood');
+    for (let i = 0; i < PUBLIC_BUDGETS.telemetryGlobal + 10; i++) {
+      assert.equal((await f.call('playtest', 'flood', undefined, batch())).status, i < PUBLIC_BUDGETS.telemetryIp ? 401 : 429);
+    }
+    assert.equal((await f.call('playtest', 'other', other.cookie, batch())).status, 200,
+      'another IP can still upload after denied unauthenticated telemetry flood');
   } finally { f.database.close(); }
 });
 
