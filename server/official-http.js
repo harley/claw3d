@@ -141,17 +141,27 @@ export function createOfficialHttp({ db, body, json, cookies, cookie, limit, adm
       if (run) {
         const operation = run[2];
         only(req, !operation || ['best', 'session', 'board'].includes(operation) ? 'GET' : 'POST');
+        if (operation === 'logout') {
+          // A missing cookie is not retirement proof. Only this read-only,
+          // nonce-bound acknowledgement can recover a committed lost response.
+          admissionBudget.take(`logout-ip:${clientAddress(req)}`, 60); admissionBudget.take('logout-global', 600);
+          const value = await input(req, ['nonce']);
+          const retired = db.prepare(`SELECT s.token,s.generation,r.nonce_hash,r.owner_id FROM official_run_sessions s
+            JOIN official_runs r ON r.id=s.run_id WHERE s.run_id=?`).get(run[1]);
+          const acknowledged = retired?.owner_id.startsWith('public:') && retired.nonce_hash === hash(value.nonce) && retired.token === null && retired.generation > 0;
+          if (!acknowledged) {
+            const s = requireSession(req, run[1], true);
+            if (hash(value.nonce) !== s.nonce_hash) fail(409, 'Attempt belongs to another page.');
+            const current = events.getRun({ ownerId: s.owner_id }, run[1]);
+            if (!['complete', 'void', 'expired'].includes(current.status)) fail(409, 'Finish this attempt before changing players.');
+            db.prepare('UPDATE official_run_sessions SET token=NULL,generation=generation+1 WHERE run_id=?').run(run[1]);
+          }
+          res.setHeader('Set-Cookie', cookie(`cc_official_${run[1]}`, '', 0, '/api/official'));
+          json(res, 200, { retired: true, runId: run[1] }); return;
+        }
         const s = requireSession(req, run[1], publicScope), p = { ownerId: s.owner_id };
         let data;
-        if (operation === 'logout') {
-          const value = await input(req, ['nonce']);
-          if (hash(value.nonce) !== s.nonce_hash) fail(409, 'Attempt belongs to another page.');
-          const current = events.getRun(p, run[1]);
-          if (!['complete', 'void', 'expired'].includes(current.status)) fail(409, 'Finish this attempt before changing players.');
-          db.prepare('UPDATE official_run_sessions SET token=NULL,generation=generation+1 WHERE run_id=?').run(run[1]);
-          res.setHeader('Set-Cookie', cookie(`cc_official_${run[1]}`, '', 0, '/api/official'));
-          data = { ok: true };
-        } else if (!operation || operation === 'session') data = events.getRun(p, run[1]);
+        if (!operation || operation === 'session') data = events.getRun(p, run[1]);
         else if (operation === 'board') data = events.board(p, s.event_id);
         else if (operation === 'best') data = events.personalBest(p, run[1]);
         else if (operation === 'activate') data = events.activate(p, { ...await input(req, ['nonce']), runId: run[1] });

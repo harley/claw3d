@@ -797,7 +797,7 @@ test('public admission is anonymous, exact-run scoped, non-overwriting and retir
   const bCookie = c.jar.get(`cc_official_${b.data.id}`);
   applyCookies(c, delayedRedeem); applyCookies(c, delayedLogout);
   assert.equal(c.jar.get(`cc_official_${b.data.id}`), bCookie, 'late A responses cannot change B');
-  assert.equal((await c.request(publicPath(a.run.id, 'logout'), { nonce: a.input.nonce })).status, 401);
+  assert.deepEqual((await c.request(publicPath(a.run.id, 'logout'), { nonce: a.input.nonce })).data, { retired: true, runId: a.run.id });
   assert.equal((await c.request(publicPath(b.data.id))).data.id, b.data.id);
   assert.equal((await c.request('/api/official/public/redeem', a.input)).status, 409);
   f.app.database.db.prepare('UPDATE official_runs SET accepted_at=? WHERE id=?').run(Date.now() - 12 * 3600_000 - 1, a.run.id);
@@ -985,4 +985,50 @@ test('requests already over a canonical peer budget cannot exhaust another peer 
     assert.equal(response.status, i < 60 ? 400 : 429);
   }
   assert.equal((await b.request('/api/official/public/redeem', {}, { headers: { 'x-real-ip': '192.0.2.11' } })).status, 400, 'B reaches input validation after A has been limited');
+});
+
+
+test('public handoff keeps its journal when a cookie disappears before logout, then requires exact retirement proof', async t => {
+  const p = await publicPlayer(t), ticket = await p.s.ticket(); await p.flow.redeem(ticket.code);
+  const intent = p.flow.state().intent, input = { code: ticket.code, requestKey: intent.requestKey, nonce: intent.nonce };
+  const run = await p.flow.activate();
+  await p.flow.queue({ ...run, turns: [1, 2, 3].map(turn => ({ turn, prizeId: null })) });
+  const set = p.local.setItem, journal = 'cloud-claw:official-player:v1:handoff', cookie = `cc_official_${run.id}`;
+  p.local.setItem = (name, value) => {
+    set(name, value);
+    if (name === journal && JSON.parse(value).phase === 'logout') p.c.jar.delete(cookie);
+  };
+  await assert.rejects(p.flow.handoff(), /unavailable/);
+  assert.equal(JSON.parse(p.local.getItem(journal)).phase, 'logout');
+  assert.equal(p.local.getItem(`${journal}:completed:${intent.requestKey}`), null);
+  assert.equal(p.f.app.database.db.prepare('SELECT generation FROM official_run_sessions WHERE run_id=?').get(run.id).generation, 0);
+  // The unretired grant can still be recovered with the original ticket. This
+  // is precisely why a generic 401 must not claim that handoff succeeded.
+  assert.equal((await p.c.request('/api/official/public/redeem', input)).status, 200);
+  p.local.setItem = set;
+  let lose = true;
+  p.hook = async path => { if (path.endsWith('/logout') && lose) { lose = false; throw Error('response lost after server retirement'); } };
+  await assert.rejects(p.flow.handoff(), /unavailable/);
+  assert.equal(p.f.app.database.db.prepare('SELECT generation FROM official_run_sessions WHERE run_id=?').get(run.id).generation, 1);
+  assert.equal(p.c.jar.has(cookie), false);
+  assert.equal((await p.c.request(publicPath(run.id, 'logout'), { nonce: key() })).status, 401);
+  assert.equal((await p.c.request(publicPath(key(), 'logout'), { nonce: input.nonce })).status, 401);
+  assert.equal((await p.c.request(publicPath(run.id, 'logout'), { nonce: input.nonce }, { headers: { origin: 'https://wrong.example' } })).status, 403);
+  assert.equal((await p.c.request(publicPath(run.id))).status, 401, 'nonce retirement proof grants no result read access');
+  assert.equal((await p.c.request('/api/official/public/redeem', input)).status, 409);
+  const recovered = p.client(storage()); await recovered.initialize(); await recovered.handoff();
+  assert.equal(p.local.getItem(journal), null);
+  assert.equal(p.f.app.database.db.prepare('SELECT generation FROM official_run_sessions WHERE run_id=?').get(run.id).generation, 1, 'reconciliation is read-only');
+});
+test('public handoff rejects missing or mismatched successful retirement receipts', async t => {
+  const p = await publicPlayer(t); await p.flow.redeem((await p.s.ticket()).code); const run = await p.flow.activate();
+  await p.flow.queue({ ...run, turns: [1, 2, 3].map(turn => ({ turn, prizeId: null })) });
+  for (const data of [{ ok: true }, { retired: true, runId: key() }]) {
+    p.hook = async (path, response) => { if (path.endsWith('/logout')) response.data = data; };
+    await assert.rejects(p.flow.handoff(), /retirement is unconfirmed/);
+    assert.ok(p.local.getItem('cloud-claw:official-player:v1:handoff'));
+  }
+  p.hook = async () => {};
+  await p.flow.handoff();
+  assert.equal(p.local.getItem('cloud-claw:official-player:v1:handoff'), null);
 });

@@ -235,8 +235,13 @@ export function createOfficialPlayer({ storage = browserStorage('localStorage'),
           if (admission.list().some(row => row.requestKey === handoffPhase.key)) await admission.acknowledge(handoffPhase.key);
           savePhase({ ...handoffPhase, phase: 'logout' });
         }
-        for (const path of publicScope ? ['/api/official/logout'] : ['/api/official/logout', '/api/logout']) {
-          try { await request(path, publicScope ? { nonce: handoffPhase.nonce } : {}); } catch (failure) { if (failure.status !== 401) throw failure; }
+        if (publicScope) {
+          const retired = await request('/api/official/logout', { nonce: handoffPhase.nonce });
+          if (retired?.retired !== true || retired.runId !== handoffPhase.runId) throw new Error('Attempt retirement is unconfirmed. Keep this page and retry.');
+        } else {
+          for (const path of ['/api/official/logout', '/api/logout']) {
+            try { await request(path, {}); } catch (failure) { if (failure.status !== 401) throw failure; }
+          }
         }
         if (publicScope) saveCompletion();
         if (!publicScope || tabStorage.getItem(SELECTED) === handoffPhase.key) remove(tabStorage, SELECTED);
