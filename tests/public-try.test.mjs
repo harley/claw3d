@@ -66,3 +66,13 @@ test('disabled official API cannot advertise host event controls', async t => {
   const cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
   assert.match(await (await request('/staff', { cookie })).text(), /__OFFICIAL_EVENTS__=false/);
 });
+
+// A worker uses the policy on its own script response, not the document's.
+test('same-origin connection policy covers public entry, worker assets and staff gate', async t => {
+  const { request } = await fixture(t, true);
+  for (const path of ['/', '/try', '/staff', '/assets/game.js', '/vision/wasm/runtime.wasm', '/healthz']) {
+    const response = await request(path);
+    assert.equal(response.status, 200, path);
+    assert.equal(response.headers.get('content-security-policy'), "connect-src 'self'", path);
+  }
+});

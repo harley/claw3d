@@ -93,8 +93,8 @@ try {
  await page.route('**/models/hands/*.glb', route => route.abort());
  await page.goto('http://127.0.0.1:4196/?setup=manual&controls=dual');
  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
- await page.waitForFunction(() => !document.getElementById('hand-art-status').hidden);
- assert.equal(await page.locator('#hand-art-status').textContent(), 'One or more 3D hand models failed to load. Camera tracking and game controls remain available.');
+ await page.waitForFunction(() => document.getElementById('hand-art-status').textContent.includes('Reload to retry'));
+ assert.equal(await page.locator('#hand-art-status').textContent(), '3D hands are unavailable. Camera tracking and game controls remain available. Reload to retry the artwork.');
  assert.equal(await page.locator('#error').isVisible(), false, 'missing hand artwork does not block the game renderer');
  await page.locator('#camera-open').click();
  assert.equal(await page.locator('#hand-art-status').isVisible(), true, 'camera setup explains the missing 3D artwork');

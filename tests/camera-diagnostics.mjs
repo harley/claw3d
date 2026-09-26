@@ -11,12 +11,17 @@ export async function cameraDiagnostics(page, { stallGPU = false } = {}) {
     // arriving at the page. A stuck GPU call cannot send the exit record.
     const traced = source.replaceAll('recognizer.recognizeForVideo(image, data.now)', 'traceInference(image, data.now)');
     await route.fulfill({ response, body: traced + `
-let traceCount = 0;
+let traceCount = 0, qualityStall = false;
+self.addEventListener('message', ({ data }) => { if (data.type === 'test-quality-stall') qualityStall = true; });
 function traceInference(image, now) {
-  const record = traceCount++ < 4;
+  const record = traceCount++ < 4 || qualityStall;
   const log = stage => console.debug('CAMERA_WORKER ' + JSON.stringify({ stage, now, delegate, at: performance.now() }));
   if (record) log('inference-enter');
-  if (${stallGPU} && delegate === 'GPU') { while (true) {} }
+  if (delegate === 'GPU' && (${JSON.stringify(stallGPU)} === true || qualityStall)) { while (true) {} }
+  // The post-quality fault needs a responsive worker before the fault, even
+  // on runners whose GPU stalls on its very first inference. Only this test
+  // fixture supplies empty pre-fault results; replacement CPU inference is real.
+  if (${JSON.stringify(stallGPU)} === 'after-quality' && delegate === 'GPU') return { landmarks: [], handedness: [], gestures: [] };
   try { const result = recognizer.recognizeForVideo(image, now); if (record) log('inference-return'); return result; }
   catch (error) { if (record) log('inference-throw'); throw error; }
 }
@@ -31,7 +36,7 @@ function traceInference(image, now) {
     const NativeWorker = window.Worker;
     window.Worker = class extends NativeWorker {
       constructor(...args) {
-        super(...args); record('worker-create');
+        super(...args); record('worker-create'); window.cameraTestWorker = this;
         let replies = 0;
         this.addEventListener('message', ({ data }) => {
           if (data.type !== 'result' || replies++ < 4) record('worker-receive', { type: data.type, capturedAt: data.now, delegate: data.delegate });
@@ -56,6 +61,13 @@ function traceInference(image, now) {
 export async function traceController(page) {
   await page.evaluate(async () => {
     const { HandController } = await import('/src/vision.js');
+    const configure = HandController.prototype.configureCapture;
+    HandController.prototype.configureCapture = function (...args) {
+      window.cameraControllerState = () => ({ busy: this.busy, delegate: this.delegate,
+        receivedResult: this.receivedResult, lastActivity: this.lastActivity, lastResponseCapture: this.lastResponseCapture,
+        frameAge: this.busy ? performance.now() - this.lastSent : null });
+      return configure.apply(this, args);
+    };
     for (const method of ['fail', 'stop']) {
       const original = HandController.prototype[method];
       HandController.prototype[method] = function (...args) {

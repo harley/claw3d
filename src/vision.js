@@ -103,7 +103,7 @@ export class HandController {
         if (generation === this.generation) this.fail(new Error('Camera disconnected. Reconnect it, then start again.'), 'camera_disconnected');
       }, { once: true });
       this.running = true; this.starting = false; this.lastFrame = -1; this.busy = false; this.lastSent = undefined; this.lastSupervise = undefined;
-      this.receivedResult = false; this.startupRecoveryUsed = false; this.recovering = false;
+      this.receivedResult = false; this.workerRecoveryUsed = false; this.recovering = false;
       this.lastResult = performance.now(); this.lastActivity = this.lastResult; this.lastCapture = -Infinity; this.lastResponseCapture = -Infinity; this.lastFreshReceipt = this.lastResult;
       await this.listCameras(stream.getVideoTracks()[0]?.getSettings().deviceId);
       if (generation !== this.generation || !this.running) return;
@@ -158,7 +158,7 @@ export class HandController {
   bindWorker(generation) {
     const worker = this.worker;
     worker.onmessage = ({ data }) => {
-      // A terminated startup worker can have a queued reply. Camera generation
+      // A terminated GPU worker can have a queued reply. Camera generation
       // alone cannot distinguish it from its replacement on the same stream.
       if (generation !== this.generation || worker !== this.worker) return;
       if (data.type === 'progress') { this.lastActivity = performance.now(); return; }
@@ -174,9 +174,9 @@ export class HandController {
     };
   }
 
-  async recoverStartup() {
+  async recoverWorker() {
     const generation = this.generation;
-    this.startupRecoveryUsed = true; this.recovering = true;
+    this.workerRecoveryUsed = true; this.recovering = true;
     this.resetOwner();
     // GPU inference is synchronous: a wedged call cannot process a fallback
     // message. Terminate it and create one fresh CPU worker, retaining camera,
@@ -184,7 +184,7 @@ export class HandController {
     this.frameReader?.cancel().catch(() => {}); this.frameReader = null;
     this.paceToken = {}; this.captureDriver = null;
     this.worker.terminate(); this.worker = null;
-    this.onDiagnostic?.({ recovery: 'startup_cpu' });
+    this.onDiagnostic?.({ recovery: this.receivedResult ? 'worker_cpu' : 'startup_cpu' });
     try {
       await this.initializeWorker('CPU');
       if (generation !== this.generation) return;
@@ -255,8 +255,8 @@ export class HandController {
     this.lastSupervise = now;
     const asked = this.lastSent ?? this.lastActivity ?? this.lastResult;
     if (this.busy && now - asked > 7000) {
-      if (!this.receivedResult && !this.startupRecoveryUsed && this.delegate === 'GPU' && this.worker && !this.worker.local) {
-        this.recoverStartup();
+      if (!this.workerRecoveryUsed && this.delegate === 'GPU' && this.worker && !this.worker.local) {
+        this.recoverWorker();
       } else this.fail(new Error('Hand tracking stopped responding. Start the camera again.'), 'worker_timeout');
       return false;
     }
