@@ -1,5 +1,5 @@
 // Bounded lifecycle metadata only: never copy images, landmarks or results.
-export async function cameraDiagnostics(page) {
+export async function cameraDiagnostics(page, { stallGPU = false } = {}) {
   const workerEvents = [];
   page.on('console', message => {
     if (message.text().startsWith('CAMERA_WORKER ') && workerEvents.length < 64) workerEvents.push(message.text());
@@ -16,6 +16,7 @@ function traceInference(image, now) {
   const record = traceCount++ < 4;
   const log = stage => console.debug('CAMERA_WORKER ' + JSON.stringify({ stage, now, delegate, at: performance.now() }));
   if (record) log('inference-enter');
+  if (${stallGPU} && delegate === 'GPU') { while (true) {} }
   try { const result = recognizer.recognizeForVideo(image, now); if (record) log('inference-return'); return result; }
   catch (error) { if (record) log('inference-throw'); throw error; }
 }
