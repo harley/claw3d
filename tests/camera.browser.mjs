@@ -2,13 +2,17 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { browserOptions } from '../scripts/browser-options.mjs';
+import { cameraDiagnostics, traceController } from './camera-diagnostics.mjs';
 const browser = await chromium.launch({ ...browserOptions, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
+let reportDiagnostics = async () => {};
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, permissions: ['camera'] });
   const page = await context.newPage(), errors = [];
+  reportDiagnostics = await cameraDiagnostics(page);
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(() => { window.mediaCalls = 0; const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); navigator.mediaDevices.getUserMedia = options => { window.mediaCalls++; return original(options); }; });
   await page.goto('http://127.0.0.1:4196/?setup=manual'); await page.waitForFunction(() => window.__littleCloud);
+  await traceController(page);
   await page.evaluate(async () => {
     const { ArcadeScene } = await import('/src/arcade-scene.js');
     const draw = ArcadeScene.prototype.draw;
@@ -82,6 +86,7 @@ try {
   await page.screenshot({ path: '.screenshots/camera-only.png' });
   assert.deepEqual(errors, []);
   console.log('PASS opt-in real worker/model with synthetic camera; camera-only input; hand-loss timer hold; blur does not latch pause; separate camera setup; shutdown');
+  await reportDiagnostics(); reportDiagnostics = async () => {};
   await context.close();
   const denied = await browser.newContext(); const dp = await denied.newPage();
   await dp.addInitScript(() => { const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); let first = true; navigator.mediaDevices.getUserMedia = async options => { if (first) { first = false; throw new DOMException('Denied', 'NotAllowedError'); } return original(options); }; });
@@ -114,4 +119,4 @@ try {
   assert.equal(await fp.locator('#camera-preview').isVisible(), true);
   console.log(`PASS worker-canvas fallback starts the real model on ${fallbackCamera.diagnostic.delegate} with timer-paced video input`);
   await fallback.close();
-} finally { await browser.close(); }
+} finally { await reportDiagnostics(); await browser.close(); }
