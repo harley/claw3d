@@ -1,3 +1,4 @@
+import { setHidden } from './arcade-hud.js';
 import { menuScreenPoint } from './steering.js';
 // Only player-facing actions participate. Operator controls never accept gestures.
 const actions = {
@@ -20,10 +21,10 @@ export function createHandMenu({ leftHand = false } = {}) {
   let mode = '', hovered = null, locked = null, holding = false;
   const clearCursor = () => {
     hovered?.classList.remove('hand-hover'); hovered = locked = null; holding = false;
-    cursor.hidden = true; cursor.classList.remove('targeting', 'demonstrating', 'clenching');
+    setHidden(cursor, true); cursor.classList.remove('targeting', 'demonstrating', 'clenching');
     cursor.style.setProperty('--hold', 0);
   };
-  const clear = () => { clearCursor(); guide.hidden = true; };
+  const clear = () => { clearCursor(); setHidden(guide, true); };
   function eligible(id) {
     const button = document.getElementById(id);
     return button && !button.disabled && button.getClientRects().length && !button.hidden ? button : null;
@@ -36,13 +37,13 @@ export function createHandMenu({ leftHand = false } = {}) {
       if (guide.parentElement !== parent) parent.prepend(guide);
       // Use the adapter's existing freshness/loss state; never infer hand evidence
       // from this illustration or add a second recognition timer.
-      guide.hidden = !actions[mode] || !showGuide || !['ready', 'calibrating', 'lost', 'tracking', 'clenching'].includes(feedback.kind);
+      setHidden(guide, !actions[mode] || !showGuide || !['ready', 'calibrating', 'lost', 'tracking', 'clenching'].includes(feedback.kind));
       guide.classList.toggle('tracked', Boolean(valid));
       guide.setAttribute('aria-hidden', String(guide.hidden || Boolean(valid)));
       if (!valid) { clearCursor(); return; }
       if (cursor.parentElement !== parent) parent.append(cursor);
       if (hovered && eligible(hovered.id) !== hovered) clearCursor();
-      cursor.hidden = false;
+      setHidden(cursor, false);
       const clenching = feedback.kind === 'clenching' && feedback.progress > 0;
       if (clenching && !holding) locked = hovered;
       if (!clenching) {

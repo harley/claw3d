@@ -8,11 +8,12 @@ export async function assertMenuGuidance(browser) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   try {
     const html = (await readFile(new URL('../index.html', import.meta.url), 'utf8'))
-      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, '')
       .replace('</head>', '<link rel="stylesheet" href="/src/arcade.css"></head>');
     await page.route('**/menu-guidance-fixture', route => route.fulfill({ contentType: 'text/html', body: html }));
+    await page.route('**/src/arcade.js*', route => route.fulfill({ contentType: 'application/javascript', body: '' }));
     await page.goto('http://127.0.0.1:4196/menu-guidance-fixture');
     await page.evaluate(async () => {
+      clearTimeout(window.__arcadeBootTimer);
       const { createHandMenu } = await import('/src/hand-menu.js');
       document.getElementById('loading').hidden = true;
       document.getElementById('player-form').addEventListener('submit', e => e.preventDefault());
