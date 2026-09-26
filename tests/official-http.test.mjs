@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { createOfficialSessionApi } from '../src/official-session-api.js';
 import { createPilotServer } from '../server/index.js';
 import { CLOSE_GRACE_MS, EVENT_RETENTION_MS } from '../server/official-events.js';
 
@@ -259,4 +260,169 @@ test('official per-run rate limit cannot be reset with forwarded headers or cons
   for (let i = 0; i < 119; i++) assert.equal((await a.official.request('/api/official/session')).status, 200);
   assert.equal((await a.official.request('/api/official/session', undefined, { headers: { 'x-real-ip': '198.51.100.2', 'x-forwarded-for': '198.51.100.3' } })).status, 429);
   assert.equal((await s.host.request(`/api/host/events/${s.eventId}/export`)).status, 200);
+});
+
+// The existing HTTP tests exercise server policy. These exercise the browser
+// adapter against that same boundary: a lost acknowledgement must not create a
+// duplicate score, and reload/credential changes must not restart a scene.
+function storage() {
+  const data = new Map();
+  return { get length() { return data.size; }, key: i => [...data.keys()][i],
+    getItem: k => data.get(k) ?? null, setItem: (k, v) => data.set(k, v), removeItem: k => data.delete(k) };
+}
+async function outbox(t) {
+  const f = await fixture(t), s = await f.setup(), issued = await s.ticket();
+  const input = { code: issued.code, requestKey: key(), nonce: key() };
+  const admitted = await s.staff.request('/api/official/redeem', input);
+  assert.equal(admitted.status, 200);
+  const c = f.client({ cc_official: s.staff.jar.get('cc_official') }), local = storage(), tab = storage(), calls = [], notices = [];
+  let offline = false, lose = '', afterResponse = async () => {};
+  const fetcher = async (url, options) => {
+    calls.push(url);
+    if (offline) throw Error('offline');
+    const r = await c.request(url, options.body ? JSON.parse(options.body) : undefined);
+    await afterResponse(url, r);
+    if (lose && url.endsWith(lose)) { lose = ''; throw Error('response lost after commit'); }
+    return Response.json(r.data, { status: r.status });
+  };
+  const client = (tabStorage = tab) => createOfficialSessionApi({ storage: local, tabStorage, fetcher, onChange: n => notices.push(n) });
+  return { f, s, c, local, tab, calls, notices, input, run: admitted.data, client,
+    set offline(value) { offline = value; }, set lose(value) { lose = value; }, set afterResponse(value) { afterResponse = value; } };
+}
+
+test('official client drains exactly three turns after acknowledgement loss and reload without staff access', async t => {
+  const o = await outbox(t), api = o.client();
+  o.lose = '/activate';
+  await assert.rejects(api.activate(o.run, o.input.nonce), /response lost/);
+  assert.throws(() => api.queue({ ...o.run, turns: [{ turn: 1, prizeId: null }] }), /does not own/);
+  const run = await api.activate(o.run, o.input.nonce);
+  await assert.rejects(api.activate(o.run, o.input.nonce), /cannot restart/);
+  o.lose = '/turns';
+  run.turns.push({ turn: 1, prizeId: 'butter', remainingMs: 7500, score: 999999 });
+  await api.queue(run);
+  assert.equal(api.state().attempts[0].pending, 1);
+  assert.equal(o.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_turns').get().n, 1);
+  o.offline = true;
+  run.turns.push({ turn: 2, prizeId: null }, { turn: 3, prizeId: 'sprout' });
+  await api.queue(run);
+  const beforeReload = o.calls.length;
+  o.offline = false;
+  const reloaded = o.client(); await reloaded.initialize();
+  assert.equal(o.calls.slice(beforeReload).some(url => url.endsWith('/activate')), false);
+  assert.equal(o.local.length, 0); assert.equal(o.tab.length, 0);
+  assert.equal(o.notices.find(n => n.saved)?.saved.total, 325);
+  assert.equal(o.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_turns').get().n, 3);
+  assert.equal(o.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM runs').get().n, 0);
+  assert.ok(o.calls.every(url => url.startsWith('/api/official/')));
+});
+
+test('official reload interrupts only its tab after draining and cannot reactivate', async t => {
+  const o = await outbox(t), api = o.client();
+  const run = await api.activate(o.run, o.input.nonce);
+  await o.client(storage()).initialize();
+  assert.equal((await o.c.request('/api/official/session')).data.status, 'active');
+  o.offline = true; run.turns.push({ turn: 1, prizeId: null }); await api.queue(run);
+  const reloaded = o.client(); await reloaded.initialize();
+  await assert.rejects(reloaded.activate(o.run, o.input.nonce), /cannot restart/);
+  assert.throws(() => reloaded.acknowledge(run.id), /must sync/);
+  o.offline = false; const start = o.calls.length; await reloaded.flush();
+  assert.deepEqual(o.calls.slice(start).map(url => url.split('/').at(-1)), ['session', 'turns', 'interrupt']);
+  assert.equal((await o.c.request('/api/official/session')).data.status, 'interrupted');
+  assert.equal(reloaded.state().attempts[0].pending, 0);
+  reloaded.acknowledge(run.id); assert.equal(o.local.length, 0);
+});
+
+test('official client keeps void, expired and expired-capability outboxes for review without late scoring', async t => {
+  for (const condition of ['void', 'expired', 'capability']) {
+    const o = await outbox(t), api = o.client(), run = await api.activate(o.run, o.input.nonce);
+    o.offline = true; run.turns.push({ turn: 1, prizeId: 'sprout' }); await api.queue(run); o.offline = false;
+    if (condition === 'void') {
+      assert.equal((await o.s.host.request(`/api/host/event-runs/${run.id}/recover`, { reason: 'camera_failure', requestKey: key() })).status, 200);
+    } else if (condition === 'expired') {
+      o.f.app.database.db.prepare("UPDATE official_events SET state='closed',closed_at=? WHERE id=?").run(Date.now() - CLOSE_GRACE_MS, o.s.eventId);
+    } else o.f.app.database.db.prepare('UPDATE official_run_sessions SET expires=0 WHERE run_id=?').run(run.id);
+    const start = o.calls.length; await api.flush();
+    assert.equal(o.calls.slice(start).some(url => url.endsWith('/turns')), false);
+    assert.equal(o.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_turns').get().n, 0);
+    assert.equal(api.state().attempts[0].pending, 1);
+    assert.equal(api.state().needsCapability, condition === 'capability');
+    if (condition !== 'capability') {
+      assert.equal(api.state().attempts[0].status, condition);
+      assert.throws(() => api.queue(run), /does not own/);
+      api.acknowledge(run.id); assert.equal(o.local.length, 0);
+    }
+  }
+});
+
+test('official and legacy outboxes keep separate ownership when a browser capability changes', async t => {
+  const { createSessionApi } = await import('../src/session-api.js');
+  const o = await outbox(t), api = o.client(), run = await api.activate(o.run, o.input.nonce);
+  let legacyOffline = false;
+  const legacy = createSessionApi({ storage: o.local, tabStorage: o.tab, fetcher: async (url, options) => {
+    if (legacyOffline) throw Error('offline');
+    const r = await o.s.staff.request(url, options.body ? JSON.parse(options.body) : undefined);
+    return Response.json(r.data, { status: r.status });
+  } });
+  const old = await legacy.start('Legacy', key()); legacyOffline = true;
+  old.turns = [1, 2, 3].map(turn => ({ turn, prizeId: null })); legacy.queue(old); await legacy.flush();
+  const legacyKeys = Array.from({ length: o.local.length }, (_, i) => o.local.key(i)).filter(k => k.startsWith('cloud-claw:pending:v2:'));
+  const snapshot = legacyKeys.map(k => o.local.getItem(k));
+  o.offline = true; run.turns.push({ turn: 1, prizeId: null }); await api.queue(run); o.offline = false;
+  const other = await o.s.admit(); o.c.jar.set('cc_official', other.official.jar.get('cc_official'));
+  const start = o.calls.length; await api.flush();
+  assert.deepEqual(o.calls.slice(start), ['/api/official/session']);
+  assert.deepEqual(legacyKeys.map(k => o.local.getItem(k)), snapshot);
+  legacyOffline = false; await legacy.flush();
+  assert.equal(legacy.state().pending, 0); assert.equal(api.state().attempts[0].pending, 1);
+  assert.equal(o.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_turns WHERE run_id=?').get(run.id).n, 0);
+});
+
+test('official client refuses unavailable storage, conflicting results and a fourth turn', async t => {
+  const o = await outbox(t), api = o.client(), set = o.local.setItem;
+  o.local.setItem = () => { throw Error('storage unavailable'); };
+  await assert.rejects(api.activate(o.run, o.input.nonce), /storage unavailable/);
+  assert.equal(o.calls.length, 0);
+  o.local.setItem = set;
+  const run = await api.activate(o.run, o.input.nonce);
+  run.turns.push({ turn: 1, prizeId: null }); await api.queue(run);
+  assert.throws(() => api.queue({ ...run, turns: [{ turn: 1, prizeId: 'butter' }] }), /cannot change/);
+  assert.throws(() => api.queue({ ...run, turns: [1, 2, 3, 4].map(turn => ({ turn, prizeId: null })) }), /three ordered/);
+  assert.throws(() => api.queue({ ...run, turns: [{ turn: 2, prizeId: null }] }), /three ordered/);
+  assert.equal(o.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_turns').get().n, 1);
+});
+
+test('official lost activation reload interrupts instead of retrying activation', async t => {
+  const o = await outbox(t), api = o.client(); o.lose = '/activate';
+  await assert.rejects(api.activate(o.run, o.input.nonce));
+  const start = o.calls.length, reloaded = o.client(); await reloaded.initialize();
+  assert.deepEqual(o.calls.slice(start).map(url => url.split('/').at(-1)), ['session', 'interrupt']);
+  await assert.rejects(reloaded.activate(o.run, o.input.nonce), /cannot restart/);
+  assert.equal((await o.c.request('/api/official/session')).data.status, 'interrupted');
+});
+
+test('official storage exhaustion preserves completed turns for same-page recovery', async t => {
+  const o = await outbox(t), api = o.client(), run = await api.activate(o.run, o.input.nonce), set = o.local.setItem;
+  o.local.setItem = () => { throw Error('quota exceeded'); }; o.offline = true;
+  run.turns = [1, 2, 3].map(turn => ({ turn, prizeId: null })); await api.queue(run);
+  assert.equal(api.state().attempts[0].pending, 3); assert.ok(api.state().error);
+  o.local.setItem = set; o.offline = false; await api.flush();
+  assert.equal(o.notices.find(n => n.saved)?.saved.total, 0);
+  assert.equal(o.local.length, 0);
+});
+
+test('delayed official acknowledgement cannot overwrite turns queued by the live page', async t => {
+  const o = await outbox(t), a = o.client(), run = await a.activate(o.run, o.input.nonce);
+  o.offline = true; run.turns.push({ turn: 1, prizeId: null }); await a.queue(run); o.offline = false;
+  let release, started;
+  const began = new Promise(resolve => { started = resolve; });
+  o.afterResponse = async url => {
+    if (!url.endsWith('/turns')) return;
+    o.afterResponse = async () => {}; started(); await new Promise(resolve => { release = resolve; });
+  };
+  const pending = o.client(storage()).flush(); await began;
+  o.offline = true; run.turns.push({ turn: 2, prizeId: 'butter' }, { turn: 3, prizeId: null }); await a.queue(run);
+  o.offline = false; release(); await pending;
+  assert.equal(o.local.length, 0);
+  assert.equal(o.notices.find(n => n.saved)?.saved.total, 100);
+  assert.equal(o.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_turns').get().n, 3);
 });

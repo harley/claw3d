@@ -25,6 +25,14 @@ PUBLIC_ORIGIN=http://127.0.0.1:4200 DATA_DIR=.local-data npm start
 
 Open `http://127.0.0.1:4200` and enter the staff code. Ordinary `npm run play` remains explicitly browser-local; network failures in the shared service never switch to that board.
 
+## Staged official outbox adapter
+
+`src/official-session-api.js` is an unwired adapter for the staged event API. It accepts an already admitted server receipt and its activation nonce; ticket redemption, public admission and UI integration remain separate work. Call `activate(receipt, nonce)` only from that admission flow. It persists ownership before activation, permits a same-page retry after acknowledgement loss, and never returns a second playable activation after success. Admission must persist its redemption request key and nonce before consuming a ticket; this adapter does not implement that step.
+
+Call `queue(run)` with completed ordered turns and `flush()` on reconnect/retry. Only turn number, prize and remaining aiming time are sent; server scoring remains authoritative. Its `cloud-claw:official:v1:` keys never read, migrate or delete the legacy staff outbox. A flush uses only the current official cookie's run; other retained attempts wait for their matching capability. Staff login is not a substitute for an expired official capability.
+
+Call `initialize()` on reload. It drains completed turns and interrupts the tab's old physical attempt, without calling activation or recreating physics. Another tab may drain scores but cannot interrupt the live tab. Interrupted receipts stay available for host review; void/expired attempts retain pending turns without further submissions. `acknowledge(id)` explicitly clears a reviewed terminal receipt, or an interrupted receipt whose completed turns have synced. Storage exhaustion keeps unsaved turns in memory for same-page retry, so keep the page open. Wire `onChange` to visible pending/access/storage messages when adding the future UI; this module starts no timers or gameplay and is not imported by the current player entry point.
+
 ## Playtest observations and feedback
 
 The protected pilot stores bounded playtest observations in `playtest_events`, a separate table in the existing `/data/pilot.sqlite`. A random page-session UUID, build commit, practice/event mode and elapsed time describe each observation. Camera readiness, control/phase changes, the gesture funnel (`hold_start`, `hold_cancelled` with its cause, `drop`, `time_to_control`), drops, completions, bounded performance samples — including vision latency percentiles, result rate and capture-reject counts — and fixed error categories help identify where players hesitate. Historical practice observations do not create leaderboard runs or scores; the current client records event mode only. These are client-reported observations, not proof of physical gesture accuracy.
