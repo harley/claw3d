@@ -236,7 +236,7 @@ The supplied prize and ball posters are design references, not approved scoring 
 
 ### Staged host event lifecycle
 
-With the official-event API enabled, authenticated staff can unlock the existing operator panel with the host code and create a draft official event, open it, refresh its server state, or permanently close it. Closing requires an explicit checkbox explaining unused-ticket expiry and the ten-minute grace for admitted runs. The panel reports unavailable/expired records without presenting cached state as current. Public Try and local preview do not mount these controls. The participant/ticket panel below extends this console; unfinished-attempt technical recovery remains separate; the existing server rules remain authoritative.
+With the official-event API enabled, authenticated staff can unlock the existing operator panel with the host code and create a draft official event, open it, refresh its server state, or permanently close it. Closing requires an explicit checkbox explaining unused-ticket expiry and the ten-minute grace for admitted runs. The panel reports unavailable/expired records without presenting cached state as current. Public Try and local preview do not mount these controls. The participant/ticket panel below extends this console; explicit technical recovery is described below; the existing server rules remain authoritative.
 
 ### Staged official player journey
 
@@ -246,7 +246,7 @@ A ticket is reserved only after its request key, nonce and tab selection persist
 
 The live HUD is a gameplay preview. The final official total stays blank until the server confirms all three turns; the displayed rank explicitly belongs to the participant’s event best, which may differ from this attempt. Result recovery uses the admitted run ID, never a display name. A completed player cannot replay automatically. “Sign out · next player” requires no retained official outbox, clears the resolved admission metadata, revokes official access and signs out staff before returning to the staff gate. Failed sign-out stays on the page for retry. Unresolved attempts cannot use this handoff.
 
-This is a single-station staff-testing path. Unfinished-attempt adjudication/cleanup, anonymous admission, production enablement and physical-camera acceptance remain open. It does not provide a host recovery UI or a destructive browser-data reset.
+This is a single-station staff-testing path. Player outbox adjudication/cleanup, anonymous admission, production enablement and physical-camera acceptance remain open. The host recovery controls below do not reset player browser data.
 
 ### Staged host participants and tickets
 
@@ -254,4 +254,10 @@ An open event’s host console can create a participant or select an existing se
 
 Host requests persist their original keys before sending. Unconfirmed participant/ticket/reissue requests can be retried after reload without duplicate creation. A ticket code is shown and copied only from its initial successful response; it is never put in URLs, telemetry or durable browser storage. Closing or refreshing the console clears the displayed code. Retained receipts identify tickets, not their current redemption status. After a lost ticket response, retry retrieves its ID without the code; an explicit confirmed revoke/reissue can replace an unused ticket. The server refuses a redeemed ticket, and this flow never claims to recover its attempt.
 
-Closed, expired/unavailable events and lost host access disable mutations until an authoritative refresh permits them. Existing server admission switches remain authoritative. Request keys and secret-free receipts stay in the original tab for host reconciliation; this is not a purge or unfinished-run recovery UI. Production enablement, anonymous admission and physical booth acceptance remain open.
+Closed, expired/unavailable events and lost host access disable mutations until an authoritative refresh permits them. Existing server admission switches remain authoritative. Request keys and secret-free receipts stay in the original tab for host reconciliation; ticket issuance does not recover an unfinished run; use the separate controls below. Production enablement, anonymous admission and physical booth acceptance remain open.
+
+### Staged host technical-failure recovery
+
+Hosts can inspect an exact server-issued attempt ID, its participant ID, server status and saved-turn count in the event console. A fixed camera, connection or browser failure reason and explicit void/replacement confirmation are required. Only unfinished attempts in open events can be replaced; the server atomically voids the old attempt, rejects its late writes/activation and issues one ticket for the same participant. Completed attempts and participant best scores remain unchanged.
+
+The original recovery key persists before sending. Lost responses/reloads expose an explicit same-key retry, never an automatic second replacement. The once-returned replacement code is memory-only. If its response is lost, retry recovers the ticket ID; a separate confirmed unused-ticket revoke/reissue uses the existing server contract. Used replacements cannot be reissued: inspect their own attempt ID. Closure/auth loss/expiry disable new actions; an original request may still reconcile a committed receipt after closure without a new grant. No player outbox is erased or restarted. Player cleanup, multi-station operations and physical booth acceptance remain open.

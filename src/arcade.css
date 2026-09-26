@@ -254,7 +254,7 @@ dialog .play-button { width: 100%; margin-top: 24px; }
 /* Quiet playtest reporting, also reachable from the result dialog. */
 .footer { gap: 12px; }
 #feedback-open { margin: 0; padding: 4px; font: 11px Arial, sans-serif; white-space: nowrap; pointer-events: auto; }
-#host-tickets select, #official-recovery, #feedback-dialog select, #feedback-dialog textarea { box-sizing: border-box; width: 100%; margin: 10px 0 18px; padding: 12px; border: 1px solid #43516c; border-radius: 6px; background: #101b2e; color: #f4eee5; font: 16px Arial, sans-serif; }
+#host-recovery select, #host-tickets select, #official-recovery, #feedback-dialog select, #feedback-dialog textarea { box-sizing: border-box; width: 100%; margin: 10px 0 18px; padding: 12px; border: 1px solid #43516c; border-radius: 6px; background: #101b2e; color: #f4eee5; font: 16px Arial, sans-serif; }
 #feedback-dialog textarea { resize: vertical; }
 .playtest-notice { font-size: 12px; line-height: 1.5; color: #9db3d0; }
 
@@ -440,3 +440,7 @@ dialog .menu-guide-hand { font-size: 52px; }
 #host-tickets { border-top: 1px solid #355074; margin-top: 24px; padding-top: 12px; }
 #host-tickets p { overflow-wrap: anywhere; }
 #host-ticket-code { font: 14px monospace; }
+
+.host-workflow { border: 0; padding: 0; margin: 0; min-width: 0; }
+#host-recovery { border-top: 1px solid #355074; margin-top: 20px; padding-top: 12px; }
+#host-recovery p { overflow-wrap: anywhere; white-space: pre-line; }
