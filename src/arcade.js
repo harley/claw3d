@@ -23,35 +23,27 @@ import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, record
 $('build-info').textContent = `BUILD ${__BUILD_INFO__.commit}${__BUILD_INFO__.dirty ? ' · uncommitted changes' : ''} · ${__BUILD_INFO__.branch}`;
 let game = createGame({ carousel: true }), scene, previous = 0, stopped = false, frozen = false;
 let cameraControls, cameraLoading = false;
-const handMenu = createHandMenu();
+const handMenu = createHandMenu({ leftHand: dualEnabled });
 document.body.classList.toggle('machine-controls', cabinetEnabled);
 document.body.classList.toggle('dual-controls', cabinetEnabled);
 document.body.classList.toggle('two-hand-mode', dualEnabled);
 const controlInstructions = {
   'hold-drop': {
-    attractTitle: 'SHOW YOUR HAND',
     scene: 'Steer with one open hand. Clench and hold your fist to drop.',
     camera: 'Move one open hand to steer. Clench and hold your fist to drop; open to cancel.',
-    attract: 'OPEN HAND STEERS · FIST DROPS',
   },
   'grab-release': {
-    attractTitle: 'SHOW YOUR HAND',
     scene: 'Clench on MOVE to grip and steer. Open to release without dropping. Click or clench DROP to drop.',
     camera: 'Clench on MOVE to grip and steer. Open to release without dropping. Click, clench, or swipe down on DROP to drop.',
-    attract: 'GRIP MOVE · OPEN TO RELEASE · PRESS DROP',
   },
   dual: {
-    attractTitle: 'SHOW BOTH HANDS',
     scene: 'Clench your left hand to grip and steer. Raise your open right hand to drop. Open your left hand to release.',
     camera: 'Show both open hands. Clench your left hand to grip and steer; raise your open right hand to drop. Open your left hand to release without dropping.',
-    attract: 'LEFT HAND STEERS · RIGHT HAND DROPS',
   },
 }[mode.profile];
-$('attract-title').textContent = controlInstructions.attractTitle;
 $('scene').setAttribute('aria-label', controlInstructions.scene);
 $('camera-help').textContent = controlInstructions.camera;
 if (dualEnabled) $('camera-menu-help').textContent = 'Use your left hand and hold a fist to select menu buttons. Your right hand can stay visible.';
-$('attract-rule').textContent = controlInstructions.attract;
 const glove = createJoystickCursor(() => cabinetEnabled ? scene?.controlTargets() : null, () => { if (cabinetEnabled) gestureDrop(); });
 let previousMenuMode = '';
 function menuMode() {
@@ -258,7 +250,7 @@ function gestureDrop() {
 }
 function fail(message, error) { track('client_error', { reason: 'renderer' }); stopped = true; cameraControls?.stop(); clearTimeout(window.__arcadeBootTimer); errors.push(String(error || message)); $('loading').hidden = true; $('error').hidden = false; $('error-message').textContent = message; console.error('Cloud Claw:', error || message); }
 function openOperator() { if (shared && pilot.role !== 'host') { $('host-access').showModal(); return; } renderBoard(); $('operator').showModal(); $('pause').textContent = recovering ? 'RESUME INTERRUPTED TURN' : paused ? 'RESUME GAME' : 'PAUSE GAME'; }
-document.addEventListener('visibilitychange', () => { previous = 0; if (document.hidden) audio.silence(); });
+document.addEventListener('visibilitychange', () => { previous = 0; if (document.hidden) { audio.silence(); handMenu.clear(); cameraControls?.reset(); } });
 $('player-form').addEventListener('submit', event => { event.preventDefault(); if (!scene || stopped || !cameraControls?.running) return;
   if (startingRun || run) return;
   const name = $('name').value.trim() || generatedName();
@@ -422,7 +414,7 @@ function frame(time) {
   // One dialog query per frame; every consumer below shares it.
   const nextMenuMode = menuMode();
   if (nextMenuMode !== previousMenuMode) { cameraControls?.reset(); handMenu.clear(); previousMenuMode = nextMenuMode; }
-  handMenu.update(nextMenuMode, cameraControls?.feedback || {});
+  handMenu.update(nextMenuMode, cameraControls?.feedback || {}, { showGuide: Boolean(cameraControls?.running) && !paused });
   const openDialogs = document.querySelectorAll('dialog[open]');
   const aiming = game.phase === 'aim', modal = openDialogs.length > 0;
   const modalBeyondFinal = modal && [...openDialogs].some(dialog => dialog.id !== 'final');
