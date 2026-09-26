@@ -5,6 +5,7 @@ import './arcade.css';
 import { createJoystickCursor } from './joystick-cursor.js';
 import { createHandMenu, generatedName } from './hand-menu.js';
 const manualSetup = new URLSearchParams(location.search).get('setup') === 'manual';
+import { createOfficialPlayer } from './official-player.js';
 import { createHostEvents } from './host-events.js';
 import { createSharedBoard } from './shared-board.js';
 import { createPlaytestClient, createPublicPlaytestClient } from './playtest-client.js';
@@ -15,9 +16,11 @@ import { createMovementMusic } from './movement-music.js';
 import { PerformanceGovernor, PERFORMANCE_WINDOW_MS } from './performance-governor.js';
 const publicTry = globalThis.__PUBLIC_TRY__ === true;
 const shared = !publicTry && globalThis.__SHARED_PILOT__ === true;
+const official = shared && globalThis.__OFFICIAL_EVENTS__ === true && new URLSearchParams(location.search).get('play') === 'official';
+let officialBlocked = false;
 let noticeReady = !publicTry;
 // One resolution of the play mode: input profile, storage namespace, experiment flags.
-const mode = resolvePlayMode(location.search, shared || publicTry);
+const mode = resolvePlayMode(official ? '' : location.search, shared || publicTry);
 const { dual: dualEnabled, grab: grabEnabled, cabinet: cabinetEnabled, holdMs, steering, storageKey: scoreKey } = mode;
 import { ArcadeScene } from './arcade-scene.js';
 import { createGame, begin, drop, advance, move, moveToward, homeClaw, planGrab, clawPose, PHASES, MAX_FRAME_DELTA, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
@@ -79,7 +82,7 @@ try { store = shared || publicTry ? newStore() : loadStore({ getItem: () => loca
 let run = store.active, completedRun = null, turnNumber = run ? run.turns.length + 1 : 0;
 let recovering = Boolean(run);
 const frames = [], errors = [];
-let playtest = createPlaytestClient({ build: __BUILD_INFO__.commit, enabled: shared });
+let playtest = createPlaytestClient({ build: __BUILD_INFO__.commit, enabled: shared && !official });
 const track = (type, data = {}, subject = run || pendingPlayer || completedRun) => playtest.track(type, data, { mode: 'event', ...(subject?.id ? { runId: subject.id } : {}) });
 track('page_open');
 let observedControl = '', observedPhase = '', observedSaveError = false, cameraFailureReported = false;
@@ -114,16 +117,17 @@ function persist() {
   $('storage-status').textContent = shared ? pilot.status : storageError || store.notice || 'Scores saved on this browser.';
 }
 function renderBoard() {
-  const board = shared ? pilot.board || { name: 'Shared staff leaderboard', runs: [] } : currentBoard(store); $('board-name').textContent = publicTry ? 'TRY · THREE TURNS' : board.name; $('leaders').replaceChildren();
+  const board = shared ? pilot.board || { name: official ? 'Official event leaderboard' : 'Shared staff leaderboard', runs: [] } : currentBoard(store); $('board-name').textContent = publicTry ? 'TRY · THREE TURNS' : board.name; $('leaders').replaceChildren();
   if (publicTry) $('board-empty').textContent = 'Play again as often as you like.';
+  if (official) $('board-empty').textContent = officialPlayer.state().board ? 'No completed event scores yet.' : 'Event board unavailable until admission is confirmed.';
   const leaders = shared ? board.runs : leaderboard(board); $('board-empty').hidden = leaders.length > 0;
   for (const row of leaders.slice(0, 5)) {
-    const li = document.createElement('li'); li.classList.toggle('current', row.id === completedRun?.id);
+    const li = document.createElement('li'); li.classList.toggle('current', Boolean(row.id && row.id === completedRun?.id));
     for (const [tag, value] of [['span', String(row.rank).padStart(2, '0')], ['strong', row.name], ['b', row.total]]) { const el = document.createElement(tag); el.textContent = value; li.append(el); }
     $('leaders').append(li);
   }
-  const official = board.runs.filter(r => !r.practice), turns = official.flatMap(r => r.turns);
-  $('operator-stats').textContent = `${official.length} completed · ${turns.length ? Math.round(turns.filter(t => t.score).length / turns.length * 100) : 0}% catch rate${shared ? '' : ` · ${store.boards.length} sessions stored`}`;
+  const scoredRuns = board.runs.filter(r => !r.practice), turns = scoredRuns.flatMap(r => r.turns || []);
+  $('operator-stats').textContent = official ? `${scoredRuns.length} ranked participants · server confirmed` : `${scoredRuns.length} completed · ${turns.length ? Math.round(turns.filter(t => t.score).length / turns.length * 100) : 0}% catch rate${shared ? '' : ` · ${store.boards.length} sessions stored`}`;
   $('storage-status').textContent = shared ? pilot.status : storageError || store.notice || 'Scores saved on this browser.';
 }
 const audio = createArcadeAudio({ onChange: syncSoundUI, enabledByDefault: !manualSetup });
@@ -181,6 +185,11 @@ function resumeRecoveredRun() {
 }
 function openRegistration(name = $('name').value) {
   if (stopped || !scene || startingRun) return;
+  if (official) {
+    if (!officialPlayer.state().canActivate) return openOfficialTicket();
+    $('name').value = officialPlayer.state().intent.receipt.name;
+    $('registration').showModal(); $('register-play').focus(); return;
+  }
   if (publicTry) { pendingPlayer = { name: 'Try' }; void startScoredRun(); return; }
   $('name').setCustomValidity(''); $('name').value = name.trim() || generatedName();
   $('registration').showModal(); $('register-play').focus();
@@ -198,13 +207,13 @@ function finishTurn() {
   if (outcome.completed) {
     track('run_complete', { score: outcome.run.total }, outcome.run);
     completedRun = outcome.run; run = null; renderBoard();
-    $('final-name').textContent = completedRun.name.toUpperCase(); $('final-score').textContent = String(completedRun.total).padStart(3, '0');
+    $('final-name').textContent = completedRun.name.toUpperCase(); $('final-score').textContent = official ? '—' : String(completedRun.total).padStart(3, '0');
     const rank = shared ? undefined : leaderboard(currentBoard(store)).find(r => r.id === completedRun.id)?.rank;
-    $('final-kicker').textContent = finaleHeadline(completedRun.turns, rank, completedRun.rules.points);
+    $('final-kicker').textContent = official ? 'AWAITING SERVER RESULT' : finaleHeadline(completedRun.turns, rank, completedRun.rules.points);
     $('final-rank').textContent = shared ? 'Score waiting to sync' : publicTry ? 'PRACTICE · NO EVENT RANKING' : `LOCAL PREVIEW · ${dualEnabled ? '2 HANDS' : '1 HAND'}${rank ? ` · RANK #${rank}` : ''}`;
     setText('final-board', publicTry ? 'Three turns · play again anytime' : `Board: ${completedRun.boardName || store.boards.find(board => board.id === completedRun.boardId)?.name || completedRun.boardId}`);
     $('final-turns').replaceChildren();
-    completedRun.turns.forEach((turn, i) => {
+    if (!official) completedRun.turns.forEach((turn, i) => {
       const toy = turn.prizeId ? game.toys.find(t => t.id === turn.prizeId) : null;
       const chip = document.createElement('span'); chip.className = `turn-chip scored catch-card${toy ? '' : ' miss'}`;
       if (toy) { chip.dataset.prize = toy.id; chip.style.setProperty('--toy', toy.color); }
@@ -215,8 +224,8 @@ function finishTurn() {
       $('final-turns').append(chip);
     });
     setText('final-sync', shared ? pilot.state().error : storageError);
-    $('final').showModal(); $('play-again').focus();
-    if (!scene.reducedMotion) { const total = completedRun.total, start = performance.now(); const count = time => { if (!$('final').open) return; const progress = Math.min(1, (time - start) / 850); $('final-score').textContent = String(Math.round(total * (1 - (1 - progress) ** 3))).padStart(3, '0'); if (progress < 1) scoreAnimation = requestAnimationFrame(count); }; scoreAnimation = requestAnimationFrame(count); }
+    $('final').showModal(); $(official ? 'next-player' : 'play-again').focus();
+    if (!official && !scene.reducedMotion) { const total = completedRun.total, start = performance.now(); const count = time => { if (!$('final').open) return; const progress = Math.min(1, (time - start) / 850); $('final-score').textContent = String(Math.round(total * (1 - (1 - progress) ** 3))).padStart(3, '0'); if (progress < 1) scoreAnimation = requestAnimationFrame(count); }; scoreAnimation = requestAnimationFrame(count); }
   }
 }
 async function play() {
@@ -235,7 +244,7 @@ async function play() {
   updateUI();
 }
 async function startScoredRun() {
-  if (startingRun || !pendingPlayer) return;
+  if (startingRun || !pendingPlayer || officialBlocked) return;
   startingRun = true; updateUI();
   try {
     if (shared) {
@@ -284,6 +293,11 @@ $('name').addEventListener('input', () => $('name').setCustomValidity(''));
 $('register-cancel').addEventListener('click', () => $('registration').close());
 async function replay(samePlayer) {
   if (startingRun || run || cameraLoading) return;
+  if (official) {
+    try { await officialPlayer.handoff(); location.replace('/staff'); }
+    catch (error) { setText('final-sync', error.message); }
+    return;
+  }
   const name = samePlayer ? completedRun?.name || '' : '';
   $('name').value = name;
   track('replay'); $('final').close(); freshGame(); updateUI();
@@ -295,8 +309,8 @@ $('next-player').addEventListener('click', () => { void replay(false); });
 $('result-open').addEventListener('click', () => {
   if (!completedRun || startingRun || run || cameraLoading) return;
   cancelAnimationFrame(scoreAnimation);
-  setText('final-score', String(completedRun.total).padStart(3, '0'));
-  $('final').showModal(); $('play-again').focus();
+  setText('final-score', official && !officialPlayer.state().result ? '—' : String(completedRun.total).padStart(3, '0'));
+  $('final').showModal(); $(official ? 'next-player' : 'play-again').focus();
 });
 $('final-leaderboard').addEventListener('click', () => {
   $('final').close(); document.querySelector('.leaderboard').focus();
@@ -304,14 +318,14 @@ $('final-leaderboard').addEventListener('click', () => {
 $('final').addEventListener('cancel', event => event.preventDefault());
 $('play').addEventListener('click', () => { $('scene').focus(); play(); });
 for (const [id, dual] of [['mode-one', false], ['mode-two', true]]) $(id).addEventListener('click', () => {
-  if (dual === dualEnabled || run || pendingPlayer || startingRun || cameraLoading || paused || recovering || document.querySelector('dialog[open]')) return;
+  if (official || dual === dualEnabled || run || pendingPlayer || startingRun || cameraLoading || paused || recovering || document.querySelector('dialog[open]')) return;
   const url = new URL(location.href);
   if (dual) url.searchParams.set('controls', 'dual'); else url.searchParams.delete('controls');
   url.searchParams.delete('start'); location.assign(url);
 });
 $('operator-open').addEventListener('click', openOperator);
-$('pause').addEventListener('click', () => { if (recovering) { resumeRecoveredRun(); paused = false; } else paused = !paused; $('operator').close(); $('scene').focus(); updateUI(); });
-$('reset').addEventListener('click', () => { if (startingRun) return; if (shared && run) pilot.abandon(run); if (store.active) { store.active.abortedAt = new Date().toISOString(); store.active = null; } run = null; pendingPlayer = null; completedRun = null; recovering = paused = frozen = false; persist(); freshGame(); $('operator').close(); updateUI(); });
+$('pause').addEventListener('click', () => { if (officialBlocked) return; if (recovering) { resumeRecoveredRun(); paused = false; } else paused = !paused; $('operator').close(); $('scene').focus(); updateUI(); });
+$('reset').addEventListener('click', () => { if (startingRun) return; if (official) { officialBlocked = paused = true; void officialPlayer.interrupt().catch(error => setText('sync-message', error.message)); $('operator').close(); updateUI(); return; } if (shared && run) pilot.abandon(run); if (store.active) { store.active.abortedAt = new Date().toISOString(); store.active = null; } run = null; pendingPlayer = null; completedRun = null; recovering = paused = frozen = false; persist(); freshGame(); $('operator').close(); updateUI(); });
 $('new-board').addEventListener('click', async () => {
   if (shared) {
     if (pilot.rotating) return;
@@ -538,7 +552,66 @@ function updateSavedRank(saved) {
   $('final-kicker').textContent = finaleHeadline(completedRun.turns, saved.rank, completedRun.rules.points);
   $('final-rank').textContent = `SAVED · RANK #${saved.rank}`;
 }
-const pilot = createSharedBoard({
+function openOfficialTicket() {
+  if (startingRun || officialPlayer.state().busy) return;
+  const select = $('official-recovery'); select.replaceChildren(new Option('New ticket', ''));
+  try {
+    for (const [i, row] of officialPlayer.recoveries().entries()) select.add(new Option(`Retained admission ${i + 1} · ${row.status}`, row.requestKey));
+    select.value = officialPlayer.state().intent?.requestKey || '';
+    select.disabled = Boolean(officialPlayer.state().intent);
+  } catch { setText('official-message', 'Recovery storage unavailable. Keep browser data and ask the host.'); }
+  $('official-ticket').showModal();
+}
+function renderOfficialResult(saved) {
+  if (run && run.id !== saved.attempt.id) return;
+  const recovered = !completedRun;
+  completedRun = { ...saved.attempt, boardId: saved.attempt.eventId };
+  setText('final-name', saved.attempt.name.toUpperCase());
+  setText('final-score', String(saved.attempt.total).padStart(3, '0'));
+  setText('final-kicker', 'SERVER-CONFIRMED RESULT');
+  setText('final-rank', saved.best ? `YOUR EVENT BEST ${saved.best.total} · RANK #${saved.best.rank}` : 'No ranked best available');
+  setText('final-board', 'Official event · this attempt is complete');
+  setText('final-sync', '');
+  $('final-turns').textContent = saved.attempt.turns.map(turn => `TURN ${turn.turn}: ${turn.score}`).join(' · ');
+  if (recovered && !document.querySelector('dialog[open]')) $('final').showModal();
+}
+const officialPlayer = official ? createOfficialPlayer({
+  onResult: renderOfficialResult,
+  onChange: state => {
+    officialBlocked = state.blocked;
+    $('official-signout').hidden = !state.handingOff;
+    if (officialBlocked && run) paused = true;
+    const message = state.error || (state.intent?.recoveryRequired ? 'Recovery only. Completed turns can sync; ask the host about unfinished play.' : state.canActivate ? 'Ticket admitted. Select PLAY, then START when ready.' : 'Enter a host-issued ticket.');
+    setText('official-message', message); setText('sync-message', message);
+    $('official-redeem').disabled = !state.ready || state.busy || Boolean(state.intent?.receipt && !state.intent.recoveryRequired);
+    if (state.blocked && !state.result && completedRun) {
+      setText('final-score', '—'); setText('final-name', 'Official result unavailable');
+      setText('final-kicker', 'ACCESS UNAVAILABLE'); setText('final-rank', 'Ask the host'); $('final-turns').replaceChildren();
+    }
+    if (completedRun) setText('final-sync', state.error || (state.result ? '' : 'Official score waiting to sync'));
+    renderBoard();
+  },
+}) : null;
+async function officialLogin(path, code) {
+  const response = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+  if (!response.ok) throw new Error('Access code was not accepted.');
+}
+let officialRole = 'staff';
+const pilot = official ? {
+  connect: () => {
+    void officialPlayer.initialize();
+    setInterval(() => { void officialPlayer.refresh(); }, 5000);
+    window.addEventListener('online', () => { void officialPlayer.refresh(); });
+  },
+  start: () => officialPlayer.activate(), queue: run => officialPlayer.queue(run),
+  flush: () => officialPlayer.refresh(), refresh: () => officialPlayer.refresh(),
+  state: () => officialPlayer.state(),
+  loginStaff: code => officialLogin('/api/login', code),
+  loginHost: async code => { await officialLogin('/api/host/login', code); officialRole = 'host'; },
+  get role() { return officialRole; },
+  get status() { return officialPlayer.state().error || 'OFFICIAL EVENT · SCORE PREVIEW'; },
+  get board() { return { name: 'Official event leaderboard', runs: officialPlayer.state().board || [] }; },
+} : createSharedBoard({
   enabled: shared,
   getCompletedRun: () => completedRun,
   onSaved: updateSavedRank,
@@ -554,9 +627,30 @@ const pilot = createSharedBoard({
   onConnectError: error => { $('sync-message').textContent = error.message; $('shared-reauth').hidden = error.status !== 401; renderBoard(); },
 });
 const hostEvents = shared && globalThis.__OFFICIAL_EVENTS__ === true ? createHostEvents($('host-events'), { onUnauthorized: () => { $('operator').close(); $('host-access').showModal(); $('host-message').textContent = 'Host access expired. Sign in again.'; } }) : null;
+if (shared && globalThis.__OFFICIAL_EVENTS__ === true && !official) $('official-entry').hidden = false;
+if (official) {
+  $('official-status-open').hidden = false;
+  for (const id of ['mode-one', 'mode-two', 'new-board', 'session-name', 'export', 'play-again', 'feedback-open', 'final-feedback', 'error-feedback']) $(id).hidden = true;
+  $('next-player').textContent = 'SIGN OUT · NEXT PLAYER';
+  $('reset').textContent = 'END ATTEMPT · HOST RECOVERY';
+  $('name').readOnly = true;
+  $('registration').querySelector('h1').textContent = 'OFFICIAL · THREE TURNS';
+  $('registration').querySelector('.playtest-notice').textContent = 'START activates this ticket once. Reload cannot restart it. Scores are confirmed by the event server.';
+  $('official-status-open').addEventListener('click', openOfficialTicket);
+  $('official-signout').addEventListener('click', () => { void replay(false); });
+  $('official-ticket-back').addEventListener('click', () => $('official-ticket').close());
+  $('official-ticket-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const code = $('official-code').value.trim(); $('official-code').value = '';
+    try {
+      const receipt = await officialPlayer.redeem(code, $('official-recovery').value);
+      if (!receipt.recoveryRequired) { $('official-ticket').close(); if (cameraControls?.running) openRegistration(); }
+    } catch (error) { setText('official-message', error.message); }
+  });
+}
 if (shared) {
   $('shared-access').hidden = false;
-  $('operator-help').textContent = 'Shared scores persist on the pilot server. Existing runs keep their original board when you rotate. Names are display labels; scores are for fun.';
+  $('operator-help').textContent = official ? 'Official scores are server-confirmed. Ending an attempt requires host recovery. Pending turns stay in this browser.' : 'Shared scores persist on the pilot server. Existing runs keep their original board when you rotate. Names are display labels; scores are for fun.';
   pilot.connect();
 }
 for (const id of ['shared-reauth', 'final-reauth', 'start-reauth', 'host-reauth']) $(id).addEventListener('click', () => { $('staff-access').showModal(); });

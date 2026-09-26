@@ -546,3 +546,115 @@ test('server rejection retains admission identifiers and never falls back to sta
   assert.ok(a.calls.every(x => ['/api/official/redeem', '/api/official/session'].includes(x.url)));
   assert.equal(a.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM runs').get().n, 0);
 });
+
+// This boundary adds coordinator lifecycle, not another scoring implementation.
+// Real HTTP catches cookie mixups, result scope and dual-logout ordering.
+async function player(t) {
+  const { createOfficialPlayer } = await import('../src/official-player.js');
+  const a = await admission(t), tabStorage = storage();
+  const client = () => createOfficialPlayer({ storage: a.local, tabStorage, fetcher: a.fetcher });
+  const flow = client(); await flow.initialize();
+  return { ...a, a, tabStorage, client, flow };
+}
+test('official player explicitly activates once and confirms exactly three server turns before dual logout', async t => {
+  const p = await player(t), { flow } = p;
+  await flow.redeem(p.issued.code);
+  assert.equal(flow.state().canActivate, true);
+  assert.equal(p.calls.some(c => c.url.endsWith('/activate')), false);
+  const run = await flow.activate();
+  await assert.rejects(flow.activate(), /cannot restart/);
+  await assert.rejects(flow.handoff(), /Resolve retained/);
+  await flow.queue({ ...run, turns: [1, 2, 3].map(turn => ({ turn, prizeId: 'butter', remainingMs: 0, score: 9999 })), total: 99999 });
+  assert.equal(flow.state().result.attempt.id, run.id);
+  assert.notEqual(flow.state().result.attempt.total, 99999);
+  assert.equal(flow.state().result.attempt.turns.length, 3);
+  assert.equal(flow.state().result.best.rank, 1);
+  const cookie = p.s.staff.jar.get('cc_official');
+  await assert.rejects(flow.redeem((await p.s.ticket()).code), /Finish this attempt/);
+  await flow.handoff();
+  assert.equal(p.s.staff.jar.has('cc_official'), false);
+  assert.equal(p.s.staff.jar.has('cc_session'), false);
+  assert.equal((await p.f.client({ cc_official: cookie }).request('/api/official/session')).status, 401);
+  assert.equal(p.local.length, 0);
+  assert.equal(p.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM runs').get().n, 0);
+});
+test('player loss and reload retain admission identity, never auto activate, and storage failure prevents consumption', async t => {
+  const p = await player(t), set = p.tabStorage.setItem;
+  p.tabStorage.setItem = () => {};
+  await assert.rejects(p.flow.redeem(p.issued.code), /storage unavailable/);
+  assert.equal(p.calls.length, 0);
+  p.tabStorage.setItem = set;
+  p.a.lose = true;
+  await assert.rejects(p.flow.redeem(p.issued.code), /response unavailable/);
+  const intent = p.flow.state().intent;
+  const reloaded = p.client(); await reloaded.initialize();
+  await reloaded.redeem(p.issued.code);
+  assert.equal(reloaded.state().intent.requestKey, intent.requestKey);
+  assert.equal(reloaded.state().intent.nonce, intent.nonce);
+  assert.equal(reloaded.state().canActivate, false);
+  await assert.rejects(reloaded.activate(), /cannot restart/);
+  assert.equal(p.calls.filter(c => c.url.endsWith('/activate')).length, 0);
+  assert.equal(p.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_runs').get().n, 1);
+});
+test('reloaded official player drains saved turns before interruption and cannot restart or hand off unresolved data', async t => {
+  const p = await player(t); await p.flow.redeem(p.issued.code); const run = await p.flow.activate();
+  p.a.transport = { request: async () => { throw Error('offline'); } };
+  await p.flow.queue({ ...run, turns: [{ turn: 1, prizeId: null }] });
+  p.a.transport = p.s.staff;
+  const before = p.calls.length, reloaded = p.client(); await reloaded.initialize();
+  const writes = p.calls.slice(before).filter(c => c.method === 'POST').map(c => c.url.split('/').at(-1));
+  assert.deepEqual(writes, ['turns', 'interrupt']);
+  const saved = await p.s.staff.request(`/api/official/runs/${run.id}`);
+  assert.equal(saved.data.status, 'interrupted'); assert.equal(saved.data.turns.length, 1);
+  await assert.rejects(reloaded.activate(), /cannot restart/);
+  await assert.rejects(reloaded.handoff(), /Resolve retained/);
+  assert.ok(p.local.length > 0);
+});
+test('wrong official cookie blocks player flow without posting to another attempt or clearing retained turns', async t => {
+  const p = await player(t); await p.flow.redeem(p.issued.code); const run = await p.flow.activate();
+  const other = await p.s.admit(); assert.notEqual(other.run.id, run.id);
+  const before = p.calls.length;
+  await p.flow.refresh();
+  assert.equal(p.flow.state().blocked, true);
+  assert.ok(p.calls.slice(before).every(c => c.method !== 'POST'));
+  assert.throws(() => p.flow.queue({ ...run, turns: [{ turn: 1, prizeId: null }] }), /no longer playable/);
+  assert.ok(p.local.length > 0);
+});
+test('acknowledged result recovers after reload and handoff retries a lost logout response', async t => {
+  const p = await player(t); await p.flow.redeem(p.issued.code); const run = await p.flow.activate();
+  await p.flow.queue({ ...run, turns: [1, 2, 3].map(turn => ({ turn, prizeId: null })) });
+  const recovered = p.client(); await recovered.initialize();
+  assert.equal(recovered.state().result.attempt.id, run.id);
+  assert.equal(recovered.state().canActivate, false);
+  const original = p.s.staff.request.bind(p.s.staff); let lost = true;
+  p.a.transport = { request: async (path, ...args) => {
+    const response = await original(path, ...args);
+    if (path === '/api/official/logout' && lost) { lost = false; throw Error('lost logout response'); }
+    return response;
+  } };
+  await assert.rejects(recovered.handoff(), /unavailable/);
+  const signingOut = p.client(); await signingOut.initialize();
+  assert.equal(signingOut.state().handingOff, true);
+  await assert.rejects(signingOut.redeem(p.issued.code), /Finish this attempt/);
+  await signingOut.handoff();
+  assert.equal(p.s.staff.jar.has('cc_session'), false);
+});
+
+test('player storage denial is visible before admission and expiry retains a blocked attempt', async t => {
+  const p = await player(t), get = p.tabStorage.getItem;
+  p.tabStorage.getItem = () => { throw Error('denied'); };
+  const denied = p.client(); await denied.initialize();
+  assert.equal(denied.state().ready, false);
+  assert.match(denied.state().error, /storage unavailable/);
+  await assert.rejects(denied.redeem(p.issued.code), /Please wait/);
+  assert.equal(p.calls.length, 0);
+  p.tabStorage.getItem = get;
+  await p.flow.redeem(p.issued.code); await p.flow.activate();
+  p.f.app.database.db.prepare("UPDATE official_events SET state='closed',closed_at=? WHERE id=?").run(Date.now() - CLOSE_GRACE_MS, p.s.eventId);
+  await p.flow.refresh();
+  assert.equal(p.flow.state().blocked, true);
+  assert.match(p.flow.state().error, /expired/);
+  await assert.rejects(p.flow.handoff(), /Resolve retained/);
+  assert.ok(p.local.length > 0);
+  assert.equal(p.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_turns').get().n, 0);
+});
