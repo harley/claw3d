@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { ApiError, openDatabase } from './database.js';
 import { createPlaytestStore } from './playtest.js';
 import { backupForRelease } from './release-backup.js';
+import { createOfficialHttp, isOfficialPath } from './official-http.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const matches = (a, b) => typeof a === 'string' && timingSafeEqual(Buffer.from(hash(a)), Buffer.from(hash(b)));
@@ -15,12 +16,14 @@ const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.
 const gate = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Cloud Claw · Staff pilot</title><style>body{background:#080e1c;color:#f4eee5;font:18px system-ui;display:grid;place-content:center;min-height:95vh;margin:0}main{max-width:360px;padding:24px}small{color:#ffba60}input,button{box-sizing:border-box;width:100%;font:inherit;padding:14px;margin:12px 0;border-radius:8px;border:1px solid #aaa}button{background:#ffba60;color:#111;font-weight:700}p{line-height:1.5}</style><main><small>CODERPUSH × AWS CLOUD DAY</small><h1>Cloud Claw</h1><p>Staff pilot · enter your access code.</p><form id="login"><label for="code">Staff code</label><input id="code" type="password" autocomplete="current-password" required maxlength="128"><button>ENTER THE ARCADE</button><p id="message" role="status"></p></form></main><script>document.getElementById('login').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:document.getElementById('code').value})});if(!r.ok)throw Error((await r.json()).error);location.replace('/')}catch(e){document.getElementById('message').textContent=e.message}finally{button.disabled=false}};</script></html>`;
 
 export async function createPilotServer(options) {
-  const { filename, origin, staffCode, hostCode, dist = resolve('dist'), secure = true } = options;
+  const { filename, origin, staffCode, hostCode, dist = resolve('dist'), secure = true,
+    officialEventsEnabled = false, officialAdmissionsEnabled = false } = options;
+  if (typeof officialEventsEnabled !== 'boolean' || typeof officialAdmissionsEnabled !== 'boolean') throw new Error('Event feature options must be booleans.');
   if (!origin || !staffCode || !hostCode || staffCode.length < 16 || hostCode.length < 8 || staffCode === hostCode) throw new Error('A fixed origin, a staff secret of at least 16 characters and a distinct host code of at least 8 characters are required.');
   const database = openDatabase(filename), { db } = database;
   const root = await realpath(dist), attempts = new Map();
   const playtest = createPlaytestStore(db);
-  function cookie(name, value, age) { return `${name}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${age}${secure ? '; Secure' : ''}`; }
+  function cookie(name, value, age, path = '/') { return `${name}=${value}; Path=${path}; HttpOnly; SameSite=Strict; Max-Age=${age}${secure ? '; Secure' : ''}`; }
   function cookies(req) { return Object.fromEntries((req.headers.cookie || '').split(';').map(part => part.trim().split('='))); }
   function session(req) {
     const value = cookies(req).cc_session;
@@ -56,6 +59,7 @@ export async function createPilotServer(options) {
     catch { throw new ApiError(400, 'Invalid request.'); }
   }
   function json(res, status, data) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); }
+  const official = officialEventsEnabled ? createOfficialHttp({ db, body, json, cookies, cookie, limit, admissionsEnabled: officialAdmissionsEnabled }) : null;
   const server = createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -67,6 +71,10 @@ export async function createPilotServer(options) {
       const url = new URL(req.url, origin), path = url.pathname;
       if (req.method === 'GET' && path === '/healthz') return json(res, 200, { ok: true });
       const auth = session(req);
+      if (isOfficialPath(path)) {
+        if (!official) throw new ApiError(404, 'Event API is not enabled.');
+        await official.handle(req, res, path, auth); return;
+      }
       if (req.method === 'POST' && path === '/api/login') {
         limit(req, null, true);
         const input = await body(req);
@@ -145,7 +153,7 @@ export async function createPilotServer(options) {
   server.requestTimeout = 10_000;
   server.headersTimeout = 10_000;
   const retentionTimer = setInterval(() => {
-    try { playtest.prune(); } catch (error) { console.error('Playtest retention failed:', error.code || error.name); }
+    try { playtest.prune(); official?.pruneSessions(); } catch (error) { console.error('Retention maintenance failed:', error.code || error.name); }
   }, 3600_000);
   retentionTimer.unref();
   server.once('close', () => clearInterval(retentionTimer));
@@ -169,7 +177,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (snapshot) console.log(`Pre-release database snapshot verified for ${build.commit}.`);
   }
   const { server, database } = await createPilotServer({ filename: resolve(dataDir, 'pilot.sqlite'), origin: process.env.PUBLIC_ORIGIN,
-    staffCode: process.env.STAFF_CODE, hostCode: process.env.HOST_CODE, secure: production });
+    staffCode: process.env.STAFF_CODE, hostCode: process.env.HOST_CODE, secure: production,
+    officialEventsEnabled: process.env.OFFICIAL_EVENTS_ENABLED === 'true',
+    officialAdmissionsEnabled: process.env.OFFICIAL_EVENT_ADMISSIONS === 'enabled' });
   server.listen(Number(process.env.PORT || 4200), production ? '0.0.0.0' : '127.0.0.1', () => console.log('Cloud Claw pilot listening.'));
   const stop = () => { server.close(() => { database.close(); process.exit(0); }); setTimeout(() => process.exit(1), 8000).unref(); };
   process.on('SIGTERM', stop); process.on('SIGINT', stop);
