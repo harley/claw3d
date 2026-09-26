@@ -58,10 +58,11 @@ function cleanData(type, source) {
 }
 
 // Page-scoped diagnostics only. Never persist camera data or borrow score storage.
-export function createPlaytestClient({ build, enabled = false, fetcher = globalThis.fetch, onStatus = () => {} }) {
-  const sessionId = crypto.randomUUID(), started = performance.now();
-  const active = enabled && /^[0-9a-f]{7,12}$/.test(build);
+export function createPlaytestClient({ build, enabled = false, fetcher = globalThis.fetch, onStatus = () => {}, publicDiagnostics = false, noticeAcknowledged = false, now = () => performance.now() }) {
+  const sessionId = crypto.randomUUID(), started = now();
+  const active = (publicDiagnostics ? enabled === true && noticeAcknowledged === true : enabled) && /^[0-9a-f]{7,12}$/.test(build);
   const queue = [];
+  let sessionReady = false, nextAllowed = started;
   let timer = null, request = null, flushing = null, disposed = false, failures = 0;
   const status = () => ({ enabled: Boolean(active && !disposed), pending: queue.length, retrying: failures > 0 });
   const notify = () => { try { onStatus(status()); } catch { /* Diagnostics must not interrupt play. */ } };
@@ -76,6 +77,7 @@ export function createPlaytestClient({ build, enabled = false, fetcher = globalT
     if (!active || disposed) return unsent(disposed ? 'disposed' : 'disabled');
     if (!TYPES.has(type) || !data || typeof data !== 'object') return unsent('invalid_event');
     const cleaned = cleanData(type, data);
+    if (publicDiagnostics && cleaned) delete cleaned.comment;
     if (!cleaned) return unsent('invalid_feedback');
     if (queue.length >= 100) {
       const noisy = queue.findIndex(entry => entry.event.type !== 'feedback');
@@ -84,16 +86,16 @@ export function createPlaytestClient({ build, enabled = false, fetcher = globalT
       queue.splice(noisy, 1)[0].resolve({ sent: false, reason: 'dropped' });
     }
     const event = {
-      id: crypto.randomUUID(), type, elapsedMs: Math.min(WEEK, Math.max(0, Math.round(performance.now() - started))),
-      mode: context.mode === 'event' ? 'event' : 'practice',
-      ...(UUID.test(context.runId || '') ? { runId: context.runId.toLowerCase() } : {}), data: cleaned,
+      id: crypto.randomUUID(), type, elapsedMs: Math.min(WEEK, Math.max(0, Math.round(now() - started))),
+      mode: !publicDiagnostics && context.mode === 'event' ? 'event' : 'practice',
+      ...(!publicDiagnostics && UUID.test(context.runId || '') ? { runId: context.runId.toLowerCase() } : {}), data: cleaned,
     };
     let resolve;
     const acknowledged = new Promise(done => { resolve = done; });
     queue.push({ event, resolve });
     notify();
     if (type === 'feedback') void flush();
-    else schedule(1500);
+    else schedule(publicDiagnostics ? 10000 : 1500);
     return { id: event.id, acknowledged };
   }
 
@@ -101,8 +103,15 @@ export function createPlaytestClient({ build, enabled = false, fetcher = globalT
     if (flushing) return flushing;
     if (timer) { clearTimeout(timer); timer = null; }
     if (!active || disposed || !queue.length) return Promise.resolve({ ...status(), sent: 0 });
+    if (publicDiagnostics && now() < nextAllowed) {
+      schedule(nextAllowed - now());
+      return Promise.resolve({ ...status(), sent: 0 });
+    }
+    if (publicDiagnostics) nextAllowed = now() + 10000;
     // A single in-flight batch and stable IDs make uncertain responses retryable.
     const batch = [...queue.filter(entry => entry.event.type === 'feedback'), ...queue.filter(entry => entry.event.type !== 'feedback')].slice(0, 20);
+    const payload = () => JSON.stringify({ sessionId, build, events: batch.map(entry => entry.event) });
+    if (publicDiagnostics) while (batch.length > 1 && new TextEncoder().encode(payload()).length > 16000) batch.pop();
     flushing = Promise.resolve().then(async () => {
       if (disposed) return { ...status(), sent: 0 };
       request = new AbortController();
@@ -110,11 +119,26 @@ export function createPlaytestClient({ build, enabled = false, fetcher = globalT
       timeout.unref?.();
       let sent = 0;
       try {
-        const response = await fetcher('/api/playtest', {
+        const send = (url, body) => fetcher(url, {
           method: 'POST', credentials: 'same-origin', cache: 'no-store',
           headers: { 'Content-Type': 'application/json' }, signal: request.signal,
-          body: JSON.stringify({ sessionId, build, events: batch.map(entry => entry.event) }),
+          body,
         });
+        let response;
+        if (publicDiagnostics && !sessionReady) {
+          response = await send('/api/public/session', '{}');
+          sessionReady = response.ok;
+        }
+        if (disposed) return { ...status(), sent: 0 };
+        if (!publicDiagnostics || sessionReady) response = await send(publicDiagnostics ? '/api/public/playtest' : '/api/playtest', payload());
+        if (publicDiagnostics) {
+          if (response.status === 401) sessionReady = false;
+          if ([403, 404].includes(response.status)) { dispose('unavailable'); return { ...status(), sent: 0 }; }
+          if (response.status === 429) {
+            const seconds = Number(response.headers?.get('Retry-After'));
+            nextAllowed = Math.max(nextAllowed, now() + (Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 3600) : 60) * 1000);
+          }
+        }
         if ([400, 409, 413, 415].includes(response.status)) {
           for (const entry of batch) {
             const index = queue.indexOf(entry);
@@ -141,18 +165,25 @@ export function createPlaytestClient({ build, enabled = false, fetcher = globalT
       return { ...status(), sent };
     }).finally(() => {
       flushing = null;
+      if (publicDiagnostics) nextAllowed = Math.max(nextAllowed, now() + 10000);
+      if (publicDiagnostics && failures) nextAllowed = Math.max(nextAllowed, now() + Math.min(300000, 10000 * 2 ** Math.min(failures, 5)));
       notify();
-      schedule(failures ? Math.min(30000, 1500 * 2 ** Math.min(failures, 5)) : 250);
+      schedule(publicDiagnostics ? Math.max(0, nextAllowed - now()) : failures ? Math.min(30000, 1500 * 2 ** Math.min(failures, 5)) : 250);
     });
     return flushing;
   }
 
-  function dispose() {
+  function dispose(reason = 'disposed') {
     disposed = true;
     if (timer) clearTimeout(timer);
     timer = null; request?.abort();
-    for (const entry of queue.splice(0)) entry.resolve({ sent: false, reason: 'disposed' });
+    for (const entry of queue.splice(0)) entry.resolve({ sent: false, reason });
     notify();
   }
   return { sessionId, track, flush, status, dispose };
+}
+
+// Call only after the public notice has been shown. No UI or startup wiring here.
+export function createPublicPlaytestClient(options = {}) {
+  return createPlaytestClient({ ...options, publicDiagnostics: true });
 }
