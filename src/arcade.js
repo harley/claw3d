@@ -688,13 +688,16 @@ $('shared-start').addEventListener('cancel', event => event.preventDefault());
 const loadingTimeout = setTimeout(() => fail('The arcade took too long to open. Reload the page to try again.'), 15000);
 try {
   await new Promise(resolve => requestAnimationFrame(resolve));
-  scene = new ArcadeScene($('scene'), { wideControls: cabinetEnabled && new URLSearchParams(location.search).get('controls') !== 'grab' });
-  scene.cabinetHands?.ready.then(() => {
-    if (dualEnabled && scene.cabinetHands.error) {
-      $('hand-art-status').textContent = 'One or more 3D hand models failed to load. Camera tracking and game controls remain available.';
-      $('hand-art-status').hidden = false;
-    }
-  });
+  scene = new ArcadeScene($('scene'), { wideControls: cabinetEnabled && new URLSearchParams(location.search).get('controls') !== 'grab', anatomicalHands: dualEnabled });
+  if (scene.cabinetHands) {
+    const status = $('hand-art-status');
+    status.textContent = '3D hands are loading. Camera tracking and game controls remain available.';
+    status.hidden = false;
+    scene.cabinetHands.ready.then(() => {
+      status.hidden = scene.cabinetHands.state === 'ready';
+      if (!status.hidden) status.textContent = '3D hands are unavailable. Camera tracking and game controls remain available. Reload to retry the artwork.';
+    });
+  }
   scene.groundToys(game);
   restoreTrophies();
   persist(); renderBoard();

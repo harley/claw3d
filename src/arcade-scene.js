@@ -15,7 +15,7 @@ const SHADOW_FRUSTUM = {
 };
 
 export class ArcadeScene {
-  constructor(canvas, { wideControls = false } = {}) {
+  constructor(canvas, { wideControls = false, anatomicalHands = false } = {}) {
     this.wideControls = wideControls;
     this.canvas = canvas;
     this.renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -38,7 +38,7 @@ export class ArcadeScene {
     this.mats = createArtMaterials(); this.toys = new Map(); this.buildWorld(); this.buildCabinet(); this.buildClaw();
     for (const toy of ASSORTMENT) { const object = createToy(toy, this.mats); object.position.set(toy.x, BED, toy.z); this.scene.add(object); this.toys.set(toy.id, object); }
     this.contacts = new ToyContacts(this.toys);
-    if (wideControls) this.cabinetHands = new CabinetHands(this.scene);
+    if (anatomicalHands) this.cabinetHands = new CabinetHands(this.scene);
     this.buildCarousel();
     this.createTarget();
     this.buildEffects();
@@ -55,7 +55,7 @@ export class ArcadeScene {
         return !object.material.transparent;
       });
     }
-    this.cabinetHands?.ready.then(() => { this.trackShadowCaster(this.cabinetHands.root); this.renderer.shadowMap.needsUpdate = true; });
+    this.cabinetHands?.ready.then(() => { if (this.cabinetHands.state === 'ready') { this.trackShadowCaster(this.cabinetHands.root); this.renderer.shadowMap.needsUpdate = true; } });
     this.renderer.shadowMap.needsUpdate = true;
     this.motionQuery = matchMedia('(prefers-reduced-motion: reduce)'); this.reducedMotion = this.motionQuery.matches;
     this.motionQuery.addEventListener('change', e => { this.reducedMotion = e.matches; });
