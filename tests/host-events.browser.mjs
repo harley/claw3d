@@ -6,7 +6,7 @@ import { chromium } from 'playwright';
 import { browserOptions } from '../scripts/browser-options.mjs';
 import { createPilotServer } from '../server/index.js';
 const origin = 'http://127.0.0.1:4294', staffCode = 'host-ui-staff-test-secret', hostCode = 'host-ui-test-secret';
-const app = await createPilotServer({ filename: ':memory:', origin, staffCode, hostCode, secure: false, publicTryEnabled: true, officialEventsEnabled: true });
+const app = await createPilotServer({ filename: ':memory:', origin, staffCode, hostCode, secure: false, publicTryEnabled: true, officialEventsEnabled: true, officialAdmissionsEnabled: true });
 await new Promise(resolve => app.server.listen(4294, '127.0.0.1', resolve));
 const browser = await chromium.launch(browserOptions);
 try {
@@ -66,6 +66,41 @@ try {
   await page.locator('#event-retry').click();
   await page.waitForFunction(() => document.getElementById('event-state').textContent.includes('OPEN'));
   assert.deepEqual(stateBodies[1], stateBodies[0]);
+
+  // Distinct host wiring: duplicate display labels remain selectable by ID.
+  await page.locator('#participant-name').fill('Same display name'); await page.locator('#participant-create-button').click();
+  await page.waitForFunction(() => document.getElementById('participant-identity').textContent.startsWith('Selected ID:'));
+  const firstParticipant = await page.locator('#participant-select').inputValue();
+  await page.locator('#participant-create-button').click();
+  await page.waitForFunction(first => document.getElementById('participant-select').value !== first, firstParticipant);
+  await page.locator('#participant-select').selectOption(firstParticipant);
+  const ticketBodies = [];
+  await page.route('**/api/host/events/*/tickets', async route => {
+    ticketBodies.push(route.request().postDataJSON()); const response = await route.fetch();
+    if (ticketBodies.length === 1) await route.abort('failed'); else await route.fulfill({ response });
+  });
+  await page.locator('#ticket-issue').click();
+  await page.waitForFunction(() => document.getElementById('ticket-message').textContent.includes('Could not confirm'));
+  await Promise.all([page.waitForResponse(r => r.url().endsWith('/api/session')), page.reload()]);
+  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+  await page.locator('#operator-open').click(); await page.locator('#ticket-retry').click();
+  await page.waitForFunction(() => document.getElementById('ticket-message').textContent.includes('not returned again'));
+  assert.deepEqual(ticketBodies[0], ticketBodies[1]);
+  assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM official_tickets').get().n, 1);
+  assert.equal(await page.locator('#ticket-secret').isVisible(), false);
+  await page.locator('#ticket-reissue-confirm').check(); await page.locator('#ticket-reissue').click();
+  await page.locator('#ticket-secret').waitFor();
+  const issuedCode = await page.locator('#host-ticket-code').inputValue();
+  assert.match(issuedCode, /^T-[A-Fa-f0-9]{32}$/);
+  assert.equal(await page.locator('#participant-select').inputValue(), firstParticipant);
+  assert.equal(app.database.db.prepare("SELECT COUNT(*) AS n FROM official_tickets WHERE state='revoked'").get().n, 1);
+  assert.equal(await page.evaluate(code => JSON.stringify(sessionStorage).includes(code), issuedCode), false);
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.locator('#ticket-copy').click();
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), issuedCode);
+  // Never include the secret in screenshots. Refresh clears the memory-only code.
+  await page.locator('#event-refresh').click();
+  await page.waitForFunction(() => document.getElementById('ticket-secret').hidden);
   assert.equal(await page.locator('#event-close').isDisabled(), true);
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
@@ -75,6 +110,7 @@ try {
   await page.locator('#event-close-check').check(); await page.locator('#event-close').click();
   await page.waitForFunction(() => document.getElementById('event-state').textContent.includes('CLOSED'));
   assert.equal(await page.locator('#event-open').isVisible(), false);
+  assert.equal(await page.locator('#ticket-issue').isDisabled(), true);
   const closedAt = app.database.db.prepare('SELECT closed_at FROM official_events').get().closed_at;
   await page.locator('#event-refresh').click();
   assert.equal(app.database.db.prepare('SELECT closed_at FROM official_events').get().closed_at, closedAt);
@@ -88,5 +124,5 @@ try {
   await page.locator('#host-access').waitFor();
   assert.equal(await page.locator('#host-events').isVisible(), false);
   assert.deepEqual(errors, []);
-  console.log('Host UI: protected login, one event after lost response/reload, open/confirmed close, expired/auth errors; no ticket or score mutations.');
+  console.log('Host UI: protected login, one event after lost response/reload, open/confirmed close, participant IDs, lost ticket/reload/reissue/copy, expiry/auth errors; no gameplay or score mutations.');
 } finally { await browser.close(); await new Promise(resolve => app.server.close(resolve)); app.database.close(); }

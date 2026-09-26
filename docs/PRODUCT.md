@@ -187,7 +187,7 @@ A concise notice is shown before the first camera request or diagnostic bootstra
 
 ### Event admission API (staged)
 
-The event domain in `server/official-events.js` now has an opt-in HTTP adapter. Both the API and new admissions default off. When enabled for staff testing, hosts create events, participants and tickets; redemption still requires a staff session. A separate secure cookie then grants access only to the admitted run and its event board, without staff or host privileges. The legacy staff pilot remains separate. The staged official player entry is described below; anonymous official admission and participant/ticket host UI remain separate work. Public Try is staged separately above.
+The event domain in `server/official-events.js` now has an opt-in HTTP adapter. Both the API and new admissions default off. When enabled for staff testing, hosts create events, participants and tickets; redemption still requires a staff session. A separate secure cookie then grants access only to the admitted run and its event board, without staff or host privileges. The legacy staff pilot remains separate. The staged official player entry is described below; anonymous official admission remains separate work. Public Try is staged separately above.
 
 The intended event contract is three scored turns per single-use ticket, with host-issued repeat tickets retaining an opaque participant identity and one best completed score per participant. Display names never identify participants. Events have immutable scoring rules; a closed event cannot reopen. Unused tickets expire after 24 hours or at event close. Already admitted attempts may finish within ten minutes of closure, then expire unscored. Only admitted participants and hosts can read the bounded official board. Practice scores never enter it, and no automated prize awards are introduced.
 
@@ -236,7 +236,7 @@ The supplied prize and ball posters are design references, not approved scoring 
 
 ### Staged host event lifecycle
 
-With the official-event API enabled, authenticated staff can unlock the existing operator panel with the host code and create a draft official event, open it, refresh its server state, or permanently close it. Closing requires an explicit checkbox explaining unused-ticket expiry and the ten-minute grace for admitted runs. The panel reports unavailable/expired records without presenting cached state as current. Public Try and local preview do not mount these controls. Ticket issuance, participant management and technical recovery are not wired in this slice; the existing server rules remain authoritative.
+With the official-event API enabled, authenticated staff can unlock the existing operator panel with the host code and create a draft official event, open it, refresh its server state, or permanently close it. Closing requires an explicit checkbox explaining unused-ticket expiry and the ten-minute grace for admitted runs. The panel reports unavailable/expired records without presenting cached state as current. Public Try and local preview do not mount these controls. The participant/ticket panel below extends this console; unfinished-attempt technical recovery remains separate; the existing server rules remain authoritative.
 
 ### Staged official player journey
 
@@ -246,4 +246,12 @@ A ticket is reserved only after its request key, nonce and tab selection persist
 
 The live HUD is a gameplay preview. The final official total stays blank until the server confirms all three turns; the displayed rank explicitly belongs to the participant’s event best, which may differ from this attempt. Result recovery uses the admitted run ID, never a display name. A completed player cannot replay automatically. “Sign out · next player” requires no retained official outbox, clears the resolved admission metadata, revokes official access and signs out staff before returning to the staff gate. Failed sign-out stays on the page for retry. Unresolved attempts cannot use this handoff.
 
-This is a single-station staff-testing path. Host ticket issuance/reissue, unfinished-attempt adjudication/cleanup, participant management, anonymous admission, production enablement and physical-camera acceptance remain open. It does not provide a host recovery UI or a destructive browser-data reset.
+This is a single-station staff-testing path. Unfinished-attempt adjudication/cleanup, anonymous admission, production enablement and physical-camera acceptance remain open. It does not provide a host recovery UI or a destructive browser-data reset.
+
+### Staged host participants and tickets
+
+An open event’s host console can create a participant or select an existing server-issued participant ID. Display names are labels; equal names remain separate identities. Selecting that same ID for an explicit extra ticket preserves the participant’s event best. No nickname lookup or prize decision is added.
+
+Host requests persist their original keys before sending. Unconfirmed participant/ticket/reissue requests can be retried after reload without duplicate creation. A ticket code is shown and copied only from its initial successful response; it is never put in URLs, telemetry or durable browser storage. Closing or refreshing the console clears the displayed code. Retained receipts identify tickets, not their current redemption status. After a lost ticket response, retry retrieves its ID without the code; an explicit confirmed revoke/reissue can replace an unused ticket. The server refuses a redeemed ticket, and this flow never claims to recover its attempt.
+
+Closed, expired/unavailable events and lost host access disable mutations until an authoritative refresh permits them. Existing server admission switches remain authoritative. Request keys and secret-free receipts stay in the original tab for host reconciliation; this is not a purge or unfinished-run recovery UI. Production enablement, anonymous admission and physical booth acceptance remain open.
