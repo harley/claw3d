@@ -63,9 +63,9 @@ export function createHandMenu({ leftHand = false } = {}) {
       cursor.style.setProperty('--hold', clenching && locked ? feedback.progress : 0);
     },
     confirm(currentMode, feedback) {
-      if (!feedback.controlEnabled || feedback.kind !== 'clenching' || !feedback.pointer) { clear(); return false; }
+      if (!feedback.controlEnabled || feedback.kind !== 'clenching' || !feedback.pointer) { clearCursor(); return false; }
       if (!holding || !locked || mode !== currentMode || !actions[mode]?.includes(locked.id) || eligible(locked.id) !== locked) return false;
-      const target = locked; clear(); target.click(); return true;
+      const target = locked; clearCursor(); target.click(); return true;
     },
     clear,
   };

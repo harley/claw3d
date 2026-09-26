@@ -60,6 +60,7 @@ export async function assertMenuGuidance(browser) {
         await page.evaluate(() => updateMenu('lost'));
         assert.equal(await page.locator('#menu-guide').isVisible(), true);
         assert.equal(await page.evaluate(() => menu.confirm(mode, feedback)), false, 'loss cannot select');
+        assert.equal(await page.locator('#menu-guide').isVisible(), true, 'rejected confirmation keeps the loss guide and button layout');
         await point(id);
         await page.evaluate(() => updateMenu('clenching', { pointer: feedback.pointer, progress: 1 }));
         assert.equal(await page.evaluate(() => menu.confirm(mode, feedback)), true, `${mode}/${id}: completed hold`);
