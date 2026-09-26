@@ -51,6 +51,18 @@ test('GPU init failure falls back to CPU before reporting ready', async () => {
   assert.deepEqual(posted.at(-1), { type: 'ready', delegate: 'CPU' });
 });
 
+test('a startup replacement initializes CPU directly without revisiting the stalled GPU', async () => {
+  plan = {}; made = []; posted = [];
+  globalThis.OffscreenCanvas = class {};
+  globalThis.self = { postMessage: message => posted.push(message) };
+  await import(`../src/vision-worker.js?case=${imports++}`);
+  await self.onmessage({ data: { type: 'init', base: '/x', delegate: 'CPU' } });
+  assert.deepEqual(made, ['CPU']);
+  assert.deepEqual(posted.at(-1), { type: 'ready', delegate: 'CPU' });
+  await frame();
+  assert.equal(posted.at(-1).type, 'result');
+});
+
 test('first-inference GPU failure rebuilds on CPU, announces the flip and answers the same frame', async () => {
   await boot({ GPU: { recognizeThrows: true, closeThrows: true } });
   assert.deepEqual(posted.at(-1), { type: 'ready', delegate: 'GPU' });
