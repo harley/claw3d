@@ -293,7 +293,7 @@ $('player-form').addEventListener('submit', event => { event.preventDefault(); i
 $('name').addEventListener('input', () => $('name').setCustomValidity(''));
 $('register-cancel').addEventListener('click', () => $('registration').close());
 async function replay(samePlayer) {
-  if (startingRun || cameraLoading || (run && !(official && officialPlayer.state().canHandoff))) return;
+  if (startingRun || ((run || cameraLoading) && !(official && officialPlayer.state().canHandoff))) return;
   if (official) {
     try { await officialPlayer.handoff(); location.replace(publicOfficial ? '/official' : '/staff'); }
     catch (error) { setText('final-sync', error.message); }
@@ -584,6 +584,9 @@ const officialPlayer = official ? createOfficialPlayer({
     $('official-signout').hidden = !state.canHandoff;
     $('official-signout').textContent = state.handingOff ? 'Finish sign-out' : 'Finish · next player';
     if (officialBlocked && run) paused = true;
+    if (state.canHandoff && state.blocked && !state.result) {
+      for (const id of ['registration', 'official-ticket', 'camera-setup']) if ($(id).open) $(id).close();
+    }
     const message = state.error || (state.intent?.recoveryRequired ? 'Recovery only. Completed turns can sync; ask the host about unfinished play.' : state.canActivate ? 'Ticket admitted. Select PLAY, then START when ready.' : 'Enter a host-issued ticket.');
     setText('official-message', message); setText('sync-message', message);
     $('official-redeem').disabled = !state.ready || state.busy || Boolean(state.intent?.receipt && !state.intent.recoveryRequired);
@@ -635,6 +638,7 @@ if ((shared || publicTry) && globalThis.__OFFICIAL_EVENTS__ === true && !officia
   if (publicTry) $('official-entry').href = '/official';
 }
 if (publicOfficial) {
+  document.body.classList.add('public-official');
   $('operator-open').hidden = true;
   $('official-try').hidden = false;
   $('official-ticket').querySelector('.eyebrow').textContent = 'OFFICIAL EVENT';

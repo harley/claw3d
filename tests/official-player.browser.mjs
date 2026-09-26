@@ -2,7 +2,7 @@
 // loop -> pending versus server result -> reload -> public capability handoff.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { browserOptions } from '../scripts/browser-options.mjs';
 import { createPilotServer } from '../server/index.js';
@@ -29,6 +29,14 @@ try {
   await installCameraFixture(page, { built: true });
   await page.goto(`${origin}/official?setup=manual`);
   await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+  const built = JSON.parse(await readFile('dist/build-info.json', 'utf8'));
+  assert.ok((await page.locator('#build-info').textContent()).includes(`BUILD ${built.commit}`));
+  await mkdir('.screenshots', { recursive: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const entryBox = await page.locator('#shared-access').boundingBox(), playBox = await page.locator('#play').boundingBox();
+  assert.ok(entryBox.y + entryBox.height <= playBox.y, 'mobile ticket controls do not cover PLAY');
+  await page.screenshot({ path: '.screenshots/official-entry-mobile.png' });
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.locator('#official-status-open').click();
   await page.locator('#official-code').fill(ticket.code);
   await page.locator('#official-redeem').click();
@@ -99,7 +107,7 @@ try {
   const replacement = await post(host, `/api/host/event-runs/${unfinished.id}/recover`, { reason: 'camera_failure', requestKey: randomUUID() });
   await page.locator('#official-signout').waitFor();
   await page.screenshot({ path: '.screenshots/official-void.png' });
-  await Promise.all([page.waitForURL(`${origin}/official`), page.locator('#official-signout').click()]);
+  await Promise.all([page.waitForEvent('framenavigated', frame => frame === page.mainFrame()), page.locator('#official-signout').click()]);
   await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
   await page.locator('#official-status-open').click();
   await page.locator('#official-code').fill(replacement.code); await page.locator('#official-redeem').click();

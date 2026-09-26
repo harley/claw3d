@@ -179,6 +179,9 @@ dialog .play-button { width: 100%; margin-top: 24px; }
 #shared-access { position: absolute; bottom: 166px; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 44px); z-index: 8; font-size: 12px; line-height: 1.5; text-align: center; color: #ffba60; background: #080e1cf2; border-radius: 5px; }
 #sync-message:not(:empty) { display: inline-block; padding: 8px 12px; }
 #shared-access button { margin: 6px; }
+#shared-access a { display: inline-block; margin: 6px; padding: 6px; color: inherit; }
+#shared-access a:focus-visible { outline: 3px solid #35c9ff; outline-offset: 2px; }
+@media (max-width: 650px) { .public-official #shared-access { bottom: 240px; } }
 
 /* Announcements occupy the clear strip above the cabinet. */
 #loading, #error { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #080e1c; text-align: center; padding: 30px; }

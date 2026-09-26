@@ -177,6 +177,8 @@ export function createOfficialPlayer({ storage = browserStorage('localStorage'),
         }
         if (handoffPhase.phase === 'cleanup') {
           // Revalidate even on reload. A missing/expired capability is not proof.
+          const admissionRecord = admission.list().find(row => row.requestKey === handoffPhase.key);
+          if (publicScope && admissionRecord && (admissionRecord.nonce !== handoffPhase.nonce || admissionRecord.receipt?.id !== handoffPhase.runId)) throw new Error('Handoff does not match this admission. Keep browser data.');
           const receipt = await request('/api/official/session');
           const endingRun = handoffPhase.runId || (!publicScope && admission.read(handoffPhase.key).receipt?.id);
           if (receipt.id !== endingRun || !['complete', 'void', 'expired'].includes(receipt.status)) throw new Error('Terminal receipt unavailable. Keep browser data.');

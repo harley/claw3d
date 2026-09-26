@@ -783,7 +783,9 @@ test('public admission is anonymous, exact-run scoped, non-overwriting and retir
   assert.equal((await c.request(publicPath(key()))).status, 401);
   const bInput = admissionInput(await s.ticket());
   assert.equal((await c.request('/api/official/public/redeem', bInput)).status, 409);
+  const expiry = f.app.database.db.prepare('SELECT expires FROM official_run_sessions WHERE run_id=?').get(a.run.id).expires;
   const delayedRedeem = await c.request('/api/official/public/redeem', a.input, { saveCookies: false });
+  assert.equal(f.app.database.db.prepare('SELECT expires FROM official_run_sessions WHERE run_id=?').get(a.run.id).expires, expiry);
   assert.equal(delayedRedeem.status, 200);
   await completePublic(c, a.run, a.input);
   assert.equal((await c.request(publicPath(a.run.id, 'logout'), { nonce: key() })).status, 409);
@@ -798,6 +800,10 @@ test('public admission is anonymous, exact-run scoped, non-overwriting and retir
   assert.equal((await c.request(publicPath(a.run.id, 'logout'), { nonce: a.input.nonce })).status, 401);
   assert.equal((await c.request(publicPath(b.data.id))).data.id, b.data.id);
   assert.equal((await c.request('/api/official/public/redeem', a.input)).status, 409);
+  f.app.database.db.prepare('UPDATE official_runs SET accepted_at=? WHERE id=?').run(Date.now() - 12 * 3600_000 - 1, a.run.id);
+  f.app.database.db.prepare('DELETE FROM official_run_sessions WHERE run_id=?').run(a.run.id);
+  assert.equal((await f.client().request('/api/official/public/redeem', a.input)).status, 401, 'fixed admission expiry prevents regrant after retired row pruning');
+  assert.equal(f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_run_sessions WHERE run_id=?').get(a.run.id).n, 0);
 });
 test('public admission validates fields, proves never-admitted rejection, preserves exact paused retry and budgets immediate peers', async t => {
   const p = await publicFixture(t), { f, c } = p, input = admissionInput(await p.s.ticket());
