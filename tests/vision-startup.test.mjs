@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { HandController } from '../src/vision.js';
 
-// The observable contract is one bounded replacement of an unanswered first
-// GPU frame, retaining the camera. Existing vision tests cover late results and
-// terminal silence, but cannot exercise worker replacement/cancellation races.
+// The observable contract is one bounded replacement of an unanswered
+// GPU frame (including a previously responsive worker), retaining the camera.
+// Existing vision tests cover late results and terminal silence, but cannot
+// exercise worker replacement/cancellation races.
 function fixture(t) {
   const saved = new Map(['Worker', 'location', 'document', 'createImageBitmap'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
   t.after(() => { for (const [key, descriptor] of saved) {
@@ -54,9 +55,14 @@ for (const outcome of ['resolved', 'rejected']) {
   });
 }
 
-test('first GPU silence replaces the worker once, retains the camera and accepts only a fresh CPU result', async t => {
+for (const proven of [false, true]) test(`${proven ? 'Previously responsive' : 'First-frame'} GPU silence replaces the worker once, retains the camera and accepts only a fresh CPU result`, async t => {
   const f = fixture(t), { c, workers, stream } = f;
   const old = c.worker;
+  if (proven) {
+    old.reply({ type: 'result', result: {}, now: performance.now() });
+    assert.equal(c.receivedResult, true);
+    c.busy = true; // The next frame is sent but never receives a reply.
+  }
   c.fist.armed = true; c.fist.held = 400;
   f.silence(1065, 7955);
   assert.equal(workers.length, 1, 'original seven-second deadline is preserved');
@@ -70,7 +76,7 @@ test('first GPU silence replaces the worker once, retains the camera and accepts
   assert.deepEqual(workers[1].messages, [{ type: 'init', base: 'http://camera.test', maxHands: undefined, delegate: 'CPU' }]);
   old.reply({ type: 'result', result: {}, now: 8065 });
   assert.equal(c.busy, true, 'old queued reply must not release the replacement latch');
-  assert.equal(f.read().handled, 0);
+  assert.equal(f.read().handled, proven ? 1 : 0);
   old.onerror(); assert.equal(c.running, true);
   f.silence(8130, 20000);
   assert.equal(workers.length, 2, 'no replacement loop during initialization');
@@ -83,7 +89,7 @@ test('first GPU silence replaces the worker once, retains the camera and accepts
   assert.equal(capture.type, 'frame');
   assert.ok(capture.bitmap, 'replacement captures a new image, never replays the stale transferred frame');
   workers[1].reply({ type: 'result', result: {}, now: capture.now });
-  assert.equal(f.read().handled, 1);
+  assert.equal(f.read().handled, proven ? 2 : 1);
   assert.equal(c.receivedResult, true);
   assert.equal(c.video.srcObject, stream);
   Object.assign(c, { busy: true, lastSent: 30000, lastSupervise: 30000 });
@@ -121,11 +127,11 @@ test('stopping during replacement cancels initialization and ignores its late re
   assert.equal(replacement.terminated, 1);
 });
 
-for (const reason of ['CPU', 'proven GPU', 'main thread']) {
-  test(`${reason} silence is terminal without startup replacement`, t => {
+for (const reason of ['CPU', 'already recovered GPU', 'main thread']) {
+  test(`${reason} silence is terminal without another replacement`, t => {
     const f = fixture(t);
     if (reason === 'CPU') f.c.delegate = 'CPU';
-    if (reason === 'proven GPU') f.c.receivedResult = true;
+    if (reason === 'already recovered GPU') f.c.workerRecoveryUsed = true;
     if (reason === 'main thread') f.c.worker.local = true;
     f.silence(1065, 8085);
     assert.equal(f.c.running, false);
