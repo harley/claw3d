@@ -15,14 +15,13 @@ export const browserSuites = Object.freeze([
   'delivery-clearance',
 ]);
 
-// Durations are estimates from the per-suite stdout timestamps in PR run
-// 35717643384. The final contact/clearance pair is timed together because
-// those suites do not print completion markers. Each runner stays sequential.
+// Balance the same four runners using post-cleanup suite timings (issue #120).
+// Each runner stays sequential; the default local order above is unchanged.
 export const browserShards = Object.freeze({
   'shard-1': Object.freeze(['play-modes', 'dual-hand-controls', 'audio']),
-  'shard-2': Object.freeze(['grab-release', 'camera', 'gesture-feedback']),
-  'shard-3': Object.freeze(['hand-menu', 'arcade-presentation', 'target-label', 'arcade']),
-  'shard-4': Object.freeze(['movement-music', 'carousel', 'contact', 'delivery-clearance']),
+  'shard-2': Object.freeze(['grab-release', 'camera', 'gesture-feedback', 'target-label']),
+  'shard-3': Object.freeze(['arcade-presentation', 'arcade']),
+  'shard-4': Object.freeze(['movement-music', 'carousel', 'contact', 'delivery-clearance', 'hand-menu']),
 });
 
 export function selectBrowserSuites(args = []) {
