@@ -109,18 +109,23 @@ async function finish(page, firstTurn = 1, stopCameraOnLastDrop = false) {
 }
 async function scoredAndFeedback() {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
+  const modelRequests = [];
+  context.on('request', request => { if (/\/models\/hands\/.*\.glb/.test(request.url())) modelRequests.push(request.url()); });
   app.database.db.prepare('INSERT INTO owners VALUES (?)').run('rank-owner');
   for (let i = 0; i < 6; i++) {
     const run = app.database.createRun('rank-owner', { requestKey: crypto.randomUUID(), name: 'Same nickname' });
     for (let turn = 1; turn <= 3; turn++) app.database.record(run.id, 'rank-owner', { turn, prizeId: 'butter' });
   }
   const page = await open(context), boardBefore = app.database.board();
+  assert.deepEqual(modelRequests, [], 'shared one-hand play does not request anatomical assets');
   assert.equal(await page.locator('#mode-one').getAttribute('aria-pressed'), 'true');
   assert.equal(await page.locator('#camera-help').textContent(), 'Move one open hand to steer. Clench and hold your fist to drop; open to cancel.', 'shared default gives one-hand gameplay help');
   assert.equal(await page.locator('#scene').getAttribute('aria-label'), 'Steer with one open hand. Clench and hold your fist to drop.');
   await page.goto(`${origin}/?setup=manual&controls=dual`);
   await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
   assert.equal(await page.locator('#mode-two').getAttribute('aria-pressed'), 'true');
+  await page.waitForFunction(() => document.getElementById('hand-art-status').hidden);
+  assert.equal(modelRequests.length, 2, 'shared dual play requests both anatomical assets');
   assert.equal(await page.locator('#camera-help').textContent(), 'Show both open hands. Clench your left hand to grip and steer; raise your open right hand to drop. Open your left hand to release without dropping.', 'shared dual mode gives dual-hand gameplay help');
   assert.equal(await page.locator('#scene').getAttribute('aria-label'), 'Clench your left hand to grip and steer. Raise your open right hand to drop. Open your left hand to release.');
   await page.goto(`${origin}/?setup=manual&controls=grab&hold=300&steer=absolute`);
@@ -129,6 +134,7 @@ async function scoredAndFeedback() {
   assert.equal(await page.locator('#camera-help').textContent(), 'Move one open hand to steer. Clench and hold your fist to drop; open to cancel.', 'shared mode ignores local grab, hold and steering experiments');
   await page.goto(`${origin}/?setup=manual`);
   await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+  assert.equal(modelRequests.length, 2, 'switching back to shared one-hand does not load anatomical assets');
   let starts = 0;
   page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/runs') starts++; });
   assert.equal(await page.locator('#practice, #shared-practice, #rehearsal-exit').count(), 0);

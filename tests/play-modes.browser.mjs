@@ -19,6 +19,7 @@ async function assertLocalLabel(page, hands, unsaved = false) {
 const browser=await chromium.launch(browserOptions);
 try {
  const page=await browser.newPage({viewport:{width:1440,height:900}}), errors=[];
+ const modelRequests=[]; page.on('request', request=>{if(/\/models\/hands\/.*\.glb/.test(request.url())) modelRequests.push(request.url());});
  page.on('pageerror',e=>errors.push(e.message));await installCameraFixture(page);
  await page.goto('http://127.0.0.1:4196/?setup=manual');
  await page.waitForFunction(()=>document.getElementById('button-text').textContent==='PLAY · 1 HAND');
@@ -27,6 +28,7 @@ try {
  await page.goto('http://127.0.0.1:4196/');
  await page.waitForFunction(()=>document.getElementById('button-text').textContent==='PLAY · 1 HAND');
  assert.equal(await page.locator('#mode-two').textContent(),'2 Hands');
+ assert.deepEqual(modelRequests, [], 'one-hand play must not fetch either anatomical model');
  for(const size of [{width:1440,height:900},{width:390,height:700}]) {
   await page.setViewportSize(size);
   const a=await page.locator('#mode-one').boundingBox(),b=await page.locator('#mode-two').boundingBox();
@@ -37,6 +39,8 @@ try {
  await page.locator('#mode-two').click();await page.waitForFunction(()=>document.getElementById('mode-two').getAttribute('aria-pressed')==='true' && !document.getElementById('mode-two').disabled && window.testCamera?.running); await page.locator('#play').click();await page.locator('#registration').waitFor();
  await assertLocalLabel(page, '2 HANDS');
  assert.equal(new URL(page.url()).searchParams.get('controls'),'dual');
+ await page.waitForFunction(()=>document.getElementById('hand-art-status').hidden);
+ assert.equal(modelRequests.length, 2, 'dual mode fetches one copy of each hand');
  assert.equal(new URL(page.url()).searchParams.has('start'),false,'one-shot start is removed from URL');
  await page.locator('#register-play').click();
  await assertScoredStart(page);
@@ -69,5 +73,37 @@ try {
   await assertLocalLabel(blocked, hands, true);
  }
  await blocked.close();
+ // Asset-only lifecycle checks: no scored journey or camera is needed.
+ const assets = await browser.newPage();
+ const requests=[];
+ assets.on('request', request=>{if(/\/models\/hands\/.*\.glb/.test(request.url())) requests.push(request.url());});
+ await assets.goto('http://127.0.0.1:4196/?setup=manual&controls=grab');
+ await assets.waitForFunction(()=>window.__littleCloud);
+ assert.deepEqual(requests, [], 'local grab play does not load anatomical hands');
+ let release;
+ const delayed = new Promise(resolve=>{release=resolve;});
+ await assets.route('**/models/hands/*.glb', async route=>{await delayed; await route.continue();});
+ await assets.goto('http://127.0.0.1:4196/?setup=manual&controls=dual');
+ await assets.waitForFunction(()=>window.__littleCloud);
+ assert.equal(requests.length, 2);
+ assert.match(await assets.locator('#hand-art-status').textContent(), /loading.*controls remain available/);
+ assert.equal(await assets.evaluate(()=>window.__littleCloud.snapshot().event.run), null);
+ await assets.locator('#camera-open').click();
+ await assets.screenshot({path:'.screenshots/hand-assets-loading.png'});
+ await assets.locator('#camera-setup [aria-label="Close camera setup"]').click();
+ release();
+ await assets.waitForFunction(()=>document.getElementById('hand-art-status').hidden);
+ await assets.unroute('**/models/hands/*.glb');
+ await assets.route('**/models/hands/right.glb', route=>route.abort());
+ await assets.reload(); await assets.waitForFunction(()=>window.__littleCloud);
+ await assets.waitForFunction(()=>document.getElementById('hand-art-status').textContent.includes('Reload to retry'));
+ assert.equal(await assets.evaluate(()=>window.__littleCloud.snapshot().event.controlProfile), 'dual');
+ assert.equal(await assets.evaluate(()=>window.__littleCloud.snapshot().event.run), null);
+ await assets.locator('#camera-open').click();
+ await assets.screenshot({path:'.screenshots/hand-assets-unavailable.png'});
+ await assets.unroute('**/models/hands/right.glb');
+ await assets.reload(); await assets.waitForFunction(()=>window.__littleCloud && document.getElementById('hand-art-status').hidden);
+ assert.equal(requests.length, 6, 'each reload makes exactly two requests without in-page retry loops');
+ await assets.close();
  console.log('PASS both mode choices, responsive layout, one-shot selection, recovery isolation and cabinet controls');
 }finally{await browser.close();}
