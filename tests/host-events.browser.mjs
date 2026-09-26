@@ -1,0 +1,89 @@
+// Real host auth + production UI: catches wiring, request-key loss and stale
+// state presentation that domain tests cannot. No camera/gameplay duplication.
+import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
+import { chromium } from 'playwright';
+import { browserOptions } from '../scripts/browser-options.mjs';
+import { createPilotServer } from '../server/index.js';
+const origin = 'http://127.0.0.1:4294', staffCode = 'host-ui-staff-test-secret', hostCode = 'host-ui-test-secret';
+const app = await createPilotServer({ filename: ':memory:', origin, staffCode, hostCode, secure: false, publicTryEnabled: true, officialEventsEnabled: true });
+await new Promise(resolve => app.server.listen(4294, '127.0.0.1', resolve));
+const browser = await chromium.launch(browserOptions);
+try {
+  await mkdir('.screenshots', { recursive: true });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }), errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto(`${origin}/?setup=manual`);
+  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+  assert.equal(await page.locator('#operator-open').isVisible(), false);
+  assert.equal(await page.locator('#event-create').count(), 0, 'no public host controls mounted');
+  const denied = await page.evaluate(async () => (await fetch('/api/host/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Denied', requestKey: crypto.randomUUID() }) })).status);
+  assert.equal(denied, 401);
+  await page.goto(`${origin}/staff?setup=manual`);
+  await page.locator('#code').fill(staffCode); await page.locator('#login button').click();
+  await page.goto(`${origin}/staff?setup=manual`);
+  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+  await page.locator('#operator-open').click();
+  assert.equal(await page.locator('#host-access').isVisible(), true);
+  assert.equal(await page.locator('#host-events').isVisible(), false);
+  await page.locator('#host-code').fill('wrong'); await page.locator('#host-form button').click();
+  await page.waitForFunction(() => document.getElementById('host-message').textContent.length > 0);
+  assert.equal(await page.locator('#operator').isVisible(), false);
+  await page.locator('#host-code').fill(hostCode); await page.locator('#host-form button').click();
+  await page.locator('#event-name').waitFor();
+
+  const bodies = [];
+  await page.route('**/api/host/events', async route => {
+    bodies.push(route.request().postDataJSON());
+    const response = await route.fetch();
+    assert.equal(response.status(), 201);
+    if (bodies.length === 1) {
+      assert.equal(await page.locator('#event-create-button').isDisabled(), true);
+      await route.abort('failed'); // server committed, client did not receive it
+    } else await route.fulfill({ response });
+  });
+  await page.locator('#event-name').fill('Host UI test');
+  await page.locator('#event-create-button').click();
+  await page.waitForFunction(() => document.getElementById('event-message').textContent.includes('retry'));
+  assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM official_events').get().n, 1);
+  await Promise.all([page.waitForResponse(r => r.url().endsWith('/api/session')), page.reload()]);
+  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+  await page.locator('#operator-open').click();
+  await page.locator('#event-retry').click();
+  await page.waitForFunction(() => document.getElementById('event-state').textContent.includes('DRAFT'));
+  assert.deepEqual(bodies[1], bodies[0]);
+  assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM official_events').get().n, 1);
+  const stateBodies = [];
+  await page.route('**/api/host/events/*/state', async route => {
+    stateBodies.push(route.request().postDataJSON()); const response = await route.fetch();
+    if (stateBodies.length === 1) await route.abort('failed'); else await route.fulfill({ response });
+  });
+  await page.locator('#event-open').click();
+  await page.waitForFunction(() => document.getElementById('event-message').textContent.includes('retry'));
+  await page.locator('#event-retry').click();
+  await page.waitForFunction(() => document.getElementById('event-state').textContent.includes('OPEN'));
+  assert.deepEqual(stateBodies[1], stateBodies[0]);
+  assert.equal(await page.locator('#event-close').isDisabled(), true);
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.locator('#host-events').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `.screenshots/host-events-${width}.png` });
+  }
+  await page.locator('#event-close-check').check(); await page.locator('#event-close').click();
+  await page.waitForFunction(() => document.getElementById('event-state').textContent.includes('CLOSED'));
+  assert.equal(await page.locator('#event-open').isVisible(), false);
+  const closedAt = app.database.db.prepare('SELECT closed_at FROM official_events').get().closed_at;
+  await page.locator('#event-refresh').click();
+  assert.equal(app.database.db.prepare('SELECT closed_at FROM official_events').get().closed_at, closedAt);
+  app.database.db.prepare('UPDATE official_events SET retain_until=0').run();
+  await page.locator('#event-refresh').click();
+  await page.waitForFunction(() => document.getElementById('event-message').textContent.includes('expired'));
+  assert.equal(await page.locator('#event-open').isVisible(), false);
+  assert.equal(await page.locator('#event-close').isVisible(), false);
+  app.database.db.prepare("UPDATE sessions SET role='staff'").run();
+  await page.locator('#event-refresh').click();
+  await page.locator('#host-access').waitFor();
+  assert.equal(await page.locator('#host-events').isVisible(), false);
+  assert.deepEqual(errors, []);
+  console.log('Host UI: protected login, one event after lost response/reload, open/confirmed close, expired/auth errors; no ticket or score mutations.');
+} finally { await browser.close(); await new Promise(resolve => app.server.close(resolve)); app.database.close(); }

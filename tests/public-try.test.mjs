@@ -7,13 +7,13 @@ import { createPilotServer } from '../server/index.js';
 
 // Public entry/asset routing is a new access boundary. These disposable HTTP
 // tests catch accidental auth bypasses and symlink escapes without a browser.
-async function fixture(t, publicTryEnabled = false) {
+async function fixture(t, publicTryEnabled = false, officialEventsEnabled = true) {
   const dir = await mkdtemp(join(tmpdir(), 'public-try-'));
   for (const path of ['assets', 'models/hands', 'vision/wasm']) await mkdir(join(dir, path), { recursive: true });
   for (const path of ['index.html', 'build-info.json', 'private.txt', 'assets/game.js', 'assets/game.css', 'models/hands/left.glb', 'vision/gesture_recognizer.task', 'vision/wasm/runtime.wasm']) await writeFile(join(dir, path), path === 'index.html' ? '<head></head>Arcade' : 'fixture');
   await symlink(join(dir, 'private.txt'), join(dir, 'assets/secret.js'));
   const origin = 'http://127.0.0.1:4291';
-  const app = await createPilotServer({ filename: ':memory:', dist: dir, origin, staffCode: 'public-try-staff-secret', hostCode: 'public-host-code', secure: false, publicTryEnabled, officialEventsEnabled: true });
+  const app = await createPilotServer({ filename: ':memory:', dist: dir, origin, staffCode: 'public-try-staff-secret', hostCode: 'public-host-code', secure: false, publicTryEnabled, officialEventsEnabled });
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await new Promise(resolve => app.server.close(resolve)); app.database.close(); await rm(dir, { recursive: true, force: true }); });
   const request = (path, { data, cookie, method = data ? 'POST' : 'GET' } = {}) => fetch(`http://127.0.0.1:${app.server.address().port}${path}`, {
@@ -33,7 +33,7 @@ test('enabled Try exposes only its entry and required assets, without owners or 
   for (const path of ['/', '/try']) {
     const response = await request(path); assert.equal(response.status, 200);
     assert.equal(response.headers.get('set-cookie'), null);
-    const html = await response.text(); assert.match(html, /__PUBLIC_TRY__=true/); assert.match(html, /__PUBLIC_DIAGNOSTICS__=false/); assert.doesNotMatch(html, /__SHARED_PILOT__/);
+    const html = await response.text(); assert.match(html, /__PUBLIC_TRY__=true/); assert.match(html, /__PUBLIC_DIAGNOSTICS__=false/); assert.doesNotMatch(html, /__SHARED_PILOT__|__OFFICIAL_EVENTS__/);
   }
   for (const path of ['/assets/game.js', '/assets/game.css', '/models/hands/left.glb', '/vision/gesture_recognizer.task', '/vision/wasm/runtime.wasm']) {
     assert.equal((await request(path)).status, 200);
@@ -52,9 +52,17 @@ test('enabled Try cannot replace or elevate the separate staff session', async t
   assert.match(await (await request('/staff')).text(), /Staff pilot/);
   const login = await request('/api/login', { data: { code: 'public-try-staff-secret' } });
   const cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
-  assert.match(await (await request('/staff', { cookie })).text(), /__SHARED_PILOT__=true/);
+  assert.match(await (await request('/staff', { cookie })).text(), /__SHARED_PILOT__=true;window.__OFFICIAL_EVENTS__=true/);
   const practice = await request('/try', { cookie }); assert.equal(practice.headers.get('set-cookie'), null);
   assert.match(await practice.text(), /__PUBLIC_TRY__=true/);
   assert.equal((await request('/api/session', { cookie })).status, 200);
   assert.equal((await request('/api/host/export', { cookie })).status, 403);
+});
+
+// The host UI flag must follow the existing server feature switch, not public Try.
+test('disabled official API cannot advertise host event controls', async t => {
+  const { request } = await fixture(t, true, false);
+  const login = await request('/api/login', { data: { code: 'public-try-staff-secret' } });
+  const cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
+  assert.match(await (await request('/staff', { cookie })).text(), /__OFFICIAL_EVENTS__=false/);
 });

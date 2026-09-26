@@ -160,7 +160,7 @@ export async function createPilotServer(options) {
       let content = await readFile(actual);
       if (actual === resolve(root, 'index.html')) content = Buffer.from(content.toString().replace('<head>', publicPage
         ? `<head><script>window.__PUBLIC_TRY__=true;window.__PUBLIC_DIAGNOSTICS__=${publicDiagnosticsEnabled};</script>`
-        : '<head><script>window.__SHARED_PILOT__=true;</script>'));
+        : `<head><script>window.__SHARED_PILOT__=true;window.__OFFICIAL_EVENTS__=${officialEventsEnabled};</script>`));
       res.writeHead(200, { 'Content-Type': mime[extname(actual)] || 'application/octet-stream', 'Content-Length': content.length });
       res.end(req.method === 'HEAD' ? undefined : content);
     } catch (error) {
