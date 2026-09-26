@@ -7,6 +7,8 @@ const browserStorage = name => ({
 });
 const SELECTED = 'cloud-claw:official-player:v1';
 const HANDOFF = `${SELECTED}:handoff`;
+const COMPLETED = `${HANDOFF}:completed:`;
+const COMPLETED_RETENTION_MS = 30 * 86400_000, MAX_COMPLETED = 1024;
 // Coordinates admission and score delivery; the arcade alone owns physics.
 // A reconstructed controller can inspect/drain, but can never start a game.
 export function createOfficialPlayer({ storage = browserStorage('localStorage'), tabStorage = browserStorage('sessionStorage'), fetcher = fetch, onChange = () => {}, onResult = () => {}, publicScope = false, locks = globalThis.navigator?.locks } = {}) {
@@ -41,6 +43,42 @@ export function createOfficialPlayer({ storage = browserStorage('localStorage'),
   }
   function remove(store, key) {
     store.removeItem(key); if (store.getItem(key) !== null) throw new Error('Recovery storage unavailable. Keep this page.');
+  }
+  function completion(key) {
+    const value = JSON.parse(storage.getItem(COMPLETED + key) || 'null');
+    return value?.requestKey === key && /^[a-f0-9-]{36}$/.test(value.runId) &&
+      ['complete', 'void', 'expired'].includes(value.terminalReason) && Number.isFinite(value.at) &&
+      value.at <= Date.now() && value.at > Date.now() - COMPLETED_RETENTION_MS ? value : null;
+  }
+  function reconcileCompletedSelection() {
+    if (!publicScope) return false;
+    const selected = tabStorage.getItem(SELECTED);
+    if (!selected || admission.list().some(row => row.requestKey === selected)) return false;
+    const done = completion(selected);
+    if (!done || api.state().attempts.some(row => row.id === done.runId)) return false;
+    // This receipt only retires a stale tab pointer. It never authorizes score
+    // cleanup or deleting an admission/outbox, even after receipt eviction.
+    remove(tabStorage, SELECTED);
+    if (!intent || intent.requestKey === selected) { intent = active = result = board = terminalReceipt = null; blocked = false; }
+    return true;
+  }
+  function saveCompletion() {
+    const value = { requestKey: handoffPhase.key, runId: handoffPhase.runId, terminalReason: handoffPhase.terminalReason, at: Date.now() };
+    const text = JSON.stringify(value), key = COMPLETED + value.requestKey;
+    storage.setItem(key, text);
+    if (storage.getItem(key) !== text) throw new Error('Handoff confirmation storage unavailable. Keep this page.');
+    const receipts = [];
+    for (let i = 0; i < storage.length; i++) {
+      const name = storage.key(i);
+      if (name?.startsWith(COMPLETED)) receipts.push(name);
+    }
+    const retained = [];
+    for (const name of receipts) {
+      const record = completion(name.slice(COMPLETED.length));
+      if (!record) remove(storage, name); else retained.push({ name, at: record.at });
+    }
+    retained.sort((a, b) => a.name === key ? -1 : b.name === key ? 1 : b.at - a.at);
+    for (const row of retained.slice(MAX_COMPLETED)) remove(storage, row.name);
   }
   function state() {
     let sync;
@@ -95,6 +133,7 @@ export function createOfficialPlayer({ storage = browserStorage('localStorage'),
     state, refresh,
     async initialize() {
       try { await locked(async () => {
+        reconcileCompletedSelection();
         const selected = tabStorage.getItem(SELECTED);
         const ending = readHandoff();
         if (ending) {
@@ -116,6 +155,7 @@ export function createOfficialPlayer({ storage = browserStorage('localStorage'),
     redeem(code, recoveryKey = '') {
       return exclusive(async () => {
         if (publicScope) {
+          reconcileCompletedSelection();
           handoffPhase = readHandoff();
           const unresolved = admission.list().filter(row => row.submitted && row.requestKey !== (intent?.requestKey || recoveryKey));
           if (unresolved.length) throw new Error('Another attempt needs recovery before a new ticket.');
@@ -163,7 +203,11 @@ export function createOfficialPlayer({ storage = browserStorage('localStorage'),
     // Fresh server truth authorizes cleanup; persisted phases make it retriable.
     handoff() {
       return exclusive(async () => {
-        if (publicScope) handoffPhase = readHandoff();
+        if (publicScope) {
+          const completedElsewhere = reconcileCompletedSelection();
+          handoffPhase = readHandoff();
+          if (completedElsewhere && !handoffPhase) return;
+        }
         function savePhase(phase) {
           const text = JSON.stringify(phase); endingStorage.setItem(HANDOFF, text);
           if (endingStorage.getItem(HANDOFF) !== text) throw new Error('Sign-out storage unavailable. Keep this page.');
@@ -194,7 +238,8 @@ export function createOfficialPlayer({ storage = browserStorage('localStorage'),
         for (const path of publicScope ? ['/api/official/logout'] : ['/api/official/logout', '/api/logout']) {
           try { await request(path, publicScope ? { nonce: handoffPhase.nonce } : {}); } catch (failure) { if (failure.status !== 401) throw failure; }
         }
-        remove(tabStorage, SELECTED);
+        if (publicScope) saveCompletion();
+        if (!publicScope || tabStorage.getItem(SELECTED) === handoffPhase.key) remove(tabStorage, SELECTED);
         remove(endingStorage, HANDOFF);
         handoffPhase = terminalReceipt = intent = result = board = null; active = null; blocked = true;
       });

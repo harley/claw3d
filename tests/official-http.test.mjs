@@ -920,3 +920,69 @@ test('public terminal cleanup detects silent storage refusal and handoff holds a
   assert.notEqual(b.state().intent.receipt.id, run.id);
   assert.equal((await p.c.request(publicPath(b.state().intent.receipt.id))).status, 200);
 });
+test('completed shared handoff reconciles both an original reloaded tab and a still-open tab without erasing unresolved data', async t => {
+  const p = await publicPlayer(t); await p.flow.redeem((await p.s.ticket()).code); const run = await p.flow.activate();
+  await p.flow.queue({ ...run, turns: [1, 2, 3].map(turn => ({ turn, prizeId: null })) });
+  const selected = p.tab.getItem('cloud-claw:official-player:v1'), oldTab = storage();
+  oldTab.setItem('cloud-claw:official-player:v1', selected);
+  let lost = true;
+  p.hook = async path => { if (path.endsWith('/logout') && lost) { lost = false; throw Error('lost'); } };
+  await assert.rejects(p.flow.handoff(), /unavailable/);
+  const b = p.client(storage()); await b.initialize(); await b.handoff();
+  assert.equal(p.tab.getItem('cloud-claw:official-player:v1'), selected, 'other tab cannot directly clear A session storage');
+  const reloaded = p.client(oldTab); await reloaded.initialize();
+  assert.equal(reloaded.state().ready, true);
+  assert.equal(oldTab.getItem('cloud-claw:official-player:v1'), null);
+  const next = await p.s.ticket();
+  await reloaded.redeem(next.code); assert.equal(reloaded.state().canActivate, true, 'reloaded A admits the next player');
+  const intermediate = reloaded.state().intent.receipt;
+  assert.equal((await p.s.host.request(`/api/host/event-runs/${intermediate.id}/recover`, { reason: 'browser_failure', requestKey: key() })).status, 200);
+  await reloaded.handoff();
+  await p.flow.redeem((await p.s.ticket()).code); assert.equal(p.flow.state().canActivate, true, 'still-open A reconciles before a new ticket');
+  assert.notEqual(p.flow.state().intent.receipt.id, run.id);
+  // A missing unresolved admission has no completion acknowledgement and must
+  // remain blocked. Completion receipts never erase retained outbox data.
+  const unresolvedTab = storage(); unresolvedTab.setItem('cloud-claw:official-player:v1', key());
+  const unresolved = p.client(unresolvedTab); await unresolved.initialize(); assert.equal(unresolved.state().ready, false);
+  p.local.setItem(`cloud-claw:official:v1:${run.id}:run`, JSON.stringify({ id: run.id, rules: run.rules, nonce: key() }));
+  const retainedTab = storage(); retainedTab.setItem('cloud-claw:official-player:v1', selected);
+  const retained = p.client(retainedTab); await retained.initialize(); assert.equal(retained.state().ready, false);
+  assert.ok(p.local.getItem(`cloud-claw:official:v1:${run.id}:run`));
+});
+test('failed completion acknowledgement keeps shared handoff journal retryable', async t => {
+  const p = await publicPlayer(t); await p.flow.redeem((await p.s.ticket()).code); const run = await p.flow.activate();
+  await p.flow.queue({ ...run, turns: [1, 2, 3].map(turn => ({ turn, prizeId: null })) });
+  const set = p.local.setItem;
+  p.local.setItem = (name, value) => { if (!name.startsWith('cloud-claw:official-player:v1:handoff:completed:')) set(name, value); };
+  await assert.rejects(p.flow.handoff(), /confirmation storage unavailable/);
+  assert.ok(p.local.getItem('cloud-claw:official-player:v1:handoff'));
+  p.local.setItem = set;
+  const recovered = p.client(storage()); await recovered.initialize(); await recovered.handoff();
+  assert.equal(p.local.getItem('cloud-claw:official-player:v1:handoff'), null);
+});
+test('completion acknowledgements are bounded and expired evidence cannot clear an unresolved tab pointer', async t => {
+  const p = await publicPlayer(t); await p.flow.redeem((await p.s.ticket()).code); const run = await p.flow.activate();
+  await p.flow.queue({ ...run, turns: [1, 2, 3].map(turn => ({ turn, prizeId: null })) });
+  const prefix = 'cloud-claw:official-player:v1:handoff:completed:', original = p.flow.state().intent.requestKey;
+  for (let i = 0; i < 1025; i++) {
+    const requestKey = key(); p.local.setItem(prefix + requestKey, JSON.stringify({ requestKey, runId: key(), terminalReason: 'complete', at: Date.now() - 1000 }));
+  }
+  const expired = key(); p.local.setItem(prefix + expired, JSON.stringify({ requestKey: expired, runId: key(), terminalReason: 'complete', at: Date.now() - 31 * 86400_000 }));
+  const oldTab = storage(); oldTab.setItem('cloud-claw:official-player:v1', expired);
+  const old = p.client(oldTab); await old.initialize(); assert.equal(old.state().ready, false);
+  assert.equal(oldTab.getItem('cloud-claw:official-player:v1'), expired);
+  await p.flow.handoff();
+  let count = 0; for (let i = 0; i < p.local.length; i++) if (p.local.key(i).startsWith(prefix)) count++;
+  assert.equal(count, 1024); assert.ok(p.local.getItem(prefix + original)); assert.equal(p.local.getItem(prefix + expired), null);
+});
+test('requests already over a canonical peer budget cannot exhaust another peer global allowance', async t => {
+  // The immediate fixture peer is explicitly trusted; X-Real-IP therefore
+  // selects real canonical client buckets under the production resolver.
+  const f = await fixture(t, { publicTryEnabled: true, trustedProxyPeers: ['127.0.0.1'] });
+  const a = f.client(), b = f.client();
+  for (let i = 0; i < 600; i++) {
+    const response = await a.request('/api/official/public/redeem', {}, { headers: { 'x-real-ip': '192.0.2.10' } });
+    assert.equal(response.status, i < 60 ? 400 : 429);
+  }
+  assert.equal((await b.request('/api/official/public/redeem', {}, { headers: { 'x-real-ip': '192.0.2.11' } })).status, 400, 'B reaches input validation after A has been limited');
+});

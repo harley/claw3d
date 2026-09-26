@@ -87,7 +87,7 @@ export function createOfficialHttp({ db, body, json, cookies, cookie, limit, adm
       if (publicScope && !publicEnabled) fail(404, 'Public official play is not enabled.');
       if (path === '/api/official/public/redeem') {
         only(req, 'POST');
-        admissionBudget.take('global', 600); admissionBudget.take(`ip:${clientAddress(req)}`, 60);
+        admissionBudget.take(`ip:${clientAddress(req)}`, 60); admissionBudget.take('global', 600);
         const data = await input(req, ['code', 'requestKey', 'nonce']);
         if (typeof data.code !== 'string' || !/^T-[a-f0-9]{32}$/i.test(data.code)) fail(400, 'Invalid ticket code.');
         const secret = createHmac('sha256', data.code.toUpperCase()).update(`public-admission-v1:${data.nonce}`).digest('hex');
