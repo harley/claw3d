@@ -394,7 +394,9 @@ test('official client refuses unavailable storage, conflicting results and a fou
 test('official lost activation reload interrupts instead of retrying activation', async t => {
   const o = await outbox(t), api = o.client(); o.lose = '/activate';
   await assert.rejects(api.activate(o.run, o.input.nonce));
-  const start = o.calls.length, reloaded = o.client(); await reloaded.initialize();
+  const reloaded = o.client(); o.offline = true; await reloaded.initialize();
+  assert.throws(() => reloaded.acknowledge(o.run.id), /Interruption must sync/);
+  o.offline = false; const start = o.calls.length; await reloaded.flush();
   assert.deepEqual(o.calls.slice(start).map(url => url.split('/').at(-1)), ['session', 'interrupt']);
   await assert.rejects(reloaded.activate(o.run, o.input.nonce), /cannot restart/);
   assert.equal((await o.c.request('/api/official/session')).data.status, 'interrupted');

@@ -53,7 +53,7 @@ export function createOfficialSessionApi({ storage = browserStorage('localStorag
   }
   function clear(id) {
     // Remove the marker first so late acknowledgements cannot resurrect it.
-    for (const part of ['run', 'interrupted', 'terminal', ...[1, 2, 3].flatMap(n => [`turn:${n}`, `ack:${n}`])]) {
+    for (const part of ['run', 'interrupted', 'interruptAck', 'terminal', ...[1, 2, 3].flatMap(n => [`turn:${n}`, `ack:${n}`])]) {
       storage.removeItem(key(id, part)); unsaved.delete(key(id, part));
     }
     stop(id);
@@ -85,7 +85,8 @@ export function createOfficialSessionApi({ storage = browserStorage('localStorag
         const completed = read(id, 'ack:3');
         if (completed?.status === 'complete') { clear(id); onChange({ saved: completed }); }
         else if (read(id, 'interrupted') && activeId !== id) {
-          const interrupted = await request(`/runs/${id}/interrupt`, {});
+          const interrupted = read(id, 'interruptAck') ?? await request(`/runs/${id}/interrupt`, {});
+          if (read(id, 'run')) write(id, 'interruptAck', interrupted);
           if (terminal(interrupted)) { retainTerminal(interrupted); return interrupted; }
           // Keep the interrupted receipt for explicit host review/recovery.
         }
@@ -153,6 +154,7 @@ export function createOfficialSessionApi({ storage = browserStorage('localStorag
     acknowledge(id) {
       if (!read(id, 'terminal') && !read(id, 'interrupted')) throw new Error('Only reviewed interrupted or terminal attempts can be cleared.');
       if (!read(id, 'terminal') && [1, 2, 3].some(n => read(id, `turn:${n}`) && !read(id, `ack:${n}`))) throw new Error('Completed turns must sync before clearing.');
+      if (!read(id, 'terminal') && !read(id, 'interruptAck')) throw new Error('Interruption must sync before clearing.');
       clear(id); notify();
     },
   };
