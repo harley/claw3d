@@ -428,3 +428,121 @@ test('delayed official acknowledgement cannot overwrite turns queued by the live
   assert.equal(o.notices.find(n => n.saved)?.saved.total, 100);
   assert.equal(o.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_turns').get().n, 3);
 });
+
+// Admission must persist before ticket consumption; domain/outbox tests cannot
+// detect identifier replacement or browser storage failures at this boundary.
+async function admission(t) {
+  const { createOfficialAdmission } = await import('../src/official-admission.js');
+  const f = await fixture(t), s = await f.setup(), issued = await s.ticket(), local = storage(), calls = [];
+  let lose = false, afterResponse = () => {}, c = s.staff;
+  const fetcher = async (url, options) => {
+    calls.push({ url, ...options });
+    const r = await c.request(url, options.body ? JSON.parse(options.body) : undefined, { saveCookies: !lose });
+    afterResponse();
+    if (lose) { lose = false; throw Error('lost response'); }
+    return Response.json(r.data, { status: r.status });
+  };
+  return { f, s, issued, local, calls, fetcher, client: () => createOfficialAdmission({ storage: local, fetcher }),
+    set lose(value) { lose = value; }, set afterResponse(value) { afterResponse = value; }, set transport(value) { c = value; } };
+}
+
+test('admission refuses unavailable or silent storage before consuming a ticket', async t => {
+  const a = await admission(t), api = a.client(), set = a.local.setItem;
+  for (const refusing of [() => { throw Error('quota'); }, () => {}]) {
+    a.local.setItem = refusing;
+    await assert.rejects(api.prepare(a.issued.code));
+    assert.equal(a.calls.length, 0);
+  }
+  a.local.setItem = set;
+  const intent = await api.prepare(a.issued.code);
+  a.local.setItem = () => { throw Error('quota'); };
+  await assert.rejects(api.redeem(intent.requestKey, a.issued.code));
+  assert.equal(a.calls.length, 0);
+  assert.equal(a.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_runs').get().n, 0);
+  a.local.setItem = set;
+  const result = await api.redeem(intent.requestKey, a.issued.code);
+  assert.equal(result.receipt.status, 'accepted');
+  assert.equal(result.recoveryRequired, false);
+});
+
+test('lost redemption response reload reuses durable identifiers and capability without activation', async t => {
+  const a = await admission(t), api = a.client(), intent = await api.prepare(a.issued.code);
+  a.lose = true;
+  await assert.rejects(api.redeem(intent.requestKey, a.issued.code), /response unavailable/);
+  assert.throws(() => api.discard(intent.requestKey), /must be retained/);
+  assert.equal(a.s.staff.jar.has('cc_official'), false);
+  await a.f.restart();
+  const reloaded = a.client(), before = a.calls.length;
+  assert.deepEqual(reloaded.list().map(x => x.requestKey), [intent.requestKey]);
+  assert.equal(reloaded.read(intent.requestKey).recoveryRequired, true);
+  assert.equal(a.calls.length, before);
+  const recovered = await reloaded.redeem(intent.requestKey, a.issued.code);
+  assert.equal(recovered.recoveryRequired, true);
+  assert.equal(recovered.nonce, intent.nonce);
+  const capability = a.s.staff.jar.get('cc_official');
+  assert.ok(capability);
+  const retried = await reloaded.redeem(intent.requestKey, a.issued.code);
+  assert.deepEqual(retried, recovered);
+  assert.equal(a.s.staff.jar.get('cc_official'), capability);
+  assert.equal(a.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_runs').get().n, 1);
+  assert.equal(a.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_turns').get().n, 0);
+  assert.ok(a.calls.every(x => x.url === '/api/official/redeem' && x.credentials === 'same-origin'));
+  assert.ok(a.calls.every(x => x.body === a.calls[0].body));
+  const stored = Array.from({ length: a.local.length }, (_, i) => a.local.getItem(a.local.key(i))).join('');
+  assert.equal(stored.includes(a.issued.code), false);
+  assert.equal(stored.includes(capability), false);
+});
+
+test('receipt persistence failure retains replay identity and recovery works with a changed ticket case', async t => {
+  const a = await admission(t), api = a.client(), intent = await api.prepare(a.issued.code), set = a.local.setItem;
+  a.afterResponse = () => { a.local.setItem = () => { throw Error('quota'); }; };
+  await assert.rejects(api.redeem(intent.requestKey, a.issued.code), /quota/);
+  assert.equal(api.read(intent.requestKey).receipt, null);
+  a.local.setItem = set; a.afterResponse = () => {};
+  const recovered = await a.client().redeem(intent.requestKey, 'T-' + a.issued.code.slice(2).toLowerCase());
+  assert.equal(recovered.receipt.status, 'accepted');
+  assert.equal(recovered.recoveryRequired, true);
+  assert.equal(a.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_runs').get().n, 1);
+});
+
+test('distinct admission intents bind tickets and retain unrelated outboxes during terminal cleanup', async t => {
+  const a = await admission(t), api = a.client(), second = await a.s.ticket();
+  const one = await api.prepare(a.issued.code), two = await api.prepare(second.code);
+  assert.notEqual(one.requestKey, two.requestKey); assert.notEqual(one.nonce, two.nonce);
+  assert.notEqual(one.requestKey, one.nonce);
+  await assert.rejects(api.redeem(one.requestKey, second.code), /original ticket/);
+  assert.equal(a.calls.length, 0);
+  const result = await api.redeem(one.requestKey, a.issued.code);
+  const outbox = createOfficialSessionApi({ storage: a.local, tabStorage: storage(), fetcher: a.fetcher });
+  const active = await outbox.activate(result.receipt, result.nonce);
+  await assert.rejects(api.acknowledge(one.requestKey), /terminal/);
+  a.local.setItem('cloud-claw:pending:v2:other', 'legacy');
+  await outbox.queue({ ...active, turns: [1, 2, 3].map(turn => ({ turn, prizeId: null })) });
+  await api.acknowledge(one.requestKey);
+  assert.equal(a.local.getItem('cloud-claw:pending:v2:other'), 'legacy');
+  assert.equal(api.read(two.requestKey).submitted, false);
+  api.discard(two.requestKey);
+  assert.equal(api.list().length, 0);
+  assert.equal(a.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_turns').get().n, 3);
+});
+
+test('server rejection retains admission identifiers and never falls back to staff or legacy scoring', async t => {
+  const a = await admission(t), api = a.client(), intent = await api.prepare(a.issued.code);
+  a.transport = a.f.client();
+  await assert.rejects(api.redeem(intent.requestKey, a.issued.code), { status: 401 });
+  assert.equal(api.read(intent.requestKey).nonce, intent.nonce);
+  a.transport = a.s.staff;
+  await a.f.restart({ officialAdmissionsEnabled: false });
+  await assert.rejects(api.redeem(intent.requestKey, a.issued.code), { status: 503 });
+  assert.equal(a.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_runs').get().n, 0);
+  await a.f.restart();
+  const result = await api.redeem(intent.requestKey, a.issued.code);
+  const duplicate = await api.prepare(a.issued.code);
+  await assert.rejects(api.redeem(duplicate.requestKey, a.issued.code), { status: 409 });
+  const other = await a.s.admit();
+  assert.notEqual(other.run.id, result.receipt.id);
+  await assert.rejects(api.acknowledge(intent.requestKey), /terminal/);
+  assert.equal(api.read(intent.requestKey).receipt.id, result.receipt.id);
+  assert.ok(a.calls.every(x => ['/api/official/redeem', '/api/official/session'].includes(x.url)));
+  assert.equal(a.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM runs').get().n, 0);
+});
