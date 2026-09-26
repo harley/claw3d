@@ -35,7 +35,7 @@ try {
   await page.waitForFunction(() => document.getElementById('gesture-meter').getAttribute('aria-valuenow') === '50');
   assert.equal((await snap()).joystick.progress, .5);
   const held = await snap();
-  assert.ok(held.effects.fingerRadius < held.claw.radii[0] - .1);
+  assert.ok(Math.abs(held.effects.fingerRadius - held.claw.radii[0]) < 1e-12, 'partial confirmation keeps the visible claw open');
   assert.deepEqual(held.effects.clawLean, [0, 0, 0]);
   const meterBox = await page.locator('#gesture-meter').boundingBox();
   assert.equal(meterBox.width, 1, 'remote progress remains accessible without a competing visible meter');
@@ -45,9 +45,22 @@ try {
   assert.equal(await page.locator('#control-deck').isVisible(),false);
   assert.equal(await page.locator('#machine-drop').getAttribute('data-ready'),'true');
   await page.screenshot({ path: '.screenshots/gesture-hold.png' });
+  for (const reducedMotion of ['no-preference', 'reduce']) {
+    await page.emulateMedia({ reducedMotion });
+    for (const progress of [.99, 1]) {
+      await feedback({ kind: 'clenching', progress });
+      await page.waitForFunction(progress => window.__littleCloud.snapshot().joystick.progress === progress, progress);
+      const confirmed = await snap();
+      assert.equal(confirmed.phase, 'aim', 'presentation alone never accepts a drop');
+      assert.ok(Math.abs(confirmed.effects.fingerRadius - confirmed.claw.radii[0]) < 1e-12, `${reducedMotion}: confirmation keeps fingers open`);
+    }
+  }
   await feedback({ kind: 'tracking', progress: 0 });
   await page.waitForFunction(() => document.getElementById('gesture-meter').hidden);
-  assert.equal((await snap()).joystick.progress, 0, 'cancelled hold clears the scene ring');
+  const cancelled = await snap();
+  assert.equal(cancelled.joystick.progress, 0, 'cancelled hold clears the scene ring');
+  assert.equal(cancelled.phase, 'aim');
+  assert.ok(Math.abs(cancelled.effects.fingerRadius - cancelled.claw.radii[0]) < 1e-12);
   assert.equal(await page.locator('#machine-drop').evaluate(el => el.style.getPropertyValue('--hold')), '0');
 
   // Silence must expire both the input and its visible control claim.
@@ -55,7 +68,10 @@ try {
   await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.feedback.kind === 'delayed');
   await page.waitForFunction(() => !window.__littleCloud.snapshot().joystick.visible);
   assert.equal(await page.locator('#status').textContent(), 'TRACKING DELAYED');
-  const heldRemaining = (await snap()).event.remaining;
+  const lost = await snap();
+  assert.equal(lost.phase, 'aim');
+  assert.ok(Math.abs(lost.effects.fingerRadius - lost.claw.radii[0]) < 1e-12);
+  const heldRemaining = lost.event.remaining;
   await page.waitForTimeout(300); assert.equal((await snap()).event.remaining, heldRemaining);
   await page.screenshot({ path: '.screenshots/gesture-lost.png' });
   await page.evaluate(() => { window.testCamera.tick(); window.testCamera.timer = setInterval(() => window.testCamera.tick(), 30); });

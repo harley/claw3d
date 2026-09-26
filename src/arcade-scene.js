@@ -460,9 +460,9 @@ export class ArcadeScene {
     });
   }
 
-  updateClawFeedback(pose, phase, dt, feedback, holding) {
-    // Rendering only: contacts have already resolved from the unmodified pose.
-    this.applyClawPose(holding ? { ...pose, radii: pose.radii.map(r => Math.max(.06, r - .22 * ease(holding))) } : pose);
+  updateClawFeedback(pose, phase, dt, feedback) {
+    // Fist confirmation presses DROP; only the mechanical grip closes the fingers.
+    this.applyClawPose(pose);
     const steering = phase === 'aim' && feedback.controlEnabled && feedback.kind === 'tracking';
     const previous = this.previousAim;
     const lean = delta => Math.abs(delta) < .08 ? 0 : clamp(delta * .035, -.035, .035);
@@ -500,8 +500,6 @@ export class ArcadeScene {
     if (presentation.machineControls && activeControl && !['dual', 'grab-release'].includes(feedback.profile)) this.button.position.y -= .04 * (feedback.progress || 0);
     this.cabinetHands?.update(phase, elapsed, dt, feedback, presentation.machineControls, this.stick, this.button, this.reducedMotion);
     this.target.visible = ['idle', 'aim'].includes(phase); this.target.position.set(game.position.x, BED + (game.carousel && Math.hypot(game.position.x - CAROUSEL.x, game.position.z - CAROUSEL.z) < .55 ? CAROUSEL.height : 0) + .014, game.position.z); this.targetMat.color.set(aligned ? '#547e69' : '#bb5b49');
-    // Fist-hold confirmation fills the ring the player is already watching.
-    const holding = !['grab-release', 'dual'].includes(feedback.profile) && phase === 'aim' && feedback.controlEnabled && feedback.kind === 'clenching' ? clamp(feedback.progress, 0, 1) : 0;
     this.beam.visible = this.target.visible; this.beam.position.set(game.position.x, BED + .02, game.position.z); this.beam.scale.y = HIGH - BED - 1.01; this.beamMat.color.copy(this.targetMat.color);
     this.deliveryTray.visible = false; this.deliveryTray.scale.setScalar(1);
     const hatchOpen = plan?.prize && ['release', 'deliver', 'reveal', 'result'].includes(phase);
@@ -559,7 +557,7 @@ export class ArcadeScene {
     }
     for (const toy of game.toys) if (toy.impact && !toy.claimed && game.plan?.prize?.id !== toy.id) this.contacts.rock(game, toy, this.toys.get(toy.id), dt);
     this.contacts.resolve(game, pose);
-    this.updateClawFeedback(pose, phase, dt, feedback, holding);
+    this.updateClawFeedback(pose, phase, dt, feedback);
     // The rim light answers the player: green when a toy is under the claw, gold on a catch, red on a miss.
     if (this.rim) {
       this.rimTarget.set(rimColorFor({ phase, aligned: Boolean(aligned), prize: Boolean(plan?.prize) }));
