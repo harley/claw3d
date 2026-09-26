@@ -35,10 +35,25 @@ try {
   assert.equal(await page.locator('#hint').isVisible(), false, 'camera recovery uses one clear status line');
   assert.equal(await page.locator('#camera-recognition').textContent(), 'Camera view');
   // The draw cap follows quality, not camera state (unit-tested in render-budget.test.mjs).
-  // The operator toggle itself is not exercised here: on the CI runner's virtual GPU a
-  // quality change starves the camera worker for over 7 s (issue #75).
+  // Restore both quality changes against the real camera/worker. A weak GPU
+  // may recover once on CPU; it must produce fresh results after each toggle.
   await page.waitForFunction(() => typeof window.cameraRenderBudget === 'boolean');
   assert.equal(await page.evaluate(() => window.cameraRenderBudget), await page.evaluate(() => window.__littleCloud.snapshot().lowQuality), 'capped exactly when quality is simple');
+  await page.locator('#operator-open').click();
+  for (let toggle = 0; toggle < 2; toggle++) {
+    const before = (await snap()).lowQuality;
+    const changedAt = await page.evaluate(() => performance.now());
+    await page.locator('#quality').click();
+    assert.equal((await snap()).lowQuality, !before);
+    console.log('QUALITY_CAMERA_STATE', await page.evaluate(() => window.cameraControllerState()));
+    await page.waitForFunction(changedAt => {
+      const camera = window.__littleCloud.snapshot().event.handCamera;
+      return camera.running && window.cameraControllerState().lastResponseCapture > changedAt
+        && Number.isFinite(camera.diagnostic.captureAge) && camera.diagnostic.rejected === null;
+    }, changedAt, { timeout: 35000 });
+    assert.equal(await page.evaluate(() => window.cameraRenderBudget), !before);
+  }
+  await page.locator('#operator .panel-head button').click();
   const geometry = await page.evaluate(() => {
     const video = document.getElementById('camera-video'), overlay = document.getElementById('camera-overlay');
     const v = video.getBoundingClientRect(), o = overlay.getBoundingClientRect();
@@ -94,13 +109,25 @@ try {
   await context.close();
   // A synchronous GPU call cannot receive a recovery message. Force that exact
   // failure in a real worker, then require fresh CPU output on the same camera.
+  for (const fault of [true, 'after-quality']) {
   const stalled = await browser.newContext({ permissions: ['camera'] }); const sp = await stalled.newPage();
-  reportDiagnostics = await cameraDiagnostics(sp, { stallGPU: true });
+  reportDiagnostics = await cameraDiagnostics(sp, { stallGPU: fault });
   await sp.goto('http://127.0.0.1:4196/?setup=manual'); await sp.waitForFunction(() => window.__littleCloud);
   await traceController(sp);
   await sp.locator('#play').click();
   await sp.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running, {}, { timeout: 35000 });
   await sp.evaluate(() => { window.originalCameraStream = document.getElementById('camera-video').srcObject; });
+  if (fault === 'after-quality') {
+    await sp.waitForFunction(() => window.cameraControllerState().receivedResult);
+    assert.equal(await sp.evaluate(() => window.cameraControllerState().delegate), 'GPU');
+    await sp.locator('#operator-open').click();
+    await sp.locator('#quality').click();
+    await sp.evaluate(() => {
+      window.recordCameraLifecycle('quality-fault', window.cameraControllerState());
+      window.cameraTestWorker.postMessage({ type: 'test-quality-stall' });
+    });
+    await sp.locator('#operator .panel-head button').click();
+  }
   const fresh = await sp.waitForFunction(() => {
     const diagnostic = window.__littleCloud.snapshot().event.handCamera.diagnostic;
     return diagnostic.delegate === 'CPU' && Number.isFinite(diagnostic.captureAge) && diagnostic.rejected === null && { captureAge: diagnostic.captureAge };
@@ -119,9 +146,10 @@ try {
   assert.equal(recovery.events.filter(event => event.stage === 'worker-create').length, 2);
   assert.equal(recovery.events.filter(event => event.stage === 'worker-terminate').length, 1);
   assert.ok(recovery.events.some(event => event.stage === 'worker-receive' && event.type === 'ready' && event.delegate === 'GPU'));
-  console.log('PASS blocked first GPU inference is replaced once by a CPU worker with fresh results and the same camera', freshCapture);
+  console.log('PASS blocked GPU inference recovers once with fresh CPU results and the same camera', { fault, ...freshCapture });
   await reportDiagnostics(); reportDiagnostics = async () => {};
   await stalled.close();
+  }
   const denied = await browser.newContext(); const dp = await denied.newPage();
   await dp.addInitScript(() => { const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); let first = true; navigator.mediaDevices.getUserMedia = async options => { if (first) { first = false; throw new DOMException('Denied', 'NotAllowedError'); } return original(options); }; });
   await dp.goto('http://127.0.0.1:4196/?setup=manual'); await dp.waitForFunction(() => window.__littleCloud); await dp.locator('#camera-open').click(); await dp.locator('#camera-toggle').click();
