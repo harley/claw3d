@@ -78,7 +78,10 @@ try {
   await page.keyboard.down('ArrowRight'); await page.waitForTimeout(350); await page.keyboard.up('ArrowRight');
   await page.keyboard.press('Space'); assert.deepEqual((await snap()).position, position); assert.equal((await snap()).phase, 'idle');
   await page.evaluate(() => window.dispatchEvent(new Event('blur'))); assert.equal((await snap()).event.paused, false);
-  await page.waitForFunction(() => window.cameraLifecycle.some(event => event.stage === 'worker-receive' && event.type === 'result'));
+  await page.waitForFunction(() => {
+    const diagnostic = window.__littleCloud.snapshot().event.handCamera.diagnostic;
+    return Number.isFinite(diagnostic.captureAge) && diagnostic.rejected === null;
+  });
   await page.locator('#camera-open').click(); assert.equal(await page.locator('#operator').isVisible(), false);
   await page.locator('#camera-toggle').click(); assert.equal((await snap()).event.handCamera.running, false);
   await page.waitForFunction(() => window.cameraRenderBudget === false);
@@ -98,7 +101,12 @@ try {
   await sp.locator('#play').click();
   await sp.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running, {}, { timeout: 35000 });
   await sp.evaluate(() => { window.originalCameraStream = document.getElementById('camera-video').srcObject; });
-  await sp.waitForFunction(() => window.cameraLifecycle.some(event => event.stage === 'worker-receive' && event.type === 'result'), {}, { timeout: 35000 });
+  const fresh = await sp.waitForFunction(() => {
+    const diagnostic = window.__littleCloud.snapshot().event.handCamera.diagnostic;
+    return diagnostic.delegate === 'CPU' && Number.isFinite(diagnostic.captureAge) && diagnostic.rejected === null && { captureAge: diagnostic.captureAge };
+  }, {}, { timeout: 35000 });
+  const freshCapture = await fresh.jsonValue();
+  assert.ok(freshCapture.captureAge >= 0 && freshCapture.captureAge <= 300);
   const recovery = await sp.evaluate(() => ({ events: window.cameraLifecycle,
     sameStream: window.originalCameraStream === document.getElementById('camera-video').srcObject,
     camera: window.__littleCloud.snapshot().event.handCamera,
@@ -111,7 +119,7 @@ try {
   assert.equal(recovery.events.filter(event => event.stage === 'worker-create').length, 2);
   assert.equal(recovery.events.filter(event => event.stage === 'worker-terminate').length, 1);
   assert.ok(recovery.events.some(event => event.stage === 'worker-receive' && event.type === 'ready' && event.delegate === 'GPU'));
-  console.log('PASS blocked first GPU inference is replaced once by a CPU worker with fresh results and the same camera');
+  console.log('PASS blocked first GPU inference is replaced once by a CPU worker with fresh results and the same camera', freshCapture);
   await reportDiagnostics(); reportDiagnostics = async () => {};
   await stalled.close();
   const denied = await browser.newContext(); const dp = await denied.newPage();
