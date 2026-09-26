@@ -1,12 +1,19 @@
 import assert from 'node:assert/strict';
 import { recordStartCue, assertStartCueDuration, assertPreparationTiming } from './start-cue-observation.mjs';
 // Deterministic camera events for game-flow tests; hardware/model smoke is separate.
-export async function installCameraFixture(page) {
-  await page.route('**/src/vision.js', route => route.fulfill({ contentType: 'application/javascript', body: `
+export async function installCameraFixture(page, { built = false, cameraRequest = false } = {}) {
+  await page.route(built ? '**/assets/vision-*.js' : '**/src/vision.js', async route => {
+    if (built) assert.ok((await (await route.fetch()).text()).includes(' as HandController'), 'production vision export found');
+    return route.fulfill({ contentType: 'application/javascript', body: `
     export class HandController {
       constructor(options) { Object.assign(this, options); this.running = false; this.input = {x:0,z:0}; this.visible = true; this.feedback = {}; window.testCamera = this; }
       resetOwner() { this.input = {x:0,z:0}; this.onInput(this.input); }
-      async start() { this.running = true; this.tick(); this.timer = setInterval(() => this.tick(), 30); }
+      async start() {
+        if (${cameraRequest}) {
+          try { await navigator.mediaDevices.getUserMedia({video:true}); }
+          catch { this.onState({kind:'error',code:'permission_denied',message:'Camera permission denied'}); return; }
+        }
+        this.running = true; this.tick(); this.timer = setInterval(() => this.tick(), 30); }
       tick() {
         const profile = this.getControlProfile?.() || 'hold-drop';
         const common = { profile, kind: this.visible ? 'tracking' : 'lost', message: this.visible ? profile === 'dual' ? 'Both hands recognized' : 'One hand to steer · clench to drop' : profile === 'dual' ? 'Show both hands to continue' : 'Show one hand to continue', handCount: this.visible ? profile === 'dual' ? 2 : 1 : 0, controlEnabled: true };
@@ -23,7 +30,7 @@ export async function installCameraFixture(page) {
       setPerformanceMode() { return false; }
       clench() { return this.onDrop(); }
     }
-  ` }));
+  ` }); });
 }
 export const cameraInput = (page, input) => page.evaluate(input => { window.testCamera.input = input; window.testCamera.tick(); }, input);
 export const cameraDrop = page => page.evaluate(() => window.testCamera.clench());

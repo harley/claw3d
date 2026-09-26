@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { browserShards, browserSuites, selectBrowserSuites } from '../scripts/browser-suites.mjs';
 
 test('defaults to all browser suites in their established sequential order', () => {
@@ -16,9 +16,12 @@ test('--shard selects its configured suite group', () => {
 });
 
 test('CI shards cover every browser suite exactly once', () => {
-  // Shared-session owns a separate required job with its real server.
+  // Both real-server journeys run sequentially in the required shared job.
+  const shared = ['shared-session', 'public-try'];
+  const scripts = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).scripts;
+  assert.equal(scripts['test:shared'], shared.map(name => `node tests/${name}.browser.mjs`).join(' && '));
   const entries = readdirSync(new URL('.', import.meta.url))
-    .filter(name => name.endsWith('.browser.mjs') && name !== 'shared-session.browser.mjs')
+    .filter(name => name.endsWith('.browser.mjs') && !shared.some(suite => name === `${suite}.browser.mjs`))
     .map(name => name.slice(0, -'.browser.mjs'.length)).sort();
   assert.deepEqual([...browserSuites].sort(), entries);
   assert.deepEqual(Object.values(browserShards).flat().sort(), entries);

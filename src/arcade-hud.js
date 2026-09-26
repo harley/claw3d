@@ -115,7 +115,7 @@ function presentMessage(title, hint, key, duration = 0) {
 export function createHud({ audio, phaseSound }) {
   let lastCue = '', lastStatus = '', lastFirstTurnCue = null;
   function update(view, feedback, modal) {
-    const { game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, firstTurnPreparationElapsed, firstTurnControlReady, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus, storageError, aligned } = view;
+    const { game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, firstTurnPreparationElapsed, firstTurnControlReady, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, publicTry, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus, storageError, aligned } = view;
   const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
   const turns = run?.rules?.turns ?? completedRun?.rules?.turns ?? RULES.turns;
   const preparingFirstTurn = Boolean(run && firstTurnPreparationElapsed !== null);
@@ -210,7 +210,7 @@ export function createHud({ audio, phaseSound }) {
   setText('timer', String(Math.ceil(remaining)).padStart(2, '0'));
   setText('speed-bonus', `SPEED +${Math.floor((run?.rules.speedBonus ?? 50) * remaining / (run?.rules.seconds || 15))}`);
   $('arcade').classList.toggle('last-claw', Boolean(run && turnNumber === turns)); $('arcade').classList.toggle('urgent', phase === 'aim' && remaining <= 5);
-  setText('mode-label', shared ? sharedStatus : `LOCAL PREVIEW · ${dualEnabled ? '2 HANDS' : '1 HAND'}${storageError ? ' · UNSAVED' : ''}`);
+  setText('mode-label', shared ? sharedStatus : publicTry ? 'PRACTICE · NO EVENT RANKING' : `LOCAL PREVIEW · ${dualEnabled ? '2 HANDS' : '1 HAND'}${storageError ? ' · UNSAVED' : ''}`);
   setHidden($('mode-label'), !$('mode-label').textContent);
   setHidden($('result-open'), !completedRun || startingRun || Boolean(run) || cameraLoading);
   if (!run && !recovering) button = cameraLoading ? 'Starting…' : !shared ? (dualEnabled ? 'PLAY · 2 HANDS' : 'PLAY · 1 HAND') : cameraControls?.running ? 'Play' : 'Start camera';

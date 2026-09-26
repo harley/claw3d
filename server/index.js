@@ -15,13 +15,15 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 const matches = (a, b) => typeof a === 'string' && timingSafeEqual(Buffer.from(hash(a)), Buffer.from(hash(b)));
 const token = () => randomBytes(32).toString('base64url');
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.wasm': 'application/wasm', '.glb': 'model/gltf-binary', '.svg': 'image/svg+xml', '.png': 'image/png', '.task': 'application/octet-stream' };
-const gate = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Cloud Claw · Staff pilot</title><style>body{background:#080e1c;color:#f4eee5;font:18px system-ui;display:grid;place-content:center;min-height:95vh;margin:0}main{max-width:360px;padding:24px}small{color:#ffba60}input,button{box-sizing:border-box;width:100%;font:inherit;padding:14px;margin:12px 0;border-radius:8px;border:1px solid #aaa}button{background:#ffba60;color:#111;font-weight:700}p{line-height:1.5}</style><main><small>CODERPUSH × AWS CLOUD DAY</small><h1>Cloud Claw</h1><p>Staff pilot · enter your access code.</p><form id="login"><label for="code">Staff code</label><input id="code" type="password" autocomplete="current-password" required maxlength="128"><button>ENTER THE ARCADE</button><p id="message" role="status"></p></form></main><script>document.getElementById('login').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:document.getElementById('code').value})});if(!r.ok)throw Error((await r.json()).error);location.replace('/')}catch(e){document.getElementById('message').textContent=e.message}finally{button.disabled=false}};</script></html>`;
+const gate = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Cloud Claw · Staff pilot</title><style>body{background:#080e1c;color:#f4eee5;font:18px system-ui;display:grid;place-content:center;min-height:95vh;margin:0}main{max-width:360px;padding:24px}small{color:#ffba60}input,button{box-sizing:border-box;width:100%;font:inherit;padding:14px;margin:12px 0;border-radius:8px;border:1px solid #aaa}button{background:#ffba60;color:#111;font-weight:700}p{line-height:1.5}</style><main><small>CODERPUSH × AWS CLOUD DAY</small><h1>Cloud Claw</h1><p>Staff pilot · enter your access code.</p><form id="login"><label for="code">Staff code</label><input id="code" type="password" autocomplete="current-password" required maxlength="128"><button>ENTER THE ARCADE</button><p id="message" role="status"></p></form></main><script>document.getElementById('login').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:document.getElementById('code').value})});if(!r.ok)throw Error((await r.json()).error);location.replace('/staff')}catch(e){document.getElementById('message').textContent=e.message}finally{button.disabled=false}};</script></html>`;
 
 export async function createPilotServer(options) {
   const { filename, origin, staffCode, hostCode, dist = resolve('dist'), secure = true,
-    officialEventsEnabled = false, officialAdmissionsEnabled = false, publicDiagnosticsEnabled = false, trustedProxyPeers = [] } = options;
+    officialEventsEnabled = false, officialAdmissionsEnabled = false, publicDiagnosticsEnabled = false, publicTryEnabled = false, trustedProxyPeers = [] } = options;
   if (typeof officialEventsEnabled !== 'boolean' || typeof officialAdmissionsEnabled !== 'boolean') throw new Error('Event feature options must be booleans.');
   if (typeof publicDiagnosticsEnabled !== 'boolean') throw new Error('Diagnostics option must be a boolean.');
+  if (typeof publicTryEnabled !== 'boolean') throw new Error('Public Try option must be a boolean.');
+  const publicAsset = path => /^\/(?:assets\/[a-zA-Z0-9_-]+\.(?:js|css)|models\/hands\/(?:left|right)\.glb|vision\/(?:gesture_recognizer\.task|wasm\/[a-zA-Z0-9_-]+\.(?:js|wasm)))$/.test(path);
   const clientAddress = clientAddressResolver(trustedProxyPeers);
   if (!origin || !staffCode || !hostCode || staffCode.length < 16 || hostCode.length < 8 || staffCode === hostCode) throw new Error('A fixed origin, a staff secret of at least 16 characters and a distinct host code of at least 8 characters are required.');
   const database = openDatabase(filename), { db } = database;
@@ -95,8 +97,10 @@ export async function createPilotServer(options) {
         res.setHeader('Set-Cookie', [res.getHeader('Set-Cookie'), cookie('cc_owner', ownerToken, 90 * 86400)]);
         return json(res, 200, { ok: true });
       }
-      if (!auth) {
-        if (path === '/' && req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(gate); }
+      const publicPage = publicTryEnabled && ['/', '/try'].includes(path);
+      const publicRead = publicTryEnabled && ['GET', 'HEAD'].includes(req.method) && (publicPage || publicAsset(path));
+      if (!auth && !publicRead) {
+        if (['/', '/staff'].includes(path) && req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(gate); }
         throw new ApiError(401, 'Sign in with the staff code to continue.');
       }
       if (path.startsWith('/api/')) {
@@ -147,13 +151,16 @@ export async function createPilotServer(options) {
       if (!['GET', 'HEAD'].includes(req.method)) throw new ApiError(405, 'Method not allowed.');
       let relative;
       try { relative = decodeURIComponent(path); } catch { throw new ApiError(400, 'Invalid path.'); }
-      const file = resolve(root, `.${relative === '/' ? '/index.html' : relative}`);
+      const file = resolve(root, `.${['/', '/staff'].includes(relative) || publicPage ? '/index.html' : relative}`);
       if (!file.startsWith(root + sep)) throw new ApiError(404, 'File not found.');
       let actual;
       try { actual = await realpath(file); if (!actual.startsWith(root + sep) || !(await stat(actual)).isFile()) throw Error(); }
       catch { throw new ApiError(404, 'File not found.'); }
+      if (!auth && !publicPage && !publicAsset('/' + actual.slice(root.length + 1).split(sep).join('/'))) throw new ApiError(404, 'File not found.');
       let content = await readFile(actual);
-      if (actual === resolve(root, 'index.html')) content = Buffer.from(content.toString().replace('<head>', '<head><script>window.__SHARED_PILOT__=true;</script>'));
+      if (actual === resolve(root, 'index.html')) content = Buffer.from(content.toString().replace('<head>', publicPage
+        ? `<head><script>window.__PUBLIC_TRY__=true;window.__PUBLIC_DIAGNOSTICS__=${publicDiagnosticsEnabled};</script>`
+        : '<head><script>window.__SHARED_PILOT__=true;</script>'));
       res.writeHead(200, { 'Content-Type': mime[extname(actual)] || 'application/octet-stream', 'Content-Length': content.length });
       res.end(req.method === 'HEAD' ? undefined : content);
     } catch (error) {
@@ -191,6 +198,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   }
   const { server, database } = await createPilotServer({ filename: resolve(dataDir, 'pilot.sqlite'), origin: process.env.PUBLIC_ORIGIN,
     staffCode: process.env.STAFF_CODE, hostCode: process.env.HOST_CODE, secure: production,
+    publicTryEnabled: process.env.PUBLIC_TRY_ENABLED === 'true',
     publicDiagnosticsEnabled: process.env.PUBLIC_DIAGNOSTICS_ENABLED === 'true',
     trustedProxyPeers: process.env.TRUSTED_PROXY_PEERS ? process.env.TRUSTED_PROXY_PEERS.split(',').map(value => value.trim()) : [],
     officialEventsEnabled: process.env.OFFICIAL_EVENTS_ENABLED === 'true',
