@@ -428,3 +428,11 @@ dialog .menu-guide-hand { font-size: 52px; }
 
 #staff-link { color: #9db3d0; font-size: 11px; }
 @media (max-width: 650px) { #try-notice[open] { top: 82px; bottom: auto; } }
+
+#host-events { border-top: 1px solid #ffffff30; margin-top: 20px; padding-top: 12px; }
+#host-events h3 { color: var(--gold, #ffba60); }
+#host-events .event-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+#host-events .event-actions button { flex: 1 1 140px; }
+#event-close-confirm { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 1.5; margin-top: 12px; }
+#event-close-check { width: 20px; min-width: 20px; margin-top: 3px; }
+#event-state, #event-message { overflow-wrap: anywhere; }

@@ -5,6 +5,7 @@ import './arcade.css';
 import { createJoystickCursor } from './joystick-cursor.js';
 import { createHandMenu, generatedName } from './hand-menu.js';
 const manualSetup = new URLSearchParams(location.search).get('setup') === 'manual';
+import { createHostEvents } from './host-events.js';
 import { createSharedBoard } from './shared-board.js';
 import { createPlaytestClient, createPublicPlaytestClient } from './playtest-client.js';
 import { createArcadeAudio } from './arcade-audio.js';
@@ -269,7 +270,7 @@ function gestureDrop() {
   return Boolean(result);
 }
 function fail(message, error) { track('client_error', { reason: 'renderer' }); stopped = true; cameraControls?.stop(); clearTimeout(window.__arcadeBootTimer); errors.push(String(error || message)); $('loading').hidden = true; $('error').hidden = false; $('error-message').textContent = message; console.error('Cloud Claw:', error || message); }
-function openOperator() { if (shared && pilot.role !== 'host') { $('host-access').showModal(); return; } renderBoard(); $('operator').showModal(); $('pause').textContent = recovering ? 'RESUME INTERRUPTED TURN' : paused ? 'RESUME GAME' : 'PAUSE GAME'; }
+function openOperator() { if (publicTry) return; if (shared && pilot.role !== 'host') { $('host-access').showModal(); return; } renderBoard(); $('operator').showModal(); void hostEvents?.open(); $('pause').textContent = recovering ? 'RESUME INTERRUPTED TURN' : paused ? 'RESUME GAME' : 'PAUSE GAME'; }
 document.addEventListener('visibilitychange', () => { previous = 0; if (document.hidden) { audio.silence(); handMenu.clear(); cameraControls?.reset(); } });
 $('player-form').addEventListener('submit', event => { event.preventDefault(); if (!scene || stopped || !cameraControls?.running) return;
   if (startingRun || run) return;
@@ -552,6 +553,7 @@ const pilot = createSharedBoard({
   },
   onConnectError: error => { $('sync-message').textContent = error.message; $('shared-reauth').hidden = error.status !== 401; renderBoard(); },
 });
+const hostEvents = shared && globalThis.__OFFICIAL_EVENTS__ === true ? createHostEvents($('host-events'), { onUnauthorized: () => { $('operator').close(); $('host-access').showModal(); $('host-message').textContent = 'Host access expired. Sign in again.'; } }) : null;
 if (shared) {
   $('shared-access').hidden = false;
   $('operator-help').textContent = 'Shared scores persist on the pilot server. Existing runs keep their original board when you rotate. Names are display labels; scores are for fun.';
