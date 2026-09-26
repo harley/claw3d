@@ -40,7 +40,15 @@ try {
   });
   assert.equal(await page.locator('#hand-cursor').isVisible(), false, 'hidden page clears without waiting for animation frames');
   assert.equal(await fire(), false);
-  await page.evaluate(() => { delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); });
+  await page.evaluate(() => {
+    delete document.hidden; document.dispatchEvent(new Event('visibilitychange'));
+    // Discard the fixture's pre-hide fist/pointer, then let the menu restore
+    // its guide before sampling button coordinates for the next open hand.
+    window.testCamera.clearFeedback();
+  });
+  await page.waitForFunction(() => !document.hidden && window.__littleCloud.snapshot().event.handCamera.running &&
+    !document.getElementById('menu-guide').hidden && getComputedStyle(document.getElementById('menu-guide')).visibility === 'visible');
+  assert.equal(await fire(), false, 'restoring visibility cannot carry the previous hold');
   await point('register-play'); await hold();
   await page.evaluate(() => { window.testCamera.feedback.kind = 'lost'; window.testCamera.tick(); });
   await page.waitForTimeout(80); assert.equal(await fire(), false, 'lost hand cancels selection');
