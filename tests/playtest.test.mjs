@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import { request as httpRequest } from 'node:http';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../server/database.js';
@@ -14,6 +16,60 @@ import { playtestReport } from '../server/playtest-report.js';
 const event = (type = 'page_open', data = {}) => ({ id: randomUUID(), type, mode: 'practice', elapsedMs: 123, data });
 const batch = (...events) => ({ sessionId: randomUUID(), build: 'a8d0a24', events });
 const reject = (fn, status = 400) => assert.throws(fn, error => error.status === status);
+
+test('read-only public report is opt-in, separates cohorts and never interprets missing collection as zero usage', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'claw-public-report-')), filename = join(dir, 'observations.sqlite');
+  // Observation-only fixture proves reports do not need authentication tables.
+  const db = new DatabaseSync(filename);
+  db.exec('PRAGMA journal_mode=WAL');
+  const cli = (...args) => spawnSync(process.execPath, ['server/playtest-report.js', ...args], { encoding: 'utf8' });
+  const digest = async path => createHash('sha256').update(await readFile(path)).digest('hex');
+  try {
+    const staff = createPlaytestStore(db);
+    staff.ingest({ ...batch(event('feedback', { category: 'controls', comment: 'staff-only feedback' })), build: 'aaaaaaa' });
+    assert.throws(() => playtestReport(filename, undefined, { publicOnly: true }), /Public observations unavailable.*not evidence of zero usage/);
+    const missing = cli(filename, '--public');
+    assert.notEqual(missing.status, 0); assert.equal(missing.stdout, '');
+    assert.match(missing.stderr, /Public observations unavailable/);
+    assert.equal(db.prepare("SELECT 1 FROM sqlite_master WHERE name='public_playtest_events'").get(), undefined);
+
+    let time = Date.now() - 60_000;
+    const publicStore = createPlaytestStore(db, { now: () => time, publicOnly: true, maxEvents: 20_000 });
+    const empty = playtestReport(filename, undefined, { publicOnly: true });
+    assert.equal(empty.summary.events, 0); assert.equal(empty.collectionStatus, 'unknown');
+    assert.match(empty.collectionNote, /Empty results are not evidence of zero usage/);
+    const older = { ...batch(event()), build: 'bbbbbbb' };
+    publicStore.ingest(older);
+    time += 30_000;
+    const newer = { ...batch(event('feedback', { category: 'stuck' })), build: 'ccccccc' };
+    publicStore.ingest(newer);
+    // The reader excludes expired observations without pruning stored data.
+    db.prepare('UPDATE public_playtest_events SET received_at=? WHERE id=?').run(new Date(time - PLAYTEST_RETENTION_MS - 1).toISOString(), older.events[0].id);
+    const before = await Promise.all([digest(filename), digest(`${filename}-wal`)]);
+    const report = playtestReport(filename, undefined, { publicOnly: true });
+    assert.equal(report.cohort, 'public'); assert.equal(report.collectionStatus, 'unknown');
+    assert.equal(report.maxEvents, 20_000);
+    assert.deepEqual(report.events.map(row => row.id), [newer.events[0].id]);
+    assert.deepEqual(report.summary.cohorts.map(row => row.build), ['ccccccc']);
+    assert.ok(!JSON.stringify(report).includes('staff-only feedback'));
+    const defaultReport = playtestReport(filename);
+    assert.equal(defaultReport.cohort, undefined, 'legacy API shape is unchanged');
+    assert.deepEqual(defaultReport.summary.cohorts.map(row => row.build), ['aaaaaaa']);
+    assert.equal(defaultReport.maxEvents, 100_000);
+    const publicCli = cli(filename, '--public'), staffCli = cli(filename);
+    assert.equal(publicCli.status, 0, publicCli.stderr); assert.equal(staffCli.status, 0, staffCli.stderr);
+    assert.deepEqual(JSON.parse(publicCli.stdout).events, report.events);
+    assert.deepEqual(JSON.parse(staffCli.stdout).events, defaultReport.events);
+    const filtered = cli(filename, new Date(time + 1).toISOString(), '--public');
+    assert.equal(filtered.status, 0, filtered.stderr); assert.equal(JSON.parse(filtered.stdout).summary.events, 0);
+    for (const args of [[filename, '--staff'], [filename, '--public', '--public'], ['--public', filename], [filename, '--public', 'extra']]) {
+      const invalid = cli(...args); assert.notEqual(invalid.status, 0); assert.equal(invalid.stdout, ''); assert.match(invalid.stderr, /Usage:/);
+    }
+    assert.throws(() => playtestReport(filename, undefined, { publicOnly: 'true' }), /must be a boolean/);
+    assert.deepEqual(await Promise.all([digest(filename), digest(`${filename}-wal`)]), before, 'reporting does not change database or WAL bytes');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM public_playtest_events').get().n, 2, 'expired row remains stored');
+  } finally { db.close(); await rm(dir, { recursive: true, force: true }); }
+});
 
 test('playtest batches are private, bounded, atomically validated and idempotent across restart', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'claw-playtest-')), filename = join(dir, 'pilot.sqlite');
