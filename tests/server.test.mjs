@@ -93,7 +93,7 @@ test('protected shared runs: ownership, ordered idempotency, ties, rotation, rea
   } finally { await stop(); await rm(dir, { recursive: true, force: true }); }
 });
 
-test('secure Railway login buckets use validated client addresses and secure cookies', async () => {
+test('legacy secure ingress preserves distinct staff clients and abuse limits with diagnostics off', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cloud-claw-proxy-'));
   await writeFile(join(dir, 'index.html'), '<head></head>');
   const origin = 'https://pilot.example';
@@ -105,6 +105,7 @@ test('secure Railway login buckets use validated client addresses and secure coo
   try {
     for (let i = 0; i < 12; i++) assert.equal((await login('192.0.2.1')).status, 401);
     assert.equal((await login('192.0.2.1', staffCode, '198.51.100.1')).status, 429);
+    for (let i = 3; i <= 21; i++) assert.equal((await login(`192.0.2.${i}`, staffCode)).status, 200, 'distinct legitimate clients must not share the proxy peer budget');
     const success = await login('192.0.2.2', staffCode); assert.equal(success.status, 200);
     assert.ok(success.headers.getSetCookie().every(cookie => /HttpOnly/.test(cookie) && /SameSite=Strict/.test(cookie) && /; Secure/.test(cookie)));
     for (let i = 0; i < 12; i++) await login('not-an-ip-' + i);

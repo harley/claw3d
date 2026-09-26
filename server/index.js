@@ -7,6 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { ApiError, openDatabase } from './database.js';
 import { createPlaytestStore } from './playtest.js';
 import { backupForRelease } from './release-backup.js';
+import { createBudget, clientAddressResolver } from './request-budget.js';
+import { createPublicDiagnostics } from './public-diagnostics.js';
 import { createOfficialHttp, isOfficialPath } from './official-http.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -17,11 +19,13 @@ const gate = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="v
 
 export async function createPilotServer(options) {
   const { filename, origin, staffCode, hostCode, dist = resolve('dist'), secure = true,
-    officialEventsEnabled = false, officialAdmissionsEnabled = false } = options;
+    officialEventsEnabled = false, officialAdmissionsEnabled = false, publicDiagnosticsEnabled = false, trustedProxyPeers = [] } = options;
   if (typeof officialEventsEnabled !== 'boolean' || typeof officialAdmissionsEnabled !== 'boolean') throw new Error('Event feature options must be booleans.');
+  if (typeof publicDiagnosticsEnabled !== 'boolean') throw new Error('Diagnostics option must be a boolean.');
+  const clientAddress = clientAddressResolver(trustedProxyPeers);
   if (!origin || !staffCode || !hostCode || staffCode.length < 16 || hostCode.length < 8 || staffCode === hostCode) throw new Error('A fixed origin, a staff secret of at least 16 characters and a distinct host code of at least 8 characters are required.');
   const database = openDatabase(filename), { db } = database;
-  const root = await realpath(dist), attempts = new Map();
+  const root = await realpath(dist), attempts = createBudget();
   const playtest = createPlaytestStore(db);
   function cookie(name, value, age, path = '/') { return `${name}=${value}; Path=${path}; HttpOnly; SameSite=Strict; Max-Age=${age}${secure ? '; Secure' : ''}`; }
   function cookies(req) { return Object.fromEntries((req.headers.cookie || '').split(';').map(part => part.trim().split('='))); }
@@ -36,16 +40,14 @@ export async function createPilotServer(options) {
     res.setHeader('Set-Cookie', cookie('cc_session', value, 12 * 3600));
   }
   function limit(req, auth, login = false, telemetry = false) {
-    // Railway supplies X-Real-IP. Missing/invalid proxy metadata shares a conservative fallback bucket.
+    // Preserve the existing staff-pilot ingress contract; proxy migration is separate
+    // from the default-off public diagnostics routes below.
     const forwarded = req.headers['x-real-ip'];
-    const ip = secure ? typeof forwarded === 'string' && isIP(forwarded) ? forwarded : 'unknown-proxy-client' : req.socket.remoteAddress;
-    const key = login ? `login:${ip}` : `${telemetry ? 'playtest' : 'write'}:${auth.owner_id}`;
-    const time = Date.now(), entry = attempts.get(key);
-    if (entry && entry.until > time && entry.count >= (login ? 12 : telemetry ? 60 : 120)) throw new ApiError(429, 'Too many attempts. Try again in a minute.');
-    if (!entry || entry.until <= time) attempts.set(key, { count: 1, until: time + 60_000 });
-    else entry.count++;
-    if (attempts.size > 5000) for (const [id, value] of attempts) if (value.until <= time) attempts.delete(id);
+    const loginIp = secure ? typeof forwarded === 'string' && isIP(forwarded) ? forwarded : 'unknown-proxy-client' : req.socket.remoteAddress;
+    const key = login ? `login:${loginIp}` : `${telemetry ? 'playtest' : 'write'}:${auth.owner_id}`;
+    attempts.take(key, login ? 12 : telemetry ? 60 : 120);
   }
+
   async function body(req, maxBytes = 4096) {
     if (req.headers.origin !== origin) throw new ApiError(403, 'Use this pilot’s own page to make changes.');
     if (!req.headers['content-type']?.startsWith('application/json')) throw new ApiError(415, 'JSON required.');
@@ -60,6 +62,7 @@ export async function createPilotServer(options) {
   }
   function json(res, status, data) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); }
   const official = officialEventsEnabled ? createOfficialHttp({ db, body, json, cookies, cookie, limit, admissionsEnabled: officialAdmissionsEnabled }) : null;
+  const diagnostics = publicDiagnosticsEnabled ? createPublicDiagnostics({ db, body, json, cookies, cookie, clientAddress }) : null;
   const server = createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -70,6 +73,10 @@ export async function createPilotServer(options) {
     try {
       const url = new URL(req.url, origin), path = url.pathname;
       if (req.method === 'GET' && path === '/healthz') return json(res, 200, { ok: true });
+      if (path.startsWith('/api/public/')) {
+        if (!diagnostics) throw new ApiError(404, 'Public diagnostics are not enabled.');
+        await diagnostics.handle(req, res, path); return;
+      }
       const auth = session(req);
       if (isOfficialPath(path)) {
         if (!official) throw new ApiError(404, 'Event API is not enabled.');
@@ -105,6 +112,11 @@ export async function createPilotServer(options) {
         if (req.method === 'GET' && path === '/api/host/playtest') {
           if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');
           return json(res, 200, playtest.read(url.searchParams.get('since')));
+        }
+        if (req.method === 'GET' && path === '/api/host/public-playtest') {
+          if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');
+          if (!diagnostics) throw new ApiError(404, 'Public diagnostics are not enabled.');
+          return json(res, 200, diagnostics.read(url.searchParams.get('since')));
         }
         if (req.method === 'POST' && path === '/api/playtest') {
           limit(req, auth, false, true);
@@ -145,6 +157,7 @@ export async function createPilotServer(options) {
       res.writeHead(200, { 'Content-Type': mime[extname(actual)] || 'application/octet-stream', 'Content-Length': content.length });
       res.end(req.method === 'HEAD' ? undefined : content);
     } catch (error) {
+      if (!res.headersSent && error.retryAfter) res.setHeader('Retry-After', String(error.retryAfter));
       if (!res.headersSent) json(res, error.status || 500, { error: error.status ? error.message : 'The score service is unavailable. Please retry.' });
       else res.end();
       if (!error.status) console.error('Pilot request failed:', error.code || error.name);
@@ -153,7 +166,7 @@ export async function createPilotServer(options) {
   server.requestTimeout = 10_000;
   server.headersTimeout = 10_000;
   const retentionTimer = setInterval(() => {
-    try { playtest.prune(); official?.pruneSessions(); } catch (error) { console.error('Retention maintenance failed:', error.code || error.name); }
+    try { playtest.prune(); official?.pruneSessions(); diagnostics?.prune(); attempts.prune(); } catch (error) { console.error('Retention maintenance failed:', error.code || error.name); }
   }, 3600_000);
   retentionTimer.unref();
   server.once('close', () => clearInterval(retentionTimer));
@@ -178,6 +191,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   }
   const { server, database } = await createPilotServer({ filename: resolve(dataDir, 'pilot.sqlite'), origin: process.env.PUBLIC_ORIGIN,
     staffCode: process.env.STAFF_CODE, hostCode: process.env.HOST_CODE, secure: production,
+    publicDiagnosticsEnabled: process.env.PUBLIC_DIAGNOSTICS_ENABLED === 'true',
+    trustedProxyPeers: process.env.TRUSTED_PROXY_PEERS ? process.env.TRUSTED_PROXY_PEERS.split(',').map(value => value.trim()) : [],
     officialEventsEnabled: process.env.OFFICIAL_EVENTS_ENABLED === 'true',
     officialAdmissionsEnabled: process.env.OFFICIAL_EVENT_ADMISSIONS === 'enabled' });
   server.listen(Number(process.env.PORT || 4200), production ? '0.0.0.0' : '127.0.0.1', () => console.log('Cloud Claw pilot listening.'));
