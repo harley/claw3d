@@ -18,7 +18,7 @@
     "check": "npm test && npm run build",
     "check:booth": "npm run check && node scripts/check-browser.mjs",
     "start": "node server/index.js",
-    "test:shared": "node tests/shared-session.browser.mjs && node tests/public-try.browser.mjs && node tests/host-events.browser.mjs && node tests/official-player.browser.mjs"
+    "test:shared": "node tests/connection-policy.browser.mjs && node tests/shared-session.browser.mjs && node tests/public-try.browser.mjs && node tests/host-events.browser.mjs && node tests/official-player.browser.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "1.0.1",
