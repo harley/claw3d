@@ -2,19 +2,26 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { browserOptions } from '../scripts/browser-options.mjs';
+import { assertMenuGuidance } from './menu-guidance.mjs';
 import { installCameraFixture } from './camera-fixture.mjs';
 const browser = await chromium.launch(browserOptions);
 try {
+  await assertMenuGuidance(browser);
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await installCameraFixture(page);
   await page.goto('http://127.0.0.1:4196/');
   await page.waitForFunction(() => window.__littleCloud?.snapshot().event.handCamera.running);
+  await page.waitForFunction(() => !document.getElementById('menu-guide').hidden);
+  assert.equal(await page.locator('#menu-guide strong').textContent(), 'Raise your hand');
+  await page.screenshot({ path: '.screenshots/clp81-after-idle.png' });
   assert.equal(await page.locator('#sound').getAttribute('aria-pressed'), 'true');
   const point = async id => {
     const box = await page.locator(`#${id}`).boundingBox();
     await page.evaluate(({ x, y }) => { window.testCamera.feedback = { kind: 'tracking', pointer: { x, y } }; window.testCamera.tick(); }, { x: .18 + (box.x + box.width / 2) / 1440 * .64, y: .15 + (box.y + box.height / 2) / 900 * .70 });
     await page.waitForFunction(id => document.getElementById(id).classList.contains('hand-hover'), id);
+    assert.equal(await page.locator('#menu-guide').isVisible(), false);
+    assert.equal(await page.locator('#hand-cursor.demonstrating').count(), 1);
   };
   const hold = async () => { await page.evaluate(() => { window.testCamera.feedback.kind = 'clenching'; window.testCamera.feedback.progress = .7; window.testCamera.tick(); }); await page.waitForFunction(() => Number(document.getElementById('hand-cursor').style.getPropertyValue('--hold')) > 0); };
   const fire = () => page.evaluate(() => window.testCamera.clench());
@@ -27,6 +34,14 @@ try {
   await page.waitForTimeout(80); await point('register-play');
   assert.equal(await page.locator('#registration #hand-cursor').count(), 1);
   await hold();
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  assert.equal(await page.locator('#hand-cursor').isVisible(), false, 'hidden page clears without waiting for animation frames');
+  assert.equal(await fire(), false);
+  await page.evaluate(() => { delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); });
+  await point('register-play'); await hold();
   await page.evaluate(() => { window.testCamera.feedback.kind = 'lost'; window.testCamera.tick(); });
   await page.waitForTimeout(80); assert.equal(await fire(), false, 'lost hand cancels selection');
   await point('register-play'); await hold();
@@ -94,6 +109,7 @@ try {
   assert.equal(await real.evaluate(() => window.__littleCloud.snapshot().phase), 'aim', 'real recognizer requires open hand after START; no carried drop');
   await real.locator('#operator-open').click();await real.locator('#pause').click();
   await real.waitForFunction(()=>document.getElementById('status').textContent==='PAUSED');
+  assert.equal(await real.locator('#menu-guide').isVisible(), false, 'pause keeps its specific help');
   const resumePosition=await select('play');
   await real.waitForFunction(()=>!window.__littleCloud.snapshot().event.paused);
   await samples(resumePosition,true,10);
