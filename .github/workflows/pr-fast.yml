@@ -10,7 +10,8 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: pr-fast-${{ github.event.pull_request.number || github.ref }}
+  # Metadata edits must not cancel the code run whose unit/build job they skip.
+  group: pr-fast-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'pull_request' && github.event.action == 'edited' && 'metadata' || 'code' }}
   cancel-in-progress: true
 
 jobs:
