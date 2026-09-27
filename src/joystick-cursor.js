@@ -31,6 +31,7 @@ function createGlove(id, screen) {
         const d = `M${x} 68 Q${x - 3 * curl} ${top + (43 - top) * curl} ${x + 2 * curl} ${top + (65 - top) * curl}`;
         outlines.children[i].setAttribute('d', d); skin.children[i].setAttribute('d', d);
       }
+      root.querySelector('svg > g').setAttribute('transform', feedback.physicalHand === 'left' ? 'translate(110 0) scale(-1 1)' : '');
       const thumb = `M29 82 Q${12 + 21 * curl} ${55 + 4 * curl} ${14 + 48 * curl} ${53 + 24 * curl}`;
       root.querySelector('.glove-thumb').setAttribute('d', thumb); root.querySelector('.glove-thumb-skin').setAttribute('d', thumb);
     }

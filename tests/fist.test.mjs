@@ -270,3 +270,18 @@ test('a flagged shorter hold fires at its own length and bleeds credit instead o
 test('the default profile is unchanged: 550 ms, uncertainty zeroes after 130 ms',()=>{
   const g=new FistDrop();assert.equal(g.holdMs,550);assert.equal(g.decay,false);
 });
+
+// Contract: presentation receives the acquired anatomical identity, including
+// reacquisition. Existing input tests do not inspect this feedback field.
+test('cursor identity follows the acquired hand and survives transient label flips', () => {
+  const { c, events } = controller();
+  for (const [label, role] of [['Left', 'left'], ['Right', 'right']]) {
+    c.resetOwner();
+    const frame = result(); frame.handedness[0][0].categoryName = label;
+    for (const time of [1000, 1520, 1585]) c.handle(frame, time);
+    assert.equal(events.states.at(-1).physicalHand, role);
+    frame.handedness[0][0].categoryName = label === 'Left' ? 'Right' : 'Left';
+    c.handle(frame, 1650);
+    assert.equal(events.states.at(-1).physicalHand, role, 'spatial continuity preserves acquired identity');
+  }
+});

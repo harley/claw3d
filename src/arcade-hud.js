@@ -59,8 +59,8 @@ export function playFirstTurnCueTone(audio, cue, allowed = true) {
 
 export function firstTurnWaitingMessage(feedback = {}, dualEnabled = false) {
   if (dualEnabled) return {
-    off: 'CAMERA OFF', loading: 'STARTING CAMERA', error: 'CAMERA ERROR', delayed: 'TRACKING DELAYED', blocked: 'SHOW LEFT HAND OPEN',
-    show_both: 'SHOW BOTH HANDS OPEN', show_left: 'SHOW LEFT HAND OPEN', show_right: 'SHOW RIGHT HAND OPEN',
+    off: 'CAMERA OFF', loading: 'STARTING CAMERA', error: 'CAMERA ERROR', delayed: 'TRACKING DELAYED', blocked: 'SHOW LEFT HAND',
+    show_both: 'SHOW BOTH HANDS', show_left: 'SHOW LEFT HAND', show_right: 'SHOW RIGHT HAND',
     return_left: 'LEFT HAND INTO L WINDOW', return_right: 'RIGHT HAND INTO R WINDOW',
     open_left: 'OPEN LEFT HAND', open_right: 'OPEN RIGHT HAND',
     hold_left: 'HOLD LEFT HAND STILL', hold_right: 'HOLD RIGHT HAND STILL', hold_both: 'HOLD BOTH HANDS STILL', ready: 'LEFT HAND READY',
@@ -165,7 +165,7 @@ export function createHud({ audio, phaseSound }) {
   const learning = phase === 'aim' || (!run && !recovering && cameraControls?.running);
   if (learning) {
     if (feedback.kind === 'off') { title = 'CAMERA OFF'; hint = ''; }
-    else if (['ready', 'lost'].includes(feedback.kind)) { title = feedback.profile === 'menu-left' ? 'SHOW LEFT HAND OPEN' : feedback.handCount > 1 ? 'ONE HAND ONLY' : 'SHOW ONE HAND'; hint = ''; }
+    else if (['ready', 'lost'].includes(feedback.kind)) { title = feedback.profile === 'menu-left' ? 'SHOW LEFT HAND' : feedback.handCount > 1 ? 'ONE HAND ONLY' : 'SHOW ONE HAND'; hint = ''; }
     else if (feedback.kind === 'delayed') { title = 'TRACKING DELAYED'; hint = ''; }
     else if (feedback.kind === 'calibrating') { title = 'HOLD STILL'; hint = ''; }
     else if (feedback.kind === 'clenching' && feedback.controlEnabled) { title = feedback.progress > 0 ? (phase === 'aim' ? 'Hold to drop' : 'HOLD TO SELECT') : 'OPEN HAND'; hint = ''; }
@@ -179,7 +179,7 @@ export function createHud({ audio, phaseSound }) {
     title = gripStage === 'gripped' ? 'OPEN TO LET GO' : gripStage === 'pressing' ? 'DROP!'  : gripStage === 'grabbing' ? 'GRABBING' : feedback.closed ? 'OPEN HAND' : feedback.target === 'drop' ? 'PRESS OR SLAM' : 'GRAB JOYSTICK'; hint = '';
   }
   if (feedback.profile === 'dual' && phase === 'aim' && !['delayed', 'off', 'error'].includes(feedback.kind)) {
-    title = feedback.message || 'SHOW LEFT HAND OPEN'; hint = '';
+    title = feedback.message || 'SHOW LEFT HAND'; hint = '';
   }
   if (startingRun) { title = 'CONNECTING'; hint = ''; }
   const holding = phase === 'aim' && feedback.controlEnabled && feedback.kind === 'clenching';

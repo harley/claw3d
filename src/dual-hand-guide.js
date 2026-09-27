@@ -1,16 +1,16 @@
 import { projectDropHand } from './hand-workspace.js';
 
-// Palm-facing right-hand outline (thumb at viewer's left). Mirror the entire
-// outline for an anatomical left hand; never mirror the lettering.
+// Player-view shadow: left thumb points right; right thumb points left.
+// Mirror inside the SVG so tutorial animation cannot undo the orientation.
 const palm = '<path d="M22 35V19q0-5 4-5t4 5v12-18q0-5 4-5t4 5v18-15q0-5 4-5t4 5v17-10q0-5 4-5t4 5v20q0 17-17 17h-3q-8 0-12-8l-9-14q-3-6 3-7 3 0 6 6z"/>';
 const fist = '<path d="M17 36V26q0-5 4-5t4 5v-5q0-5 4-5t4 5v-1q0-5 4-5t4 5v3q0-5 4-5t4 5v18q0 15-15 15h-3q-10 0-14-10l-5-9q-2-5 2-6 3-1 6 5z"/>';
-const icon = (shape, name) => `<svg class="${name}" viewBox="0 0 64 64" aria-hidden="true">${shape}</svg>`;
+const icon = (shape, name, role = 'left') => `<svg class="${name}" viewBox="0 0 64 64" aria-hidden="true">${role === 'left' ? `<g transform="translate(64 0) scale(-1 1)">${shape}</g>` : shape}</svg>`;
 
 export function createDualHandGuide() {
   const guide = document.createElement('div'); guide.id = 'dual-hand-guide'; guide.hidden = true;
   guide.innerHTML = `<div class="dual-demo">${icon(palm, 'demo-palm')}${icon(fist, 'demo-fist')}</div><span></span>`;
   const target = document.createElement('div'); target.id = 'dual-drop-target'; target.hidden = true; target.setAttribute('aria-hidden', 'true');
-  const cursor = document.createElement('div'); cursor.id = 'dual-palm-cursor'; cursor.hidden = true; cursor.setAttribute('aria-hidden', 'true'); cursor.innerHTML = icon(palm, '');
+  const cursor = document.createElement('div'); cursor.id = 'dual-palm-cursor'; cursor.hidden = true; cursor.setAttribute('aria-hidden', 'true'); cursor.innerHTML = icon(palm, '', 'right');
   document.body.append(guide, target, cursor);
   return {
     update(feedback, targets, visible) {
@@ -23,6 +23,11 @@ export function createDualHandGuide() {
       const dropping = feedback.controlEnabled && feedback.dropEnabled;
       const stage = dropping ? 'drop' : gripping ? 'ready' : left?.ready ? 'grip' : 'acquire';
       guide.dataset.stage = stage;
+      const role = dropping ? 'right' : 'left';
+      if (guide.dataset.hand !== role) {
+        guide.dataset.hand = role;
+        guide.querySelector('.dual-demo').innerHTML = `${icon(palm, 'demo-palm', role)}${icon(fist, 'demo-fist', role)}`;
+      }
       const anchor = dropping ? targets.drop : targets.stick;
       guide.style.left = `${Math.max(95, Math.min(innerWidth - 95, anchor.x))}px`;
       guide.style.top = `${Math.max(80, anchor.y - anchor.radius - 18)}px`;

@@ -29,7 +29,7 @@ import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, record
 
 if (publicTry) {
   $('try-notice').hidden = false;
-  if (globalThis.__PUBLIC_DIAGNOSTICS__ !== true) $('try-diagnostics-notice').textContent = 'Gameplay diagnostics are off.';
+  if (globalThis.__PUBLIC_DIAGNOSTICS__ !== true) $('try-diagnostics-notice').textContent = 'Play data collection is off.';
   document.querySelector('.leaderboard .eyebrow').textContent = 'PRACTICE';
   $('final-leaderboard').hidden = true;
   $('next-player').hidden = true;

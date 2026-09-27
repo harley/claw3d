@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handCameraGuide } from '../src/hand-camera-guide.js';
+import { handCameraGuide, drawHandCameraGuide } from '../src/hand-camera-guide.js';
 
 const feedback = { kind: 'tracking', controlEnabled: true, dropEnabled: true, hands: {
   left: { ready: true, grab: { stage: 'gripped', armed: true } },
@@ -51,4 +51,19 @@ test('first-turn preview asks for open hands and confirms each ready role withou
 test('right tutorial remains inactive until left grip after START',()=>{
  assert.equal(handCameraGuide('right',{...feedback,preparing:true,controlEnabled:false}).state,'inactive');
  assert.equal(handCameraGuide('right',{kind:'tracking',controlEnabled:true,hands:{}}).state,'inactive');
+});
+
+// Rendering contract: the camera overlay uses the same player-view role orientation
+// as the cabinet guide. State-only tests cannot catch a reversed canvas transform.
+test('camera palm and fist silhouettes match the player-view shadow', () => {
+  for (const role of ['left', 'right']) {
+    for (const icon of ['palm', 'fist']) {
+      const scales = [];
+      const ctx = new Proxy({}, { get: (_, key) => key === 'scale' ? (x, y) => scales.push([x, y]) : () => {} });
+      drawHandCameraGuide(ctx, 640, 480, [{ ...handCameraGuide(role, feedback), icon }]);
+      assert.equal(scales.length, 1);
+      assert.equal(Math.sign(scales[0][0]), role === 'left' ? -1 : 1);
+      assert.ok(scales[0][1] > 0);
+    }
+  }
 });
