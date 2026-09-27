@@ -98,8 +98,20 @@ export class DualHandControls {
         return own && distance(hand.center, other) + .025 < distance(hand.center, own);
       }));
     if (ambiguous) {
-      clear(this.left); clear(this.right);
-      return { kind: 'lost', message: 'SEPARATE YOUR HANDS', input: { x: 0, z: 0 }, hands: {}, fired: false };
+      // Right-side noise must not erase a left grip we can still independently
+      // identify. Never relabel that noise: discard it and reacquire the right.
+      const heldLeft = this.left.owner && this.left.gesture.stage === 'gripped'
+        ? hands.filter(hand => hand.physicalHand === 'left' && hand.handednessScore >= .75 &&
+          hand.fist.closed && !hand.fist.open && inLeftGripZone(hand.center) &&
+          distance(hand.center, this.left.owner) <= MAX_STEP) : [];
+      const keepLeft = hands.length === 2 && heldLeft.length === 1 && hands.every(hand =>
+        hand === heldLeft[0] || (handInZone(hand.center, 'right') && distance(hand.center, heldLeft[0].center) >= SEPARATION));
+      if (!keepLeft) {
+        clear(this.left); clear(this.right);
+        return { kind: 'lost', message: 'SEPARATE YOUR HANDS', input: { x: 0, z: 0 }, hands: {}, fired: false };
+      }
+      clear(this.right);
+      hands = heldLeft;
     }
     const leftWasInterrupted = this.left.interrupted;
     const left = this.track(this.left, 'left', hands, now);

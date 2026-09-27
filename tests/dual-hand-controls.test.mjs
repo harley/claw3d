@@ -318,6 +318,50 @@ test('duplicate right observations cancel the established left grip', () => {
   assert.equal(f.controls.left.owner, null); assert.equal(f.controls.right.owner, null);
 });
 
+// Contract: right-side ambiguity cannot erase a fresh, uniquely matched left
+// grip. Existing ambiguity tests cover competing/missing left hands, not this
+// recovery while the same left hand remains clenched. No extra test seam needed.
+for (const fault of ['jump', 'weak-label-flip', 'confident-label-flip']) test(`${fault} on the right preserves left grip and reacquires DROP in place`, () => {
+  const f = fixture(), left = hand('left', 'closed', .40, .55);
+  const lowRight = hand('right', 'open', .72, .85), atDrop = hand('right', 'open', .72, .44);
+  f.repeat([hand('left', 'open', .40, .55), lowRight]);
+  f.repeat([left, lowRight], 5);
+  const badRight = fault === 'jump' ? atDrop : { ...atDrop, physicalHand: 'left', handednessScore: fault === 'weak-label-flip' ? .4 : .99 };
+  const rejected = f.step([left, badRight]);
+  assert.equal(rejected.hands.left.ready, true);
+  assert.equal(rejected.hands.left.grab.stage, 'gripped');
+  assert.equal(rejected.hands.right.ready, false);
+  assert.equal(rejected.fired, false, 'the ambiguous sample itself cannot drop');
+  if (fault !== 'jump') {
+    for (let i = 0; i < 8; i++) {
+      const stillBad = f.step([left, badRight]);
+      assert.equal(stillBad.hands.left.grab.stage, 'gripped');
+      assert.equal(stillBad.fired, false, 'wrong labels never gain right-hand ownership');
+    }
+  }
+  let fired = 0;
+  for (let i = 0; i < 20; i++) {
+    const recovered = f.step([left, atDrop]);
+    assert.equal(recovered.hands.left.grab.stage, 'gripped');
+    if (i < 5) assert.equal(recovered.fired, false, 'right must finish fresh open acquisition');
+    fired += Number(recovered.fired);
+  }
+  assert.equal(fired, 1, 'recover and drop once without reopening the left or moving right out');
+});
+
+for (const fault of ['overlap', 'third-hand', 'left-label-flip', 'uncertain-left']) test(`${fault} cannot use right-side recovery to keep control`, () => {
+  const f = fixture(); f.arm();
+  const hands = fault === 'overlap' ? [hand('left', 'closed', .48), hand('right', 'open', .53)]
+    : fault === 'third-hand' ? [f.left, hand('right'), hand('left', 'open', .72, .44)]
+    : fault === 'left-label-flip' ? [hand('right', 'closed', .35), hand('left', 'open', .72, .44)]
+    : [{ ...f.left, handednessScore: .4 }, hand('left', 'open', .72, .44)];
+  const rejected = f.step(hands);
+  assert.deepEqual(rejected.input, { x: 0, z: 0 });
+  assert.equal(rejected.fired, false);
+  assert.equal(Boolean(rejected.dropEnabled), false);
+  assert.equal(f.controls.left.owner, null);
+});
+
 // Contract: missing/distant samples cannot replace a recently acquired player.
 // Existing loss tests only returned the same hand, never a distant open hand.
 test('a distant bystander cannot acquire the reserved left role during a dropout', () => {
