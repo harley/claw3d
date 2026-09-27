@@ -40,8 +40,8 @@ try {
   async function inspectTarget(id, expectedSide) {
     // A swinging claw can lose alignment while an import or browser call yields.
     // Read the target, game pose and bounds together after the asynchronous work.
-    const observation = await page.waitForFunction(async id => {
-      const T = await import('/node_modules/three/build/three.module.js');
+    const three = await page.evaluateHandle(() => import('/node_modules/three/build/three.module.js'));
+    const observation = await page.waitForFunction(({ id, T }) => {
       const state = window.__littleCloud.snapshot(true);
       const toy = state.toys.find(item => item.id === id);
       const element = document.querySelector('.prize-tag.targeted');
@@ -59,9 +59,10 @@ try {
         borderWidth: parseFloat(style.borderTopWidth), bounds: bounds.toJSON(), parent: parent.toJSON(),
         toyTopY: scene.top + (1 - top.y) * scene.height / 2,
       };
-    }, id);
+    }, { id, T: three });
     const target = await observation.jsonValue();
     await observation.dispose();
+    await three.dispose();
     assert.equal(target.visible, true);
     assert.equal(target.count, 1, 'only the active toy gets an emphasized label');
     assert.match(target.text, /^\d{3}$/);
