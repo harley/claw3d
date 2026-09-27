@@ -30,6 +30,16 @@ export async function verifyReleaseBrowser({ browser, origin, expected, cookies,
     }));
     await context.exposeBinding('releaseCameraAttempt', () => { cameraCalls++; });
     await context.addInitScript(() => {
+      // Suppress collectors before dispatch: network routing alone can race
+      // navigation or context shutdown while a diagnostic flush is pending.
+      const fetch = window.fetch.bind(window);
+      window.fetch = async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : input, location.href);
+        if (url.origin === location.origin && ['/api/public/session', '/api/playtest', '/api/public/playtest'].includes(url.pathname)) {
+          return Response.json({ error: 'Release probe: diagnostics disabled' }, { status: 404 });
+        }
+        return fetch(input, init);
+      };
       navigator.mediaDevices.getUserMedia = async () => {
         await window.releaseCameraAttempt();
         throw new Error('Release verification must not start the camera.');
@@ -102,11 +112,6 @@ export async function verifyReleaseBrowser({ browser, origin, expected, cookies,
     assert.deepEqual(errors, [], 'Live page errors');
     return { operatorBuild, anonymousEntry: publicTry ? 'public Try' : 'staff gate' };
   } finally {
-    for (const context of contexts) {
-      // Closing disables route interception; queued keepalive requests must not
-      // reach the live collectors while an early assertion tears down the page.
-      await context.setOffline(true);
-      await context.close();
-    }
+    for (const context of contexts) await context.close();
   }
 }
