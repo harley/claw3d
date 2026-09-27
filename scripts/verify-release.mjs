@@ -6,13 +6,14 @@ import { chromium } from 'playwright';
 import { browserOptions } from './browser-options.mjs';
 import { waitForRelease } from './release-readiness.mjs';
 import { createSecretRedactor } from './release-secrets.mjs';
-import { expectedPublicTry, expectedOfficialEvents, expectedPublicDiagnostics, verifyReleaseBrowser } from './release-browser.mjs';
+import { expectedPublicTry, expectedPublicRanked, expectedOfficialEvents, expectedPublicDiagnostics, verifyReleaseBrowser } from './release-browser.mjs';
 
 const secrets = createSecretRedactor();
 async function main() {
 const origin = 'https://claw.coderpush.com';
 const expected = process.env.EXPECTED_BUILD;
 const publicTry = expectedPublicTry(process.env.EXPECTED_PUBLIC_TRY);
+const publicRanked = expectedPublicRanked(process.env.EXPECTED_PUBLIC_RANKED ?? String(publicTry));
 const officialEvents = expectedOfficialEvents(process.env.EXPECTED_OFFICIAL_EVENTS);
 const publicDiagnostics = expectedPublicDiagnostics(process.env.EXPECTED_PUBLIC_DIAGNOSTICS);
 assert.match(expected ?? '', /^[a-f0-9]{40}$/, 'EXPECTED_BUILD must be the checked full commit SHA');
@@ -33,9 +34,9 @@ for (const cookie of cookies) secrets.add(cookie.split(';')[0].slice(cookie.inde
 const browser = await chromium.launch(browserOptions);
 try {
   const { operatorBuild, anonymousEntry } = await verifyReleaseBrowser({
-    browser, origin, expected, cookies, hostCode: credentials.HOST_CODE, publicTry, officialEvents, publicDiagnostics,
+    browser, origin, expected, cookies, hostCode: credentials.HOST_CODE, publicTry, publicRanked, officialEvents, publicDiagnostics,
   });
-  console.log(JSON.stringify({ build, operatorBuild, anonymousEntry, officialEvents, publicDiagnostics, cameraStarted: false, scoreSubmitted: false }));
+  console.log(JSON.stringify({ build, operatorBuild, anonymousEntry, publicRanked, officialEvents, publicDiagnostics, cameraStarted: false, scoreSubmitted: false }));
   if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY,
     `Verified [Cloud Claw](${origin}) at \`${expected}\`: authenticated BUILD, rendered staff operator panel, anonymous ${anonymousEntry} entry, official entry ${officialEvents ? 'enabled' : 'disabled'}, public diagnostics ${publicDiagnostics ? 'enabled' : 'disabled'} and no page errors. No camera or scores used. Physical playtesting remains required.\n`);
 } finally { await browser.close(); }

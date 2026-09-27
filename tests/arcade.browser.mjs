@@ -23,7 +23,19 @@ const instructions = {
  grab: { profile: 'grab-release', scene: 'Clench on MOVE to grip and steer. Open to release without dropping. Click or clench DROP to drop.', camera: 'Clench on MOVE to grip and steer. Open to release without dropping. Click, clench, or swipe down on DROP to drop.' },
  dual: { profile: 'dual', scene: 'Clench your left hand to grip and steer. Bring your open right palm to DROP. Open your left hand to release.', camera: 'Show your left hand open to start. Clench to grip and steer; bring your open right palm into the highlighted DROP area. Open your left hand to release without dropping.' },
 };
-async function aimToy(id='butter'){ for(const axis of ['x','z']) for(let i=0;i<6;i++){const delta=({butter:{x:-.38,z:.72},peach:{x:.20,z:.72}}[id])[axis]-(await snap()).position[axis];if(Math.abs(delta)<.025)break;const speed=Math.abs(delta)<.14?.25:1;await cameraInput(page,{x:0,z:0,[axis]:Math.sign(delta)*speed});await page.waitForTimeout(Math.abs(delta)/(.85*speed)*1000);await cameraInput(page,{x:0,z:0});} assert.equal((await snap()).aligned,id);}
+async function aimToy(id='butter'){
+ for(const axis of ['x','z']) for(let i=0;i<6;i++){
+  const delta=({butter:{x:-.38,z:.72},peach:{x:.20,z:.72}}[id])[axis]-(await snap()).position[axis];
+  if(Math.abs(delta)<.025)break;
+  const speed=Math.abs(delta)<.14?.25:1;
+  await cameraInput(page,{x:0,z:0,[axis]:Math.sign(delta)*speed});
+  await page.waitForTimeout(Math.abs(delta)/(.85*speed)*1000);
+  await cameraInput(page,{x:0,z:0});
+ }
+ // The suspended fingers can still swing past the toy after its carriage stops.
+ await page.waitForFunction(id=>window.__littleCloud.snapshot().aligned===id,id,{timeout:3000});
+ assert.equal((await snap()).aligned,id);
+}
 let checkedDelivery = false;
 async function catchTurn({ timeout = false } = {}){
  if (timeout) await phase('anticipate');
@@ -39,7 +51,9 @@ async function catchTurn({ timeout = false } = {}){
   await phase('result');
   assert.match(await page.locator('#hint').textContent(), /^(SO CLOSE|SLIPPED OFF [A-Z ]+|[A-Z ]+ STUCK BESIDE [A-Z ]+|BLOCKED BY [A-Z ]+|BUMPED [A-Z ]+|STAR MOVED ON|NOTHING THERE)$/, 'a miss says why');
   assert.deepEqual((await snap()).camera, missCamera, 'a miss keeps the close view');
-  assert.ok(Math.abs((await snap()).claw.x - (await snap()).position.x) < 1e-6, 'the empty claw stays over its drop');
+  const miss = await snap();
+  assert.ok(Math.abs(miss.claw.carriage.x - miss.position.x) < 1e-6, 'the empty carriage stays over its drop');
+  assert.ok(Math.hypot(miss.claw.x - miss.position.x, miss.claw.z - miss.position.z) < .12, 'the empty claw retains only its bounded suspended sway');
  }
  if (!checkedDelivery) {
   await phase('deliver');

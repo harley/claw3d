@@ -74,7 +74,7 @@ export function openDatabase(filename) {
     if (result.status === 'complete') result.rank = db.prepare("SELECT COUNT(*) + 1 AS rank FROM runs WHERE board_id=? AND status='complete' AND total>?").get(result.boardId, result.total).rank;
     return result;
   }
-  function createRun(owner, input) {
+  function createRun(owner, input, boardId = currentId(), onCreated = () => {}) {
     const name = label(input.name), controlMode = input.controlMode ?? 'one-hand';
     if (!['one-hand', 'two-hand'].includes(controlMode)) throw new ApiError(400, 'Invalid control mode.');
     if (typeof input.requestKey !== 'string' || !/^[a-f0-9-]{36}$/.test(input.requestKey)) throw new ApiError(400, 'Invalid run request.');
@@ -85,9 +85,10 @@ export function openDatabase(filename) {
         if ((JSON.parse(previous.rules).controlMode ?? 'one-hand') !== controlMode) throw new ApiError(409, 'This run request already has another control mode.');
         return runData(previous);
       }
-      const id = randomUUID(), activeBoard = boardMetadata();
+      const id = randomUUID(), activeBoard = boardMetadata(boardId);
       db.prepare('INSERT INTO runs (id,owner_id,request_key,board_id,name,rules,started_at) VALUES (?,?,?,?,?,?,?)')
         .run(id, owner, input.requestKey, activeBoard.id, name, JSON.stringify({ ...activeBoard.rules, ...(input.controlMode === undefined ? {} : { controlMode }), controlVersion: controlMode === 'two-hand' ? 'camera-dual-raise-v1' : activeBoard.rules.controlVersion }), now());
+      onCreated(id);
       return runData(owned(id, owner));
     });
   }

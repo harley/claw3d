@@ -22,20 +22,27 @@ try {
     env: { ...process.env, CLAW_BUILD_OUT_DIR: dist, BUILD_COMMIT: expected, BUILD_BRANCH: 'main', BUILD_DIRTY: 'false' }, stdio: 'pipe',
   });
   browser = await chromium.launch(browserOptions);
-  for (const { publicTry, officialEvents, publicDiagnostics } of [
+  for (const { publicTry, publicRanked = publicTry, officialEvents, publicDiagnostics, retainedRanked = false } of [
     { publicTry: false, officialEvents: false, publicDiagnostics: false },
+    { publicTry: true, publicRanked: false, retainedRanked: true, officialEvents: false, publicDiagnostics: false },
     { publicTry: true, officialEvents: false, publicDiagnostics: false },
+    { publicTry: true, publicRanked: false, officialEvents: true, publicDiagnostics: false },
     { publicTry: true, officialEvents: true, publicDiagnostics: true },
     { publicTry: true, officialEvents: true, publicDiagnostics: false },
   ]) {
-    const app = await createPilotServer({ filename: ':memory:', origin, staffCode, hostCode, dist, secure: false,
-      publicTryEnabled: publicTry, publicDiagnosticsEnabled: publicDiagnostics, officialEventsEnabled: officialEvents, officialAdmissionsEnabled: false });
+    const filename = retainedRanked ? join(dist, 'retained-ranked.sqlite') : ':memory:';
+    if (retainedRanked) {
+      const prior = await createPilotServer({ filename, origin, staffCode, hostCode, dist, secure: false, publicTryEnabled: true });
+      await new Promise(resolve => prior.server.close(resolve)); prior.database.close();
+    }
+    const app = await createPilotServer({ filename, origin, staffCode, hostCode, dist, secure: false,
+      publicTryEnabled: publicTry, publicRankedEnabled: publicRanked, publicDiagnosticsEnabled: publicDiagnostics, officialEventsEnabled: officialEvents, officialAdmissionsEnabled: false });
     const writes = [];
     app.server.prependListener('request', req => { if (!['GET', 'HEAD'].includes(req.method)) writes.push(`${req.method} ${req.url}`); });
     await new Promise(resolve => app.server.listen(4294, '127.0.0.1', resolve));
     try {
       const { cookies } = await waitForRelease({ origin, expected, staffCode, attempts: 1 });
-      const options = { browser, origin, expected, cookies, hostCode, publicTry, officialEvents, publicDiagnostics };
+      const options = { browser, origin, expected, cookies, hostCode, publicTry, publicRanked, officialEvents, publicDiagnostics };
       assert.deepEqual(await verifyReleaseBrowser(options), {
         operatorBuild: 'BUILD 123abcd · main', anonymousEntry: publicTry ? 'public Try' : 'staff gate',
       });
@@ -45,10 +52,11 @@ try {
         await assert.rejects(verifyReleaseBrowser({ ...options, publicTry: !publicTry, officialEvents: false }), /Anonymous entry differs from EXPECTED_PUBLIC_TRY/);
       }
       if (publicTry) {
+        await assert.rejects(verifyReleaseBrowser({ ...options, publicRanked: !publicRanked }), /Public ranking differs from EXPECTED_PUBLIC_RANKED/);
         await assert.rejects(verifyReleaseBrowser({ ...options, publicDiagnostics: !publicDiagnostics }), /Public diagnostics differs from EXPECTED_PUBLIC_DIAGNOSTICS/);
         await assert.rejects(verifyReleaseBrowser({ ...options, officialEvents: !officialEvents }), /Official entry differs from EXPECTED_OFFICIAL_EVENTS/);
       }
-      assert.deepEqual(writes, ['POST /api/login', 'POST /api/host/login'], 'Only verification authentication may reach the server');
+      assert.deepEqual(writes, ['POST /api/login', publicTry && publicRanked ? 'POST /api/host/sign-in' : 'POST /api/host/login'], 'Only verification authentication may reach the server');
       assert.equal(Boolean(app.database.db.prepare("SELECT 1 FROM sqlite_master WHERE name='public_playtest_events'").get()), publicDiagnostics,
         'Disabled diagnostics must not create its observation table');
       for (const table of ['runs', 'turns', ...(publicDiagnostics ? ['public_playtest_events'] : []), ...(officialEvents ? ['official_runs', 'official_turns'] : [])]) {

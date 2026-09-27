@@ -19,12 +19,12 @@ try {
   assert.equal(await page.locator('#event-create').count(), 0, 'no public host controls mounted');
   const denied = await page.evaluate(async () => (await fetch('/api/host/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Denied', requestKey: crypto.randomUUID() }) })).status);
   assert.equal(denied, 401);
-  await page.goto(`${origin}/staff?setup=manual`);
+  await page.goto(`${origin}/staff?legacy=1&setup=manual`);
   await page.locator('#code').fill(staffCode);
   // Login awaits fetch before location.replace('/staff'). Clicking alone can
   // finish first; let that navigation load before starting the manual view.
-  await Promise.all([page.waitForURL(`${origin}/staff`), page.locator('#login button').click()]);
-  await page.goto(`${origin}/staff?setup=manual`);
+  await Promise.all([page.waitForURL(`${origin}/staff?legacy=1`), page.locator('#login button').click()]);
+  await page.goto(`${origin}/staff?legacy=1&setup=manual`);
   await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
   await page.locator('#operator-open').click();
   assert.equal(await page.locator('#host-access').isVisible(), true);

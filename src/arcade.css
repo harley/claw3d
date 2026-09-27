@@ -470,3 +470,8 @@ body.attract .player-hud { visibility: hidden; }
   .menu-guide-hand { font-size: 40px; }
   #menu-guide strong { font-size: 18px; }
 }
+
+#privacy-link { pointer-events:auto; margin-left:auto; color:#a8bbd5; font:11px Arial,sans-serif; padding:4px; white-space:nowrap; }
+.footer #mode-label { min-width:0; white-space:normal; }
+#privacy-link:focus-visible { outline:2px solid #32c6f4; outline-offset:2px; }
+#board-scope { max-width:100%; font:inherit; color:#dce8f8; background:#101e32; padding:6px; border:1px solid #4a6485; border-radius:6px; }

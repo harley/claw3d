@@ -15,9 +15,14 @@ export function expectedPublicDiagnostics(value = 'false') {
   return value === 'true';
 }
 
+export function expectedPublicRanked(value = 'false') {
+  assert.ok(['true', 'false'].includes(value), 'EXPECTED_PUBLIC_RANKED must be true or false');
+  return value === 'true';
+}
+
 // The expectation comes from reviewed release configuration, never from the
 // page being checked. These contexts cannot start cameras or write player data.
-export async function verifyReleaseBrowser({ browser, origin, expected, cookies, hostCode, publicTry, officialEvents = false, publicDiagnostics = false }) {
+export async function verifyReleaseBrowser({ browser, origin, expected, cookies, hostCode, publicTry, publicRanked = publicTry, officialEvents = false, publicDiagnostics = false }) {
   assert.ok(!officialEvents || publicTry, 'Public official entry requires EXPECTED_PUBLIC_TRY');
   const contexts = [], errors = [], unexpectedWrites = [];
   let cameraCalls = 0;
@@ -35,7 +40,7 @@ export async function verifyReleaseBrowser({ browser, origin, expected, cookies,
       const fetch = window.fetch.bind(window);
       window.fetch = async (input, init) => {
         const url = new URL(input instanceof Request ? input.url : input, location.href);
-        if (url.origin === location.origin && ['/api/public/session', '/api/playtest', '/api/public/playtest'].includes(url.pathname)) {
+        if (url.origin === location.origin && ['/api/play/session', '/api/public/session', '/api/playtest', '/api/public/playtest'].includes(url.pathname)) {
           return Response.json({ error: 'Release probe: diagnostics disabled' }, { status: 404 });
         }
         return fetch(input, init);
@@ -48,12 +53,12 @@ export async function verifyReleaseBrowser({ browser, origin, expected, cookies,
     await context.route('**/api/**', route => {
       const request = route.request(), path = new URL(request.url()).pathname;
       // Suppress both collectors, including anonymous session creation.
-      if (path === '/api/public/session') return route.fulfill({ status: 404, json: { error: 'Release probe: diagnostics disabled' } });
+      if (['/api/play/session', '/api/public/session'].includes(path)) return route.fulfill({ status: 404, json: { error: 'Release probe: diagnostics disabled' } });
       if (['/api/playtest', '/api/public/playtest'].includes(path) && request.method() === 'POST') {
         const events = request.postDataJSON()?.events ?? [];
         return route.fulfill({ json: { accepted: events.map(event => event.id) } });
       }
-      if (!['GET', 'HEAD'].includes(request.method()) && !(authenticated && path === '/api/host/login' && request.method() === 'POST')) {
+      if (!['GET', 'HEAD'].includes(request.method()) && !(authenticated && ['/api/host/login', '/api/host/sign-in'].includes(path) && request.method() === 'POST')) {
         unexpectedWrites.push(`${request.method()} ${path}`);
         return route.abort();
       }
@@ -76,10 +81,11 @@ export async function verifyReleaseBrowser({ browser, origin, expected, cookies,
       assert.equal(await anonymous.locator('#try-diagnostics-notice').isVisible(), true, 'Diagnostics notice missing');
       assert.match(notice, publicDiagnostics ? /Play data helps us improve/ : /Play data collection is off/);
       assert.equal(await anonymous.evaluate(() => window.__OFFICIAL_EVENTS__ === true), officialEvents, 'Official entry differs from EXPECTED_OFFICIAL_EVENTS');
+      assert.equal(await anonymous.locator('#privacy-link').getAttribute('href'), '/privacy');
+      assert.equal(await anonymous.evaluate(() => window.__PUBLIC_PLAY__ === true), publicRanked, 'Public ranking differs from EXPECTED_PUBLIC_RANKED');
       if (officialEvents) {
         const entry = anonymous.locator('#official-entry');
-        assert.equal(await entry.isVisible(), true, 'Deliberate official entry missing');
-        assert.equal(await entry.getAttribute('href'), '/official');
+        assert.equal(await entry.isVisible(), false, 'Legacy tickets must not interrupt public play');
         // Inspect the ticket entry only. Never redeem or activate a ticket.
         await anonymous.goto(`${origin}/official?setup=manual`);
         await anonymous.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
@@ -98,15 +104,24 @@ export async function verifyReleaseBrowser({ browser, origin, expected, cookies,
     await anonymous.close();
 
     const page = await context(true);
-    await page.goto(`${origin}/staff?setup=manual`);
+    await page.goto(`${origin}/staff?${publicRanked ? '' : 'legacy=1&'}setup=manual`);
+    if (publicTry && publicRanked) {
+      assert.equal(await page.locator('#scene, #camera-video').count(), 0, 'Host setup must not load the game or camera');
+      await page.locator('#code').fill(hostCode);
+      await page.locator('#login button').click();
+      await page.locator('#build-details').waitFor();
+      await page.locator('#build-details summary').click();
+      await page.waitForFunction(() => document.getElementById('build-info').textContent.startsWith('BUILD '));
+    } else {
     await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
     await page.locator('#operator-open').click();
     await page.locator('#host-code').fill(hostCode);
     await page.locator('#host-form button').click();
     await page.locator('#operator').waitFor();
+    assert.equal(await page.locator('#camera-video').evaluate(video => video.srcObject === null), true);
+    }
     const operatorBuild = await page.locator('#build-info').textContent();
     assert.equal(operatorBuild, `BUILD ${expected.slice(0, 7)} · main`);
-    assert.equal(await page.locator('#camera-video').evaluate(video => video.srcObject === null), true);
     assert.equal(cameraCalls, 0, 'Release probe attempted camera access');
     assert.deepEqual(unexpectedWrites, [], 'Release probe attempted a data mutation');
     assert.deepEqual(errors, [], 'Live page errors');

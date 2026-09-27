@@ -1,4 +1,5 @@
 import { FIST_HOLD_MS } from './fist.js';
+import { createSuspension, stepSuspension, suspendedPose, clawSupportSlice, rotateClaw, clawWorldPoint, CLAW_FINGER_ANGLES } from './claw-suspension.js';
 // Original, deterministic arcade grasping. No win rolls or target snapping.
 export const BED = 1.66;
 export const HIGH = 4.04;
@@ -6,7 +7,7 @@ export const FIELD = { minX: -1.18, maxX: 1.18, minZ: -.675, maxZ: .73 };
 export const CHUTE = { x: -1.08, z: .66 };
 // Every turn that does not continue over a miss begins here, clear of every toy.
 export const START = Object.freeze({ x: 0, z: .03 });
-export const FINGER_ANGLES = [Math.PI / 6, Math.PI * 5 / 6, Math.PI * 3 / 2];
+export const FINGER_ANGLES = CLAW_FINGER_ANGLES;
 export const OPEN_RADIUS = .41;
 export const FINGER_DEPTH = .98;
 // Durations of the committed-drop phases; PHASE_ORDER is the explicit sequence.
@@ -14,7 +15,7 @@ export const PHASES = { anticipate: .20, descend: .85, grip: .85, lift: 1.45, tr
 export const PHASE_ORDER = Object.freeze(['anticipate', 'descend', 'grip', 'lift', 'transfer', 'release', 'deliver', 'reveal']);
 // An empty claw lifts briefly, then the turn ends where it is: no shelf run, no return home.
 export const MISS_LIFT = .55;
-export const phaseSeconds = (game, phase = game.phase) => phase === 'lift' && !game.plan?.prize ? MISS_LIFT : PHASES[phase];
+export const phaseSeconds = (game, phase = game.phase) => phase === 'lift' && !game.plan?.prize ? MISS_LIFT : phase === 'transfer' && game.suspendedClaw ? PHASES.transfer + .7 : PHASES[phase];
 export const MAX_FRAME_DELTA = .10;
 export const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 export const mix = (a, b, t) => a + (b - a) * t;
@@ -177,9 +178,9 @@ export function planGrab(position, toys) {
 }
 export const MISS_REASONS = Object.freeze(['near', 'slipped', 'crowded', 'blocked', 'bumped', 'platform', 'empty']);
 
-export function createGame({ carousel = false, pushContact = false } = {}) { const game = { carousel, pushContact, carouselTime: 0, phase: 'idle', elapsed: 0, position: { ...START }, plan: null, rounds: 0, collection: [], toys: ASSORTMENT.filter(t => !carousel || EVENT_TOYS.includes(t.id)).map(t => ({ ...t, ...(carousel && t.id === 'peach' ? { x: .20, z: .72, scale: .82 } : {}), elevation: carousel && t.id === CAROUSEL.id ? CAROUSEL.height : 0, claimed: false })), rider: carousel ? CAROUSEL.id : null }; moveCarousel(game, 0); return game; }
+export function createGame({ carousel = false, pushContact = false, suspendedClaw = false } = {}) { const game = { carousel, pushContact: pushContact && !suspendedClaw, suspendedClaw, suspension: suspendedClaw ? createSuspension() : null, carouselTime: 0, phase: 'idle', elapsed: 0, position: { ...START }, plan: null, rounds: 0, collection: [], toys: ASSORTMENT.filter(t => !carousel || EVENT_TOYS.includes(t.id)).map(t => ({ ...t, ...(carousel && t.id === 'peach' ? { x: .20, z: .72, scale: .82 } : {}), elevation: carousel && t.id === CAROUSEL.id ? CAROUSEL.height : 0, claimed: false })), rider: carousel ? CAROUSEL.id : null }; moveCarousel(game, 0); return game; }
 // A miss continues over its drop; a catch or a fresh run starts at the bed centre.
-export function begin(game) { if (!['idle', 'result'].includes(game.phase)) return false; if (game.collection.length === game.toys.length) return false; const pose = clawPose(game); game.position = game.plan && !game.plan.prize ? { x: pose.x, z: pose.z } : { ...START }; game.phase = 'aim'; game.elapsed = 0; game.plan = null; return true; }
+export function begin(game) { if (!['idle', 'result'].includes(game.phase)) return false; if (game.collection.length === game.toys.length) return false; const pose = carriagePose(game); game.position = game.plan && !game.plan.prize ? { x: pose.x, z: pose.z } : { ...START }; game.phase = 'aim'; game.elapsed = 0; game.plan = null; return true; }
 // After a delivery the empty claw drives from the chute to the start while the next round is announced.
 export function homeClaw(game, dt) {
   const plan = game.plan;
@@ -195,7 +196,8 @@ export function homeClaw(game, dt) {
 }
 export function aimTarget(game) {
   const toys = game.toys.map(t => game.carousel && t.id === game.rider && !t.claimed ? riderAhead(game, CONTACT_DELAY) : t);
-  return planGrab(game.position, toys).prize;
+  const pose = clawPose(game);
+  return planGrab(game.suspendedClaw ? clawWorldPoint(pose, { x: 0, y: -FINGER_DEPTH, z: 0 }) : game.position, toys).prize;
 }
 export function drop(game) {
   if (game.phase !== 'aim') return false;
@@ -208,20 +210,57 @@ export function drop(game) {
     game.plan.pendingContact = true; game.plan.prize = null; game.plan.offset = null;
   }
   if (game.pushContact) game.plan.pushDescent = { y: HIGH, target: game.plan.low };
+  if (game.suspendedClaw) { game.plan.pendingContact = true; game.plan.prize = null; game.plan.offset = null; }
   game.phase = 'anticipate'; game.elapsed = 0; game.rounds++; return true;
+}
+export function advanceSuspension(game, dt) {
+  if (!game.suspendedClaw) return;
+  stepSuspension(game.suspension, carriagePose(game), dt, {
+    constrained: game.phase === 'grip' || game.phase === 'descend' && Boolean(game.plan?.blockedDescent),
+    loaded: Boolean(game.plan?.prize),
+  });
+}
+
+// Called by the contact owner after the last descent sweep. No catch exists
+// until this physical pose has been checked; the carriage prediction is only height.
+export function resolveSuspendedGrab(game, pose) {
+  const plan = game.plan;
+  const localToys = game.toys.filter(t => !t.claimed).flatMap(toy => {
+    const support = clawSupportSlice(pose, toy, BODY[toy.family], BED);
+    return support ? [{ ...toy, x: support.x, z: support.z, support }] : [];
+  });
+  const actual = planGrab({ x: 0, z: 0 }, localToys);
+  const prize = !plan.blockedDescent && actual.prize ? game.toys.find(t => t.id === actual.prize.id) : null;
+  plan.contacts = actual.contacts;
+  // The envelope includes the old pad clearance. Pointed fingers must travel
+  // beyond that estimate until the mesh sweep finds the real metal contact.
+  plan.radii = actual.contacts.map(r => r == null ? .055 : Math.max(.055, r - .035));
+  plan.prize = prize;
+  if (!plan.blockedDescent) { plan.touched = game.toys.find(t => t.id === actual.touched?.id) || null; plan.reason = actual.reason; plan.stop = actual.stop; }
+  plan.pendingContact = false; plan.gripPose = { ...pose, rotation: { ...pose.rotation } };
+  plan.gripContacts = [null, null, null];
+  if (prize) {
+    plan.offset = { x: prize.x - pose.x, y: pose.y - BED - (prize.elevation || 0), z: prize.z - pose.z };
+    plan.heldLocalOffset = rotateClaw({ x: plan.offset.x, y: -plan.offset.y, z: plan.offset.z }, pose.rotation, true);
+  } else plan.offset = null;
 }
 export function advance(game, dt) {
   if (!(game.phase in PHASES)) return false;
   // Split at phase boundaries so frame rate cannot move the interception time.
   while (dt > 1e-10 && game.phase in PHASES) {
     const seconds = phaseSeconds(game);
-    const step = Math.min(dt, seconds - game.elapsed);
+    const step = Math.min(dt, seconds - game.elapsed, game.suspendedClaw ? 1 / 120 : Infinity);
     moveCarousel(game, step); game.elapsed += step; dt -= step;
+    advanceSuspension(game, step);
     if (game.elapsed >= seconds - 1e-10) {
       // An empty claw has nothing to carry: the turn ends after its short lift.
       const next = game.phase === 'lift' && !game.plan.prize ? 'result' : PHASE_ORDER[PHASE_ORDER.indexOf(game.phase) + 1] || 'result';
+      if (game.suspendedClaw && next === 'lift' && game.plan.prize && !game.plan.gripContacts?.every(id => id === game.plan.prize.id)) {
+        game.plan.prize = null; game.plan.offset = null; game.plan.reason = 'slipped';
+      }
+      if (game.suspendedClaw && next === 'release') game.plan.releasePose = clawPose(game);
       game.elapsed = 0;
-      if (next === 'grip' && game.plan.pendingContact && !game.pushContact) {
+      if (next === 'grip' && game.plan.pendingContact && !game.pushContact && !game.suspendedClaw) {
         const actual = planGrab(game.position, game.toys), low = game.plan.low, blocked = game.plan.blockedDescent, touched = game.plan.touched, platform = game.plan.stop === 'platform';
         game.plan = actual; game.plan.low = low;
         // An empty grab over the carousel deck means the star was elsewhere at contact.
@@ -236,7 +275,7 @@ export function advance(game, dt) {
   return true;
 }
 
-export function clawPose(game) {
+export function carriagePose(game) {
   const plan = game.plan;
   const pose = { x: game.position.x, y: HIGH, z: game.position.z, radii: [OPEN_RADIUS, OPEN_RADIUS, OPEN_RADIUS] };
   if (!plan) return pose;
@@ -251,7 +290,7 @@ export function clawPose(game) {
   }
   // Only a held prize travels to the chute; an empty claw stays over its drop.
   if (plan.prize && ['transfer', 'release', 'deliver', 'reveal', 'result'].includes(phase)) {
-    const travel = phase === 'transfer' ? ease(t) : 1;
+    const travel = phase === 'transfer' ? ease(game.suspendedClaw ? elapsed / PHASES.transfer : t) : 1;
     pose.x = mix(plan.position.x, clamp(CHUTE.x - (plan.offset?.x || 0), FIELD.minX, FIELD.maxX), travel);
     pose.z = mix(plan.position.z, clamp(CHUTE.z - (plan.offset?.z || 0), FIELD.minZ, FIELD.maxZ), travel);
     if (phase === 'result' && plan.park) { pose.x = plan.park.x; pose.z = plan.park.z; }
@@ -259,4 +298,11 @@ export function clawPose(game) {
   if (phase === 'release') pose.radii = pose.radii.map(r => mix(r, OPEN_RADIUS, ease(t)));
   if (['deliver', 'reveal', 'result'].includes(phase)) pose.radii = [OPEN_RADIUS, OPEN_RADIUS, OPEN_RADIUS];
   return pose;
+}
+
+export function clawPose(game) {
+  const carriage = carriagePose(game);
+  if (!game.suspendedClaw) return carriage;
+  if (game.phase === 'grip' && game.plan?.gripPose) return { ...game.plan.gripPose, radii: carriage.radii, carriage };
+  return suspendedPose(carriage, game.suspension);
 }

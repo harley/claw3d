@@ -297,8 +297,9 @@ test('simple performance mode keeps zero-copy streaming and only resizes bitmap 
 test('an explicit capture-width diagnostic override is never replaced automatically', () => {
   const f = fixture(), c = f.controller;
   Object.assign(c, { captureLocked: true, captureWidth: 480 });
-  assert.equal(c.setPerformanceMode('simple'), false);
+  assert.equal(c.setPerformanceMode('simple'), true);
   assert.equal(c.captureWidth, 480);
+  assert.equal(c.requestedFps, 30, 'the width override does not disable camera FPS adaptation');
 });
 
 test('reconfiguring an rvfc capture path retires the previous pacing loop', () => {

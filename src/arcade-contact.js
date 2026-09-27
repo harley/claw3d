@@ -1,7 +1,8 @@
 import * as T from 'three';
 import { supportHull, gravityStep, hangingStep, MASS_CENTRE_Y } from './arcade-gravity.js';
 import { MeshBVH, acceleratedRaycast } from 'three-mesh-bvh';
-import { BED, HIGH, BODY, FIELD, CAROUSEL, FINGER_DEPTH, OPEN_RADIUS, FINGER_ANGLES, mix, ease, PHASES, planGrab } from './arcade-mechanics.js';
+import { BED, HIGH, BODY, FIELD, CAROUSEL, FINGER_DEPTH, OPEN_RADIUS, FINGER_ANGLES, mix, ease, PHASES, planGrab, clawPose, resolveSuspendedGrab } from './arcade-mechanics.js';
+import { steelFingerSamples, steelFingerWidth, clawWorldPoint } from './claw-suspension.js';
 
 // Swept finger samples test visible geometry. The grasp support model still
 // decides catches; these contacts can reject one, never manufacture a win.
@@ -22,14 +23,14 @@ export class ToyContacts {
       this.meshes.set(id, meshes);
     }
   }
-  hit(start, end, available) {
+  hit(start, end, available, clearance = radius) {
     const direction = end.clone().sub(start), length = direction.length(); if (length < .00001) return null;
-    this.ray.set(start, direction.divideScalar(length)); this.ray.near = 0; this.ray.far = length + radius;
+    this.ray.set(start, direction.divideScalar(length)); this.ray.near = 0; this.ray.far = length + clearance;
     const meshes = available.flatMap(toy => this.meshes.get(toy.id));
     const hit = this.ray.intersectObjects(meshes, false)[0];
     if (!hit) return null;
     const toy = available.find(toy => this.meshes.get(toy.id).includes(hit.object));
-    return { ...hit, toy, fraction: Math.max(0, (hit.distance - radius) / length) };
+    return { ...hit, toy, fraction: Math.max(0, (hit.distance - clearance) / length) };
   }
   impact(toy, point, phase) {
     if (toy.impact) return;
@@ -215,6 +216,7 @@ export class ToyContacts {
   }
   resolve(game, pose, dt = 0) {
     if (!game.plan) return;
+    if (game.suspendedClaw) { this.resolveSuspended(game, pose); return; }
     if (game.plan.stop === 'neighbour' && !game.plan.meshDescentPrepared) {
       const deck = game.carousel && Math.hypot(pose.x - CAROUSEL.x, pose.z - CAROUSEL.z) < .57 ? CAROUSEL.height : 0;
       game.plan.low = BED + deck + FINGER_DEPTH + .021; game.plan.meshDescentPrepared = true;
@@ -255,6 +257,58 @@ export class ToyContacts {
       // end of grip. Keep closing targets separate so contacts cannot feed back.
       game.plan.resolvedRadii = [...pose.radii];
     }
+  }
+  resolveSuspended(game, pose) {
+    const plan = game.plan;
+    const remember = () => { plan.previousClawPose = { ...pose, rotation: { ...pose.rotation }, radii: [...pose.radii] }; };
+    if (!['descend', 'grip'].includes(game.phase)) { remember(); return; }
+    const available = game.toys.filter(toy => !toy.claimed);
+    for (const toy of available) this.toys.get(toy.id).updateWorldMatrix(true, true);
+    const point = (p, angle, sample) => {
+      const world = clawWorldPoint(p, { x: Math.cos(angle) * sample.x, y: sample.y, z: Math.sin(angle) * sample.x });
+      return vector(world.x, world.y, world.z);
+    };
+    // Sweep the entire visible curved finger from its previous physical pose,
+    // including lateral swing. Recasting vertically under the carriage misses it.
+    if (!plan.blockedDescent && (game.phase === 'descend' || plan.pendingContact)) {
+      const previous = plan.previousClawPose || { ...pose, y: HIGH };
+      let fraction = 1, contact = null;
+      const samples = steelFingerSamples(OPEN_RADIUS);
+      for (const angle of FINGER_ANGLES) for (const [index, sample] of samples.entries()) {
+        const start = point(previous, angle, sample), end = point(pose, angle, sample);
+        const hit = this.hit(start, end, available, steelFingerWidth(index / (samples.length - 1)));
+        if (hit && hit.fraction < fraction) { fraction = hit.fraction; contact = hit; }
+        if (end.y < BED + .012 && start.y > end.y) fraction = Math.min(fraction, Math.max(0, (start.y - BED - .012) / (start.y - end.y)));
+      }
+      if (fraction < 1) {
+        const previousY = previous.carriage?.y ?? HIGH;
+        plan.low = mix(previousY, pose.carriage.y, fraction) + .002;
+        plan.blockedDescent = plan.low;
+        plan.prize = null; plan.offset = null;
+        plan.reason = contact ? 'bumped' : 'empty'; plan.stop = contact ? 'mesh-contact' : 'bed';
+        if (contact) { plan.touched = contact.toy; this.impact(contact.toy, contact.point, 'descend'); }
+        Object.assign(pose, clawPose(game));
+      }
+    }
+    if (game.phase === 'grip') {
+      if (plan.pendingContact) resolveSuspendedGrab(game, pose);
+      for (let i = 0; i < 3; i++) {
+        const angle = FINGER_ANGLES[i], goal = pose.radii[i];
+        const opened = steelFingerSamples(OPEN_RADIUS), closed = steelFingerSamples(goal);
+        let fraction = 1, contact = null;
+        for (let j = 0; j < opened.length; j++) {
+          const hit = this.hit(point(pose, angle, opened[j]), point(pose, angle, closed[j]), available, steelFingerWidth(j / (opened.length - 1)));
+          if (hit && hit.fraction < fraction) { fraction = hit.fraction; contact = hit; }
+        }
+        if (contact) {
+          pose.radii[i] = mix(OPEN_RADIUS, goal, fraction);
+          plan.gripContacts[i] = contact.toy.id;
+          if (!plan.prize) this.impact(contact.toy, contact.point, 'grip');
+        }
+      }
+      plan.resolvedRadii = [...pose.radii];
+    }
+    remember();
   }
   // A full setFromObject traversal per obstacle per frame is the rock() hot
   // cost. The box is a pure function of the toy's mesh world matrices, so the

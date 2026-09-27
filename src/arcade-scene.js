@@ -6,6 +6,8 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { ASSORTMENT, CAROUSEL, carouselCue, carouselRider, BED, HIGH, FINGER_ANGLES, PHASES, SHELF_LEVELS, collectionSlot, clawPose, mix, ease, clamp } from './arcade-mechanics.js';
 import { palette, material, group, mesh, ball, box, cylinder, line, rod, batch, label, createArtMaterials, createToy } from './arcade-art.js';
 import { createBloom, BLOOM_LAYER, rimColorFor, marqueeGlowFor } from './arcade-fx.js';
+import { buildSteelClaw, updateSteelClaw } from './suspended-claw-art.js';
+import { clawWorldPoint } from './claw-suspension.js';
 
 const v = (x, y, z) => new T.Vector3(x, y, z);
 const wideToClose = (elapsed, reducedMotion) => reducedMotion ? Number(elapsed < 2.2) : 1 - ease((elapsed - 1.6) / .6);
@@ -15,8 +17,9 @@ const SHADOW_FRUSTUM = {
 };
 
 export class ArcadeScene {
-  constructor(canvas, { wideControls = false, anatomicalHands = false } = {}) {
+  constructor(canvas, { wideControls = false, anatomicalHands = false, suspendedClaw = false } = {}) {
     this.wideControls = wideControls;
+    this.suspendedClaw = suspendedClaw;
     this.canvas = canvas;
     this.renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
@@ -44,6 +47,7 @@ export class ArcadeScene {
     this.buildEffects();
     this.shadowTracked = []; this.shadowSnapshots = new WeakMap();
     for (const object of [this.bridge, this.carriage, this.cable, this.claw, this.stick, this.button, this.courier, this.deliveryTray]) this.trackShadowCaster(object);
+    if (this.steelLeadRoot) this.trackShadowCaster(this.steelLeadRoot);
     this.trackShadowCaster(this.carousel, object => {
       for (let parent = object; parent && parent !== this.carousel; parent = parent.parent) if (parent === this.carouselDeck) return !object.material.transparent;
       return false;
@@ -238,6 +242,12 @@ export class ArcadeScene {
     for (const x of [-.21, .21]) for (const z of [-.11, .11]) { const wheel = cylinder(this.carriage, m.rubber, [x, 4.37, z], .048, .045, 16); wheel.rotation.z = Math.PI / 2; }
     batch(this.carriage);
     this.cable = cylinder(this.scene, m.darkMetal, [0, 4.1, 0], .014, 1, 12);
+    if (this.suspendedClaw) {
+      const steel = buildSteelClaw(this.scene, m);
+      this.claw = steel.claw; this.fingers = steel.fingers;
+      this.steelLeadRoot = steel.leadRoot; this.steelLead = steel.lead;
+      return;
+    }
     this.claw = group(this.scene);
     cylinder(this.claw, m.brass, [0, .04, 0], .058, .10); cylinder(this.claw, m.ivory, [0, -.055, 0], .132, .16, 40);
     cylinder(this.claw, m.red, [0, -.126, 0], .136, .045, 40); cylinder(this.claw, m.chrome, [0, -.167, 0], .093, .032);
@@ -451,8 +461,10 @@ export class ArcadeScene {
   toyBounds(id) { const bounds = new T.Box3().setFromObject(this.toys.get(id), true); return { min: bounds.min.toArray(), max: bounds.max.toArray() }; }
 
   applyClawPose(pose) {
-    this.bridge.position.z = pose.z; this.carriage.position.set(pose.x, 0, pose.z);
+    const carriage = pose.carriage || pose;
+    this.bridge.position.z = carriage.z; this.carriage.position.set(carriage.x, 0, carriage.z);
     this.claw.position.set(pose.x, pose.y, pose.z);
+    if (this.suspendedClaw) { updateSteelClaw(this, pose); return; }
     this.cable.position.set(pose.x, (4.21 + pose.y + .09) / 2, pose.z); this.cable.scale.y = Math.max(.025, 4.21 - pose.y - .09);
     const setBone = (bone, a, b) => { const delta = v(...b).sub(v(...a)); bone.position.copy(v(...a).add(v(...b)).multiplyScalar(.5)); bone.scale.y = delta.length(); bone.quaternion.setFromUnitVectors(v(0, 1, 0), delta.normalize()); };
     this.fingers.forEach((finger, i) => {
@@ -466,6 +478,7 @@ export class ArcadeScene {
   updateClawFeedback(pose, phase, dt, feedback) {
     // Fist confirmation presses DROP; only the mechanical grip closes the fingers.
     this.applyClawPose(pose);
+    if (this.suspendedClaw) return;
     const steering = phase === 'aim' && feedback.controlEnabled && feedback.kind === 'tracking';
     const previous = this.previousAim;
     const lean = delta => Math.abs(delta) < .08 ? 0 : clamp(delta * .035, -.035, .035);
@@ -503,8 +516,9 @@ export class ArcadeScene {
     this.button.material.emissive.set('#ffb52b'); this.button.material.emissiveIntensity = this.dropReady ? .55 : 0;
     if (presentation.machineControls && activeControl && !['dual', 'grab-release'].includes(feedback.profile)) this.button.position.y -= .04 * (feedback.progress || 0);
     this.cabinetHands?.update(phase, elapsed, dt, feedback, presentation.machineControls, this.stick, this.button, this.reducedMotion);
-    this.target.visible = ['idle', 'aim'].includes(phase); this.target.position.set(game.position.x, BED + (game.carousel && Math.hypot(game.position.x - CAROUSEL.x, game.position.z - CAROUSEL.z) < .55 ? CAROUSEL.height : 0) + .014, game.position.z); this.targetMat.color.set(aligned ? '#547e69' : '#bb5b49');
-    this.beam.visible = this.target.visible; this.beam.position.set(game.position.x, BED + .02, game.position.z); this.beam.scale.y = HIGH - BED - 1.01; this.beamMat.color.copy(this.targetMat.color);
+    const aim = game.suspendedClaw ? clawWorldPoint(pose, { x: 0, y: -.98, z: 0 }) : game.position;
+    this.target.visible = ['idle', 'aim'].includes(phase); this.target.position.set(aim.x, BED + (game.carousel && Math.hypot(aim.x - CAROUSEL.x, aim.z - CAROUSEL.z) < .55 ? CAROUSEL.height : 0) + .014, aim.z); this.targetMat.color.set(aligned ? '#547e69' : '#bb5b49');
+    this.beam.visible = this.target.visible; this.beam.position.set(aim.x, BED + .02, aim.z); this.beam.scale.y = HIGH - BED - 1.01; this.beamMat.color.copy(this.targetMat.color);
     this.deliveryTray.visible = false; this.deliveryTray.scale.setScalar(1);
     const hatchOpen = plan?.prize && ['release', 'deliver', 'reveal', 'result'].includes(phase);
     this.hatch.rotation.x = hatchOpen ? (phase === 'release' ? ease(elapsed / .18) : 1) * Math.PI / 2 : phase === 'idle' ? 0 : Math.max(0, this.hatch.rotation.x - dt * 9);
@@ -518,16 +532,25 @@ export class ArcadeScene {
       if (index >= 0) { const slot = collectionSlot(toy.id); object.position.set(slot.x, slot.y, slot.z); object.rotation.y = .35; }
       const held = plan?.prize?.id === toy.id;
       const affected = plan?.touched?.id === toy.id;
+      const releasePoint = held && game.suspendedClaw && plan.releasePose ? clawWorldPoint(plan.releasePose, plan.heldLocalOffset) : null;
+      const heldRotation = source => new T.Quaternion().setFromEuler(new T.Euler(source.rotation.x, 0, source.rotation.z))
+        .multiply(new T.Quaternion().setFromEuler(new T.Euler(plan.gripPose.rotation.x, 0, plan.gripPose.rotation.z)).invert())
+        .multiply(new T.Quaternion().setFromEuler(new T.Euler(0, toy.yaw, 0)));
       let compression = 0, wobble = 0;
       if (affected && phase === 'grip') compression = ease(elapsed / PHASES.grip) * (toy.family === 'star' ? .14 : toy.family === 'robot' ? .018 : .085);
       if (held && ['lift', 'transfer', 'release'].includes(phase)) {
         object.position.set(pose.x + plan.offset.x, pose.y - plan.offset.y, pose.z + plan.offset.z);
+        if (game.suspendedClaw) {
+          const source = phase === 'release' && plan.releasePose ? plan.releasePose : pose;
+          const point = clawWorldPoint(source, plan.heldLocalOffset);
+          object.position.set(point.x, point.y, point.z); object.quaternion.copy(heldRotation(source));
+        }
         compression = toy.family === 'star' ? .09 : toy.family === 'robot' ? .01 : .042;
         const progress = elapsed / PHASES[phase]; wobble = motion * Math.sin(progress * Math.PI * 2) * (toy.family === 'star' ? .10 : .032) * Math.sin(progress * Math.PI);
-        if (phase === 'release') { const fall = clamp((elapsed - .18) / .37, 0, 1) * .28; object.position.y = mix(HIGH - plan.offset.y, .50, fall * fall); compression *= 1 - ease(progress); }
+        if (phase === 'release') { const fall = clamp((elapsed - .18) / .37, 0, 1) * .28; object.position.y = mix(releasePoint?.y ?? HIGH - plan.offset.y, .50, fall * fall); compression *= 1 - ease(progress); }
       }
       if (held && phase === 'deliver') {
-        const t = clamp(elapsed / PHASES.deliver, 0, 1), slot = collectionSlot(toy.id), startY = HIGH - plan.offset.y, chuteX = pose.x + plan.offset.x, chuteZ = pose.z + plan.offset.z;
+        const t = clamp(elapsed / PHASES.deliver, 0, 1), slot = collectionSlot(toy.id), startY = releasePoint?.y ?? HIGH - plan.offset.y, chuteX = releasePoint?.x ?? pose.x + plan.offset.x, chuteZ = releasePoint?.z ?? pose.z + plan.offset.z;
         // A continuous gravity fall into the hatch, followed by a supported
         // miniature courier platform to the gallery. The prize keeps its size.
         if (t < .24) { const fall = mix(.28, 1, t / .24); object.position.set(chuteX, mix(startY, .50, fall * fall), chuteZ); }
@@ -542,6 +565,7 @@ export class ArcadeScene {
           compression = Math.sin(Math.min(1, courier * 8) * Math.PI) * (toy.family === 'robot' ? .015 : toy.family === 'star' ? .14 : .10);
         }
         object.rotation.y = mix(toy.yaw, .35, ease(t)); wobble = motion * Math.sin(t * 25) * .07 * Math.sin(t * Math.PI);
+        if (releasePoint && t < .4) object.quaternion.copy(heldRotation(plan.releasePose)).slerp(new T.Quaternion().setFromEuler(new T.Euler(0, object.rotation.y, 0)), ease(t / .4));
       }
       if (held && ['reveal', 'result'].includes(phase)) {
         wobble = motion * (phase === 'reveal' ? Math.sin(elapsed * 12) * Math.exp(-elapsed * 3) * (toy.family === 'star' ? .13 : .07) : 0);

@@ -8,7 +8,7 @@ import { createPilotServer } from '../server/index.js';
 import { installCameraFixture } from './camera-fixture.mjs';
 
 const origin = 'http://127.0.0.1:4292';
-const app = await createPilotServer({ filename: ':memory:', origin, staffCode: 'try-browser-staff-secret', hostCode: 'try-host-code', secure: false,
+const app = await createPilotServer({ filename: ':memory:', origin, staffCode: 'try-browser-staff-secret', hostCode: 'try-host-code', secure: false, publicRankedEnabled: false,
   publicTryEnabled: true, publicDiagnosticsEnabled: true });
 await new Promise(resolve => app.server.listen(4292, '127.0.0.1', resolve));
 const browser = await chromium.launch(browserOptions);

@@ -79,12 +79,16 @@ export class HandController {
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error('Camera access needs HTTPS or localhost in Chrome or Edge.');
       const deviceId = this.select.value;
+      const fps = this.requestedFps;
       stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: {
-        width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 30, max: 30 },
+        width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: fps, max: fps },
         ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
       } });
       if (generation !== this.generation) { stream.getTracks().forEach(t => t.stop()); return; }
       this.stream = stream;
+      const cameraSettings = this.reportCameraSettings('initial');
+      // Quality can change while the permission prompt is open.
+      if (fps !== this.requestedFps) this.updateCameraFps();
       this.video.srcObject = stream;
       await this.video.play();
       if (generation !== this.generation) return;
@@ -105,7 +109,7 @@ export class HandController {
       this.running = true; this.starting = false; this.lastFrame = -1; this.busy = false; this.lastSent = undefined; this.lastSupervise = undefined;
       this.receivedResult = false; this.workerRecoveryUsed = false; this.recovering = false;
       this.lastResult = performance.now(); this.lastActivity = this.lastResult; this.lastCapture = -Infinity; this.lastResponseCapture = -Infinity; this.lastFreshReceipt = this.lastResult;
-      await this.listCameras(stream.getVideoTracks()[0]?.getSettings().deviceId);
+      await this.listCameras(cameraSettings.deviceId);
       if (generation !== this.generation || !this.running) return;
       this.onState({ kind: 'ready', message: 'Show one hand in the camera. Hold it still to begin.' });
       // ?capture=N forces main-thread bitmap capture at that width (A/B testing
@@ -114,7 +118,7 @@ export class HandController {
       // plain timer. The timer always runs as the staleness/liveness watchdog.
       const requested = Number(new URLSearchParams(location.search).get('capture'));
       this.captureLocked = requested >= 160 && requested <= 1280;
-      this.captureWidth = this.captureLocked ? Math.round(requested) : 0;
+      this.captureWidth = this.captureLocked ? Math.round(requested) : this.performanceMode === 'simple' ? 320 : 0;
       this.captureDriver = 'timer';
       // The WebKit compatibility runtime reads the page's video element and is
       // deliberately timer-paced. A CPU worker recognizer was tuned on the
@@ -229,6 +233,8 @@ export class HandController {
     this.frameReader?.cancel().catch(() => {}); this.frameReader = null; this.captureDriver = null;
     this.worker?.terminate(); this.worker = null;
     this.stream?.getTracks().forEach(t => t.stop()); this.stream = null;
+    this.fpsUpdate = null;
+    this.reportCameraSettings('off');
     this.video.srcObject = null;
     this.resetOwner();
     this.overlay.getContext('2d').clearRect(0, 0, this.overlay.width, this.overlay.height);
@@ -315,10 +321,52 @@ export class HandController {
     if (this.captureDriver === 'rvfc') this.paceVideoFrames(generation);
   }
 
+  get requestedFps() { return this.performanceMode === 'simple' ? 30 : 60; }
+
+  reportCameraSettings(fpsConstraintStatus) {
+    let settings = {};
+    try { settings = this.stream?.getVideoTracks()[0]?.getSettings?.() || {}; }
+    catch { /* Older implementations may not expose settings. */ }
+    const measured = value => Number.isFinite(value) && value > 0 ? value : null;
+    this.onDiagnostic?.({ requestedFps: this.requestedFps, cameraFps: measured(settings.frameRate),
+      cameraWidth: measured(settings.width), cameraHeight: measured(settings.height), fpsConstraintStatus });
+    return settings;
+  }
+
+  updateCameraFps() {
+    const track = this.stream?.getVideoTracks()[0], generation = this.generation;
+    if (!track) return;
+    if (this.fpsUpdate) return this.fpsUpdate;
+    // Serialize changes on this track, coalescing rapid toggles to the latest
+    // mode. A stopped/replaced camera must never receive a late update.
+    const update = Promise.resolve().then(async () => {
+      let attempted;
+      while (generation === this.generation && attempted !== this.requestedFps) {
+        attempted = this.requestedFps;
+        let status = 'unsupported';
+        if (typeof track.applyConstraints === 'function') {
+          this.reportCameraSettings('pending');
+          try {
+            // applyConstraints replaces constraints: retain resolution/device.
+            const constraints = track.getConstraints?.() || { width: { ideal: 960 }, height: { ideal: 540 } };
+            await track.applyConstraints({ ...constraints, frameRate: { ideal: attempted, max: attempted } });
+            status = 'applied';
+          } catch { status = 'failed'; } // Keep the live track and gameplay.
+        }
+        if (generation === this.generation) this.reportCameraSettings(status);
+      }
+    }).finally(() => { if (this.fpsUpdate === update) this.fpsUpdate = null; });
+    this.fpsUpdate = update;
+    return update;
+  }
+
   setPerformanceMode(mode) {
-    if (this.captureLocked) return false;
+    const fps = this.requestedFps;
+    this.performanceMode = mode === 'simple' ? 'simple' : 'full';
+    const fpsChanged = fps !== this.requestedFps;
+    if (fpsChanged) this.updateCameraFps();
     const width = mode === 'simple' ? 320 : 0;
-    if (width === this.captureWidth) return false;
+    if (this.captureLocked || width === this.captureWidth) return fpsChanged;
     this.captureWidth = width;
     // A streaming capture is unaffected by bitmap width; do not interrupt it.
     if (this.captureDriver !== 'stream') this.configureCapture();

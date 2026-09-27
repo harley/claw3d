@@ -134,7 +134,8 @@ try {
     if (tab === b) {
       await tab.goto(`${origin}/?setup=manual`);
       await tab.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
-      await Promise.all([tab.waitForURL(`${origin}/official`), tab.locator('#official-entry').click()]);
+      assert.equal(await tab.locator('#official-entry').isVisible(), false, 'public play does not promote legacy tickets');
+      await tab.goto(`${origin}/official?setup=manual`);
     } else await tab.goto(`${origin}/official?setup=manual`);
     await tab.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
     await tab.locator('#official-status-open').click();
@@ -163,8 +164,8 @@ try {
   assert.ok((await station.cookies()).some(cookie => cookie.name === `cc_official_${firstRun.id}`), 'same browser retains its scoped official capability');
   await b.goto(`${origin}/?setup=manual`);
   await b.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
-  assert.deepEqual(await b.evaluate(() => ({ practice: window.__PUBLIC_TRY__ === true, official: window.__PUBLIC_OFFICIAL__ === true })), { practice: true, official: false });
-  assert.equal(await b.locator('#try-notice').isVisible(), true, 'root remains practice while the official cookie exists');
+  assert.deepEqual(await b.evaluate(() => ({ ranked: window.__PUBLIC_PLAY__ === true, official: window.__PUBLIC_OFFICIAL__ === true })), { ranked: true, official: false });
+  assert.equal(await b.locator('#try-notice').isVisible(), true, 'root remains public ranked play while the official cookie exists');
   await b.goto(`${origin}/official?setup=manual`);
   await b.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
 

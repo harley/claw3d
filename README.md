@@ -35,9 +35,11 @@ Use **🔊 / 🔇** to toggle sound. If TAP FOR SOUND appears, click or press a 
 
 ## Local and shared play
 
+Public play at [claw.coderpush.com](https://claw.coderpush.com) needs no login. Keep or edit a generated name, play three turns, and compare your saved rank. **Next player** is the primary result action. See [Hanoi event setup](docs/OPERATIONS.md#public-play-and-hanoi-event-setup) for the 29 September booth browser.
+
 | | Local preview | Shared staff pilot |
 | --- | --- | --- |
-| Open | `npm run play` | [claw.coderpush.com](https://claw.coderpush.com), with the staff access code |
+| Open | `npm run play` | [claw.coderpush.com](https://claw.coderpush.com/) for players; [/staff](https://claw.coderpush.com/staff) with the host code for event setup |
 | Scores | This browser only; control modes have separate boards | Server-confirmed total and rank; both modes share the fun leaderboard |
 | Reload during a run | CONTINUE preserves completed turns and restarts the unfinished turn | Syncs completed turns and abandons the unfinished attempt |
 | Operator access | Gear panel | Separate host code for protected controls |
@@ -48,7 +50,9 @@ For shared-server setup, exports, score recovery, backup, restore and release ve
 
 ## Privacy and limitations
 
-Camera frames and landmarks stay in the browser and are not recorded. The bundled MediaPipe dependency separately discloses performance/utilization metrics sent to Google; see its [runtime provenance and privacy notice](public/vision/README.md). Local model hosting does not establish the absence of vendor metrics. The shared pilot stores display names, results, bounded playtest observations and voluntary feedback; see [collection and retention](docs/OPERATIONS.md#playtest-observations-and-feedback).
+The public [privacy page](https://claw.coderpush.com/privacy) explains camera processing, public names/results, diagnostics and browser storage.
+
+Camera frames and landmarks stay in the browser and are not recorded. The shared service's connection policy blocks external MediaPipe metric uploads; local development and static previews do not inherit that server policy. See the [runtime provenance](public/vision/README.md) and [connection-policy details](docs/OPERATIONS.md#playtest-observations-and-feedback). The shared pilot stores display names, results, bounded playtest observations and voluntary feedback; see [collection and retention](docs/OPERATIONS.md#playtest-observations-and-feedback).
 
 Names are display labels. Client-reported catches are trusted, so server scoring is not anti-cheat. Badge enforcement, physical-prize inventory and the event-day one-play/one-gift policy are not implemented. The shared pilot is a testing environment; physical recognition, comfort and first-time usability remain open acceptance checks.
 

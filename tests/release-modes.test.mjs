@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { expectedPublicTry, expectedOfficialEvents, expectedPublicDiagnostics } from '../scripts/release-browser.mjs';
+import { expectedPublicTry, expectedPublicRanked, expectedOfficialEvents, expectedPublicDiagnostics } from '../scripts/release-browser.mjs';
 
-for (const [name, parse] of Object.entries({ EXPECTED_PUBLIC_TRY: expectedPublicTry, EXPECTED_OFFICIAL_EVENTS: expectedOfficialEvents, EXPECTED_PUBLIC_DIAGNOSTICS: expectedPublicDiagnostics })) {
+for (const [name, parse] of Object.entries({ EXPECTED_PUBLIC_TRY: expectedPublicTry, EXPECTED_PUBLIC_RANKED: expectedPublicRanked, EXPECTED_OFFICIAL_EVENTS: expectedOfficialEvents, EXPECTED_PUBLIC_DIAGNOSTICS: expectedPublicDiagnostics })) {
   test(`${name} accepts only explicit booleans and defaults private`, () => {
     assert.equal(parse(), false);
     assert.equal(parse('true'), true);

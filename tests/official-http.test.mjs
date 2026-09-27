@@ -83,7 +83,7 @@ test('event API defaults off, does not migrate, and leaves staff gate intact', a
   assert.equal((await host.request('/api/host/events', { name: 'No', requestKey: key() })).status, 404);
   assert.equal((await visitor.request('/api/official/session')).status, 404);
   assert.equal(f.app.database.db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name LIKE 'official_%'").get().n, 0);
-  assert.match((await visitor.request('/')).text, /Staff pilot/);
+  assert.match((await visitor.request('/')).text, /Operator sign-in/);
   assert.equal((await visitor.request('/api/board')).status, 401);
 });
 
