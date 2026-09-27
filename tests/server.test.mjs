@@ -36,7 +36,7 @@ test('protected shared runs: ownership, ordered idempotency, ties, rotation, rea
     const a = client(), b = client(), visitor = client();
     assert.equal((await visitor.request('/api/board')).status, 401);
     assert.equal((await visitor.request('/asset.js')).status, 401);
-    assert.match((await visitor.request('/')).text, /Staff pilot/);
+    assert.match((await visitor.request('/')).text, /Operator sign-in/);
     assert.equal((await visitor.request('/api/login', { code: staffCode }, { origin: 'https://evil.example' })).status, 403);
     assert.equal((await visitor.request('/api/login', { code: 'wrong' })).status, 401);
     await a.request('/api/login', { code: staffCode }); await b.request('/api/login', { code: staffCode });

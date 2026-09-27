@@ -40,11 +40,27 @@ try {
   await page.waitForFunction(() => typeof window.cameraRenderBudget === 'boolean');
   assert.equal(await page.evaluate(() => window.cameraRenderBudget), await page.evaluate(() => window.__littleCloud.snapshot().lowQuality), 'capped exactly when quality is simple');
   await page.locator('#operator-open').click();
+  // Quality must update FPS on the same track and expose the browser's actual
+  // settings. Do not assume the synthetic camera can negotiate exactly 60 FPS.
+  await page.evaluate(() => { window.fpsTestTrack = document.getElementById('camera-video').srcObject.getVideoTracks()[0]; });
   for (let toggle = 0; toggle < 2; toggle++) {
     const before = (await snap()).lowQuality;
     const changedAt = await page.evaluate(() => performance.now());
     await page.locator('#quality').click();
     assert.equal((await snap()).lowQuality, !before);
+    await page.waitForFunction(fps => {
+      const d = window.__littleCloud.snapshot().event.handCamera.diagnostic;
+      return d.requestedFps === fps && d.fpsConstraintStatus === 'applied';
+    }, before ? 60 : 30);
+    const fpsState = await page.evaluate(() => {
+      const track = document.getElementById('camera-video').srcObject.getVideoTracks()[0];
+      return { sameTrack: track === window.fpsTestTrack, settings: track.getSettings(),
+        diagnostic: window.__littleCloud.snapshot().event.handCamera.diagnostic };
+    });
+    assert.equal(fpsState.sameTrack, true);
+    assert.equal(fpsState.diagnostic.cameraFps, fpsState.settings.frameRate);
+    assert.equal(fpsState.diagnostic.cameraWidth, fpsState.settings.width);
+    assert.equal(fpsState.diagnostic.cameraHeight, fpsState.settings.height);
     console.log('QUALITY_CAMERA_STATE', await page.evaluate(() => window.cameraControllerState()));
     await page.waitForFunction(changedAt => {
       const camera = window.__littleCloud.snapshot().event.handCamera;

@@ -9,19 +9,22 @@ import { createPlaytestStore } from './playtest.js';
 import { backupForRelease } from './release-backup.js';
 import { createBudget, clientAddressResolver } from './request-budget.js';
 import { createPublicDiagnostics } from './public-diagnostics.js';
+import { createPublicPlay } from './public-play.js';
+import { hostSetupPage } from './host-setup.js';
 import { createOfficialHttp, isOfficialPath } from './official-http.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const matches = (a, b) => typeof a === 'string' && timingSafeEqual(Buffer.from(hash(a)), Buffer.from(hash(b)));
 const token = () => randomBytes(32).toString('base64url');
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.wasm': 'application/wasm', '.glb': 'model/gltf-binary', '.svg': 'image/svg+xml', '.png': 'image/png', '.task': 'application/octet-stream' };
-const gate = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Cloud Claw · Staff pilot</title><style>body{background:#080e1c;color:#f4eee5;font:18px system-ui;display:grid;place-content:center;min-height:95vh;margin:0}main{max-width:360px;padding:24px}small{color:#ffba60}input,button{box-sizing:border-box;width:100%;font:inherit;padding:14px;margin:12px 0;border-radius:8px;border:1px solid #aaa}button{background:#ffba60;color:#111;font-weight:700}p{line-height:1.5}</style><main><small>CODERPUSH × AWS CLOUD DAY</small><h1>Cloud Claw</h1><p>Staff pilot · enter your access code.</p><form id="login"><label for="code">Staff code</label><input id="code" type="password" autocomplete="current-password" required maxlength="128"><button>ENTER THE ARCADE</button><p id="message" role="status"></p></form></main><script>document.getElementById('login').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:document.getElementById('code').value})});if(!r.ok)throw Error((await r.json()).error);location.replace('/staff')}catch(e){document.getElementById('message').textContent=e.message}finally{button.disabled=false}};</script></html>`;
+const gate = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Cloud Claw · Operator sign-in</title><style>body{background:#080e1c;color:#f4eee5;font:18px system-ui;display:grid;place-content:center;min-height:95vh;margin:0}main{max-width:360px;padding:24px}small{color:#ffba60}input,button{box-sizing:border-box;width:100%;font:inherit;padding:14px;margin:12px 0;border-radius:8px;border:1px solid #aaa}button{background:#ffba60;color:#111;font-weight:700}p{line-height:1.5}a{color:#63d3fa}#message{color:#ffba60;min-height:1.5em}</style><main><small>CODERPUSH × AWS CLOUD DAY</small><h1>Cloud Claw</h1><p>Operator sign-in for booth setup and staff testing. Visitors can play without a code.</p><p><a href="/">Open public game</a></p><form id="login"><label for="code">Staff code</label><input id="code" type="password" autocomplete="current-password" required maxlength="128"><button>SIGN IN</button><p id="message" role="status"></p></form></main><script>document.getElementById('login').onsubmit=async e=>{e.preventDefault();const button=e.target.querySelector('button');button.disabled=true;try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:document.getElementById('code').value})});if(!r.ok)throw Error((await r.json()).error);location.replace('/staff')}catch(e){document.getElementById('message').textContent=e.message}finally{button.disabled=false}};</script></html>`;
 
 export async function createPilotServer(options) {
   const { filename, origin, staffCode, hostCode, dist = resolve('dist'), secure = true,
-    officialEventsEnabled = false, officialAdmissionsEnabled = false, publicDiagnosticsEnabled = false, publicTryEnabled = false, trustedProxyPeers = [] } = options;
+    officialEventsEnabled = false, officialAdmissionsEnabled = false, publicDiagnosticsEnabled = false, publicTryEnabled = false, publicRankedEnabled = publicTryEnabled, now = Date.now, trustedProxyPeers = [] } = options;
   if (typeof officialEventsEnabled !== 'boolean' || typeof officialAdmissionsEnabled !== 'boolean') throw new Error('Event feature options must be booleans.');
   if (typeof publicDiagnosticsEnabled !== 'boolean') throw new Error('Diagnostics option must be a boolean.');
+  if (typeof publicRankedEnabled !== 'boolean') throw new Error('Public ranking option must be a boolean.');
   if (typeof publicTryEnabled !== 'boolean') throw new Error('Public Try option must be a boolean.');
   const publicAsset = path => /^\/(?:assets\/[a-zA-Z0-9_-]+\.(?:js|css)|assets\/coderpush-wordmark-white-[a-zA-Z0-9_-]+\.svg|models\/hands\/(?:left|right)\.glb|vision\/(?:gesture_recognizer\.task|wasm\/[a-zA-Z0-9_-]+\.(?:js|wasm)))$/.test(path);
   const clientAddress = clientAddressResolver(trustedProxyPeers);
@@ -40,6 +43,16 @@ export async function createPilotServer(options) {
     db.prepare('DELETE FROM sessions WHERE expires<=?').run(Date.now());
     db.prepare('INSERT INTO sessions VALUES (?,?,?,?)').run(hash(value), owner, role, Date.now() + 12 * 3600_000);
     res.setHeader('Set-Cookie', cookie('cc_session', value, 12 * 3600));
+  }
+  function signIn(req, res, auth, role) {
+    let ownerToken = cookies(req).cc_owner;
+    if (!ownerToken || !db.prepare('SELECT id FROM owners WHERE id=?').get(hash(ownerToken))) {
+      ownerToken = token(); db.prepare('INSERT INTO owners VALUES (?)').run(hash(ownerToken));
+    }
+    if (auth) db.prepare('DELETE FROM sessions WHERE token=?').run(auth.token);
+    issue(hash(ownerToken), role, res);
+    res.setHeader('Set-Cookie', [res.getHeader('Set-Cookie'), cookie('cc_owner', ownerToken, 90 * 86400)]);
+    return json(res, 200, { ok: true });
   }
   function limit(req, auth, login = false, telemetry = false) {
     // Preserve the existing staff-pilot ingress contract; proxy migration is separate
@@ -64,6 +77,7 @@ export async function createPilotServer(options) {
   }
   function json(res, status, data) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); }
   const official = officialEventsEnabled ? createOfficialHttp({ db, body, json, cookies, cookie, limit, admissionsEnabled: officialAdmissionsEnabled, publicEnabled: publicTryEnabled, clientAddress }) : null;
+  const publicPlay = (publicTryEnabled && publicRankedEnabled || db.prepare("SELECT 1 FROM settings WHERE key='public-board-v1'").get()) ? createPublicPlay({ database, body, json, cookies, cookie, clientAddress, startsEnabled: publicTryEnabled && publicRankedEnabled, now }) : null;
   const diagnostics = publicDiagnosticsEnabled ? createPublicDiagnostics({ db, body, json, cookies, cookie, clientAddress }) : null;
   const server = createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -78,11 +92,25 @@ export async function createPilotServer(options) {
     try {
       const url = new URL(req.url, origin), path = url.pathname;
       if (req.method === 'GET' && path === '/healthz') return json(res, 200, { ok: true });
+      if (path.startsWith('/api/play/')) { if (!publicPlay) throw new ApiError(404, 'Public ranking is unavailable.'); await publicPlay.handle(req, res, path); return; }
       if (path.startsWith('/api/public/')) {
         if (!diagnostics) throw new ApiError(404, 'Public diagnostics are not enabled.');
         await diagnostics.handle(req, res, path); return;
       }
       const auth = session(req);
+      const hostSetupEnabled = publicTryEnabled && Boolean(publicPlay);
+      const legacyStaff = url.searchParams.get('legacy') === '1' || url.searchParams.get('play') === 'official';
+      if (hostSetupEnabled && path === '/staff' && !legacyStaff && ['GET', 'HEAD'].includes(req.method)) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(req.method === 'HEAD' ? undefined : hostSetupPage(auth?.role === 'host'));
+      }
+      if (path === '/api/host/sign-in' && req.method === 'POST') {
+        if (!hostSetupEnabled) throw new ApiError(404, 'Host setup is unavailable.');
+        attempts.take(`host-sign-in:${clientAddress(req)}`, 12);
+        const input = await body(req);
+        if (!matches(input.code, hostCode)) throw new ApiError(401, 'That host code was not accepted. Try again.');
+        return signIn(req, res, auth, 'host');
+      }
       if (isOfficialPath(path)) {
         if (!official) throw new ApiError(404, 'Event API is not enabled.');
         await official.handle(req, res, path, auth); return;
@@ -91,23 +119,24 @@ export async function createPilotServer(options) {
         limit(req, null, true);
         const input = await body(req);
         if (!matches(input.code, staffCode)) throw new ApiError(401, 'That staff code was not accepted.');
-        let ownerToken = cookies(req).cc_owner;
-        if (!ownerToken || !db.prepare('SELECT id FROM owners WHERE id=?').get(hash(ownerToken))) {
-          ownerToken = token(); db.prepare('INSERT INTO owners VALUES (?)').run(hash(ownerToken));
-        }
-        if (auth) db.prepare('DELETE FROM sessions WHERE token=?').run(auth.token);
-        issue(hash(ownerToken), 'staff', res);
-        res.setHeader('Set-Cookie', [res.getHeader('Set-Cookie'), cookie('cc_owner', ownerToken, 90 * 86400)]);
-        return json(res, 200, { ok: true });
+        return signIn(req, res, auth, 'staff');
       }
       const publicOfficial = publicTryEnabled && officialEventsEnabled && path === '/official';
       const publicPage = publicTryEnabled && ['/', '/try'].includes(path);
-      const publicRead = publicTryEnabled && ['GET', 'HEAD'].includes(req.method) && (publicPage || publicOfficial || publicAsset(path));
+      const privacyPage = path === '/privacy' || path === '/privacy.html';
+      const publicRead = ['GET', 'HEAD'].includes(req.method) && (privacyPage || publicTryEnabled && (publicPage || publicOfficial || publicAsset(path)));
       if (!auth && !publicRead) {
-        if (['/', '/staff'].includes(path) && req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(gate); }
+        if (['/', '/staff'].includes(path) && req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(hostSetupEnabled && legacyStaff ? gate.replace("location.replace('/staff')", "location.replace('/staff?legacy=1')") : gate); }
         throw new ApiError(401, 'Sign in with the staff code to continue.');
       }
       if (path.startsWith('/api/')) {
+        if (path === '/api/host/station') {
+          if (!publicPlay) throw new ApiError(404, 'Public ranking is unavailable.');
+          if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');
+          if (req.method === 'GET') return json(res, 200, publicPlay.stationStatus(req));
+          if (req.method === 'POST') { limit(req, auth); await body(req); return json(res, 200, publicPlay.enroll(req, res)); }
+          throw new ApiError(405, 'Method not allowed.');
+        }
         if (req.method === 'GET' && path === '/api/session') return json(res, 200, { role: auth.role, board: database.board() });
         if (req.method === 'GET' && path === '/api/board') return json(res, 200, database.board());
         const runMatch = /^\/api\/runs\/([a-f0-9-]{36})(?:\/(turns|abandon))?$/.exec(path);
@@ -155,15 +184,15 @@ export async function createPilotServer(options) {
       if (!['GET', 'HEAD'].includes(req.method)) throw new ApiError(405, 'Method not allowed.');
       let relative;
       try { relative = decodeURIComponent(path); } catch { throw new ApiError(400, 'Invalid path.'); }
-      const file = resolve(root, `.${['/', '/staff'].includes(relative) || publicPage || publicOfficial ? '/index.html' : relative}`);
+      const file = resolve(root, `.${privacyPage ? '/privacy.html' : ['/', '/staff'].includes(relative) || publicPage || publicOfficial ? '/index.html' : relative}`);
       if (!file.startsWith(root + sep)) throw new ApiError(404, 'File not found.');
       let actual;
       try { actual = await realpath(file); if (!actual.startsWith(root + sep) || !(await stat(actual)).isFile()) throw Error(); }
       catch { throw new ApiError(404, 'File not found.'); }
-      if (!auth && !publicPage && !publicOfficial && !publicAsset('/' + actual.slice(root.length + 1).split(sep).join('/'))) throw new ApiError(404, 'File not found.');
+      if (!auth && !privacyPage && !publicPage && !publicOfficial && !publicAsset('/' + actual.slice(root.length + 1).split(sep).join('/'))) throw new ApiError(404, 'File not found.');
       let content = await readFile(actual);
       if (actual === resolve(root, 'index.html')) content = Buffer.from(content.toString().replace('<head>', publicPage
-        ? `<head><script>window.__PUBLIC_TRY__=true;window.__OFFICIAL_EVENTS__=${officialEventsEnabled};window.__PUBLIC_DIAGNOSTICS__=${publicDiagnosticsEnabled};</script>`
+        ? `<head><script>window.__PUBLIC_TRY__=true;window.__PUBLIC_PLAY__=${publicRankedEnabled};window.__OFFICIAL_EVENTS__=${officialEventsEnabled};window.__PUBLIC_DIAGNOSTICS__=${publicDiagnosticsEnabled};</script>`
         : publicOfficial ? `<head><script>window.__PUBLIC_OFFICIAL__=true;window.__OFFICIAL_EVENTS__=true;</script>`
         : `<head><script>window.__SHARED_PILOT__=true;window.__OFFICIAL_EVENTS__=${officialEventsEnabled};</script>`));
       res.writeHead(200, { 'Content-Type': mime[extname(actual)] || 'application/octet-stream', 'Content-Length': content.length });
@@ -178,7 +207,7 @@ export async function createPilotServer(options) {
   server.requestTimeout = 10_000;
   server.headersTimeout = 10_000;
   const retentionTimer = setInterval(() => {
-    try { playtest.prune(); official?.pruneSessions(); diagnostics?.prune(); attempts.prune(); } catch (error) { console.error('Retention maintenance failed:', error.code || error.name); }
+    try { playtest.prune(); official?.pruneSessions(); diagnostics?.prune(); publicPlay?.prune(); attempts.prune(); } catch (error) { console.error('Retention maintenance failed:', error.code || error.name); }
   }, 3600_000);
   retentionTimer.unref();
   server.once('close', () => clearInterval(retentionTimer));
@@ -204,6 +233,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const { server, database } = await createPilotServer({ filename: resolve(dataDir, 'pilot.sqlite'), origin: process.env.PUBLIC_ORIGIN,
     staffCode: process.env.STAFF_CODE, hostCode: process.env.HOST_CODE, secure: production,
     publicTryEnabled: process.env.PUBLIC_TRY_ENABLED === 'true',
+    publicRankedEnabled: process.env.PUBLIC_RANKED_ENABLED !== 'false',
     publicDiagnosticsEnabled: process.env.PUBLIC_DIAGNOSTICS_ENABLED === 'true',
     trustedProxyPeers: process.env.TRUSTED_PROXY_PEERS ? process.env.TRUSTED_PROXY_PEERS.split(',').map(value => value.trim()) : [],
     officialEventsEnabled: process.env.OFFICIAL_EVENTS_ENABLED === 'true',

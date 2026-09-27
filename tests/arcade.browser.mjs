@@ -39,7 +39,9 @@ async function catchTurn({ timeout = false } = {}){
   await phase('result');
   assert.match(await page.locator('#hint').textContent(), /^(SO CLOSE|SLIPPED OFF [A-Z ]+|[A-Z ]+ STUCK BESIDE [A-Z ]+|BLOCKED BY [A-Z ]+|BUMPED [A-Z ]+|STAR MOVED ON|NOTHING THERE)$/, 'a miss says why');
   assert.deepEqual((await snap()).camera, missCamera, 'a miss keeps the close view');
-  assert.ok(Math.abs((await snap()).claw.x - (await snap()).position.x) < 1e-6, 'the empty claw stays over its drop');
+  const miss = await snap();
+  assert.ok(Math.abs(miss.claw.carriage.x - miss.position.x) < 1e-6, 'the empty carriage stays over its drop');
+  assert.ok(Math.hypot(miss.claw.x - miss.position.x, miss.claw.z - miss.position.z) < .12, 'the empty claw retains only its bounded suspended sway');
  }
  if (!checkedDelivery) {
   await phase('deliver');

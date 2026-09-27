@@ -127,3 +127,52 @@ test('full storage after start retains all completed turns for same-page retry',
   assert.equal(notices.find(notice => notice.saved).saved.total, 0);
   assert.equal(local.length, 0); assert.equal(tab.length, 0);
 });
+
+// A separate public transport must never submit or erase a staff outbox.
+test('public client isolates storage and retries its completed results across reload', async () => {
+  const local = storage(), tab = storage(), urls = [], received = new Map();
+  const staffId = crypto.randomUUID(), staffKey = `cloud-claw:pending:v2:${staffId}:run`;
+  local.setItem(staffKey, JSON.stringify({ id: staffId }));
+  tab.setItem('cloud-claw:active:v2', staffId);
+  const issued = { id: crypto.randomUUID(), boardId: 'public', name: 'Mochi', status: 'active', turns: [], rules: RULES };
+  let offline = false;
+  const fetcher = async (url, options) => {
+    urls.push(url); assert.ok(url.startsWith('/api/play/'));
+    if (url.endsWith('/session')) { assert.equal(options.method, 'POST'); return Response.json({ role: 'public' }); }
+    if (url === '/api/play/runs') return Response.json(issued);
+    if (offline) throw Error('Offline');
+    const turn = JSON.parse(options.body); received.set(turn.turn, turn);
+    return Response.json({ ...issued, status: received.size === 3 ? 'complete' : 'active', rank: 1 });
+  };
+  let api = createSessionApi({ publicPlay: true, storage: local, tabStorage: tab, fetcher });
+  await api.initialize();
+  const run = await api.start('Mochi', crypto.randomUUID());
+  offline = true; run.turns = [1, 2, 3].map(turn => ({ turn, prizeId: null, score: 0 })); api.queue(run); await api.flush();
+  assert.equal(api.state().pending, 1);
+  offline = false; api = createSessionApi({ publicPlay: true, storage: local, tabStorage: tab, fetcher }); await api.initialize();
+  assert.equal(received.size, 3); assert.equal(api.state().pending, 0);
+  assert.equal(local.length, 1); assert.ok(local.getItem(staffKey)); assert.equal(tab.getItem('cloud-claw:active:v2'), staffId);
+  assert.ok(!urls.some(url => url.includes(staffId)));
+});
+
+test('inaccessible retained public scores cannot block a new owner from saving', async () => {
+  const local = storage(), tab = storage(), saved = [], oldId = crypto.randomUUID();
+  local.setItem(`cloud-claw:public:pending:v1:${oldId}:run`, JSON.stringify({ id: oldId }));
+  local.setItem(`cloud-claw:public:pending:v1:${oldId}:turn:1`, JSON.stringify({ turn: 1, prizeId: null }));
+  const issued = { id: crypto.randomUUID(), boardId: 'public', name: 'New player', status: 'active', turns: [], rules: RULES };
+  const received = new Set();
+  const fetcher = async (url, options) => {
+    if (url.includes(oldId)) return Response.json({ error: 'Run not found for this browser.' }, { status: 404 });
+    if (url.endsWith('/session')) return Response.json({ role: 'public' });
+    if (url === '/api/play/runs') return Response.json(issued);
+    received.add(JSON.parse(options.body).turn);
+    return Response.json({ ...issued, status: received.size === 3 ? 'complete' : 'active', rank: 1 });
+  };
+  const api = createSessionApi({ publicPlay: true, storage: local, tabStorage: tab, fetcher, onChange: state => { if (state.saved) saved.push(state.saved); } });
+  await api.initialize();
+  const run = await api.start('New player', crypto.randomUUID());
+  run.turns = [1, 2, 3].map(turn => ({ turn, prizeId: null })); api.queue(run); await api.flush();
+  assert.equal(saved.length, 1); assert.equal(saved[0].id, issued.id); assert.equal(received.size, 3);
+  assert.ok(local.getItem(`cloud-claw:public:pending:v1:${oldId}:run`));
+  assert.equal(api.state().pending, 1); assert.match(api.state().error, /new scores can still save/);
+});

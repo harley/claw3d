@@ -13,7 +13,7 @@ async function fixture(t, publicTryEnabled = false, officialEventsEnabled = true
   for (const path of ['index.html', 'build-info.json', 'private.txt', 'assets/game.js', 'assets/game.css', 'assets/coderpush-wordmark-white-Ab12.svg', 'assets/private.svg', 'models/hands/left.glb', 'vision/gesture_recognizer.task', 'vision/wasm/runtime.wasm']) await writeFile(join(dir, path), path === 'index.html' ? '<head></head>Arcade' : 'fixture');
   await symlink(join(dir, 'private.txt'), join(dir, 'assets/secret.js'));
   const origin = 'http://127.0.0.1:4291';
-  const app = await createPilotServer({ filename: ':memory:', dist: dir, origin, staffCode: 'public-try-staff-secret', hostCode: 'public-host-code', secure: false, publicTryEnabled, officialEventsEnabled });
+  const app = await createPilotServer({ filename: ':memory:', dist: dir, origin, staffCode: 'public-try-staff-secret', hostCode: 'public-host-code', secure: false, publicRankedEnabled: false, publicTryEnabled, officialEventsEnabled });
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await new Promise(resolve => app.server.close(resolve)); app.database.close(); await rm(dir, { recursive: true, force: true }); });
   const request = (path, { data, cookie, method = data ? 'POST' : 'GET' } = {}) => fetch(`http://127.0.0.1:${app.server.address().port}${path}`, {
@@ -24,7 +24,7 @@ async function fixture(t, publicTryEnabled = false, officialEventsEnabled = true
 
 test('Try defaults off and retains the staff gate and protected assets', async t => {
   const { request } = await fixture(t);
-  assert.match(await (await request('/')).text(), /Staff pilot/);
+  assert.match(await (await request('/')).text(), /Operator sign-in/);
   for (const path of ['/try', '/index.html', '/assets/game.js', '/vision/gesture_recognizer.task']) assert.equal((await request(path)).status, 401);
 });
 
@@ -49,7 +49,7 @@ test('enabled Try exposes only its entry and required assets, without owners or 
 
 test('enabled Try cannot replace or elevate the separate staff session', async t => {
   const { request } = await fixture(t, true);
-  assert.match(await (await request('/staff')).text(), /Staff pilot/);
+  assert.match(await (await request('/staff')).text(), /Operator sign-in/);
   const login = await request('/api/login', { data: { code: 'public-try-staff-secret' } });
   const cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
   assert.match(await (await request('/staff', { cookie })).text(), /__SHARED_PILOT__=true;window.__OFFICIAL_EVENTS__=true/);

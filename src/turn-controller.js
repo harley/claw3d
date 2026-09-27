@@ -1,4 +1,4 @@
-import { drop, advance, move, moveToward, moveCarousel, aimTarget, homeClaw } from './arcade-mechanics.js';
+import { drop, advance, advanceSuspension, move, moveToward, moveCarousel, aimTarget, homeClaw } from './arcade-mechanics.js';
 import { ABSOLUTE_SPEED } from './steering.js';
 
 // The turn lifecycle without the DOM: accepted drops, the aiming clock, the dual
@@ -68,6 +68,7 @@ export function stepTurn(game, state, input, dt, { preparing = false, controlRea
     input.x = input.z = 0;
     state.pendingSlam.elapsed += dt;
     moveCarousel(game, dt);
+    advanceSuspension(game, dt);
     if (state.pendingSlam.elapsed >= slamSeconds) {
       state.contactFeedback = state.pendingSlam.feedback;
       state.pendingSlam = null;
@@ -79,6 +80,7 @@ export function stepTurn(game, state, input, dt, { preparing = false, controlRea
     const previous = game.position;
     game.position = input.target ? moveToward(game.position, input.target, dt, ABSOLUTE_SPEED) : move(game.position, input, dt);
     moveCarousel(game, dt);
+    advanceSuspension(game, dt);
     effects.push({ type: 'aim', toy: aimTarget(game) });
     if (Math.hypot(game.position.x - previous.x, game.position.z - previous.z) > .0001) effects.push({ type: 'moved' });
     const before = Math.ceil(state.remaining);
@@ -88,9 +90,10 @@ export function stepTurn(game, state, input, dt, { preparing = false, controlRea
     return effects;
   }
   input.x = input.z = 0;
-  if (game.phase === 'idle') moveCarousel(game, dt);
+  if (game.phase === 'idle') { moveCarousel(game, dt); advanceSuspension(game, dt); }
   if (game.phase === 'result' && preparing) {
     homeClaw(game, dt);
+    advanceSuspension(game, dt);
     state.nextTurnElapsed += dt;
     if (state.nextTurnElapsed >= nextTurnSeconds(Boolean(game.plan?.prize))) { effects.push({ type: 'nextTurn' }); return effects; }
   }

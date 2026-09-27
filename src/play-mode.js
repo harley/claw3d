@@ -25,10 +25,13 @@ export function resolvePlayMode(search = '', shared = false) {
   const requestedHold = Number(params.get('hold'));
   const holdMs = !shared && requestedHold >= HOLD_LIMITS.min && requestedHold <= HOLD_LIMITS.max ? Math.round(requestedHold) : undefined;
   const steering = !shared && params.get('steer') === 'absolute' ? 'absolute' : 'relative';
-  const pushContact = !shared && params.get('contact') === 'push';
+  const pushContact = !shared && params.get('claw') !== 'suspended' && params.get('contact') === 'push';
+  // The approved steel claw is the normal game. Rigid geometry remains local
+  // for the separate pushing experiment and regression comparisons.
+  const suspendedClaw = shared || (!pushContact && params.get('claw') !== 'rigid');
   const storageKey = profile === 'dual' ? `${STORAGE_KEY}:dual-controls` : profile === 'grab-release' ? `${STORAGE_KEY}:cabinet-controls` : STORAGE_KEY;
   return Object.freeze({
-    shared, profile, pushContact,
+    shared, profile, pushContact, suspendedClaw,
     dual: profile === 'dual', grab: profile !== 'hold-drop', cabinet: true,
     holdMs, steering,
     controlMode: profile === 'dual' ? 'two-hand' : 'one-hand',
