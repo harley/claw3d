@@ -29,20 +29,18 @@ test('raising an acquired right hand fires on that sample, once, and locks input
   const s = f.step(hands); assert.equal(s.fired, true); assert.deepEqual(s.input, {x:0,z:0});
   assert.equal(f.repeat(hands).fired, false);
 });
-test('a palm first acquired over DROP must leave and deliberately reenter', () => {
-  const f = fixture(); f.grip();
-  assert.equal(f.repeat([f.left, hand('right', 'open', .72, .44)]).fired, false);
-  assert.equal(f.step([f.left, hand('right', 'open', .72, .60)]).fired, false);
-  assert.equal(f.step([f.left, hand('right', 'open', .72, .44)]).fired, true);
-  assert.equal(f.repeat([f.left, hand('right', 'open', .72, .44)]).fired, false);
+// Contract: an open palm acquired at the target drops once, without moving away.
+// The former entry-only tests explicitly required the confusing extra movement.
+test('a palm first acquired in the centre of DROP fires once without leaving', () => {
+  const f = fixture(); f.grip(); let fired = 0;
+  for (let i = 0; i < 60; i++) fired += Number(f.step([f.left, hand('right', 'open', .72, .44)]).fired);
+  assert.equal(fired, 1);
 });
-
-test('raising before left grip cannot be banked into an automatic drop', () => {
-  const f=fixture();f.repeat([hand('left'),hand('right')]);
-  f.repeat([hand('left'),hand('right','open',.65,.50)]);
-  for(let i=0;i<10;i++)assert.equal(f.step([f.left,hand('right','open',.65,.50)]).fired,false);
-  f.step([f.left,hand('right','open',.65,.60)]);
-  assert.equal(f.step([f.left,hand('right','open',.65,.50)]).fired,true);
+test('an acquired palm over DROP fires when left grip becomes ready', () => {
+  const f=fixture(); f.repeat([hand('left'),hand('right','open',.72,.44)]);
+  let fired=0;
+  for(let i=0;i<10;i++) fired+=Number(f.step([f.left,hand('right','open',.72,.44)]).fired);
+  assert.equal(fired,1);
 });
 test('lowering an acquired right hand establishes the next upward stroke without a hold', () => {
   const f=fixture();f.arm();assert.equal(f.step([f.left,hand('right','open',.65,.72)]).fired,false);
@@ -234,9 +232,7 @@ test('brief missing or low-confidence left evidence stops actions then recovers 
     assert.equal(recovered.dropEnabled, true);
     assert.deepEqual(recovered.input, { x: 0, z: 0 }, 'recovery recentres steering');
     assert.equal(recovered.fired, false, 'a raise during the interruption is not banked');
-    assert.ok(f.step([hand('left', 'closed', .20, .70), hand('right', 'open', .65, .50)]).input.x < 0);
-    f.step([hand('left', 'closed', .20, .70), hand('right', 'open', .65, .60)]);
-    assert.equal(f.step([hand('left', 'closed', .20, .70), hand('right', 'open', .65, .50)]).fired, true);
+    assert.equal(f.step([hand('left', 'closed', .20, .70), hand('right', 'open', .65, .50)]).fired, true, 'fresh recovered evidence over DROP needs no exit');
   }
 });
 test('a right raise begun during left recovery needs fresh evidence after the grip returns', () => {

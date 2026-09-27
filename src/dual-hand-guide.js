@@ -30,7 +30,7 @@ export function createDualHandGuide() {
       guide.querySelector('span').textContent = stage === 'drop'
         ? right?.pointer && (!right.open || right.closed) ? 'Open your right palm'
         : right?.pointer && !right.ready ? 'Hold right palm still'
-        : right?.ready && right.target === 'drop' && !right.grab?.armed ? 'Move out, then into DROP' : 'Open right palm to DROP'
+        : 'Open right palm to DROP'
         : stage === 'ready' ? 'Left hand ready' : stage === 'grip' ? 'Clench to grip' : 'Show your left hand';
       if (dropping) {
         target.hidden = false;

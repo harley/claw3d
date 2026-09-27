@@ -6,16 +6,16 @@ import { Steering } from './steering.js';
 export const HAND_ACQUIRE_MS = 300;
 export const LEFT_GRIP_GRACE_MS = 200;
 export const RIGHT_SLAM_MS = 360;
-// A fresh, acquired open palm must approach the visible target from outside.
-// A hand already over DROP at START/grip/recovery cannot bank a press.
-class RightPalmEntry {
+// A fresh, acquired open palm over the visible target commits one press.
+// Acquisition may finish inside the target; no exit-and-reentry gesture is needed.
+class RightPalmDrop {
   constructor() { this.reset(); }
   reset() { this.stage = 'seeking'; this.armed = false; this.progress = 0; }
   read() { return { stage: this.stage, armed: this.armed, progress: this.progress, fired: false }; }
   update(valid, { nearDrop }) {
     if (!valid) { this.reset(); return this.read(); }
     if (!nearDrop) { this.stage = 'armed'; this.armed = true; return this.read(); }
-    if (!this.armed || this.stage === 'fired') return this.read();
+    if (this.stage === 'fired') return this.read();
     this.stage = 'fired'; this.armed = false;
     return { ...this.read(), fired: true };
   }
@@ -32,7 +32,7 @@ const clear = state => { state.owner = state.origin = state.observed = state.can
 // the other role's closed hand or confirmation time.
 export class DualHandControls {
   constructor() { this.reset(); }
-  reset() { this.left = role(); this.right = role(); this.right.gesture = new RightPalmEntry(); this.last = null; }
+  reset() { this.left = role(); this.right = role(); this.right.gesture = new RightPalmDrop(); this.last = null; }
 
   track(state, name, hands, now) {
     if (state.interrupted && now - state.lastSeen > LEFT_GRIP_GRACE_MS) clear(state);
@@ -138,6 +138,6 @@ export class DualHandControls {
       grab: grip,
       progress: grip.progress,
       pointer: leftView.pointer, target: rightView.target, closed: leftView.closed,
-      message: left.recovering ? 'HOLD LEFT HAND STEADY' : left.outside ? 'RETURN LEFT HAND TO ITS AREA' : !leftClear ? 'SHOW LEFT HAND OPEN' : !grip.steering ? 'LEFT HAND · GRAB JOYSTICK' : right.outside ? 'RETURN RIGHT HAND TO ITS AREA' : right.ready && rightTarget.nearDrop && !press.armed ? 'MOVE PALM AWAY, THEN INTO DROP' : 'OPEN RIGHT PALM TO DROP' };
+      message: left.recovering ? 'HOLD LEFT HAND STEADY' : left.outside ? 'RETURN LEFT HAND TO ITS AREA' : !leftClear ? 'SHOW LEFT HAND OPEN' : !grip.steering ? 'LEFT HAND · GRAB JOYSTICK' : right.outside ? 'RETURN RIGHT HAND TO ITS AREA' : 'OPEN RIGHT PALM TO DROP' };
   }
 }

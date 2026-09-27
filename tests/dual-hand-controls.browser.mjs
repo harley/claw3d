@@ -198,8 +198,8 @@ try {
     assert.equal(await page.locator('#camera-overlay').getAttribute('data-right'),'open');
     await page.waitForFunction(()=>document.getElementById('jackpot-signal').hidden);
     if(turn===2){
-      // Acquire outside, then enter the visible target once.
-      await burst([left,right]);
+      // Acquire directly over DROP without an exit/reentry gesture.
+      await burst([left,{...right,y:.50}],5);
       await page.evaluate(hands=>{sample(hands);document.getElementById('pause').click();},[left,{...right,y:.50}]);
       await frame();
       const pausedSlam=await page.evaluate(()=>window.__littleCloud.snapshot());
