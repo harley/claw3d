@@ -38,18 +38,16 @@ try {
   }
 
   async function inspectTarget(id, expectedSide) {
-    await page.waitForFunction(() => {
-      const element = document.querySelector('.prize-tag.targeted');
-      if (!element) return false;
-      const bounds = element.getBoundingClientRect(), parent = document.getElementById('prize-tags').getBoundingClientRect();
-      return bounds.left >= parent.left + 9 && bounds.right <= parent.right - 9 && bounds.top >= parent.top + 9 && bounds.bottom <= parent.bottom - 9;
-    });
-    const target = await page.evaluate(async id => {
-      const T = await import('/node_modules/three/build/three.module.js');
+    // A swinging claw can lose alignment while an import or browser call yields.
+    // Read the target, game pose and bounds together after the asynchronous work.
+    const three = await page.evaluateHandle(() => import('/node_modules/three/build/three.module.js'));
+    const observation = await page.waitForFunction(({ id, T }) => {
       const state = window.__littleCloud.snapshot(true);
       const toy = state.toys.find(item => item.id === id);
       const element = document.querySelector('.prize-tag.targeted');
+      if (!element || state.aligned !== id) return false;
       const bounds = element.getBoundingClientRect(), parent = document.getElementById('prize-tags').getBoundingClientRect();
+      if (bounds.left < parent.left + 9 || bounds.right > parent.right - 9 || bounds.top < parent.top + 9 || bounds.bottom > parent.bottom - 9) return false;
       const scene = document.getElementById('scene').getBoundingClientRect();
       const camera = new T.PerspectiveCamera(35, scene.width / scene.height, .1, 70);
       camera.position.fromArray(state.camera); camera.lookAt(...state.cameraLook); camera.updateProjectionMatrix(); camera.updateMatrixWorld();
@@ -61,7 +59,10 @@ try {
         borderWidth: parseFloat(style.borderTopWidth), bounds: bounds.toJSON(), parent: parent.toJSON(),
         toyTopY: scene.top + (1 - top.y) * scene.height / 2,
       };
-    }, id);
+    }, { id, T: three });
+    const target = await observation.jsonValue();
+    await observation.dispose();
+    await three.dispose();
     assert.equal(target.visible, true);
     assert.equal(target.count, 1, 'only the active toy gets an emphasized label');
     assert.match(target.text, /^\d{3}$/);

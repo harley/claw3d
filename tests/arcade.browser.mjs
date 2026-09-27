@@ -32,7 +32,9 @@ async function aimToy(id='butter'){
   await page.waitForTimeout(Math.abs(delta)/(.85*speed)*1000);
   await cameraInput(page,{x:0,z:0});
  }
- // The suspended fingers can still swing past the toy after its carriage stops.
+ // This journey tests delivery and scoring from a settled pickup. Alignment
+ // during a swing is only momentary; suspended-claw.browser.mjs covers that miss.
+ await page.waitForTimeout(2000);
  await page.waitForFunction(id=>window.__littleCloud.snapshot().aligned===id,id,{timeout:3000});
  assert.equal((await snap()).aligned,id);
 }
@@ -44,6 +46,7 @@ async function catchTurn({ timeout = false } = {}){
  for(let i=0;i<5;i++)assert.equal(await cameraDrop(page), false, 'an accepted drop cannot be repeated');
  await phase('lift');
  const caught = (await snap()).caught;
+ if (!checkedDelivery) assert.equal(caught, 'butter', 'the settled first pickup must catch before checking delivery');
  assert.equal(await page.locator('#status').textContent(), caught ? 'GOT IT!' : 'MISSED');
  if (caught) assert.ok((await snap()).effects.burst > 0, 'catch payoff burst fires at lift');
  if (!caught) {
