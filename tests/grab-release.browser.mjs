@@ -39,10 +39,12 @@ try {
   await page.locator('#name').fill('Synthetic grab check'); await page.locator('#name').press('Enter');
   await page.waitForFunction(() => window.__littleCloud.snapshot().event.firstTurnPreparationElapsed !== null && window.controller.getControlProfile() === 'grab-release');
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  // Keep the synthetic camera live while acquiring readiness, including on
+  // runners where a frame can outlast the adapter's 700 ms freshness window.
+  await page.evaluate(() => { window.prepSamples = setInterval(() => sample('open'), 130); });
   await page.evaluate(() => { for(let i=0;i<12;i++) sample('open'); });
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await page.waitForFunction(() => window.__littleCloud.snapshot().event.firstTurnControlReady);
-  await page.evaluate(() => { window.prepSamples = setInterval(() => sample('open'), 130); });
   await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
   await page.evaluate(() => clearInterval(window.prepSamples));
   await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
@@ -114,9 +116,9 @@ try {
   await page.locator('#register-play').click();
   await page.waitForFunction(() => window.__littleCloud.snapshot().event.firstTurnPreparationElapsed !== null);
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.evaluate(() => { window.prepSamples = setInterval(() => sample('open'), 130); });
   await page.evaluate(() => { for(let i=0;i<12;i++) sample('open'); });
   await page.waitForFunction(() => window.__littleCloud.snapshot().event.firstTurnControlReady);
-  await page.evaluate(() => { window.prepSamples = setInterval(() => sample('open'), 130); });
   await page.waitForFunction(()=>window.__littleCloud.snapshot().phase==='aim');
   await page.evaluate(() => clearInterval(window.prepSamples));
   assert.ok((await page.evaluate(()=>window.__littleCloud.snapshot().toys)).every(t=>!t.claimed),'new player restocks');
