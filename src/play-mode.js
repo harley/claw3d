@@ -3,6 +3,16 @@ import { HOLD_LIMITS } from './fist.js';
 import { HAND_ACQUIRE_MS, RIGHT_SLAM_MS } from './dual-hand-controls.js';
 import { PRESS_MS } from './grab-release.js';
 
+// Orientation chooses a default only at a safe menu boundary. Explicit manual
+// choices, local experiments and official ticket rules keep their own profile.
+export function phonePlaySearch(search, { phone = false, landscape = false, locked = false, official = false } = {}) {
+  const params = new URLSearchParams(search);
+  if (!phone || locked || official || params.get('hands') === 'manual' || params.get('controls') === 'grab') return search;
+  params.set('hands', 'auto');
+  if (landscape) params.set('controls', 'dual'); else params.delete('controls');
+  return `?${params}`;
+}
+
 // The effective play mode, resolved once from the page URL and the shared-pilot
 // gate. Input profile, presentation, storage namespace and the server's control
 // mode label all derive from this one object, so they cannot drift apart.

@@ -66,8 +66,9 @@ try {
     await page.emulateMedia({ reducedMotion: 'reduce' });
   };
   await page.waitForFunction(() => controller.getControlProfile() === 'dual');
+  await frame(); // Let the menu-to-game boundary reset ownership before sending a camera sample.
   await page.waitForFunction(() => {
-    sample([]); // Keep synthetic captures fresh while the first scene frame settles.
+    sample([]); // Keep captures fresh while slow runners settle the scene.
     return document.querySelector('#dual-hand-guide')?.dataset.stage === 'acquire';
   });
   assert.equal(await page.locator('#status').textContent(), 'SHOW LEFT HAND');
@@ -140,7 +141,7 @@ try {
     // Screenshots and layout reads on slow runners outlast the 700 ms input freshness window; re-feed the hands first.
     await page.setViewportSize(size);await burst([left,right]);await frame();
     const controls=await page.evaluate(()=>window.__littleCloud.snapshot().machineControls);
-    assert.ok(controls.drop.x-controls.stick.x>(controls.bounds.right-controls.bounds.left)*.40,'actual controls sit well apart');
+    assert.ok(controls.drop.x-controls.stick.x > (controls.drop.radius + controls.stick.radius) * 2.5,'actual control hit areas stay well separated on the full-width stage');
     const hands=await page.evaluate(()=>testHands().hands);
     assert.ok(hands.left.position[0]<0 && hands.right.position[0]>0,'3D hands stay on their physical control sides');
     assert.equal(hands.left.visible,true);assert.equal(hands.right.visible,false);

@@ -23,7 +23,7 @@ export async function createPilotServer(options) {
   if (typeof officialEventsEnabled !== 'boolean' || typeof officialAdmissionsEnabled !== 'boolean') throw new Error('Event feature options must be booleans.');
   if (typeof publicDiagnosticsEnabled !== 'boolean') throw new Error('Diagnostics option must be a boolean.');
   if (typeof publicTryEnabled !== 'boolean') throw new Error('Public Try option must be a boolean.');
-  const publicAsset = path => /^\/(?:assets\/[a-zA-Z0-9_-]+\.(?:js|css)|models\/hands\/(?:left|right)\.glb|vision\/(?:gesture_recognizer\.task|wasm\/[a-zA-Z0-9_-]+\.(?:js|wasm)))$/.test(path);
+  const publicAsset = path => /^\/(?:assets\/[a-zA-Z0-9_-]+\.(?:js|css)|assets\/coderpush-wordmark-white-[a-zA-Z0-9_-]+\.svg|models\/hands\/(?:left|right)\.glb|vision\/(?:gesture_recognizer\.task|wasm\/[a-zA-Z0-9_-]+\.(?:js|wasm)))$/.test(path);
   const clientAddress = clientAddressResolver(trustedProxyPeers);
   if (!origin || !staffCode || !hostCode || staffCode.length < 16 || hostCode.length < 8 || staffCode === hostCode) throw new Error('A fixed origin, a staff secret of at least 16 characters and a distinct host code of at least 8 characters are required.');
   const database = openDatabase(filename), { db } = database;

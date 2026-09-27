@@ -43,6 +43,8 @@ try {
   });
   await page.goto(origin);
   await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true' && window.mediaCalls === 1);
+  // The built logo must load through the anonymous static-asset boundary.
+  assert.equal(await page.locator('.brand img').evaluate(img => img.complete && img.naturalWidth > 0), true);
   assert.equal(await page.locator('#try-notice').isVisible(), true);
   assert.equal(await page.locator('#registration').isVisible(), false);
   assert.equal(await page.locator('#camera-setup').isVisible(), true);

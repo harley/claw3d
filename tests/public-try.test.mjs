@@ -10,7 +10,7 @@ import { createPilotServer } from '../server/index.js';
 async function fixture(t, publicTryEnabled = false, officialEventsEnabled = true) {
   const dir = await mkdtemp(join(tmpdir(), 'public-try-'));
   for (const path of ['assets', 'models/hands', 'vision/wasm']) await mkdir(join(dir, path), { recursive: true });
-  for (const path of ['index.html', 'build-info.json', 'private.txt', 'assets/game.js', 'assets/game.css', 'models/hands/left.glb', 'vision/gesture_recognizer.task', 'vision/wasm/runtime.wasm']) await writeFile(join(dir, path), path === 'index.html' ? '<head></head>Arcade' : 'fixture');
+  for (const path of ['index.html', 'build-info.json', 'private.txt', 'assets/game.js', 'assets/game.css', 'assets/coderpush-wordmark-white-Ab12.svg', 'assets/private.svg', 'models/hands/left.glb', 'vision/gesture_recognizer.task', 'vision/wasm/runtime.wasm']) await writeFile(join(dir, path), path === 'index.html' ? '<head></head>Arcade' : 'fixture');
   await symlink(join(dir, 'private.txt'), join(dir, 'assets/secret.js'));
   const origin = 'http://127.0.0.1:4291';
   const app = await createPilotServer({ filename: ':memory:', dist: dir, origin, staffCode: 'public-try-staff-secret', hostCode: 'public-host-code', secure: false, publicTryEnabled, officialEventsEnabled });
@@ -35,13 +35,13 @@ test('enabled Try exposes only its entry and required assets, without owners or 
     assert.equal(response.headers.get('set-cookie'), null);
     const html = await response.text(); assert.match(html, /__PUBLIC_TRY__=true/); assert.match(html, /__PUBLIC_DIAGNOSTICS__=false/); assert.doesNotMatch(html, /__SHARED_PILOT__|__PUBLIC_OFFICIAL__/);
   }
-  for (const path of ['/assets/game.js', '/assets/game.css', '/models/hands/left.glb', '/vision/gesture_recognizer.task', '/vision/wasm/runtime.wasm']) {
+  for (const path of ['/assets/game.js', '/assets/game.css', '/assets/coderpush-wordmark-white-Ab12.svg', '/models/hands/left.glb', '/vision/gesture_recognizer.task', '/vision/wasm/runtime.wasm']) {
     assert.equal((await request(path)).status, 200);
     assert.equal((await request(path, { method: 'HEAD' })).status, 200);
     assert.equal((await request(path, { data: {} })).status, 401);
   }
   assert.equal((await request('/assets/secret.js')).status, 404);
-  for (const path of ['/index.html', '/private.txt', '/build-info.json', '/assets/%2e%2e/private.txt', '/api/session', '/api/board', '/api/host/export', '/api/host/playtest', '/api/host/public-playtest', '/api/official/session', '/api/official/board']) assert.equal((await request(path)).status, 401, path);
+  for (const path of ['/index.html', '/private.txt', '/assets/private.svg', '/build-info.json', '/assets/%2e%2e/private.txt', '/api/session', '/api/board', '/api/host/export', '/api/host/playtest', '/api/host/public-playtest', '/api/official/session', '/api/official/board']) assert.equal((await request(path)).status, 401, path);
   for (const path of ['/api/runs', '/api/host/boards', '/api/host/login', '/api/official/redeem']) assert.equal((await request(path, { data: {} })).status, 401, path);
   assert.equal((await request('/api/public/session', { data: {} })).status, 404, 'diagnostics remain independently disabled');
   for (const table of ['owners', 'runs', 'turns', 'official_runs']) assert.equal(app.database.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n, 0, table);

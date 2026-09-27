@@ -104,7 +104,7 @@ export async function assertScoredStart(page, { captureScreenshots = false, exer
     assert.ok(narrow.scrollWidth <= narrow.width, 'narrow HUD has no horizontal overflow');
     assert.ok(narrow.score.right <= narrow.hud.right && narrow.timer.right <= narrow.hud.right, 'score and timer stay inside the HUD');
     assert.ok(narrow.score.right < narrow.timer.left, 'score stays distinct from time left');
-    assert.ok(narrow.cue.left >= narrow.hud.left && narrow.cue.right <= narrow.hud.right, 'speed cue stays inside the HUD');
+    assert.equal(await page.locator('#score-cue').getAttribute('class'), 'sr-only', 'speed explanation stays available without repeating on screen');
     await page.screenshot({ path: '.screenshots/issue-93-countdown-narrow.png' });
     await page.setViewportSize(viewport);
   }

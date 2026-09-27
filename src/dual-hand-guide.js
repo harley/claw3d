@@ -11,18 +11,23 @@ export function createDualHandGuide() {
   guide.innerHTML = `<div class="dual-demo">${icon(palm, 'demo-palm')}${icon(fist, 'demo-fist')}</div><span></span>`;
   const target = document.createElement('div'); target.id = 'dual-drop-target'; target.hidden = true; target.setAttribute('aria-hidden', 'true');
   const cursor = document.createElement('div'); cursor.id = 'dual-palm-cursor'; cursor.hidden = true; cursor.setAttribute('aria-hidden', 'true'); cursor.innerHTML = icon(palm, '', 'right');
-  document.body.append(guide, target, cursor);
+  document.getElementById('camera-preview').append(guide);
+  document.body.append(target, cursor);
   return {
     update(feedback, targets, visible) {
       const fresh = !['off', 'loading', 'error', 'delayed', 'blocked', 'accepted', 'slamming'].includes(feedback.kind);
       const enabled = visible && targets && feedback.profile === 'dual' && fresh;
-      guide.hidden = !enabled; target.hidden = cursor.hidden = true;
-      if (!enabled) return;
+      if (!enabled) {
+        for (const element of [guide, target, cursor]) if (!element.hidden) element.hidden = true;
+        return;
+      }
+      target.hidden = cursor.hidden = true;
       const left = feedback.hands?.left, right = feedback.hands?.right;
       const gripping = left?.ready && ['grabbing', 'gripped'].includes(left.grab?.stage);
       const dropping = feedback.controlEnabled && feedback.dropEnabled;
       const stage = dropping ? 'drop' : gripping ? 'ready' : left?.ready ? 'grip' : 'acquire';
       guide.dataset.stage = stage;
+      if (guide.hidden !== (stage === 'ready')) guide.hidden = stage === 'ready';
       const role = dropping ? 'right' : 'left';
       if (guide.dataset.hand !== role) {
         guide.dataset.hand = role;
