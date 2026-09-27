@@ -54,17 +54,23 @@ try {
   for (const fps of [60, 30, 10]) {
    const game = createGame({ pushContact: true });
    game.toys = game.toys.filter(t => t.id === 'butter');
-   const toy = game.toys[0]; toy.x = toy.z = 0;
-   scene.groundToys(game); begin(game); game.position = { x: 0, z: .3 }; drop(game);
-   let firstStop, lowestAfterStop = Infinity, minGround = Infinity, maxGround = -Infinity, wallSafe = true;
+   const toy = game.toys[0]; toy.x = 0; toy.z = .3;
+   scene.groundToys(game); begin(game); game.position = { x: 0, z: .6 }; drop(game);
+   let releaseAngle, firstStop, lowestAfterStop = Infinity, minGround = Infinity, maxGround = -Infinity, wallSafe = true;
    for (let i = 0; i < 1000 && game.phase !== 'result'; i++) {
     advance(game, 1 / fps); scene.update(game, 1 / fps, i / fps, { x: 0, z: 0 }, null);
+    if (game.phase === 'lift') releaseAngle ??= toy.restPose?.angle;
     if (game.phase === 'descend' && toy.restPose) firstStop ??= game.plan.pushDescent.y;
     if (game.phase === 'descend' && firstStop) lowestAfterStop = Math.min(lowestAfterStop, game.plan.pushDescent.y);
     const bounds = scene.toyBounds(toy.id);
     minGround = Math.min(minGround, bounds.min[1] - BED); maxGround = Math.max(maxGround, bounds.min[1] - BED);
     wallSafe &&= bounds.min[0] >= -1.62 && bounds.max[0] <= 1.62 && bounds.min[2] >= -1.10 && bounds.max[2] <= 1.17;
    }
+   const contactAngle = toy.restPose.angle;
+   for (let i = 0; i < fps * 5; i++) scene.update(game, 1 / fps, i / fps, { x: 0, z: 0 }, null);
+   const settledAngle = toy.restPose.angle;
+   for (let i = 0; i < fps * 2; i++) scene.update(game, 1 / fps, i / fps, { x: 0, z: 0 }, null);
+   const settledDrift = Math.abs(toy.restPose.angle - settledAngle);
    if (fps === 60) pushedGame = structuredClone(game);
    const firstCaught = game.plan.prize?.id || null;
    const resting = { x: toy.x, z: toy.z, angle: toy.restPose?.angle || 0 };
@@ -77,15 +83,27 @@ try {
    const oppositeYields = oppositeMoved > 0 && toy.z > beforeOpposite && toy.restPose.angle < resting.angle;
    game.phase = 'result'; game.plan = null; begin(game);
    game.position = { x: toy.support?.x ?? toy.x, z: toy.support?.z ?? toy.z }; drop(game);
-   let lastGrip, firstLift;
+   let lastGrip, firstLift, heldStart, heldEnd;
    for (let i = 0; i < 1000 && game.phase !== 'result'; i++) {
     advance(game, 1 / fps); scene.update(game, 1 / fps, i / fps, { x: 0, z: 0 }, null);
     if (game.phase === 'grip') lastGrip = scene.fingers.map(f => f.pad.position.x);
-    if (game.phase === 'lift') firstLift ??= scene.fingers.map(f => f.pad.position.x);
+    if (game.phase === 'lift') { firstLift ??= scene.fingers.map(f => f.pad.position.x); heldStart ??= Math.abs(toy.restPose?.angle || 0); heldEnd = Math.abs(toy.restPose?.angle || 0); }
    }
-   pushes.push({ fps, firstCaught, resting, minGround, maxGround, wallSafe, persisted, resumed: firstStop - lowestAfterStop,
+   const object = scene.toys.get(toy.id);
+   const shelfTilt = Math.hypot(object.rotation.x, object.rotation.z);
+   pushes.push({ fps, releaseAngle, contactAngle, settledAngle, settledDrift, heldStart, heldEnd, shelfTilt, firstCaught, resting, minGround, maxGround, wallSafe, persisted, resumed: firstStop - lowestAfterStop,
     oppositeYields, recaught: game.plan.prize?.id || null, rounds: game.rounds, collection: [...game.collection],
     snap: Math.max(...lastGrip.map((r, i) => Math.abs(r - firstLift[i]))) });
+  }
+  const gravityShapes = [];
+  for (const id of ['butter', 'miso', 'blue-hour', 'peach', 'pip']) {
+   const game = createGame({ pushContact: true }); game.toys = game.toys.filter(t => t.id === id);
+   const toy = game.toys[0]; toy.x = toy.z = 0; toy.restPose = { x: 1, z: 0, angle: .7, velocity: 0 };
+   scene.groundToys(game); begin(game);
+   for (let i = 0; i < 360; i++) scene.update(game, 1 / 60, i / 60, { x: 0, z: 0 }, null);
+   const angle = toy.restPose.angle;
+   for (let i = 0; i < 120; i++) scene.update(game, 1 / 60, i / 60, { x: 0, z: 0 }, null);
+   gravityShapes.push({ id, angle, drift: Math.abs(toy.restPose.angle - angle), grounded: scene.toyBounds(id).min[1] - BED });
   }
   const reset = createGame({ pushContact: true }).toys.every(toy => !toy.restPose && !toy.support);
   const crowded = createGame({ pushContact: true });
@@ -113,7 +131,7 @@ try {
    for (let i = 0; i < 1000 && game.phase !== 'result'; i++) { advance(game, 1 / 60); scene.update(game, 1 / 60, i / 60, { x: 0, z: 0 }, null); }
    pinned.push({ name, caught: game.plan.prize?.id || null, stop: game.plan.stop, bounds: scene.toyBounds(toy.id), displacement: Math.hypot(toy.x, toy.z - (name === 'wall' ? -.64 : 0)) });
   }
-  scene.renderer.render=render; if(pushedGame){for(const [id,object] of scene.toys)object.visible=id==='butter';scene.update(pushedGame,0,0,{x:0,z:0},null);scene.inspect('butter');} return { results, transitions, pushes, pinned, reset, neighbour };
+  scene.renderer.render=render; if(pushedGame){for(const [id,object] of scene.toys)object.visible=id==='butter';scene.update(pushedGame,0,0,{x:0,z:0},null);scene.inspect('butter');} return { results, transitions, pushes, pinned, reset, neighbour, gravityShapes };
  });
  console.log(JSON.stringify(report,null,2)); await page.screenshot({path:'.screenshots/toy-push-contact.png'});
  assert.equal(report.results.find(r=>r.name==='centred').caught,'butter'); assert.equal(report.results.find(r=>r.name==='jackpot').caught,'sprout');
@@ -124,7 +142,11 @@ try {
  assert.ok(report.results.find(r=>r.name==='push-side').displaced.some(t=>t.angle>.03), 'stock layout also yields to an edge hit');
  for (const row of report.pushes) {
   assert.equal(row.firstCaught, null, 'a shove does not award a catch');
-  assert.ok(row.resting.z < -.08 && row.resting.angle > .25, `${row.fps} FPS visibly pushes and tips`);
+  assert.ok(Math.abs(row.settledAngle-row.releaseAngle)>.03, 'gravity continues after the claw leaves');
+  assert.ok(row.settledDrift<.015, `${row.fps} FPS toy settles instead of drifting: ${row.settledDrift}`);
+  assert.ok(row.heldEnd<row.heldStart*.3, 'held toy hangs toward its centre of mass');
+  assert.ok(row.shelfTilt<.001, 'shelf placement never retains the bed tilt');
+  assert.ok(row.resting.z < .22 && row.resting.angle > .25, `${row.fps} FPS visibly pushes and tips`);
   assert.ok(row.minGround > -.015 && row.maxGround < .015 && row.wallSafe, 'pushed toy rests on the bed without sinking or hovering');
   assert.ok(row.resumed > .05, 'descent continues when the toy yields');
   assert.ok(row.persisted, 'next turn preserves the displaced pose');
@@ -132,6 +154,11 @@ try {
   assert.ok(row.oppositeYields, 'opposite-side contact pushes back and reduces the old lean');
   assert.equal(row.rounds, 3); assert.deepEqual(row.collection, ['butter']);
   assert.ok(row.snap < 1e-8, 'a tilted catch preserves its finger contacts into lift');
+ }
+ for (const row of report.gravityShapes) {
+  assert.ok(Math.abs(row.angle-.7)>.05, `${row.id} responds to gravity`);
+  assert.ok(row.drift<.015, `${row.id} reaches a stable rest`);
+  assert.ok(Math.abs(row.grounded)<.015, `${row.id} stays grounded`);
  }
  assert.ok(report.reset, 'new run restocks poses');
  assert.ok(report.neighbour.maxOverlap <= report.neighbour.initialOverlap + .0001, 'pushing does not overlap a neighbour');

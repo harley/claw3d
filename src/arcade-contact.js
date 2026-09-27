@@ -1,4 +1,5 @@
 import * as T from 'three';
+import { supportHull, gravityStep, hangingStep, MASS_CENTRE_Y } from './arcade-gravity.js';
 import { MeshBVH, acceleratedRaycast } from 'three-mesh-bvh';
 import { BED, HIGH, BODY, FIELD, CAROUSEL, FINGER_DEPTH, OPEN_RADIUS, FINGER_ANGLES, mix, ease, PHASES, planGrab } from './arcade-mechanics.js';
 
@@ -14,7 +15,7 @@ function fingerSamples(r) {
 export class ToyContacts {
   constructor(toys) {
     this.toys = toys; this.meshes = new Map(); this.ray = new T.Raycaster(); this.ray.firstHitOnly = true;
-    this.obstacleBounds = new Map();
+    this.obstacleBounds = new Map(); this.gravityVertices = new Map(); this.gravityProfiles = new Map();
     for (const [id, root] of toys) {
       const meshes = [];
       root.traverse(mesh => { if (!mesh.isMesh) return; if (!mesh.geometry.boundsTree) mesh.geometry.boundsTree = new MeshBVH(mesh.geometry, { maxLeafSize: 8 }); mesh.raycast = acceleratedRaycast; meshes.push(mesh); });
@@ -64,6 +65,79 @@ export class ToyContacts {
       xz: axes.reduce((sum, a, i) => sum + a.x * a.z * weights[i], 0),
       zz: axes.reduce((sum, a, i) => sum + a.z * a.z * weights[i], 0) };
   }
+  gravityProfile(toy, object) {
+    let vertices = this.gravityVertices.get(toy.id);
+    if (!vertices) {
+      object.updateWorldMatrix(true, true);
+      const inverse = object.matrixWorld.clone().invert(); vertices = [];
+      for (const mesh of this.meshes.get(toy.id)) {
+        const transform = inverse.clone().multiply(mesh.matrixWorld), positions = mesh.geometry.attributes.position;
+        for (let i = 0; i < positions.count; i++) vertices.push(new T.Vector3().fromBufferAttribute(positions, i).applyMatrix4(transform));
+      }
+      this.gravityVertices.set(toy.id, vertices);
+    }
+    const { x, z } = toy.restPose, key = `${x.toFixed(4)}:${z.toFixed(4)}:${toy.yaw}:${toy.scale}`;
+    const cached = this.gravityProfiles.get(toy.id);
+    if (cached?.key === key) return cached;
+    const c = Math.cos(toy.yaw), s = Math.sin(toy.yaw), shape = BODY[toy.family];
+    const points = vertices.map(p => ({ x: ((p.x * c + p.z * s) * x + (p.z * c - p.x * s) * z) * toy.scale, y: p.y * toy.scale }));
+    const cy = (MASS_CENTRE_Y[toy.family] - (toy.groundOffset || 0)) * toy.scale;
+    const profile = { key, hull: supportHull(points), cy,
+      inertia: (shape.rx ** 2 + shape.ry ** 2) * toy.scale ** 2 / 5 + cy ** 2,
+      damping: toy.family === 'robot' ? 3.5 : toy.family === 'star' ? 4.5 : 6 };
+    this.gravityProfiles.set(toy.id, profile); return profile;
+  }
+  settle(game, toy, object, dt) {
+    const state = toy.restPose;
+    if (!state || state.sleeping || dt <= 0 || toy.id === game.rider || toy.transit) return;
+    // Contact can support a toy while the fingers press it. Gravity takes over
+    // as soon as they lift; an accepted grip uses the hanging constraint below.
+    if (['descend', 'grip'].includes(game.phase) && game.plan?.touched?.id === toy.id) return;
+    const profile = this.gravityProfile(toy, object);
+    const obstacles = game.toys.filter(other => other !== toy && !other.claimed).map(other => this.boundsFor(other.id));
+    const overlap = (a, b) => Math.max(0, Math.min(a.max.x, b.max.x) - Math.max(a.min.x, b.min.x)) * Math.max(0, Math.min(a.max.y, b.max.y) - Math.max(a.min.y, b.min.y)) * Math.max(0, Math.min(a.max.z, b.max.z) - Math.max(a.min.z, b.min.z));
+    for (let remaining = Math.min(dt, .1); remaining > 1e-8;) {
+      const step = Math.min(remaining, 1 / 120); remaining -= step;
+      const old = { x: toy.x, z: toy.z, angle: state.angle, velocity: state.velocity || 0 };
+      const baseline = new T.Box3().setFromObject(object);
+      const next = gravityStep(profile, state, step);
+      state.angle = next.angle; state.velocity = next.velocity; state.sleeping = next.sleeping;
+      toy.x += state.x * next.shift; toy.z += state.z * next.shift;
+      this.rest(toy, object);
+      const bounds = new T.Box3().setFromObject(object);
+      const outside = bounds.min.x < -1.62 || bounds.max.x > 1.62 || bounds.min.z < -1.10 || bounds.max.z > 1.17;
+      if (outside || obstacles.some(box => overlap(bounds, box) > overlap(baseline, box) + .00000001)) {
+        toy.x = old.x; toy.z = old.z; state.angle = old.angle; state.velocity = 0; state.sleeping = false;
+        this.rest(toy, object); break;
+      }
+      if (state.sleeping) break;
+    }
+  }
+  hang(toy, object, plan, phase, dt, elapsed) {
+    const state = toy.restPose;
+    if (!state) return;
+    const shape = BODY[toy.family];
+    const localAnchor = vector(0, shape.cy + shape.ry * .65 - (toy.groundOffset || 0), 0).multiplyScalar(toy.scale);
+    if (!plan.hangingAnchor) {
+      const rotated = localAnchor.clone().applyQuaternion(object.quaternion);
+      plan.hangingAnchor = { x: plan.offset.x + rotated.x, y: -plan.offset.y + rotated.y, z: plan.offset.z + rotated.z };
+      state.velocity = 0;
+    }
+    for (let remaining = Math.min(dt, .1); remaining > 1e-8;) {
+      const step = Math.min(remaining, 1 / 120); remaining -= step;
+      Object.assign(state, hangingStep(state, step));
+    }
+    object.quaternion.setFromAxisAngle(vector(state.z, 0, -state.x), state.angle)
+      .multiply(new T.Quaternion().setFromAxisAngle(vector(0, 1, 0), phase === 'deliver' ? object.rotation.y : toy.yaw));
+    if (['lift', 'transfer', 'release', 'deliver'].includes(phase)) {
+      const rotated = localAnchor.applyQuaternion(object.quaternion), anchor = plan.hangingAnchor;
+      const weight = phase === 'deliver' ? 1 - ease((elapsed / PHASES.deliver) / .4) : 1;
+      object.position.x += (anchor.x - rotated.x - plan.offset.x) * weight;
+      object.position.y += (anchor.y - rotated.y + plan.offset.y) * weight;
+      object.position.z += (anchor.z - rotated.z - plan.offset.z) * weight;
+    }
+    if (phase === 'reveal' && state.angle === 0) { delete toy.restPose; delete toy.support; }
+  }
   descentHit(pose, from, to, available) {
     let first = null;
     for (const angle of FINGER_ANGLES) for (const [r, y] of fingerSamples(OPEN_RADIUS)) {
@@ -95,7 +169,7 @@ export class ToyContacts {
       const leanX = resting.x * resting.angle + direction.x * distance * 3.5;
       const leanZ = resting.z * resting.angle + direction.z * distance * 3.5;
       const lean = Math.hypot(leanX, leanZ);
-      toy.restPose = { x: lean > .0001 ? leanX / lean : direction.x, z: lean > .0001 ? leanZ / lean : direction.z, angle: Math.min(1.15, lean) };
+      toy.restPose = { x: lean > .0001 ? leanX / lean : direction.x, z: lean > .0001 ? leanZ / lean : direction.z, angle: Math.min(Math.PI, lean), velocity: 0, sleeping: false };
       this.rest(toy, object);
       const bounds = new T.Box3().setFromObject(object);
       const outside = bounds.min.x < -1.62 || bounds.max.x > 1.62 || bounds.min.z < -1.10 || bounds.max.z > 1.17;

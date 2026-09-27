@@ -510,7 +510,7 @@ export class ArcadeScene {
     for (const toy of game.toys) {
       const object = this.toys.get(toy.id), { body, articulation, blink, wave, waveTime, face } = object.userData;
       object.position.set(toy.x, BED + (toy.elevation || 0), toy.z); object.rotation.set(0, toy.yaw, 0); object.scale.setScalar(toy.scale); body.scale.set(1, 1, 1); body.rotation.set(0, 0, 0);
-      if (game.pushContact) this.contacts.rest(toy, object);
+      if (game.pushContact && !toy.claimed) this.contacts.rest(toy, object);
       const index = game.collection.indexOf(toy.id);
       if (index >= 0) { const slot = collectionSlot(toy.id); object.position.set(slot.x, slot.y, slot.z); object.rotation.y = .35; }
       const held = plan?.prize?.id === toy.id;
@@ -544,6 +544,7 @@ export class ArcadeScene {
         wobble = motion * (phase === 'reveal' ? Math.sin(elapsed * 12) * Math.exp(-elapsed * 3) * (toy.family === 'star' ? .13 : .07) : 0);
         if (phase === 'reveal') { const t = elapsed / PHASES.reveal, slot = collectionSlot(toy.id); this.deliveryTray.visible = t < .97; this.deliveryTray.position.set(mix(slot.x, -1.08, ease((t - .45) / .55)), mix(slot.y, .50, ease((t - .22) / .60)), mix(slot.z, 1.69, ease(t / .30))); }
       }
+      if (game.pushContact && held && ['lift', 'transfer', 'release', 'deliver', 'reveal'].includes(phase)) this.contacts.hang(toy, object, plan, phase, dt, elapsed);
       body.scale.set(1 + compression * .65, 1 - compression, 1 + compression * .45); body.rotation.z = wobble;
       const seed = ASSORTMENT.findIndex(t => t.id === toy.id);
       // Attract mode: on the empty machine each toy takes an occasional turn to
@@ -557,7 +558,10 @@ export class ArcadeScene {
       if (motion && aligned?.id === toy.id && phase === 'aim') body.rotation.x = -.035;
       if (wave) { wave.value = motion * (Math.abs(wobble) * .32 + compression * .18 + attract * .09); waveTime.value = time; const drift = Math.sin(.4 * 11 - time * 13) * wave.value * .7; face.position.x = drift; blink.position.x = drift; }
     }
-    if (game.pushContact) for (const toy of game.toys) if (toy.restPose && !toy.claimed && game.plan?.prize?.id !== toy.id) this.contacts.rest(toy, this.toys.get(toy.id));
+    if (game.pushContact) for (const toy of game.toys) if (toy.restPose && !toy.claimed && game.plan?.prize?.id !== toy.id) {
+      const object = this.toys.get(toy.id);
+      this.contacts.rest(toy, object); this.contacts.settle(game, toy, object, dt);
+    }
     for (const toy of game.toys) if (toy.impact && !toy.claimed && game.plan?.prize?.id !== toy.id) this.contacts.rock(game, toy, this.toys.get(toy.id), dt);
     this.contacts.resolve(game, pose, dt);
     this.updateClawFeedback(pose, phase, dt, feedback);

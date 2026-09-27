@@ -22,9 +22,9 @@ The wow moment is direct control followed by a believable grab, a tense lift and
 
 `?contact=push` enables bounded pushing and tipping on the loose toys. A glancing descending finger can displace a toy and continue downward when it clears. Direct top hits, crowded toys and cabinet limits still resist descent. The moving carousel rider retains its constrained contact response. This is a deterministic contact approximation, not full rigid-body simulation.
 
-Displaced toys keep their position and tilt between turns. Their catch envelope follows that visible pose, so they can be grabbed on a later turn. A new run restocks the scene; displaced layouts are not saved across page reloads. Three turns and catch scoring stay unchanged. Local preview scores use a separate browser namespace, and shared/public play ignores the flag.
+Displaced toys settle under gravity after the claw releases contact. Torque follows each toy’s mesh support silhouette and body centre of mass: small leans can rock back, while an unstable toy can topple onto its side. Damping brings motion to rest, and cabinet/neighbour contacts constrain it. Their catch envelope follows the changing pose, so they can be grabbed on a later turn. Held toys swing toward a hanging equilibrium; delivery removes the floor tilt before shelf placement. A new run restocks the scene; displaced layouts are not saved across page reloads. Three turns and catch scoring stay unchanged. Local preview scores use a separate browser namespace, and shared/public play ignores the flag.
 
-Automated mesh replays cover yielding, continued descent, grounded poses, later pickup and finger continuity at 60, 30 and 10 FPS. The default centred catch and timed star catch remain regression cases. Physical feel on the booth camera/display is still pending; keep this preview opt-in until that comparison.
+Automated mesh replays cover yielding, gravity settling, grounded poses, later pickup, hanging, upright shelf placement and finger continuity at 60, 30 and 10 FPS. Separate shape checks cover bunny, capybara, cloud, star and robot support profiles. The default centred catch and timed star catch remain regression cases. Physical feel on the booth camera/display is still pending; keep this preview opt-in until that comparison.
 
 ## Attract mode
 

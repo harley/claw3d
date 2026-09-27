@@ -22,7 +22,7 @@ The current swept mesh contact latches a descent stop and a miss on first contac
 
 - R1. An off-centre descending finger pushes and tips a free toy away from contact; descent can continue when clearance opens.
 - R2. A pinned toy or a direct top contact resists the claw. Toys stay above the bed and inside the cabinet without increasing penetration into neighbours.
-- R3. Displaced toys remain in their new pose between turns and can be caught there. A new run restocks them.
+- R3. Displaced toys settle under gravity into a supported pose and can be caught there. Held toys swing toward vertical and do not retain their floor tilt on the shelf. A new run restocks them.
 - R4. Centred catches, moving-carousel timing, three turns and one score per turn remain intact. Pause and input-loss behavior stay unchanged.
 - R5. The change is a local `?contact=push` preview with separate browser scores; shared/public play ignores it pending physical acceptance.
 
@@ -33,7 +33,7 @@ The current swept mesh contact latches a descent stop and a miss on first contac
 ## Planning Contract
 
 - KTD1. Extend `ToyContacts` with bounded translation and tilt, using existing mesh sweeps and conservative obstacle bounds. Do not introduce a rigid-body engine. Moving carousel riders retain their existing contact treatment.
-- KTD2. Store displaced pose on the game toy and derive a transformed grasp envelope from the same rendered pose. This keeps target selection and subsequent catches aligned with visible toys (R3).
+- KTD2. Store dynamic pose on the game toy, integrate gravity against a projected mesh support hull, and derive a transformed grasp envelope from the same rendered pose. Use fixed substeps and damping to settle; use a hanging constraint during pickup and transport. This keeps target selection and subsequent catches aligned with visible toys (R3).
 - KTD3. Resolve each descent segment against current geometry; contact holds the claw only while an obstruction remains. Reconcile final descent contact before grip judgement, including frames that cross the phase boundary (R1, R4).
 - KTD4. Resolve the preview flag in `resolvePlayMode`; pass it through the existing game creation path and isolate its score namespace (R5).
 
@@ -56,9 +56,9 @@ flowchart TD
 ### U1. Contact response and catch geometry
 
 **Goal:** Satisfy R1–R4 in the existing contact, mechanics and scene modules.
-**Files:** `src/arcade-contact.js`, `src/arcade-mechanics.js`, `src/arcade-scene.js`, `tests/contact.browser.mjs`, `tests/arcade.test.mjs`.
+**Files:** `src/arcade-contact.js`, `src/arcade-gravity.js`, `tests/arcade-gravity.test.mjs`, `src/arcade-mechanics.js`, `src/arcade-scene.js`, `tests/contact.browser.mjs`, `tests/arcade.test.mjs`.
 **Approach:** KTD1–KTD3. Keep legacy contact behavior when the preview is disabled. Reuse the contact browser harness with actual toy geometry.
-**Tests:** Free edge hit moves and tips; pinned/top hit holds; no extra bed/wall/neighbour penetration; displaced toy is catchable next turn; new run resets; centred and carousel catches survive; 60/30/10 FPS contact remains bounded; grip-to-lift fingers remain continuous.
+**Tests:** Free edge hit moves and tips; pinned/top hit holds; no extra bed/wall/neighbour penetration; displaced toy is catchable next turn; new run resets; gravity settles all five shapes; hanging and shelf placement lose the old tilt; centred and carousel catches survive; 60/30/10 FPS contact remains bounded; grip-to-lift fingers remain continuous.
 **Verification:** Contact/browser regressions pass with actual meshes, alongside mechanics unit tests.
 
 ### U2. Local preview integration and product documentation
