@@ -38,11 +38,14 @@ try {
     if(first){
       await page.waitForFunction(()=>window.__littleCloud.snapshot().event.firstTurnPreparationElapsed!==null);
       const readyHands=[
-        {role:'left',kind:'open',x:.35,y:.55},{role:'right',kind:'open',x:.65,y:.55},
+        {role:'left',kind:'open',x:.35,y:.55},
       ];
       await page.evaluate(async hands=>{for(let i=0;i<14;i++){sample(hands);await new Promise(requestAnimationFrame);}},readyHands);
       await page.waitForFunction(()=>window.__littleCloud.snapshot().event.firstTurnControlReady);
-      await page.evaluate(hands=>{window.prepSamples=setInterval(()=>sample(hands),130);},readyHands);
+      await page.evaluate(hands=>{window.prepSamples=setInterval(()=>sample(hands),130);},readyHands.map(hand=>({...hand,kind:'closed'})));
+      await page.waitForFunction(()=>controller.dualFeedback?.hands.left.grab.stage==='gripped');
+      assert.equal(await page.locator('#dual-hand-guide').getAttribute('data-stage'),'ready');
+      assert.equal(await page.locator('#dual-drop-target').isVisible(),false,'no right-hand target during countdown');
       await page.waitForFunction(()=>window.__littleCloud.snapshot().phase==='aim',{},{timeout:10000});
       await page.evaluate(()=>clearInterval(window.prepSamples));
     }else await page.waitForFunction(()=>window.__littleCloud.snapshot().phase==='aim',{},{timeout:10000});
@@ -53,7 +56,7 @@ try {
   const dome=await page.evaluate(()=>testDropShape());
   assert.equal(dome.type,'SphereGeometry');assert.equal(dome.thetaLength,Math.PI/2);
   assert.deepEqual(dome.scale,[.21,.135,.21]);
-  const targets=async()=>({stick:{x:.25,y:.48},drop:{x:.75,y:.48}});
+  const targets=async()=>({stick:{x:.25,y:.48},drop:{x:.72,y:.60}});
   const burst=(hands,n=10,age=20)=>page.evaluate(({hands,n,age})=>{let s;for(let i=0;i<n;i++)s=sample(hands,age);return s;},{hands,n,age});
   let t=await targets(),left={role:'left',...t.stick},right={role:'right',...t.drop};
   await burst([]);await frame();
@@ -62,7 +65,7 @@ try {
   const alpha=await page.evaluate(()=>{
     const c=document.getElementById('camera-overlay'),ctx=c.getContext('2d');
     const at=(x,y)=>ctx.getImageData(Math.round(x*c.width),Math.round(y*c.height),1,1).data[3];
-    return {outside:at(.02,.5),gap:at(.5,.5),inside:at(.1,.4)};
+    return {outside:at(.02,.5),gap:at(.5,.5),inside:at(.2,.4)};
   });
   assert.ok(alpha.outside>180&&alpha.gap>180&&alpha.inside<30,'outside and centre gap dim while hand windows stay clear');
   await page.screenshot({path:'.screenshots/dual-camera-waiting.png'});
@@ -100,8 +103,8 @@ try {
   await page.waitForFunction(()=>Object.keys(testHands().hands).length===2);
   const rendered=await page.evaluate(()=>testHands());
   assert.equal(rendered.error,null);assert.equal(rendered.visible,true);
-  for(const hand of Object.values(rendered.hands)) {
-    assert.equal(hand.visible,true);assert.ok(hand.skinned>=25);assert.equal(hand.shadows,true);
+  for(const [role,hand] of Object.entries(rendered.hands)) {
+    assert.equal(hand.visible,role==='left');assert.ok(hand.skinned>=25);assert.equal(hand.shadows,true);
   }
   assert.equal(await page.locator('#joystick-cursor').isVisible(),false,'dual hands belong to the 3D scene');
   await page.emulateMedia({reducedMotion:'no-preference'});
@@ -115,7 +118,7 @@ try {
     assert.ok(controls.drop.x-controls.stick.x>(controls.bounds.right-controls.bounds.left)*.40,'actual controls sit well apart');
     const hands=await page.evaluate(()=>testHands().hands);
     assert.ok(hands.left.position[0]<0 && hands.right.position[0]>0,'3D hands stay on their physical control sides');
-    assert.equal(hands.left.visible,true);assert.equal(hands.right.visible,true);
+    assert.equal(hands.left.visible,true);assert.equal(hands.right.visible,false);
     const box=await page.locator('#machine-drop').boundingBox();
     assert.ok(box&&box.x>=0&&box.y>=0&&box.x+box.width<=size.width&&box.y+box.height<=size.height);
     if(size.width===390){
@@ -190,13 +193,14 @@ try {
     await aim();assert.ok((await page.evaluate(()=>window.__littleCloud.snapshot())).toys.find(t=>t.id==='sprout').claimed);
     await acquire();await page.evaluate(()=>testAim(.80,.22));
     await burst([left]);await frame();
-    assert.equal(await page.locator('#status').textContent(),'RAISE RIGHT HAND OPEN');
+    assert.equal(await page.locator('#status').textContent(),'OPEN RIGHT PALM TO DROP');
     assert.equal(await page.locator('#action-copy').evaluate(el=>el.classList.contains('quiet')),true);
     assert.equal(await page.locator('#camera-overlay').getAttribute('data-right'),'open');
     await page.waitForFunction(()=>document.getElementById('jackpot-signal').hidden);
     if(turn===2){
-      // A newly raised hand commits at its existing acquisition boundary.
-      await page.evaluate(hands=>{for(let i=0;i<6;i++)sample(hands);document.getElementById('pause').click();},[left,right]);
+      // Acquire directly over DROP without an exit/reentry gesture.
+      await burst([left,{...right,y:.50}],5);
+      await page.evaluate(hands=>{sample(hands);document.getElementById('pause').click();},[left,{...right,y:.50}]);
       await frame();
       const pausedSlam=await page.evaluate(()=>window.__littleCloud.snapshot());
       assert.ok(pausedSlam.event.pendingSlam);assert.equal(pausedSlam.event.paused,true);
@@ -225,5 +229,5 @@ try {
   const reset=await page.evaluate(()=>window.__littleCloud.snapshot());
   assert.equal(reset.event.pendingSlam,null);assert.equal(reset.event.run,null);assert.equal(reset.phase,'idle');
   assert.deepEqual(errors,[]);
-  console.log('PASS sticky grip, instant right raise, virtual contact, locked aim and score time, dual roles, closed entry, independent loss, stale captures, forearm, hold/slam/click, persistent toys and three turns');
+  console.log('PASS left-only countdown, staged guides, deliberate palm target entry, sticky grip, virtual contact, locked aim and score time, dual roles, closed entry, independent loss, stale captures, forearm, hold/slam/click, persistent toys and three turns');
 }finally{await browser.close();}

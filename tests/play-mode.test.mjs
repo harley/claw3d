@@ -48,7 +48,13 @@ test('first-turn readiness follows the selected profile and requires fresh usabl
   assert.equal(firstTurnControlReady(grab, { profile: 'grab-release', kind: 'tracking', handCount: 1, grab: { stage: 'gripped' }, closed: true }), true, 'an acquired joystick grip is ready');
   const hands = { left: { ready: true, open: true, closed: false }, right: { ready: true, open: true, closed: false } };
   assert.equal(firstTurnControlReady(dual, { profile: 'dual', kind: 'tracking', hands }), true);
-  assert.equal(firstTurnControlReady(dual, { profile: 'dual', kind: 'tracking', hands: { ...hands, right: { ready: true, open: false, closed: false } } }), false, 'a tracked ambiguous pose is not ready');
-  assert.equal(firstTurnControlReady(dual, { profile: 'dual', kind: 'tracking', hands: { ...hands, right: { ready: false, closed: false } } }), false);
+  assert.equal(firstTurnControlReady(dual, { profile: 'dual', kind: 'tracking', hands: { ...hands, right: { ready: true, open: false, closed: false } } }), true, 'the right hand is not required at start');
+  assert.equal(firstTurnControlReady(dual, { profile: 'dual', kind: 'tracking', hands: { ...hands, right: { ready: false, closed: false } } }), true);
   assert.equal(firstTurnControlReady(dual, { profile: 'dual', kind: 'tracking', hands: { ...hands, left: { ready: true, closed: true } } }), false);
+});
+
+test('left-only readiness survives a deliberate clench during countdown',()=>{
+ const dual=resolvePlayMode('?controls=dual');
+ for(const stage of ['grabbing','gripped']) assert.equal(firstTurnControlReady(dual,{profile:'dual',kind:'clenching',hands:{left:{ready:true,open:false,closed:true,grab:{stage}}}}),true);
+ assert.equal(firstTurnControlReady(dual,{profile:'dual',kind:'tracking',hands:{left:{ready:true,open:true,closed:false}}}),true);
 });

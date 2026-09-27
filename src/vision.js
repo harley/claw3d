@@ -407,7 +407,7 @@ export class HandController {
     const profile = this.getControlProfile?.() || 'hold-drop';
     const menuLeft = profile === 'menu-left';
     const acceptsInput = ['idle', 'aim', 'result'].includes(phase);
-    const recognizes = acceptsInput || phase === 'recognizing';
+    const recognizes = acceptsInput || phase === 'recognizing' || (profile === 'dual' && phase === 'observing');
     // Recognition can acquire the selected controller before first-turn prep.
     // Crossing from recognition-only to aim preserves the hand, while leaving
     // a recognized phase or changing profile discards all gesture evidence.
@@ -422,14 +422,14 @@ export class HandController {
         this.dual.reset(); this.input = { x: 0, z: 0 }; this.onInput(this.input);
         this.dualFeedback = { kind: 'blocked', profile, controlEnabled: false, hands: {} };
       } else {
-        const state = this.dual.update(hands, now, (point, role, origin) => this.getControlTarget?.(point, role, origin) || {});
+        const state = this.dual.update(hands, now, (point, role, origin) => this.getControlTarget?.(point, role, origin) || {}, acceptsInput);
         this.input = acceptsInput ? state.input : { x: 0, z: 0 }; this.onInput(this.input);
         if (state.fired) {
           const accepted = acceptsInput && this.onDrop() !== false;
           state.kind = accepted ? 'accepted' : 'tracking';
           if (!accepted) this.dual.right.gesture.reset();
         }
-        this.dualFeedback = { ...state, profile, handCount: hands.length, controlEnabled: acceptsInput, preparing: phase === 'recognizing' };
+        this.dualFeedback = { ...state, profile, handCount: hands.length, controlEnabled: acceptsInput, preparing: phase === 'recognizing', observing: phase === 'observing' };
       }
       this.onState(this.dualFeedback);
       this.draw(hands, null); return;

@@ -447,3 +447,29 @@ dialog .menu-guide-hand { font-size: 52px; }
 .host-workflow { border: 0; padding: 0; margin: 0; min-width: 0; }
 #host-recovery { border-top: 1px solid #355074; margin-top: 20px; padding-top: 12px; }
 #host-recovery p { overflow-wrap: anywhere; white-space: pre-line; }
+
+/* Cabinet tutorials are presentation only. Actual gesture evidence owns input. */
+#dual-hand-guide, #dual-drop-target, #dual-palm-cursor { position: fixed; pointer-events: none; z-index: 12; }
+#dual-hand-guide { transform: translate(-50%, -100%); width: 190px; text-align: center; color: #83eff7; }
+#dual-hand-guide span { display: block; padding: 6px 9px; border-radius: 9px; background: #102432ed; font-size: 13px; font-weight: 700; }
+.dual-demo { height: 65px; position: relative; }
+.dual-demo svg, #dual-palm-cursor svg { width: 56px; height: 56px; fill: #12283999; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+.dual-demo svg { position: absolute; left: calc(50% - 28px); top: 0; transform: scaleX(-1); }
+.demo-fist { opacity: 0; }
+#dual-hand-guide[data-stage="grip"] .demo-palm { animation: dual-palm-demo 2.4s infinite; }
+#dual-hand-guide[data-stage="grip"] .demo-fist { animation: dual-fist-demo 2.4s infinite; }
+#dual-hand-guide[data-stage="ready"] .dual-demo { display: none; }
+#dual-hand-guide[data-stage="drop"] { color: #ffd17a; }
+#dual-hand-guide[data-stage="drop"] .dual-demo { position: absolute; top: calc(100% + var(--drop-demo-offset)); width: 100%; }
+#dual-hand-guide[data-stage="drop"] .demo-palm { transform: none; animation: dual-drop-demo 2.4s infinite; }
+#dual-drop-target { border: 2px dashed #ffd17a; background: #ffd17a12; border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 18px #ffd17a45; }
+#dual-palm-cursor { color: #ffd17a; transform: translate(-50%, -50%); }
+#dual-palm-cursor[data-open="false"] { color: #8292a4; opacity: .5; }
+@keyframes dual-palm-demo { 0%, 35%, 90%, 100% { opacity: .85; } 45%, 80% { opacity: 0; } }
+@keyframes dual-fist-demo { 0%, 35%, 90%, 100% { opacity: 0; } 45%, 80% { opacity: .85; } }
+@keyframes dual-drop-demo { 0%, 15% { transform: translate(-25px, 22px); opacity: .35; } 65%, 85% { transform: translate(0, 0); opacity: .85; } 100% { transform: translate(0, 0); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  #dual-hand-guide .dual-demo svg { animation: none !important; }
+  #dual-hand-guide[data-stage="grip"] .demo-palm { left: calc(50% - 54px); opacity: .85; }
+  #dual-hand-guide[data-stage="grip"] .demo-fist { left: calc(50% + 2px); opacity: .85; }
+}

@@ -453,7 +453,7 @@ test('two-hand menu loss and ambiguous labels cancel a pending selection', () =>
   }
 });
 
-test('menu-to-dual transition discards a held selection and waits for both open hands', () => {
+test('menu-to-dual transition discards a held selection and waits for fresh left-hand acquisition', () => {
   const f = fixture(); let profile = 'menu-left';
   f.controller.getControlProfile = () => profile;
   f.controller.getControlTarget = () => ({ overTarget: true });
@@ -465,7 +465,7 @@ test('menu-to-dual transition discards a held selection and waits for both open 
   assert.equal(firstTurnControlReady(resolvePlayMode('?controls=dual'), f.read().state), false);
   assert.equal(firstTurnWaitingMessage(f.read().state, true), 'OPEN LEFT HAND');
   f.frame([hand(.35)], 12);
-  assert.equal(firstTurnWaitingMessage(f.read().state, true), 'SHOW RIGHT HAND OPEN');
+  assert.equal(firstTurnWaitingMessage(f.read().state, true), 'LEFT HAND READY');
   f.frame([hand(.35), hand(.7, 'Right')], 12);
   assert.equal(firstTurnControlReady(resolvePlayMode('?controls=dual'), f.read().state), true);
   assert.equal(f.read().state.preparing, true);

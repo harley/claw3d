@@ -1,35 +1,37 @@
-import { HAND_ZONES, HAND_RANGE } from './hand-workspace.js';
+import { HAND_ZONES, HAND_RANGE, DROP_AREA } from './hand-workspace.js';
 
 // Presentation only: use accepted role evidence, never a raw detection, to
 // claim that a control is ready. Windows follow the actual control workspace.
 export function handCameraGuide(role, feedback, origin) {
   const hand = feedback?.hands?.[role], stage = hand?.grab?.stage;
   const preparing = feedback?.preparing === true;
-  const enabled = (feedback?.controlEnabled || preparing) && !['delayed', 'blocked', 'off', 'loading', 'error'].includes(feedback.kind);
-  const held = !preparing && role === 'left' && stage === 'gripped';
+  const enabled = (feedback?.controlEnabled || preparing || feedback?.observing) && !['delayed', 'blocked', 'off', 'loading', 'error'].includes(feedback.kind);
+  const held = role === 'left' && stage === 'gripped';
   const zone = { ...HAND_ZONES[role], minY: .12, maxY: .88 };
+  if (role === 'left' && !origin) { zone.minX = .18; zone.minY = .20; zone.maxY = .80; }
   if (held) { zone.minX = .02; zone.minY = .02; zone.maxY = .98; }
-  else if (origin) {
+  else if (origin && role === 'left') {
     zone.minX = Math.max(zone.minX, origin.x - HAND_RANGE.x);
     zone.maxX = Math.min(zone.maxX, origin.x + HAND_RANGE.x);
     zone.minY = Math.max(zone.minY, origin.y - HAND_RANGE.y);
     zone.maxY = Math.min(zone.maxY, origin.y + HAND_RANGE.y);
   }
   let state = 'open', label = 'OPEN', icon = 'palm';
-  if (!enabled) { state = 'inactive'; label = ''; icon = ''; }
+  if (!enabled || (role === 'right' && (!feedback?.controlEnabled || !feedback?.dropEnabled))) { state = 'inactive'; label = ''; icon = ''; }
   else if (hand?.outside) { state = 'return'; label = 'RETURN'; }
   else if (preparing) {
-    if (hand?.open && !hand.closed) {
+    if (hand?.ready && ['grabbing', 'gripped'].includes(stage)) { state = 'active'; label = 'READY'; icon = 'fist'; }
+    else if (hand?.open && !hand.closed) {
       state = hand.ready ? 'active' : 'open'; label = hand.ready ? 'READY' : 'HOLD';
     }
   }
-  else if (!hand?.ready) { if (hand?.pointer && !hand.closed) label = role === 'right' ? 'RAISE' : 'HOLD'; }
+  else if (!hand?.ready) { if (hand?.pointer && !hand.closed) label = role === 'right' ? 'PALM' : 'HOLD'; }
   else if (role === 'left') {
     if (feedback.dropEnabled) { state = 'active'; label = 'MOVE'; icon = 'move'; }
     else if (stage === 'grabbing' || hand.grab?.armed) { state = 'grip'; label = 'GRIP'; icon = 'fist'; }
   } else if (!feedback.dropEnabled) { state = 'inactive'; label = 'WAIT'; icon = ''; }
   else if (hand.grab?.armed) {
-    state = 'active'; label = stage === 'fired' ? 'DROP' : 'RAISE'; icon = 'palm';
+    state = 'active'; label = stage === 'fired' ? 'DROP' : 'TO DROP'; icon = 'palm';
   }
   const color = state === 'inactive' ? '#718096' : state === 'active' ? '#66ffb3' : role === 'left' ? '#59e5f2' : '#ffcf65';
   return { role, zone, state, label, icon, color };
@@ -75,6 +77,9 @@ export function drawHandCameraGuide(ctx, width, height, guides) {
     ctx.fillStyle = color; ctx.textAlign = 'center'; ctx.font = `bold ${Math.min(24, (w - 16) / 5)}px Arial`;
     ctx.fillText(role === 'left' ? 'L  MOVE' : 'R  DROP', x + w / 2, y + 26);
     ctx.fillText(label, x + w / 2, y + h - 10);
+    if (role === 'right' && state !== 'inactive') {
+      ctx.beginPath(); ctx.ellipse(DROP_AREA.x * width, DROP_AREA.y * height, DROP_AREA.radiusX * width, DROP_AREA.radiusY * height, 0, 0, Math.PI * 2); ctx.stroke();
+    }
     if (icon) {
       ctx.globalAlpha = state === 'active' ? .5 : .85;
       drawGesture(ctx, icon, x + w / 2, y + h / 2, Math.max(24, Math.min(100, w * .48, h - 76)), role);

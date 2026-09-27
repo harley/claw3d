@@ -126,8 +126,8 @@ async function scoredAndFeedback() {
   assert.equal(await page.locator('#mode-two').getAttribute('aria-pressed'), 'true');
   await page.waitForFunction(() => document.getElementById('hand-art-status').hidden);
   assert.equal(modelRequests.length, 2, 'shared dual play requests both anatomical assets');
-  assert.equal(await page.locator('#camera-help').textContent(), 'Show both open hands. Clench your left hand to grip and steer; raise your open right hand to drop. Open your left hand to release without dropping.', 'shared dual mode gives dual-hand gameplay help');
-  assert.equal(await page.locator('#scene').getAttribute('aria-label'), 'Clench your left hand to grip and steer. Raise your open right hand to drop. Open your left hand to release.');
+  assert.equal(await page.locator('#camera-help').textContent(), 'Show your left hand open to start. Clench to grip and steer; bring your open right palm into the highlighted DROP area. Open your left hand to release without dropping.', 'shared dual mode gives dual-hand gameplay help');
+  assert.equal(await page.locator('#scene').getAttribute('aria-label'), 'Clench your left hand to grip and steer. Bring your open right palm to DROP. Open your left hand to release.');
   await page.goto(`${origin}/?setup=manual&controls=grab&hold=300&steer=absolute`);
   await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
   assert.equal(await page.locator('#mode-one').getAttribute('aria-pressed'), 'true');
@@ -318,7 +318,7 @@ try {
   });
   await page.locator('#mode-two').click();
   await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true' && document.getElementById('mode-two').getAttribute('aria-pressed') === 'true');
-  assert.equal(await page.locator('#camera-help').textContent(), 'Show both open hands. Clench your left hand to grip and steer; raise your open right hand to drop. Open your left hand to release without dropping.', 'shared mode switch updates gameplay help');
+  assert.equal(await page.locator('#camera-help').textContent(), 'Show your left hand open to start. Clench to grip and steer; bring your open right palm into the highlighted DROP area. Open your left hand to release without dropping.', 'shared mode switch updates gameplay help');
   assert.equal(await page.locator('#camera-open').textContent(), '📷');
   await register(page, 'Browser A');
   assert.equal(await page.evaluate(() => window.testCamera.maxHands), 2);

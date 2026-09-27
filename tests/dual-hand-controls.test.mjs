@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DualHandControls, HAND_ACQUIRE_MS, RIGHT_RAISE_DISTANCE, RIGHT_SLAM_MS } from '../src/dual-hand-controls.js';
+import { DualHandControls, HAND_ACQUIRE_MS, RIGHT_SLAM_MS } from '../src/dual-hand-controls.js';
+import { inDropArea } from '../src/hand-workspace.js';
 import { HandController } from '../src/vision.js';
 
 const hand = (physicalHand, kind = 'open', x = physicalHand === 'left' ? .35 : .65, y = .6) => ({
   physicalHand, handednessScore: .99, center: { x, y }, fist: { open: kind === 'open', closed: kind === 'closed' },
 });
-const target = p => ({ overTarget: p.x < .5, overDrop: p.x > .5 && p.y >= .6, aboveDrop: p.x > .5 && p.y < .6 });
+const target = p => ({ overTarget: p.x < .5, overDrop: p.x > .5 && p.y >= .6, aboveDrop: p.x > .5 && p.y < .6, nearDrop: inDropArea(p) });
 function fixture() {
   const controls = new DualHandControls(); let now = 0;
   const step = (hands, gap = 65) => controls.update(hands, now += gap, target);
@@ -24,25 +25,27 @@ test('right enters closed without interrupting left steering or dropping', () =>
 test('raising an acquired right hand fires on that sample, once, and locks input', () => {
   const f = fixture(); f.arm();
   assert.equal(f.repeat([f.left, hand('right')], 60).fired, false, 'a stationary visible hand is not a raise');
-  const hands = [f.left, hand('right', 'open', .65, .6-RIGHT_RAISE_DISTANCE-.001)];
+  const hands = [f.left, hand('right', 'open', .65, .50)];
   const s = f.step(hands); assert.equal(s.fired, true); assert.deepEqual(s.input, {x:0,z:0});
   assert.equal(f.repeat(hands).fired, false);
 });
-test('a newly raised open right hand fires at acquisition without an extra hold', () => {
-  const f = fixture(); f.grip();
-  for (let i=0;i<5;i++) assert.equal(f.step([f.left,hand('right')]).fired,false);
-  assert.equal(f.step([f.left,hand('right')]).fired,true);
+// Contract: an open palm acquired at the target drops once, without moving away.
+// The former entry-only tests explicitly required the confusing extra movement.
+test('a palm first acquired in the centre of DROP fires once without leaving', () => {
+  const f = fixture(); f.grip(); let fired = 0;
+  for (let i = 0; i < 60; i++) fired += Number(f.step([f.left, hand('right', 'open', .72, .44)]).fired);
+  assert.equal(fired, 1);
 });
-
-test('raising before left grip cannot be banked into an automatic drop', () => {
-  const f=fixture();f.repeat([hand('left'),hand('right')]);
-  f.repeat([hand('left'),hand('right','open',.65,.50)]);
-  for(let i=0;i<10;i++)assert.equal(f.step([f.left,hand('right','open',.65,.50)]).fired,false);
-  assert.equal(f.step([f.left,hand('right','open',.65,.43)]).fired,true);
+test('an acquired palm over DROP fires when left grip becomes ready', () => {
+  const f=fixture(); f.repeat([hand('left'),hand('right','open',.72,.44)]);
+  let fired=0;
+  for(let i=0;i<10;i++) fired+=Number(f.step([f.left,hand('right','open',.72,.44)]).fired);
+  assert.equal(fired,1);
 });
 test('lowering an acquired right hand establishes the next upward stroke without a hold', () => {
   const f=fixture();f.arm();assert.equal(f.step([f.left,hand('right','open',.65,.72)]).fired,false);
-  assert.equal(f.step([f.left,hand('right','open',.65,.65)]).fired,true);
+  f.step([f.left,hand('right','open',.65,.62)]);
+  assert.equal(f.step([f.left,hand('right','open',.72,.50)]).fired,true);
 });
 for (const loss of ['missing', 'uncertain', 'closed', 'low-confidence', 'outside', 'stale', 'left']) test(`${loss} cancels incomplete right acquisition`, () => {
   const f = fixture(); f.grip(); f.repeat([f.left, hand('right')], 3);
@@ -114,14 +117,14 @@ test('START clears a partial dual raise while preserving recognized hand roles',
   f.repeat([left,right],10);
   const grippedLeft=hand('left','closed');
   f.repeat([grippedLeft,right],5);
-  assert.equal(f.sample([grippedLeft,hand('right','open',.65,.68)]).hands.right.grab.armed,true);
+  assert.equal(f.sample([grippedLeft,hand('right','open',.65,.68)]).hands.right.grab.armed,false);
   assert.equal(f.drops(),0);
 
   f.c.neutralizeInput();f.phase('aim');
   const boundary=f.sample([grippedLeft,hand('right','open',.65,.64)]);
   assert.equal(boundary.hands.left.ready,true);assert.equal(boundary.hands.right.ready,true);
   assert.equal(boundary.fired,false,'movement begun before START cannot complete a drop across it');
-  assert.equal(f.sample([grippedLeft,hand('right','open',.65,.57)]).fired,true,'a fresh post-START raise still drops');
+  assert.equal(f.sample([grippedLeft,hand('right','open',.72,.50)]).fired,true,'a fresh post-START raise still drops');
 });
 for(const boundary of ['pause','profile','delay'])test(`${boundary} clears real two-hand raise evidence`,()=>{
   const f=cameraFixture();f.arm();const hands=[hand('left','closed'),hand('right')];f.sample(hands);
@@ -170,12 +173,11 @@ for(const role of ['left','right'])test(`${role} workspace exit cancels its acti
   assert.equal(f.repeat(normal).fired,false);
   assert.equal(f.controls[role].owner,null);
 });
-test('right local range exit leaves left steering active, even while still on the right side',()=>{
-  const f=fixture();f.arm();f.step([hand('left','closed',.30),hand('right','open',.65,.72)]);
-  const s=f.step([hand('left','closed',.30),hand('right','open',.65,.82)]);
-  assert.ok(s.input.x<0);assert.equal(s.hands.right.outside,true);assert.equal(s.fired,false);
+test('right can approach DROP across its full workspace without interrupting left steering',()=>{
+  const f=fixture();f.arm();
+  const s=f.step([hand('left','closed',.30),hand('right','open',.65,.75)]);
+  assert.ok(s.input.x<0);assert.equal(s.hands.right.outside,false);assert.equal(s.fired,false);
 });
-
 
 test('gripped joystick stays attached beyond its soft movement range and clamps steering',()=>{
   const f=fixture();f.arm();
@@ -193,7 +195,7 @@ test('sticky left grip still releases when crossing into the right half',()=>{
   const s=f.step([hand('left','closed',.55)]);
   assert.equal(s.hands.left.outside,true);assert.deepEqual(s.input,{x:0,z:0});assert.equal(s.dropEnabled,false);
 });
-test('right raise works throughout the valid workspace without a button hit',()=>{
+test('right entry into the visible DROP target fires only once',()=>{
   const f=fixture();f.arm(); let fired=0;
   for(let i=0;i<60;i++) fired+=Number(f.step([f.left,hand('right','open',.70,.50)]).fired);
   assert.equal(fired,1);
@@ -230,8 +232,7 @@ test('brief missing or low-confidence left evidence stops actions then recovers 
     assert.equal(recovered.dropEnabled, true);
     assert.deepEqual(recovered.input, { x: 0, z: 0 }, 'recovery recentres steering');
     assert.equal(recovered.fired, false, 'a raise during the interruption is not banked');
-    assert.ok(f.step([hand('left', 'closed', .20, .70), hand('right', 'open', .65, .50)]).input.x < 0);
-    assert.equal(f.step([hand('left', 'closed', .20, .70), hand('right', 'open', .65, .43)]).fired, true);
+    assert.equal(f.step([hand('left', 'closed', .20, .70), hand('right', 'open', .65, .50)]).fired, true, 'fresh recovered evidence over DROP needs no exit');
   }
 });
 test('a right raise begun during left recovery needs fresh evidence after the grip returns', () => {
@@ -246,7 +247,7 @@ test('a right raise begun during left recovery needs fresh evidence after the gr
   assert.equal(recovered.dropEnabled, true);
   assert.equal(recovered.fired, false, 'the raise began while DROP was disabled');
   assert.equal(f.step([f.left, hand('right', 'open', .65, .64)]).fired, false);
-  assert.equal(f.step([f.left, hand('right', 'open', .65, .58)]).fired, true,
+  assert.equal(f.step([f.left, hand('right', 'open', .72, .50)]).fired, true,
     'a new upward stroke after recovery can still drop');
 });
 test('sustained loss expires the held grip and requires reopening', () => {
@@ -262,7 +263,8 @@ test('explicit open during recovery releases the stick', () => {
 test('workspace reacquisition recentres instead of remaining trapped at the old origin', () => {
   const f = fixture(); f.arm();
   f.step([f.left, hand('right', 'closed', .65, .72)]);
-  assert.equal(f.step([f.left, hand('right', 'closed', .65, .82)]).hands.right.outside, true);
+  f.step([f.left, hand('right', 'closed', .65, .82)]);
+  assert.equal(f.step([f.left, hand('right', 'closed', .65, .90)]).hands.right.outside, true);
   // Reopen comfortably inside the absolute workspace, outside the old local range.
   const s = f.repeat([hand('left'), hand('right', 'open', .65, .82)]);
   assert.equal(s.hands.right.ready, true);
@@ -281,7 +283,8 @@ test('camera integration recovers a brief missing left hand without accepting a 
   assert.equal(f.c.state.dropEnabled, false); assert.equal(f.drops(), 0);
   f.sample([hand('left', 'closed'), hand('right', 'open', .65, .50)]);
   assert.equal(f.c.state.dropEnabled, true); assert.equal(f.drops(), 0);
-  f.sample([hand('left', 'closed'), hand('right', 'open', .65, .43)]);
+  f.sample([hand('left', 'closed'), hand('right', 'open', .65, .60)]);
+  f.sample([hand('left', 'closed'), hand('right', 'open', .65, .50)]);
   assert.equal(f.drops(), 1);
 });
 
@@ -313,4 +316,34 @@ test('duplicate right observations cancel the established left grip', () => {
   assert.equal(result.kind, 'lost');
   assert.deepEqual(result.input, { x: 0, z: 0 }); assert.equal(Boolean(result.dropEnabled), false);
   assert.equal(f.controls.left.owner, null); assert.equal(f.controls.right.owner, null);
+});
+
+// Contract: missing/distant samples cannot replace a recently acquired player.
+// Existing loss tests only returned the same hand, never a distant open hand.
+test('a distant bystander cannot acquire the reserved left role during a dropout', () => {
+  const f=fixture();f.grip();f.step([]);
+  for(let i=0;i<7;i++) {
+    const s=f.step([hand('left','open',.10,.35)]);
+    assert.equal(s.hands.left.ready,false);assert.equal(s.fired,false);
+  }
+});
+test('initial acquisition rejects a peripheral left hand', () => {
+  const f=fixture();
+  assert.equal(f.repeat([hand('left','open',.10,.5)],20).hands.left.ready,false);
+  assert.equal(f.repeat([hand('left','open',.35,.5)]).hands.left.ready,true);
+});
+test('delivery recognizes and displays grip while providing no gameplay input or DROP',()=>{
+  const f=cameraFixture();f.phase('observing');
+  f.repeat([hand('left')]);f.repeat([hand('left','closed')],5);
+  assert.equal(f.c.state.hands.left.grab.stage,'gripped');
+  f.repeat([hand('left','closed',.30),hand('right')]);
+  f.sample([hand('left','closed',.30),hand('right','open',.72,.44)]);
+  assert.equal(f.c.state.observing,true);assert.deepEqual(f.c.input,{x:0,z:0});assert.equal(f.drops(),0);
+});
+
+test('the first clench after open acquisition grips without another hidden arming wait',()=>{
+ const f=fixture();
+ const ready=f.repeat([hand('left')],6);
+ assert.equal(ready.hands.left.ready,true);
+ assert.equal(f.repeat([f.left],4).hands.left.grab.stage,'gripped');
 });

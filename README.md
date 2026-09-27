@@ -26,7 +26,7 @@ For development with live updates, run `npm run dev` and open **http://127.0.0.1
 1. Allow camera access. Use **📷** to select or re-centre the camera if needed.
 2. Choose **1 Hand** or **2 Hands** before PLAY. The selector works in local and shared play and locks during a run.
 3. Use one open hand and hold a fist to select menu buttons in either mode; gameplay follows the selected profile. START confirms your editable name; these menu buttons also accept clicks.
-4. In **1 Hand** mode, steer with an open hand and clench and hold to drop. In **2 Hands** mode, show the left hand open, then clench to grip and steer; raise the open right hand to drop. Brief detection gaps stop movement and drops; returning the same closed left hand promptly keeps its grip. After longer loss, reopen and grip again.
+4. In **1 Hand** mode, steer with an open hand and clench and hold to drop. In **2 Hands** mode, show the left hand open, then clench to grip and steer; bring your open right palm into the highlighted DROP area. Start with the left hand only; the right-hand guide appears after grip. Brief detection gaps stop movement and drops; returning the same closed left hand promptly keeps its grip. After longer loss, reopen and grip again.
 5. Finish three scored turns and view your result. The first drop counts; there is no practice round.
 
 Gameplay uses camera controls; keyboard aiming and dropping are not supported.

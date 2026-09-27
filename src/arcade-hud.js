@@ -59,11 +59,11 @@ export function playFirstTurnCueTone(audio, cue, allowed = true) {
 
 export function firstTurnWaitingMessage(feedback = {}, dualEnabled = false) {
   if (dualEnabled) return {
-    off: 'CAMERA OFF', loading: 'STARTING CAMERA', error: 'CAMERA ERROR', delayed: 'TRACKING DELAYED', blocked: 'SHOW BOTH HANDS OPEN',
+    off: 'CAMERA OFF', loading: 'STARTING CAMERA', error: 'CAMERA ERROR', delayed: 'TRACKING DELAYED', blocked: 'SHOW LEFT HAND OPEN',
     show_both: 'SHOW BOTH HANDS OPEN', show_left: 'SHOW LEFT HAND OPEN', show_right: 'SHOW RIGHT HAND OPEN',
     return_left: 'LEFT HAND INTO L WINDOW', return_right: 'RIGHT HAND INTO R WINDOW',
     open_left: 'OPEN LEFT HAND', open_right: 'OPEN RIGHT HAND',
-    hold_left: 'HOLD LEFT HAND STILL', hold_right: 'HOLD RIGHT HAND STILL', hold_both: 'HOLD BOTH HANDS STILL', ready: 'HOLD BOTH HANDS OPEN',
+    hold_left: 'HOLD LEFT HAND STILL', hold_right: 'HOLD RIGHT HAND STILL', hold_both: 'HOLD BOTH HANDS STILL', ready: 'LEFT HAND READY',
   }[dualStartReadiness(feedback)];
   if (feedback.kind === 'calibrating') return 'HOLD STILL';
   if (feedback.kind === 'delayed') return 'TRACKING DELAYED';
@@ -157,7 +157,7 @@ export function createHud({ audio, phaseSound }) {
   if ($('jackpot-signal').dataset.cue !== displayKey) {
     $('jackpot-signal').dataset.cue = displayKey;
     $('jackpot-signal').classList.toggle('go', cue.now && phase === 'aim');
-    setText('jackpot-cue', dualEnabled && cue.now ? 'RAISE RIGHT HAND' : grabEnabled && confirming ? (gripStage === 'pressing' ? 'PRESS DROP' : 'GRAB JOYSTICK') : confirming ? 'KEEP HOLDING' : ['idle', 'aim'].includes(phase) ? (grabEnabled && cue.now ? 'PRESS DROP' : cue.text) : 'Claw in action');
+    setText('jackpot-cue', dualEnabled && cue.now ? 'PALM TO DROP' : grabEnabled && confirming ? (gripStage === 'pressing' ? 'PRESS DROP' : 'GRAB JOYSTICK') : confirming ? 'KEEP HOLDING' : ['idle', 'aim'].includes(phase) ? (grabEnabled && cue.now ? 'PRESS DROP' : cue.text) : 'Claw in action');
     [...$('jackpot-lights').children].forEach((light, i) => light.classList.toggle('on', ['idle', 'aim'].includes(phase) && i < cue.lights));
   }
   if (phase === 'aim' && nearPickup && starAvailable) { title = `${rider.name.toUpperCase()} ${riderPoints}`; hint = ''; }
