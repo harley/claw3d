@@ -21,7 +21,7 @@ async function assertInstructions({ profile, scene, camera }) {
 const instructions = {
  holdDrop: { profile: 'one-hand', scene: 'Steer with one open hand. Clench and hold your fist to drop.', camera: 'Move one open hand to steer. Clench and hold your fist to drop; open to cancel.' },
  grab: { profile: 'grab-release', scene: 'Clench on MOVE to grip and steer. Open to release without dropping. Click or clench DROP to drop.', camera: 'Clench on MOVE to grip and steer. Open to release without dropping. Click, clench, or swipe down on DROP to drop.' },
- dual: { profile: 'dual', scene: 'Clench your left hand to grip and steer. Raise your open right hand to drop. Open your left hand to release.', camera: 'Show both open hands. Clench your left hand to grip and steer; raise your open right hand to drop. Open your left hand to release without dropping.' },
+ dual: { profile: 'dual', scene: 'Clench your left hand to grip and steer. Bring your open right palm to DROP. Open your left hand to release.', camera: 'Show your left hand open to start. Clench to grip and steer; bring your open right palm into the highlighted DROP area. Open your left hand to release without dropping.' },
 };
 async function aimToy(id='butter'){ for(const axis of ['x','z']) for(let i=0;i<6;i++){const delta=({butter:{x:-.38,z:.72},peach:{x:.20,z:.72}}[id])[axis]-(await snap()).position[axis];if(Math.abs(delta)<.025)break;const speed=Math.abs(delta)<.14?.25:1;await cameraInput(page,{x:0,z:0,[axis]:Math.sign(delta)*speed});await page.waitForTimeout(Math.abs(delta)/(.85*speed)*1000);await cameraInput(page,{x:0,z:0});} assert.equal((await snap()).aligned,id);}
 let checkedDelivery = false;
