@@ -58,3 +58,18 @@ test('left-only readiness survives a deliberate clench during countdown',()=>{
  for(const stage of ['grabbing','gripped']) assert.equal(firstTurnControlReady(dual,{profile:'dual',kind:'clenching',hands:{left:{ready:true,open:false,closed:true,grab:{stage}}}}),true);
  assert.equal(firstTurnControlReady(dual,{profile:'dual',kind:'tracking',hands:{left:{ready:true,open:true,closed:false}}}),true);
 });
+
+// Contract: preview physics must never alter shared scores or another local mode's board.
+test('pushing contact is local-only and has its own score namespace', () => {
+  for (const controls of ['', '&controls=dual', '&controls=grab']) {
+    const base = resolvePlayMode(`?setup=manual${controls}`);
+    const pushing = resolvePlayMode(`?contact=push${controls}`);
+    assert.equal(pushing.pushContact, true);
+    assert.equal(pushing.storageKey, `${base.storageKey}:push-contact`);
+    const shared = resolvePlayMode(`?contact=push${controls}`, true);
+    assert.equal(shared.pushContact, false);
+    assert.equal(shared.storageKey, resolvePlayMode(`?setup=manual${controls}`, true).storageKey);
+  }
+  assert.equal(resolvePlayMode('').pushContact, false);
+  assert.equal(resolvePlayMode('?contact=unknown').pushContact, false);
+});

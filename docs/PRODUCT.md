@@ -18,6 +18,14 @@ The wow moment is direct control followed by a believable grab, a tense lift and
 - The leaderboard is for fun and comparison only; rank earns no additional prize. Physical giveaway rules are separate. The proposed ball artwork and 20/30/50-point proposal still need alignment with the game before adoption or printing.
 
 
+## Local pushing-contact preview
+
+`?contact=push` enables bounded pushing and tipping on the loose toys. A glancing descending finger can displace a toy and continue downward when it clears. Direct top hits, crowded toys and cabinet limits still resist descent. The moving carousel rider retains its constrained contact response. This is a deterministic contact approximation, not full rigid-body simulation.
+
+Displaced toys settle under gravity after the claw releases contact. Torque follows each toy’s mesh support silhouette and body centre of mass: small leans can rock back, while an unstable toy can topple onto its side. Damping brings motion to rest, and cabinet/neighbour contacts constrain it. Their catch envelope follows the changing pose, so they can be grabbed on a later turn. Held toys swing toward a hanging equilibrium; delivery removes the floor tilt before shelf placement. A new run restocks the scene; displaced layouts are not saved across page reloads. Three turns and catch scoring stay unchanged. Local preview scores use a separate browser namespace, and shared/public play ignores the flag.
+
+Automated mesh replays cover yielding, gravity settling, grounded poses, later pickup, hanging, upright shelf placement and finger continuity at 60, 30 and 10 FPS. Separate shape checks cover bunny, capybara, cloud, star and robot support profiles. The default centred catch and timed star catch remain regression cases. Physical feel on the booth camera/display is still pending; keep this preview opt-in until that comparison.
+
 ## Attract mode
 
 Unattended, the machine attracts: with nobody registered, no dialog open and no hand in view, the 3D view fills the screen in the close framing with a slow drift, and the marquee chases faster while the leaderboard and player actions stay visible. Camera-ready menus share the central hand invitation described below; camera loading, off, error and delay keep their specific help. The instant a hand is seen the view eases back (0.4 s; a cut under reduced motion) to the existing idle framing and hand menus; nothing about registration or play changes.
