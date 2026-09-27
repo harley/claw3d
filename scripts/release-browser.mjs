@@ -102,6 +102,11 @@ export async function verifyReleaseBrowser({ browser, origin, expected, cookies,
     assert.deepEqual(errors, [], 'Live page errors');
     return { operatorBuild, anonymousEntry: publicTry ? 'public Try' : 'staff gate' };
   } finally {
-    for (const context of contexts) await context.close();
+    for (const context of contexts) {
+      // Closing disables route interception; queued keepalive requests must not
+      // reach the live collectors while an early assertion tears down the page.
+      await context.setOffline(true);
+      await context.close();
+    }
   }
 }

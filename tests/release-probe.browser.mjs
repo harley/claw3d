@@ -39,7 +39,11 @@ try {
       assert.deepEqual(await verifyReleaseBrowser(options), {
         operatorBuild: 'BUILD 123abcd · main', anonymousEntry: publicTry ? 'public Try' : 'staff gate',
       });
-      await assert.rejects(verifyReleaseBrowser({ ...options, publicTry: !publicTry, officialEvents: false }), /Anonymous entry differs from EXPECTED_PUBLIC_TRY/);
+      // Early rejection can race the public collector's bootstrap request.
+      // Repeat this path with diagnostics enabled to catch teardown leaks.
+      for (let attempt = 0; attempt < (publicDiagnostics ? 10 : 1); attempt++) {
+        await assert.rejects(verifyReleaseBrowser({ ...options, publicTry: !publicTry, officialEvents: false }), /Anonymous entry differs from EXPECTED_PUBLIC_TRY/);
+      }
       if (publicTry) {
         await assert.rejects(verifyReleaseBrowser({ ...options, publicDiagnostics: !publicDiagnostics }), /Public diagnostics differs from EXPECTED_PUBLIC_DIAGNOSTICS/);
         await assert.rejects(verifyReleaseBrowser({ ...options, officialEvents: !officialEvents }), /Official entry differs from EXPECTED_OFFICIAL_EVENTS/);
