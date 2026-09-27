@@ -38,6 +38,7 @@ export function handCameraGuide(role, feedback, origin) {
 }
 
 function drawGesture(ctx, icon, x, y, size, role) {
+  // Match the player-view shadow in the cabinet guide: left thumb points right.
   ctx.save(); ctx.translate(x, y); ctx.scale(size / 100 * (role === 'left' ? -1 : 1), size / 100);
   ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.beginPath();
   if (icon === 'move') {

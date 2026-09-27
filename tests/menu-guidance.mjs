@@ -69,6 +69,29 @@ export async function assertMenuGuidance(browser) {
     }
     await show('idle');
     await point('play');
+    // Both illustrated poses follow acquired identity, without mirroring text/rings.
+    for (const reducedMotion of ['reduce', 'no-preference']) {
+      await page.emulateMedia({ reducedMotion });
+      for (const physicalHand of ['left', 'right']) {
+        await page.evaluate(physicalHand => updateMenu('tracking', { pointer: feedback.pointer, physicalHand }), physicalHand);
+        const directions = await page.locator('#hand-cursor path').evaluateAll(paths => paths.map(path => Math.sign(path.getScreenCTM().a)));
+        assert.deepEqual(directions, [physicalHand === 'left' ? -1 : 1, physicalHand === 'left' ? -1 : 1]);
+        assert.ok(await page.locator('.cursor-track').evaluate(el => el.getScreenCTM().a > 0));
+      }
+    }
+    // The one-hand gameplay glove consumes the same identity as the menu cursor.
+    const gloveDirections = await page.evaluate(async () => {
+      const { createJoystickCursor } = await import('/src/joystick-cursor.js');
+      const targets = { stick: { x: 300, y: 400, radius: 30 }, drop: { x: 600, y: 400, radius: 30 } };
+      const glove = createJoystickCursor(() => targets);
+      const signs = ['left', 'right'].map(physicalHand => {
+        glove.update({ kind: 'tracking', physicalHand, pointer: { x: .5, y: .5 }, grab: {} }, true, .016);
+        return Math.sign(document.querySelector('#joystick-cursor .glove-thumb').getScreenCTM().a);
+      });
+      for (const id of ['joystick-cursor', 'machine-drop', 'dual-hand-guide', 'dual-drop-target', 'dual-palm-cursor']) document.getElementById(id).remove();
+      return signs;
+    });
+    assert.deepEqual(gloveDirections, [-1, 1]);
     await page.waitForTimeout(2800);
     assert.equal(await page.locator('#hand-cursor').evaluate(el => el.style.getPropertyValue('--hold')), '0', 'a whole animation cannot fill input progress');
     const clicks = await page.evaluate(() => clicks.length);

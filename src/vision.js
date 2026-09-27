@@ -443,6 +443,8 @@ export class HandController {
     const controlHands = menuLeft ? menuHand ? [menuHand] : [] : hands;
     const sendInput = input => this.onInput(acceptsInput ? input : { x: 0, z: 0 });
     const report = state => this.onState({ ...state, profile, handCount: hands.length, controlEnabled: acceptsInput,
+      // Keep artwork on the acquired identity through transient label flips.
+      physicalHand: this.owner?.handedness === 'Left' ? 'left' : this.owner?.handedness === 'Right' ? 'right' : null,
       pointer: controlHands.length === 1 && hand && this.owner && ['tracking', 'clenching'].includes(state.kind) ? { ...hand.center } : null });
     let hand;
     if (!this.owner) {

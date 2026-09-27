@@ -13,10 +13,17 @@ export function createHandMenu({ leftHand = false } = {}) {
   cursor.innerHTML = '<svg viewBox="0 0 64 64"><circle class="cursor-track" cx="32" cy="32" r="29"/><circle class="cursor-progress" cx="32" cy="32" r="29"/><path class="cursor-hand" d="M22 35V19q0-5 4-5t4 5v12-18q0-5 4-5t4 5v18-15q0-5 4-5t4 5v17-10q0-5 4-5t4 5v20q0 17-17 17h-3q-8 0-12-8l-9-14q-3-6 3-7 3 0 6 6z"/></svg>';
   const fist = '<path class="cursor-fist" d="M17 36V26q0-5 4-5t4 5v-5q0-5 4-5t4 5v-1q0-5 4-5t4 5v3q0-5 4-5t4 5v18q0 15-15 15h-3q-10 0-14-10l-5-9q-2-5 2-6 3-1 6 5z"/>';
   cursor.querySelector('svg').insertAdjacentHTML('beforeend', fist);
+  {
+    const handArtwork = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    handArtwork.classList.add('cursor-artwork');
+    handArtwork.setAttribute('transform', leftHand ? 'translate(64 0) scale(-1 1)' : '');
+    handArtwork.append(...cursor.querySelectorAll('.cursor-hand, .cursor-fist'));
+    cursor.querySelector('svg').append(handArtwork);
+  }
   cursor.insertAdjacentHTML('beforeend', '<span class="cursor-cue">Clench to select</span>');
   const guide = document.createElement('div');
   guide.id = 'menu-guide'; guide.hidden = true;
-  guide.innerHTML = `<span class="menu-guide-hand" aria-hidden="true">✋</span><strong>${leftHand ? 'Raise your left hand' : 'Raise your hand'}</strong>`;
+  guide.innerHTML = `<span class="menu-guide-hand" aria-hidden="true">${leftHand ? `<svg viewBox="0 0 64 64"><g transform="translate(64 0) scale(-1 1)">${cursor.querySelector('.cursor-hand').outerHTML.replace('class="cursor-hand"', '')}</g></svg>` : '✋'}</span><strong>${leftHand ? 'Raise your left hand' : 'Raise your hand'}</strong>`;
   document.body.append(cursor, guide);
   let mode = '', hovered = null, locked = null, holding = false;
   const clearCursor = () => {
@@ -44,6 +51,11 @@ export function createHandMenu({ leftHand = false } = {}) {
       if (cursor.parentElement !== parent) parent.append(cursor);
       if (hovered && eligible(hovered.id) !== hovered) clearCursor();
       setHidden(cursor, false);
+      // Use acquired identity, never screen position, to orient the shadow.
+      const role = leftHand ? 'left' : feedback.physicalHand;
+      if (role === 'left' || role === 'right') {
+        cursor.querySelector('.cursor-artwork').setAttribute('transform', role === 'left' ? 'translate(64 0) scale(-1 1)' : '');
+      }
       const clenching = feedback.kind === 'clenching' && feedback.progress > 0;
       if (clenching && !holding) locked = hovered;
       if (!clenching) {

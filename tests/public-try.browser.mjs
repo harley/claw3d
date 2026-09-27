@@ -24,7 +24,7 @@ try {
     window.noticePainted = false; window.ordering = []; window.mediaCalls = 0; window.scoreStorageCalls = 0;
     function observe() {
       const notice = document.getElementById('try-notice');
-      if (notice?.open && !notice.hidden && notice.getBoundingClientRect().height > 0) window.noticePainted = true;
+      if (notice && !notice.hidden && notice.getBoundingClientRect().height > 0) window.noticePainted = true;
       requestAnimationFrame(observe);
     }
     requestAnimationFrame(observe);
@@ -48,6 +48,14 @@ try {
   assert.equal(await page.locator('#camera-setup').isVisible(), true);
   await page.locator('#camera-toggle').click();
   await page.waitForFunction(() => window.testCamera?.running && !document.getElementById('camera-setup').open);
+  // The collection summary stays visible before camera/data work without an expanded panel.
+  assert.equal(await page.locator('#try-notice').evaluate(el => el.open), false);
+  assert.equal(await page.locator('#try-diagnostics-notice').isVisible(), true);
+  assert.match(await page.locator('#try-diagnostics-notice').textContent(), /Play data helps us improve/);
+  assert.ok((await page.locator('#try-notice').boundingBox()).height < 35);
+  await page.locator('#try-notice summary').click();
+  assert.equal(await page.locator('#try-notice p').isVisible(), true);
+  await page.locator('#try-notice summary').click();
   await page.screenshot({ path: '.screenshots/public-try-notice.png' });
   const selectWithHand = async id => {
     const box = await page.locator(`#${id}`).boundingBox();

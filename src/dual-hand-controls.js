@@ -150,6 +150,6 @@ export class DualHandControls {
       grab: grip,
       progress: grip.progress,
       pointer: leftView.pointer, target: rightView.target, closed: leftView.closed,
-      message: left.recovering ? 'HOLD LEFT HAND STEADY' : left.outside ? 'RETURN LEFT HAND TO ITS AREA' : !leftClear ? 'SHOW LEFT HAND OPEN' : !grip.steering ? 'LEFT HAND · GRAB JOYSTICK' : right.outside ? 'RETURN RIGHT HAND TO ITS AREA' : 'OPEN RIGHT PALM TO DROP' };
+      message: left.recovering ? 'HOLD LEFT HAND STEADY' : left.outside ? 'RETURN LEFT HAND TO ITS AREA' : !leftClear ? 'SHOW LEFT HAND' : !grip.steering ? 'LEFT HAND · GRAB JOYSTICK' : right.outside ? 'RETURN RIGHT HAND TO ITS AREA' : 'OPEN RIGHT PALM TO DROP' };
   }
 }

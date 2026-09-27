@@ -392,6 +392,7 @@ body.attract .masthead, body.attract .leaderboard { text-shadow: 0 2px 10px #000
 #menu-guide { position: absolute; z-index: 3; left: 50%; top: 42%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 10px; width: max-content; max-width: calc(100% - 32px); padding: 14px 22px; border: 1px solid #45648b; border-radius: 16px; background: #080e1ce8; color: #fff; text-align: center; pointer-events: none; }
 #menu-guide strong { font-size: clamp(20px, 2.5vw, 32px); }
 .menu-guide-hand { font-size: 72px; line-height: 1; }
+.menu-guide-hand svg { display: block; width: 1em; height: 1em; fill: #fff; stroke: #0b1526; stroke-width: 2; }
 #menu-guide.tracked { visibility: hidden; }
 dialog #menu-guide { position: static; transform: none; width: 100%; max-width: none; margin: 0 0 16px; padding: 8px; border: 0; background: transparent; }
 dialog #menu-guide strong { font-size: 20px; }
@@ -424,10 +425,10 @@ dialog .menu-guide-hand { font-size: 52px; }
 #final:has(#menu-guide:not([hidden])) .text-button { margin-top: 6px; }
 
 /* Visible through loading; collapses when a public practice run begins. */
-#try-notice { position: absolute; z-index: 6; left: 20px; bottom: 46px; width: min(360px, calc(100% - 40px)); padding: 12px 16px; border: 1px solid #354666; border-radius: 8px; background: #080e1cf5; color: #d7e5f7; font: 13px/1.5 Arial, sans-serif; }
-#try-notice summary { cursor: pointer; color: #ffc14d; font-weight: 700; }
+#try-notice { position: absolute; z-index: 6; left: 20px; bottom: 46px; width: fit-content; max-width: calc(100% - 40px); box-sizing: border-box; padding: 5px 8px; border: 1px solid #354666; border-radius: 5px; background: #080e1ce6; color: #b6c5d8; font: 11px/1.5 Arial, sans-serif; }
+#try-notice summary { cursor: pointer; }
+#try-notice[open] { width: min(360px, calc(100% - 40px)); }
 #try-notice p { margin: 8px 0; }
-#try-notice small { color: #9db3d0; }
 
 #staff-link { color: #9db3d0; font-size: 11px; }
 @media (max-width: 650px) { #try-notice[open] { top: 82px; bottom: auto; } }
@@ -454,7 +455,7 @@ dialog .menu-guide-hand { font-size: 52px; }
 #dual-hand-guide span { display: block; padding: 6px 9px; border-radius: 9px; background: #102432ed; font-size: 13px; font-weight: 700; }
 .dual-demo { height: 65px; position: relative; }
 .dual-demo svg, #dual-palm-cursor svg { width: 56px; height: 56px; fill: #12283999; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
-.dual-demo svg { position: absolute; left: calc(50% - 28px); top: 0; transform: scaleX(-1); }
+.dual-demo svg { position: absolute; left: calc(50% - 28px); top: 0; }
 .demo-fist { opacity: 0; }
 #dual-hand-guide[data-stage="grip"] .demo-palm { animation: dual-palm-demo 2.4s infinite; }
 #dual-hand-guide[data-stage="grip"] .demo-fist { animation: dual-fist-demo 2.4s infinite; }

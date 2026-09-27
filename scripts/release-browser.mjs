@@ -30,6 +30,16 @@ export async function verifyReleaseBrowser({ browser, origin, expected, cookies,
     }));
     await context.exposeBinding('releaseCameraAttempt', () => { cameraCalls++; });
     await context.addInitScript(() => {
+      // Suppress collectors before dispatch: network routing alone can race
+      // navigation or context shutdown while a diagnostic flush is pending.
+      const fetch = window.fetch.bind(window);
+      window.fetch = async (input, init) => {
+        const url = new URL(input instanceof Request ? input.url : input, location.href);
+        if (url.origin === location.origin && ['/api/public/session', '/api/playtest', '/api/public/playtest'].includes(url.pathname)) {
+          return Response.json({ error: 'Release probe: diagnostics disabled' }, { status: 404 });
+        }
+        return fetch(input, init);
+      };
       navigator.mediaDevices.getUserMedia = async () => {
         await window.releaseCameraAttempt();
         throw new Error('Release verification must not start the camera.');
@@ -64,7 +74,7 @@ export async function verifyReleaseBrowser({ browser, origin, expected, cookies,
       assert.equal(await anonymous.evaluate(() => window.__PUBLIC_DIAGNOSTICS__ === true), publicDiagnostics, 'Public diagnostics differs from EXPECTED_PUBLIC_DIAGNOSTICS');
       const notice = await anonymous.locator('#try-diagnostics-notice').textContent();
       assert.equal(await anonymous.locator('#try-diagnostics-notice').isVisible(), true, 'Diagnostics notice missing');
-      assert.match(notice, publicDiagnostics ? /Limited gameplay and performance data.*30 days/ : /Gameplay diagnostics are off/);
+      assert.match(notice, publicDiagnostics ? /Play data helps us improve/ : /Play data collection is off/);
       assert.equal(await anonymous.evaluate(() => window.__OFFICIAL_EVENTS__ === true), officialEvents, 'Official entry differs from EXPECTED_OFFICIAL_EVENTS');
       if (officialEvents) {
         const entry = anonymous.locator('#official-entry');
