@@ -8,13 +8,13 @@ const feedback = { kind: 'tracking', controlEnabled: true, dropEnabled: true, ha
 } };
 
 test('missing roles invite open hands without claiming active control', () => {
-  for (const role of ['left', 'right']) {
+  for (const role of ['left']) {
     const guide = handCameraGuide(role, { kind: 'lost', controlEnabled: true, hands: {} });
     assert.equal(guide.state, 'open'); assert.equal(guide.icon, 'palm');
   }
 });
 test('right readiness requires both acquired right and held left evidence', () => {
-  assert.equal(handCameraGuide('right', feedback).label, 'RAISE');
+  assert.equal(handCameraGuide('right', feedback).label, 'TO DROP');
   assert.equal(handCameraGuide('right', { ...feedback, dropEnabled: false }).state, 'inactive');
   assert.equal(handCameraGuide('right', { ...feedback, hands: {} }).state, 'open');
   assert.equal(handCameraGuide('right', { ...feedback, hands: { right: { ready: true, grab: { armed: false } } } }).icon, 'palm');
@@ -27,14 +27,14 @@ test('stale, blocked and reset evidence cannot leave ready windows lit', () => {
 test('guide bounds match sticky left travel and right local movement limits', () => {
   assert.deepEqual(handCameraGuide('left', feedback, { x: .25, y: .48 }).zone, { minX: .02, maxX: .48, minY: .02, maxY: .98 });
   const guide = handCameraGuide('right', feedback, { x: .75, y: .48 });
-  for (const [key, value] of Object.entries({ minX: .57, maxX: .92, minY: .28, maxY: .68 })) assert.ok(Math.abs(guide.zone[key] - value) < 1e-9);
+  for (const [key, value] of Object.entries({ minX: .52, maxX: .92, minY: .12, maxY: .88 })) assert.ok(Math.abs(guide.zone[key] - value) < 1e-9);
   const outside = handCameraGuide('right', { ...feedback, hands: { right: { outside: true } } }, { x: .75, y: .48 });
   assert.equal(outside.state, 'return'); assert.equal(outside.icon, 'palm'); assert.deepEqual(outside.zone, guide.zone);
 });
 
 
 test('first-turn preview asks for open hands and confirms each ready role without grip or raise cues', () => {
-  for (const role of ['left', 'right']) {
+  for (const role of ['left']) {
     const prep = { ...feedback, preparing: true, controlEnabled: false };
     for (const [hand, label] of [
       [{ ready: false, open: false, closed: true }, 'OPEN'],
@@ -46,4 +46,9 @@ test('first-turn preview asks for open hands and confirms each ready role withou
     }
     assert.equal(handCameraGuide(role, { ...prep, kind: 'delayed' }).state, 'inactive');
   }
+});
+
+test('right tutorial remains inactive until left grip after START',()=>{
+ assert.equal(handCameraGuide('right',{...feedback,preparing:true,controlEnabled:false}).state,'inactive');
+ assert.equal(handCameraGuide('right',{kind:'tracking',controlEnabled:true,hands:{}}).state,'inactive');
 });

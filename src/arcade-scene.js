@@ -487,7 +487,8 @@ export class ArcadeScene {
     }
     for (const [id, object] of this.toys) object.visible = game.toys.some(toy => toy.id === id);
     const pose = clawPose(game);
-    this.stick.rotation.set(input.z * .24, 0, -input.x * .24); this.button.position.y = 1.72 - .05 * (phase === 'anticipate' ? 1 : phase === 'descend' ? Math.max(0, 1 - elapsed / .18) : 0);
+    const stickInput = feedback.profile === 'dual' && feedback.observing && !['blocked', 'delayed', 'off', 'error'].includes(feedback.kind) ? feedback.input || input : input;
+    this.stick.rotation.set(stickInput.z * .24, 0, -stickInput.x * .24); this.button.position.y = 1.72 - .05 * (phase === 'anticipate' ? 1 : phase === 'descend' ? Math.max(0, 1 - elapsed / .18) : 0);
     this.joystickHand.update(phase, elapsed, dt, feedback, this.reducedMotion);
     this.stick.visible = this.button.visible = presentation.machineControls || ['idle', 'result'].includes(phase);
     if (presentation.machineControls && ['dual', 'grab-release'].includes(feedback.profile)) this.joystickHand.root.visible = false;

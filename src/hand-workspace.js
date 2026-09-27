@@ -25,3 +25,18 @@ export function projectHandWorkspace(offset, role, targets) {
     y: control.y + y * Math.max(0, Math.min(span, y < 0 ? control.y - bounds.top - 40 : bounds.bottom - control.y - 35)),
   };
 }
+
+// Fixed camera-space target: acquisition never moves DROP under a new hand.
+// Rendering and hit testing share this mapping at every viewport size.
+export const DROP_AREA = { x: .72, y: .44, radiusX: .10, radiusY: .12 };
+export function dropOffset(point) {
+  return { x: (point.x - DROP_AREA.x) / DROP_AREA.radiusX, y: (point.y - DROP_AREA.y) / DROP_AREA.radiusY };
+}
+export function inDropArea(point) {
+  const offset = dropOffset(point);
+  return handInZone(point, 'right') && Math.hypot(offset.x, offset.y) < 1;
+}
+export function projectDropHand(point, targets) {
+  const offset = dropOffset(point), radius = targets.drop.radius * 1.5;
+  return { x: targets.drop.x + offset.x * radius, y: targets.drop.y + offset.y * radius };
+}

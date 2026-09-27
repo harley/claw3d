@@ -1,5 +1,6 @@
+import { createDualHandGuide } from './dual-hand-guide.js';
 import { menuScreenPoint } from './steering.js';
-import { handOffset, projectHandWorkspace } from './hand-workspace.js';
+import { inDropArea, handOffset, projectHandWorkspace } from './hand-workspace.js';
 // Presentation owns the screen target; camera input only receives hit-test results.
 function createGlove(id, screen) {
   const root = document.createElement('div');
@@ -42,20 +43,22 @@ export function createJoystickCursor(getTargets = () => null, onDrop = () => {})
   button.id = 'machine-drop'; button.hidden = true; button.setAttribute('aria-label', 'Drop claw');
   button.addEventListener('click', onDrop); document.body.append(button);
   const left = createGlove('joystick-cursor', screen);
+  const guidance = createDualHandGuide();
   return {
     targetAt(pointer, role, origin) {
       const targets = getTargets();
-      if (!pointer || !targets || button.hidden) return {};
+      if (!pointer || !targets || (!role && button.hidden)) return {};
+      if (role === 'right') return { nearDrop: inDropArea(pointer) };
       const p = role ? projectHandWorkspace(handOffset(pointer, origin), role, targets) : screen(pointer), { stick, drop } = targets;
       const overTarget = Math.hypot(p.x - stick.x, p.y - stick.y) < stick.radius;
       const overDrop = Math.hypot((p.x - drop.x) / drop.radius, (p.y - drop.y) / drop.radius) < 1;
       const aboveDrop = Math.abs(p.x - drop.x) < drop.radius && p.y < drop.y - drop.radius && p.y > drop.y - drop.radius - innerHeight * .20;
-      const nearDrop = role === 'right' && Math.hypot(p.x - drop.x, p.y - drop.y) < drop.radius * 1.5;
-      return { overTarget, overDrop, aboveDrop, nearDrop };
+      return { overTarget, overDrop, aboveDrop };
     },
-    update(feedback, visible, dt) {
+    update(feedback, visible, dt, { guide = false } = {}) {
       const targets = getTargets();
       button.hidden = !visible || !targets;
+      guidance.update(feedback, targets, guide);
       if (targets) {
         const d = targets.drop;
         button.dataset.ready = String(Boolean(d.ready));

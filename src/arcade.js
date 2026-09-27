@@ -57,8 +57,8 @@ const controlInstructions = {
     camera: 'Clench on MOVE to grip and steer. Open to release without dropping. Click, clench, or swipe down on DROP to drop.',
   },
   dual: {
-    scene: 'Clench your left hand to grip and steer. Raise your open right hand to drop. Open your left hand to release.',
-    camera: 'Show both open hands. Clench your left hand to grip and steer; raise your open right hand to drop. Open your left hand to release without dropping.',
+    scene: 'Clench your left hand to grip and steer. Bring your open right palm to DROP. Open your left hand to release.',
+    camera: 'Show your left hand open to start. Clench to grip and steer; bring your open right palm into the highlighted DROP area. Open your left hand to release without dropping.',
   },
 }[mode.profile];
 $('scene').setAttribute('aria-label', controlInstructions.scene);
@@ -396,6 +396,7 @@ async function startCamera() {
         getControlProfile: () => dualEnabled ? menuMode() ? 'menu-left' : 'dual' : grabEnabled && !menuMode() ? 'grab-release' : 'hold-drop',
         getControlTarget: (pointer, role, origin) => glove.targetAt(pointer, role, origin),
         canControl: () => Boolean(menuMode() || (!flow.pendingSlam && !startingRun && run && game.phase === 'aim' && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]'))),
+        canObserve: () => Boolean(dualEnabled && !menuMode() && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]')),
         canPrepare: () => Boolean(run && !startingRun && !recovering && flow.firstTurnPreparationElapsed !== null && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]')),
         onDrop: () => menuMode() ? handMenu.confirm(menuMode(), cameraControls.feedback) : gestureDrop(),
         // Bounded so a boundary-trembling hand cannot evict funnel-critical
@@ -522,7 +523,7 @@ function frame(time) {
     const attract = game.phase === 'idle' && !run && !recovering && !paused && !modal && !startingRun && !document.hidden && !['calibrating', 'tracking', 'clenching', 'accepted'].includes(feedback.kind);
     if (attract !== document.body.classList.contains('attract')) document.body.classList.toggle('attract', attract);
     scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, sceneFeedback, Boolean(cameraControls?.running || cameraControls?.starting) && performanceGovernor.mode === 'simple', { preparing: Boolean(run && !recovering), nextTurnElapsed: flow.nextTurnElapsed, firstTurnPreparationElapsed: flow.firstTurnPreparationElapsed, machineControls: cabinetEnabled, cueLead, attract, dt }); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
-    glove.update(grabEnabled ? feedback : { ...feedback, pointer: null }, cabinetEnabled && (game.phase === 'aim' || (dualEnabled && flow.contactFeedback && game.phase === 'anticipate')) && !paused && !modal && !frozen && !document.hidden, dt);
+    glove.update(grabEnabled ? feedback : { ...feedback, pointer: null }, cabinetEnabled && (game.phase === 'aim' || (dualEnabled && flow.contactFeedback && game.phase === 'anticipate')) && !paused && !modal && !frozen && !document.hidden, dt, { guide: dualEnabled && !nextMenuMode && !paused && !modal && !frozen && !document.hidden && (game.phase === 'aim' || flow.firstTurnPreparationElapsed !== null) });
     const tagged = game.phase === 'aim' && aligned ? game.toys.find(toy => toy.id === aligned.id) : null;
     const toyHeight = tagged ? scene.toys.get(tagged.id).userData.height * tagged.scale : 0;
     const target = tagged ? scene.screenPoint(tagged.x, BED + (tagged.elevation || 0) + toyHeight + .28, tagged.z) : null;

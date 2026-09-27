@@ -135,14 +135,11 @@ try {
   assert.equal(await real.evaluate(() => window.__littleCloud.snapshot().event.turn), 0);
   await real.evaluate(() => { window.menuRightVisible = false; });
   await samples(resting, false, 12);
-  await real.waitForFunction(() => document.getElementById('status').textContent === 'SHOW RIGHT HAND OPEN');
-  assert.equal(await real.locator('#camera-overlay').getAttribute('data-left'), 'active');
-  assert.equal(await real.locator('#camera-overlay').getAttribute('data-right'), 'open');
-  assert.equal(await real.evaluate(() => window.__littleCloud.snapshot().event.firstTurnPreparationElapsed), 0);
-  await real.screenshot({ path: '.screenshots/issue-103-right-hand-readiness.png' });
-  await real.evaluate(() => { window.menuRightVisible = true; });
-  await samples(resting, false, 12);
   await real.waitForFunction(() => window.__littleCloud.snapshot().event.firstTurnControlReady);
+  assert.equal(await real.locator('#camera-overlay').getAttribute('data-left'), 'active');
+  assert.equal(await real.locator('#camera-overlay').getAttribute('data-right'), 'inactive');
+  assert.equal(await real.locator('#dual-drop-target').isVisible(), false);
+  await real.screenshot({ path: '.screenshots/issue-145-left-only-readiness.png' });
   await real.evaluate(position => { window.prepSamples = setInterval(() => menuSample(position.x, position.y, false), 130); }, resting);
   await real.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
   await real.evaluate(() => clearInterval(window.prepSamples));

@@ -40,7 +40,7 @@ test('waiting copy asks for the active controller without advancing the count', 
   assert.equal(firstTurnWaitingMessage({ kind: 'delayed' }), 'TRACKING DELAYED');
   assert.equal(firstTurnWaitingMessage({ kind: 'ready', closed: true, message: 'Open your hand to begin.' }), 'OPEN HAND TO READY');
   assert.equal(firstTurnWaitingMessage({ kind: 'tracking', handCount: 1, open: false }), 'OPEN HAND TO READY');
-  assert.equal(firstTurnWaitingMessage({ kind: 'tracking', message: 'Raise right hand open' }, true), 'SHOW BOTH HANDS OPEN');
+  assert.equal(firstTurnWaitingMessage({ kind: 'tracking', message: 'Raise right hand open' }, true), 'SHOW LEFT HAND OPEN');
   assert.equal(firstTurnWaitingMessage({ kind: 'clenching' }), 'OPEN HAND TO READY');
 });
 
@@ -78,8 +78,8 @@ test('the finale headline reads the run', () => {
 test('dual waiting instructions describe the actual readiness gate, never a gameplay grip', () => {
   const ready = { ready: true, open: true, closed: false, pointer: { x: .3, y: .5 } };
   const feedback = { profile: 'dual', kind: 'tracking', message: 'LEFT HAND · GRAB JOYSTICK', hands: { left: ready } };
-  assert.equal(firstTurnWaitingMessage(feedback, true), 'SHOW RIGHT HAND OPEN');
-  for (const role of ['left', 'right']) {
+  assert.equal(firstTurnWaitingMessage(feedback, true), 'LEFT HAND READY');
+  for (const role of ['left']) {
     for (const [hand, expected] of [
       [{ ...ready, closed: true, open: false }, `OPEN ${role.toUpperCase()} HAND`],
       [{ ...ready, ready: false }, `HOLD ${role.toUpperCase()} HAND STILL`],

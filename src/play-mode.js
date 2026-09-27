@@ -45,18 +45,15 @@ export function firstTurnControlReady(mode, feedback = {}) {
   return feedback.open === true && feedback.closed !== true;
 }
 
-// The gate, waiting copy and diagnostics share one reason. Gameplay grip/drop
-// messages are not valid instructions while both open hands are required.
+// The left hand starts the run. The right hand is introduced only after grip.
 export function dualStartReadiness(feedback = {}) {
   if (['off', 'loading', 'error', 'delayed', 'blocked'].includes(feedback.kind)) return feedback.kind;
-  if (feedback.profile !== 'dual') return 'show_both';
-  const { left, right } = feedback.hands || {};
-  if (!left?.ready && !left?.pointer && !right?.ready && !right?.pointer) return 'show_both';
-  for (const [role, hand] of [['left', left], ['right', right]]) {
-    if (hand?.outside) return `return_${role}`;
-    if (!hand?.ready && !hand?.pointer) return `show_${role}`;
-    if (hand.open !== true || hand.closed === true) return `open_${role}`;
-    if (hand.ready !== true) return `hold_${role}`;
-  }
-  return feedback.kind === 'tracking' ? 'ready' : 'hold_both';
+  if (feedback.profile !== 'dual') return 'show_left';
+  const left = feedback.hands?.left;
+  if (left?.outside) return 'return_left';
+  if (!left?.ready && !left?.pointer) return 'show_left';
+  if (!left?.ready) return left.closed ? 'open_left' : 'hold_left';
+  if (left.open === true && left.closed !== true) return 'ready';
+  if (left.closed === true && left.open !== true && ['grabbing', 'gripped'].includes(left.grab?.stage)) return 'ready';
+  return 'open_left';
 }

@@ -91,7 +91,8 @@ export class CabinetHands {
       const hand = this.hands[role]; if (!hand) continue;
       const evidence = feedback.hands?.[role] || {};
       const fresh = !['delayed','off','error','blocked','accepted'].includes(feedback.kind);
-      hand.pivot.visible = this.root.visible && ((phase === 'aim' && fresh && !!evidence.pointer && ['tracking','clenching','calibrating'].includes(evidence.kind)) || slam || contact);
+      hand.pivot.visible = this.root.visible && (((phase === 'aim' || role === 'left') && fresh && !!evidence.pointer && ['tracking','clenching','calibrating'].includes(evidence.kind)) || slam || contact);
+      if (role === 'right' && !slam && !contact) hand.pivot.visible = false;
       const left = role === 'left';
       const gripped = ['gripped','grabbing'].includes(evidence.grab?.stage) || slam || contact;
       const target = left && gripped ? 1 : .08;
