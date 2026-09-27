@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { MeshBVH, acceleratedRaycast } from 'three-mesh-bvh';
-import { BED, HIGH, CAROUSEL, FINGER_DEPTH, OPEN_RADIUS, FINGER_ANGLES, mix } from './arcade-mechanics.js';
+import { BED, HIGH, BODY, FIELD, CAROUSEL, FINGER_DEPTH, OPEN_RADIUS, FINGER_ANGLES, mix, ease, PHASES, planGrab } from './arcade-mechanics.js';
 
 // Swept finger samples test visible geometry. The grasp support model still
 // decides catches; these contacts can reject one, never manufacture a win.
@@ -41,16 +41,116 @@ export class ToyContacts {
     toy.impact = { x: length === 1 && !dx && !dz ? 1 : dx / length, z: dz / length, angle: 0, velocity: 0,
       target: toy.family === 'bunny' ? .42 : toy.family === 'capybara' ? .22 : .30, phase };
   }
-  resolve(game, pose) {
+  // Resting rotation is gameplay state: use the same transformed ellipsoid for
+  // subsequent aim/catch decisions that the player sees in the scene.
+  rest(toy, object) {
+    if (!toy.restPose) return;
+    const { x, z, angle } = toy.restPose;
+    object.quaternion.setFromAxisAngle(vector(z, 0, -x), angle)
+      .multiply(new T.Quaternion().setFromAxisAngle(vector(0, 1, 0), toy.yaw));
+    object.position.set(toy.x, BED + (toy.elevation || 0), toy.z);
+    object.updateWorldMatrix(true, true);
+    const bounds = new T.Box3().setFromObject(object, true);
+    const lift = BED + (toy.elevation || 0) - bounds.min.y;
+    object.position.y += lift; toy.restPose.lift = lift;
+    object.updateWorldMatrix(true, true);
+    const shape = BODY[toy.family];
+    const center = vector(0, shape.cy - (toy.groundOffset || 0), 0).multiplyScalar(toy.scale).applyQuaternion(object.quaternion).add(object.position);
+    const axes = [vector(1, 0, 0), vector(0, 1, 0), vector(0, 0, 1)].map(axis => axis.applyQuaternion(object.quaternion));
+    const weights = [shape.rx, shape.ry, shape.rz].map(r => 1 / (r * toy.scale) ** 2);
+    toy.support = { x: center.x, y: center.y, z: center.z,
+      radius: Math.sqrt(Math.max(axes.reduce((sum, a, i) => sum + a.x * a.x / weights[i], 0), axes.reduce((sum, a, i) => sum + a.z * a.z / weights[i], 0))),
+      xx: axes.reduce((sum, a, i) => sum + a.x * a.x * weights[i], 0),
+      xz: axes.reduce((sum, a, i) => sum + a.x * a.z * weights[i], 0),
+      zz: axes.reduce((sum, a, i) => sum + a.z * a.z * weights[i], 0) };
+  }
+  descentHit(pose, from, to, available) {
+    let first = null;
+    for (const angle of FINGER_ANGLES) for (const [r, y] of fingerSamples(OPEN_RADIUS)) {
+      const x = pose.x + Math.cos(angle) * r, z = pose.z + Math.sin(angle) * r;
+      const hit = this.hit(vector(x, from + y, z), vector(x, to + y, z), available);
+      if (hit) {
+        const stop = hit.point.y - y + radius;
+        if (stop <= HIGH && (!first || stop > first.stop)) first = { ...hit, stop };
+      }
+    }
+    return first;
+  }
+  push(game, hit, pose, distance) {
+    const toy = hit.toy;
+    // Riders belong to the carousel trajectory, not the loose bed simulation.
+    if (toy.id === game.rider || toy.elevation || toy.transit) return false;
+    const dx = toy.x - pose.x, dz = toy.z - pose.z, length = Math.hypot(dx, dz);
+    const center = toy.support || toy;
+    if (!game.plan.pushDescent.pushed?.includes(toy.id) && (length < .12 || Math.hypot(hit.point.x - center.x, hit.point.z - center.z) < .09)) return false;
+    if (length < .0001) return false;
+    const direction = { x: dx / length, z: dz / length };
+    const resting = toy.restPose || { x: 0, z: 0, angle: 0 };
+    const object = this.toys.get(toy.id), baseline = new T.Box3().setFromObject(object);
+    const obstacles = game.toys.filter(other => other !== toy && !other.claimed).map(other => this.boundsFor(other.id));
+    const overlap = (a, b) => Math.max(0, Math.min(a.max.x, b.max.x) - Math.max(a.min.x, b.min.x)) * Math.max(0, Math.min(a.max.y, b.max.y) - Math.max(a.min.y, b.min.y)) * Math.max(0, Math.min(a.max.z, b.max.z) - Math.max(a.min.z, b.min.z));
+    const old = { x: toy.x, z: toy.z, restPose: toy.restPose, support: toy.support };
+    for (let attempt = 0; attempt < 5; attempt++, distance *= .5) {
+      toy.x = old.x + direction.x * distance; toy.z = old.z + direction.z * distance;
+      const leanX = resting.x * resting.angle + direction.x * distance * 3.5;
+      const leanZ = resting.z * resting.angle + direction.z * distance * 3.5;
+      const lean = Math.hypot(leanX, leanZ);
+      toy.restPose = { x: lean > .0001 ? leanX / lean : direction.x, z: lean > .0001 ? leanZ / lean : direction.z, angle: Math.min(1.15, lean) };
+      this.rest(toy, object);
+      const bounds = new T.Box3().setFromObject(object);
+      const outside = bounds.min.x < -1.62 || bounds.max.x > 1.62 || bounds.min.z < -1.10 || bounds.max.z > 1.17;
+      const unreachable = toy.support.x < FIELD.minX || toy.support.x > FIELD.maxX || toy.support.z < FIELD.minZ || toy.support.z > FIELD.maxZ;
+      const onDeck = game.carousel && Math.hypot(toy.x - CAROUSEL.x, toy.z - CAROUSEL.z) < .55 + Math.max(BODY[toy.family].rx, BODY[toy.family].rz) * toy.scale;
+      if (!outside && !unreachable && !onDeck && !obstacles.some(box => overlap(bounds, box) > overlap(baseline, box) + .00000001)) {
+        delete toy.impact;
+        const pushed = game.plan.pushDescent.pushed ??= [];
+        if (!pushed.includes(toy.id)) pushed.push(toy.id);
+        return distance;
+      }
+    }
+    Object.assign(toy, old);
+    object.position.set(toy.x, BED + (toy.elevation || 0), toy.z); object.rotation.set(0, toy.yaw, 0);
+    this.rest(toy, object); object.updateWorldMatrix(true, true);
+    return false;
+  }
+  resolvePush(game, pose, dt) {
+    const plan = game.plan, state = plan.pushDescent;
+    if (!state || !['descend', 'grip'].includes(game.phase) || state.finished) return;
+    const available = game.toys.filter(toy => !toy.claimed);
+    const desired = game.phase === 'grip' ? state.target : mix(HIGH, state.target, ease(game.elapsed / PHASES.descend));
+    let budget = Math.max(0, Math.min(dt, .1)) * .9;
+    let hit = this.descentHit(pose, state.y, desired, available);
+    for (let attempt = 0; hit && budget > .0001 && attempt < 16; attempt++) {
+      const moved = this.push(game, hit, pose, Math.min(.012, budget));
+      if (!moved) break;
+      budget -= moved;
+      hit = this.descentHit(pose, state.y, desired, available);
+    }
+    pose.y = hit ? Math.max(desired, Math.min(state.y, hit.stop)) : desired;
+    state.y = pose.y;
+    if (hit) { plan.blockedDescent = pose.y; plan.touched = hit.toy; }
+    else delete plan.blockedDescent;
+    if (game.phase === 'grip') {
+      const actual = planGrab(game.position, game.toys);
+      Object.assign(plan, actual, { low: pose.y, pushDescent: state });
+      state.finished = true;
+      if (hit) { plan.blockedDescent = pose.y; plan.prize = null; plan.offset = null; plan.touched = hit.toy; plan.reason = 'bumped'; plan.stop = 'mesh-contact'; }
+      if (plan.prize) plan.offset.y = pose.y - BED - (plan.prize.elevation || 0) - (plan.prize.restPose?.lift || 0);
+      pose.radii = [OPEN_RADIUS, OPEN_RADIUS, OPEN_RADIUS];
+    }
+  }
+  resolve(game, pose, dt = 0) {
     if (!game.plan) return;
     if (game.plan.stop === 'neighbour' && !game.plan.meshDescentPrepared) {
       const deck = game.carousel && Math.hypot(pose.x - CAROUSEL.x, pose.z - CAROUSEL.z) < .57 ? CAROUSEL.height : 0;
       game.plan.low = BED + deck + FINGER_DEPTH + .021; game.plan.meshDescentPrepared = true;
+      if (game.plan.pushDescent) game.plan.pushDescent.target = game.plan.low;
     }
     if (!['descend', 'grip'].includes(game.phase)) return;
     const available = game.toys.filter(toy => !toy.claimed);
     for (const toy of available) this.toys.get(toy.id).updateWorldMatrix(true, true);
-    if (game.phase === 'descend' && !game.plan.blockedDescent) {
+    if (game.pushContact) this.resolvePush(game, pose, dt);
+    if (!game.pushContact && game.phase === 'descend' && !game.plan.blockedDescent) {
       let first = null;
       for (const angle of FINGER_ANGLES) for (const [r, y] of fingerSamples(OPEN_RADIUS)) {
         const x = pose.x + Math.cos(angle) * r, z = pose.z + Math.sin(angle) * r;
@@ -74,7 +174,7 @@ export class ToyContacts {
         }
         if (contact) {
           pose.radii[i] = mix(OPEN_RADIUS, goal, fraction);
-          if (!game.plan.prize) this.impact(contact.toy, contact.point, 'grip');
+          if (!game.plan.prize && !game.pushContact) this.impact(contact.toy, contact.point, 'grip');
         }
       }
       // Carry the last resolved pose into lifting, even when a frame skips the

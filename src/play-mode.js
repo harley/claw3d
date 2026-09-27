@@ -15,12 +15,14 @@ export function resolvePlayMode(search = '', shared = false) {
   const requestedHold = Number(params.get('hold'));
   const holdMs = !shared && requestedHold >= HOLD_LIMITS.min && requestedHold <= HOLD_LIMITS.max ? Math.round(requestedHold) : undefined;
   const steering = !shared && params.get('steer') === 'absolute' ? 'absolute' : 'relative';
+  const pushContact = !shared && params.get('contact') === 'push';
+  const storageKey = profile === 'dual' ? `${STORAGE_KEY}:dual-controls` : profile === 'grab-release' ? `${STORAGE_KEY}:cabinet-controls` : STORAGE_KEY;
   return Object.freeze({
-    shared, profile,
+    shared, profile, pushContact,
     dual: profile === 'dual', grab: profile !== 'hold-drop', cabinet: true,
     holdMs, steering,
     controlMode: profile === 'dual' ? 'two-hand' : 'one-hand',
-    storageKey: profile === 'dual' ? `${STORAGE_KEY}:dual-controls` : profile === 'grab-release' ? `${STORAGE_KEY}:cabinet-controls` : STORAGE_KEY,
+    storageKey: pushContact ? `${storageKey}:push-contact` : storageKey,
   });
 }
 

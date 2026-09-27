@@ -510,6 +510,7 @@ export class ArcadeScene {
     for (const toy of game.toys) {
       const object = this.toys.get(toy.id), { body, articulation, blink, wave, waveTime, face } = object.userData;
       object.position.set(toy.x, BED + (toy.elevation || 0), toy.z); object.rotation.set(0, toy.yaw, 0); object.scale.setScalar(toy.scale); body.scale.set(1, 1, 1); body.rotation.set(0, 0, 0);
+      if (game.pushContact) this.contacts.rest(toy, object);
       const index = game.collection.indexOf(toy.id);
       if (index >= 0) { const slot = collectionSlot(toy.id); object.position.set(slot.x, slot.y, slot.z); object.rotation.y = .35; }
       const held = plan?.prize?.id === toy.id;
@@ -556,8 +557,9 @@ export class ArcadeScene {
       if (motion && aligned?.id === toy.id && phase === 'aim') body.rotation.x = -.035;
       if (wave) { wave.value = motion * (Math.abs(wobble) * .32 + compression * .18 + attract * .09); waveTime.value = time; const drift = Math.sin(.4 * 11 - time * 13) * wave.value * .7; face.position.x = drift; blink.position.x = drift; }
     }
+    if (game.pushContact) for (const toy of game.toys) if (toy.restPose && !toy.claimed && game.plan?.prize?.id !== toy.id) this.contacts.rest(toy, this.toys.get(toy.id));
     for (const toy of game.toys) if (toy.impact && !toy.claimed && game.plan?.prize?.id !== toy.id) this.contacts.rock(game, toy, this.toys.get(toy.id), dt);
-    this.contacts.resolve(game, pose);
+    this.contacts.resolve(game, pose, dt);
     this.updateClawFeedback(pose, phase, dt, feedback);
     // The rim light answers the player: green when a toy is under the claw, gold on a catch, red on a miss.
     if (this.rim) {
