@@ -59,7 +59,7 @@ try {
  for (const width of [1440, 1050, 1000, 820, 390, 360]) {
   await page.setViewportSize({ width, height: 900 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-  if (width > 650) assert.ok(await page.evaluate(() => document.querySelector('.player-hud').getBoundingClientRect().right <= document.getElementById('scene').getBoundingClientRect().left), 'side HUD stays outside the scene');
+  if (width > 650) assert.ok(await page.evaluate(() => document.querySelector('.player-hud').getBoundingClientRect().bottom <= document.getElementById('scene').getBoundingClientRect().top), 'compact HUD stays above the scene');
  }
  await page.setViewportSize({ width: 390, height: 620 });
  await page.emulateMedia({ reducedMotion: 'reduce' });

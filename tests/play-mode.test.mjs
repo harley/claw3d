@@ -1,9 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolvePlayMode, cueLeadSeconds, firstTurnControlReady } from '../src/play-mode.js';
+import { resolvePlayMode, phonePlaySearch, cueLeadSeconds, firstTurnControlReady } from '../src/play-mode.js';
 import { STORAGE_KEY } from '../src/event-session.js';
 import { HAND_ACQUIRE_MS, RIGHT_SLAM_MS } from '../src/dual-hand-controls.js';
 import { PRESS_MS } from '../src/grab-release.js';
+
+// Contract: rotating a phone may choose the next run's mode, never alter an
+// active attempt or official rules. Existing mode tests only cover URL input.
+test('phone orientation defaults preserve locked runs, manual choices and ticket rules', () => {
+  const portrait = { phone: true, landscape: false }, landscape = { phone: true, landscape: true };
+  const two = phonePlaySearch('?setup=manual&contact=push', landscape);
+  assert.equal(resolvePlayMode(two).dual, true);
+  assert.equal(resolvePlayMode(two).pushContact, true);
+  assert.equal(resolvePlayMode(phonePlaySearch(two, portrait)).dual, false);
+  for (const options of [{ ...portrait, locked: true }, { ...portrait, official: true }, { phone: false }]) {
+    assert.equal(phonePlaySearch(two, options), two);
+  }
+  for (const search of ['?hands=manual&controls=dual', '?controls=grab']) assert.equal(phonePlaySearch(search, portrait), search);
+  assert.equal(phonePlaySearch(two, landscape), two, 'stable orientation cannot cause a reload loop');
+});
 
 test('play mode resolves once from the URL and the shared gate', () => {
   const rows = [

@@ -119,6 +119,7 @@ export function createHud({ audio, phaseSound }) {
   const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
   const turns = run?.rules?.turns ?? completedRun?.rules?.turns ?? RULES.turns;
   const preparingFirstTurn = Boolean(run && firstTurnPreparationElapsed !== null);
+  $('arcade').classList.toggle('run-active', Boolean(run || pendingPlayer || startingRun || recovering));
   $('arcade').classList.toggle('first-turn-layout', Boolean(run && (preparingFirstTurn || turnNumber === 1)));
   let title = 'READY', hint = '', button = 'Play', kicker = 'CLAW';
   if (recovering) { title = `TURN ${turnNumber} OF ${turns}`; button = cameraLoading ? 'Starting…' : 'CONTINUE'; }
@@ -232,7 +233,15 @@ export function createHud({ audio, phaseSound }) {
   const rightReady = feedback.profile !== 'dual' || (feedback.hands?.right?.ready && feedback.hands.right.grab?.armed);
   // Two-hand acquisition belongs in the webcam windows. Keep its full live
   // instruction for assistive tech; camera failures and pause stay visible.
-  $('action-copy').classList.toggle('quiet', Boolean(!paused && (cameraGuide || (steering && rightReady && (run.turns.length > 0 || cueVisible)))));
+  const dualGuide = dualEnabled && cameraControls?.running && !modal && !recovering && !startingRun &&
+    (phase === 'aim' || preparingFirstTurn && !firstTurnControlReady) && !['off', 'loading', 'error', 'delayed', 'blocked'].includes(feedback.kind);
+  const quiet = Boolean(!paused && (dualGuide || cameraGuide || (steering && rightReady && (run.turns.length > 0 || cueVisible))));
+  $('action-copy').classList.toggle('quiet', quiet);
+  const cameraGuidance = Boolean(run && !paused && !modal && !quiet && !timed &&
+    (phase === 'aim' || preparingFirstTurn && !firstTurnControlReady));
+  $('action-copy').classList.toggle('camera-guidance', cameraGuidance);
+  $('camera-preview').classList.toggle('guided', cameraGuidance);
+  $('camera-preview').classList.toggle('in-play', Boolean(run));
   $('action-copy').classList.toggle('gesture-guide', Boolean(steering && !nearPickup));
   // A miss keeps one message surface from the empty lift through the next-turn cue.
   presentMessage(title, hint, `${title === 'MISSED' ? 'missed' : ['anticipate', 'descend'].includes(phase) ? 'drop' : phase}:${turnNumber}:${title}:${hint}`, timed ? 1600 : 0);
@@ -247,6 +256,8 @@ export function createHud({ audio, phaseSound }) {
   for (let i = 0; i < turns; i++) {
     const turn = run?.turns[i] || completedRun?.turns[i], toy = ASSORTMENT.find(toy => toy.id === turn?.prizeId);
     const chip = document.createElement('span'); chip.className = `turn-chip ${turn?.score ? 'scored' : ''}`;
+    chip.classList.toggle('current', Boolean(run && i === (preparingFirstTurn ? 0 : turnNumber - 1)));
+    chip.setAttribute('aria-label', `Turn ${i + 1}: ${turn ? turn.score ? `${turn.score} points` : 'miss' : 'not scored'}`);
     chip.textContent = turn ? turn.score ? `+${turn.score}` : 'MISS' : '—';
     if (cabinetEnabled && toy) {
       chip.dataset.prize = toy.id; chip.title = `Turn ${i + 1}: ${toy.name}, ${turn.score} points`;

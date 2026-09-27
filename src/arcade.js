@@ -1,5 +1,5 @@
 import { RIGHT_SLAM_MS } from './dual-hand-controls.js';
-import { resolvePlayMode, cueLeadSeconds, dualStartReadiness, firstTurnControlReady as isFirstTurnControlReady } from './play-mode.js';
+import { resolvePlayMode, phonePlaySearch, cueLeadSeconds, dualStartReadiness, firstTurnControlReady as isFirstTurnControlReady } from './play-mode.js';
 import { ABSOLUTE_SPEED } from './steering.js';
 import './arcade.css';
 import { createJoystickCursor } from './joystick-cursor.js';
@@ -20,6 +20,19 @@ const shared = !publicTry && (publicOfficial || globalThis.__SHARED_PILOT__ === 
 const official = publicOfficial || shared && globalThis.__OFFICIAL_EVENTS__ === true && new URLSearchParams(location.search).get('play') === 'official';
 let officialBlocked = false;
 let noticeReady = !publicTry;
+const phoneViewport = () => ({
+  phone: matchMedia('(any-pointer: coarse)').matches && Math.min(innerWidth, innerHeight) <= 600,
+  landscape: innerWidth > innerHeight,
+});
+// Resolve before creating input, hand artwork or a storage namespace. A saved
+// local attempt must remain reachable in the profile in which it was started.
+let savedModeLocked = false;
+if (!shared && !publicTry) {
+  try { savedModeLocked = Boolean(loadStore({ getItem: () => localStorage.getItem(resolvePlayMode(location.search).storageKey) }).active); }
+  catch { savedModeLocked = true; }
+}
+const initialSearch = phonePlaySearch(location.search, { ...phoneViewport(), locked: savedModeLocked, official });
+if (initialSearch !== location.search) history.replaceState(null, '', `${location.pathname}${initialSearch}${location.hash}`);
 // One resolution of the play mode: input profile, storage namespace, experiment flags.
 const mode = resolvePlayMode(official ? '' : location.search, shared || publicTry);
 const { dual: dualEnabled, grab: grabEnabled, cabinet: cabinetEnabled, holdMs, steering, storageKey: scoreKey } = mode;
@@ -231,6 +244,7 @@ function finishTurn() {
 }
 async function play() {
   if (!scene || stopped || frozen || cameraLoading || document.querySelector('dialog[open]')) return;
+  if (!run && !recovering && syncPhoneMode(true)) return;
   if (recovering || paused) {
     if (shared) return openOperator();
     const currentRun = run;
@@ -302,6 +316,7 @@ async function replay(samePlayer) {
   const name = samePlayer ? completedRun?.name || '' : '';
   $('name').value = name;
   track('replay'); $('final').close(); freshGame(); updateUI();
+  if (syncPhoneMode(true)) return;
   if (!cameraControls?.running) await startCamera();
   if (cameraControls?.running) openRegistration(name);
 }
@@ -321,9 +336,21 @@ $('play').addEventListener('click', () => { $('scene').focus(); play(); });
 for (const [id, dual] of [['mode-one', false], ['mode-two', true]]) $(id).addEventListener('click', () => {
   if (official || dual === dualEnabled || run || pendingPlayer || startingRun || cameraLoading || paused || recovering || document.querySelector('dialog[open]')) return;
   const url = new URL(location.href);
+  url.searchParams.set('hands', 'manual');
   if (dual) url.searchParams.set('controls', 'dual'); else url.searchParams.delete('controls');
   url.searchParams.delete('start'); location.assign(url);
 });
+function syncPhoneMode(start = false) {
+  const locked = Boolean(run || recovering || pendingPlayer || startingRun || paused || frozen || stopped || cameraLoading || document.querySelector('dialog[open]'));
+  const search = phonePlaySearch(location.search, { ...phoneViewport(), locked, official });
+  if (search === location.search) return false;
+  const nextMode = resolvePlayMode(search, shared || publicTry);
+  if (nextMode.profile === mode.profile) { history.replaceState(null, '', `${location.pathname}${search}${location.hash}`); return false; }
+  const url = new URL(location.href); url.search = search;
+  if (start) url.searchParams.set('start', '1');
+  cameraControls?.stop(); location.replace(url); return true;
+}
+addEventListener('resize', () => { if (!completedRun) syncPhoneMode(); });
 $('operator-open').addEventListener('click', openOperator);
 $('pause').addEventListener('click', () => { if (officialBlocked) return; if (recovering) { resumeRecoveredRun(); paused = false; } else paused = !paused; $('operator').close(); $('scene').focus(); updateUI(); });
 $('reset').addEventListener('click', () => { if (startingRun) return; if (official) { officialBlocked = paused = true; void officialPlayer.interrupt().catch(error => setText('sync-message', error.message)); $('operator').close(); updateUI(); return; } if (shared && run) pilot.abandon(run); if (store.active) { store.active.abortedAt = new Date().toISOString(); store.active = null; } run = null; pendingPlayer = null; completedRun = null; recovering = paused = frozen = false; persist(); freshGame(); $('operator').close(); updateUI(); });

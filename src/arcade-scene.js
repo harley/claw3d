@@ -65,9 +65,9 @@ export class ArcadeScene {
 
   buildWorld() {
     const m = this.mats, world = this.surroundings = group(this.scene);
-    // The room floor: dark and faintly glossy, so the environment and the lamp read on it
+    // A matte ground blends into the page; the separate shadow and lamp pool retain depth
     // and the cabinet sits in a space instead of on a void. Simple quality keeps it (one plane).
-    const ground = mesh(this.scene, new T.PlaneGeometry(200, 200), new T.MeshStandardMaterial({ color: '#070c19', roughness: .42, metalness: .45, envMapIntensity: .35 })); ground.rotation.x = -Math.PI / 2; ground.position.y = -.055; ground.castShadow = false;
+    const ground = mesh(this.scene, new T.PlaneGeometry(200, 200), new T.MeshBasicMaterial({ color: '#080e1c', toneMapped: false })); ground.rotation.x = -Math.PI / 2; ground.position.y = -.055; ground.castShadow = false;
     const shadow = mesh(this.scene, new T.PlaneGeometry(200, 200), new T.ShadowMaterial({ opacity: .16 })); shadow.rotation.x = -Math.PI / 2; shadow.position.y = -.05; shadow.castShadow = false;
     box(world, material('#142c50', .88), [-.55, .12, .12], [7.75, .33, 4.7], .23);
     box(world, m.ivory, [-.55, .285, .12], [7.64, .065, 4.58], .2);
@@ -383,9 +383,12 @@ export class ArcadeScene {
     this.viewport = { width, height };
     this.renderer.setSize(width, height, false); this.camera.aspect = width / height; this.camera.updateProjectionMatrix();
     this.bloom?.setSize(width, height);
-    const extra = Math.max(1, 1.45 / this.camera.aspect); this.home.set(7.25 * extra, 2.25 + 3.90 * extra, 11.6 * extra);
-    const playScale = Math.max(1, 1.05 / this.camera.aspect);
-    this.playCamera.set((this.angledView ? 1.8 : .45) * playScale, 2.95 + 1.85 * playScale, 6.4 * playScale);
+    const extra = Math.max(1, .95 / this.camera.aspect);
+    this.home.set(3.6 * extra, 2.65 + 2.9 * extra, 9.4 * extra);
+    this.look.set(-.25, 2.65, 0);
+    const playScale = Math.max(1, .9 / this.camera.aspect);
+    this.playCamera.set((this.angledView ? 1.8 : .45) * playScale, 3.05 + 1.65 * playScale, 8.0 * playScale);
+    this.playLook.set(0, 3.05, 0);
   }
 
   // Simple quality lowers pixel ratio and halves the shadow map. Shadows stay
@@ -600,6 +603,7 @@ export class ArcadeScene {
   // The unattended machine: close framing with a slow drift, so a passer-by sees toys, not a still photograph.
   attractPose(time, position, look) {
     position.copy(this.playCamera);
+    position.z += .65;
     if (!this.reducedMotion) { position.x += Math.sin(time * .21) * .9; position.y += Math.sin(time * .13) * .25 + .15; position.z += Math.cos(time * .17) * .4; }
     look.copy(this.playLook); look.y -= .15;
   }
