@@ -198,9 +198,24 @@ try {
     assert.equal(await page.locator('#camera-overlay').getAttribute('data-right'),'open');
     await page.waitForFunction(()=>document.getElementById('jackpot-signal').hidden);
     if(turn===2){
-      // Acquire directly over DROP without an exit/reentry gesture.
-      await burst([left,{...right,y:.50}],5);
-      await page.evaluate(hands=>{sample(hands);document.getElementById('pause').click();},[left,{...right,y:.50}]);
+      // Contract: right-side faults must not restart the rendered left tutorial.
+      // Keep the same left fist through a wrong label, a jump, and reacquisition.
+      left={...left,x:.40,y:.55};
+      await burst([left,{...right,role:'left',x:.72,y:.44}],1);await frame();
+      assert.equal(await page.locator('#dual-hand-guide').getAttribute('data-stage'),'drop');
+      assert.equal(await page.locator('#dual-drop-target').isVisible(),true);
+      assert.equal(await page.evaluate(()=>controller.dualFeedback.hands.left.grab.stage),'gripped');
+      assert.equal((await page.evaluate(()=>window.__littleCloud.snapshot())).event.pendingSlam,null,'wrong label cannot drop');
+      await burst([left,{...right,x:.72,y:.85}]);
+      await burst([left,{...right,x:.72,y:.44}],1);await frame();
+      assert.equal(await page.locator('#dual-hand-guide').getAttribute('data-stage'),'drop','right jump keeps DROP guidance');
+      assert.equal(await page.locator('#dual-drop-target').isVisible(),true);
+      assert.ok((await page.evaluate(()=>testHands().hands.left)).curl>.999,'left glove stays attached');
+      assert.equal((await page.evaluate(()=>window.__littleCloud.snapshot())).event.pendingSlam,null,'jump cannot drop before fresh acquisition');
+      await page.screenshot({path:'.screenshots/dual-right-recovery.png'});
+      await burst([left,{...right,x:.72,y:.44}],5);
+      assert.equal((await page.evaluate(()=>window.__littleCloud.snapshot())).event.pendingSlam,null);
+      await page.evaluate(hands=>{sample(hands);document.getElementById('pause').click();},[left,{...right,x:.72,y:.44}]);
       await frame();
       const pausedSlam=await page.evaluate(()=>window.__littleCloud.snapshot());
       assert.ok(pausedSlam.event.pendingSlam);assert.equal(pausedSlam.event.paused,true);
