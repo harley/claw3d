@@ -68,7 +68,12 @@ function promoteRider(game) {
   const next = CAROUSEL_RIDERS.find(id => game.toys.some(t => t.id === id && !t.claimed));
   game.rider = next || null;
   const toy = carouselRider(game);
-  if (toy && toy.id !== CAROUSEL.id) toy.transit = { x: toy.x, z: toy.z, start: game.carouselTime };
+  if (toy && toy.id !== CAROUSEL.id) {
+    // The deck carries riders upright; floor support must not override its
+    // predicted position when aiming the next timed drop.
+    delete toy.restPose; delete toy.support; delete toy.impact;
+    toy.transit = { x: toy.x, z: toy.z, start: game.carouselTime };
+  }
 }
 
 // Each silhouette is authored with a matching supporting body envelope.

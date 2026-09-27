@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { ASSORTMENT, BED, FIELD, FINGER_ANGLES, OPEN_RADIUS, FINGER_DEPTH, HIGH, PHASES, PHASE_ORDER, MISS_LIFT, MISS_REASONS, CAROUSEL, START, CHUTE, phaseSeconds, homeClaw, moveToward, MAX_FRAME_DELTA, createGame, begin, drop, advance, move, planGrab, clawPose, collectionSlot } from '../src/arcade-mechanics.js';
+import { ASSORTMENT, BED, FIELD, FINGER_ANGLES, OPEN_RADIUS, FINGER_DEPTH, HIGH, PHASES, PHASE_ORDER, MISS_LIFT, MISS_REASONS, CAROUSEL, START, CHUTE, phaseSeconds, homeClaw, moveToward, MAX_FRAME_DELTA, createGame, begin, drop, advance, move, riderAhead, planGrab, clawPose, collectionSlot } from '../src/arcade-mechanics.js';
 
 const finish = game => { for (let i = 0; i < 1500 && game.phase !== 'result'; i++) advance(game, 1 / 60); assert.equal(game.phase, 'result'); };
 
@@ -224,4 +224,23 @@ test('moveToward follows a target at a bounded speed and never leaves the field'
   const clamped = moveToward({ x: 1.1, z: .7 }, { x: 5, z: 5 }, 1, 2.4);
   assert.deepEqual(clamped, { x: FIELD.maxX, z: FIELD.maxZ });
   assert.deepEqual(moveToward({ x: .5, z: .5 }, { x: .5, z: .5 }, .1), { x: .5, z: .5 });
+});
+
+// A pushed floor toy promoted to the deck must use future deck geometry.
+test('carousel promotion clears displaced floor support before prediction', () => {
+  const game = createGame({ carousel: true, pushContact: true });
+  const peach = game.toys.find(t => t.id === 'peach');
+  peach.restPose = { x: 1, z: 0, angle: .7 };
+  peach.support = { x: -.5, z: .7, y: BED + .3 };
+  peach.impact = { angle: .2 };
+  game.plan = { prize: game.toys.find(t => t.id === 'sprout') };
+  game.phase = 'deliver'; game.elapsed = PHASES.deliver - .01;
+  advance(game, .02);
+  assert.equal(game.rider, 'peach');
+  assert.equal(peach.restPose, undefined);
+  assert.equal(peach.support, undefined);
+  assert.equal(peach.impact, undefined);
+  const predicted = riderAhead(game, 2);
+  assert.ok(Math.hypot(predicted.x - peach.x, predicted.z - peach.z) > .1);
+  assert.equal(planGrab(predicted, [predicted]).prize?.id, 'peach');
 });
