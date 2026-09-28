@@ -1,0 +1,97 @@
+name: Android APK
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish_prerelease:
+        description: Publish a signed Android prerelease from main (not physical acceptance)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Android test APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"'
+      - run: npm ci
+      - run: npm run check
+      - run: npm run android:build
+      - run: npx playwright install --with-deps chromium
+      - run: xvfb-run -a npm run test:offline
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: cloud-claw-android-test-${{ github.sha }}
+          path: android/build/distributions/*
+          if-no-files-found: error
+          retention-days: 14
+
+  prerelease:
+    name: Signed Android prerelease
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_prerelease && github.ref == 'refs/heads/main'
+    environment: android-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"'
+      - run: npm ci
+      - name: Build with the persistent release key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          CLAW_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          CLAW_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          CLAW_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_BASE64"
+          export CLAW_KEYSTORE="$RUNNER_TEMP/cloud-claw-release.jks"
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$CLAW_KEYSTORE"
+          npm run android:release
+      - name: Publish immutable versioned prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/^versionName=//p' android/version.properties)
+          test -n "$version"
+          cat > "$RUNNER_TEMP/android-notes.md" <<'NOTES'
+          Offline Android build from the linked commit. APK checksum and source metadata are attached.
+
+          This is a test prerelease. Physical Tomko acceptance is not established by CI. Use the same release signing key and increasing versionCode for upgrades. The com.coderpush.cloudclaw package installs separately from the old Tomko prototype and test app; their local scores are not migrated.
+          NOTES
+          gh release create "android-v$version" android/build/distributions/* --target "$GITHUB_SHA" --title "Cloud Claw Android $version (test)" --prerelease --notes-file "$RUNNER_TEMP/android-notes.md"

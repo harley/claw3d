@@ -1,3 +1,4 @@
+import { nativeAndroid, tomkoRendering } from './runtime-platform.js';
 import * as T from 'three';
 import { ToyContacts } from './arcade-contact.js';
 import { CabinetHands } from './cabinet-hands.js';
@@ -7,6 +8,7 @@ import { ASSORTMENT, CAROUSEL, carouselCue, carouselRider, BED, HIGH, FINGER_ANG
 import { palette, material, group, mesh, ball, box, cylinder, line, rod, batch, label, createArtMaterials, createToy } from './arcade-art.js';
 import { createBloom, BLOOM_LAYER, rimColorFor, marqueeGlowFor } from './arcade-fx.js';
 import { buildSteelClaw, updateSteelClaw } from './suspended-claw-art.js';
+import { createMarqueeDisplay } from './marquee-display.js';
 import { clawWorldPoint } from './claw-suspension.js';
 
 const v = (x, y, z) => new T.Vector3(x, y, z);
@@ -17,13 +19,13 @@ const SHADOW_FRUSTUM = {
 };
 
 export class ArcadeScene {
-  constructor(canvas, { wideControls = false, anatomicalHands = false, suspendedClaw = false } = {}) {
+  constructor(canvas, { wideControls = false, anatomicalHands = false, singleHand = false, suspendedClaw = false } = {}) {
     this.wideControls = wideControls;
     this.suspendedClaw = suspendedClaw;
     this.canvas = canvas;
-    this.renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    this.renderer = new T.WebGLRenderer({ canvas, antialias: nativeAndroid ? tomkoRendering.antialias : true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
-    this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = T.PCFShadowMap;
+    this.renderer.shadowMap.enabled = nativeAndroid ? tomkoRendering.shadows : true; this.renderer.shadowMap.type = T.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
     this.renderer.toneMapping = T.ACESFilmicToneMapping; this.renderer.toneMappingExposure = .96;
     this.scene = new T.Scene(); this.scene.background = new T.Color('#080e1c');
@@ -41,7 +43,7 @@ export class ArcadeScene {
     this.mats = createArtMaterials(); this.toys = new Map(); this.buildWorld(); this.buildCabinet(); this.buildClaw();
     for (const toy of ASSORTMENT) { const object = createToy(toy, this.mats); object.position.set(toy.x, BED, toy.z); this.scene.add(object); this.toys.set(toy.id, object); }
     this.contacts = new ToyContacts(this.toys);
-    if (anatomicalHands) this.cabinetHands = new CabinetHands(this.scene);
+    if (anatomicalHands) this.cabinetHands = new CabinetHands(this.scene, undefined, { singleHand });
     this.buildCarousel();
     this.createTarget();
     this.buildEffects();
@@ -198,9 +200,8 @@ export class ArcadeScene {
     box(cab, m.ivory, [0, 4.61, 0], [3.78, .24, 2.75], .12).castShadow = true;
     box(cab, m.red, [0, 4.94, .00], [3.83, .57, 2.73], .15);
     box(cab, m.brass, [0, 4.946, 1.373], [3.39, .433, .022], .09);
-    box(cab, m.ivory, [0, 4.946, 1.394], [3.32, .367, .018], .08);
-    label(cab, 'CLAW', 2.62, .29, [0, 4.965, 1.408], { color: '#e52948', font: 'Arial', weight: 'bold', size: 59 });
-    for (const x of [-1.54, 1.54]) ball(cab, m.glow, [x, 4.957, 1.413], [.035, .035, .019]);
+    box(cab, m.darkMetal, [0, 4.946, 1.394], [3.32, .367, .018], .04);
+    for (const x of [-1.54, 1.54]) ball(cab, m.brass, [x, 4.957, 1.413], [.035, .035, .019]);
     // Original cloud finial; silhouette stays readable at a distance.
     for (const [x, y, r] of [[-.29, 5.337, .15], [-.08, 5.397, .22], [.17, 5.364, .18], [.33, 5.315, .11]]) ball(cab, m.ivory, [x, y, .03], [r, r, .12]);
     box(cab, m.ivory, [.005, 5.275, .03], [.71, .13, .22], .06);
@@ -210,6 +211,10 @@ export class ArcadeScene {
     for (const z of [-1.05, 1.05]) box(cab, m.glow, [0, 4.48, z], [2.88, .025, .034], .009);
     for (const x of [-1.758, 1.758]) for (const y of [2.08, 3.93]) box(cab, m.brass, [x, y, 1.16], [.045, .16, .09], .012);
     batch(cab);
+    // Dynamic sign stays outside the static geometry batch.
+    this.marqueeDisplay = createMarqueeDisplay();
+    const display = mesh(this.scene, new T.PlaneGeometry(3.28, .347), new T.MeshBasicMaterial({ map: this.marqueeDisplay.texture, toneMapped: false }), 0, 4.946, 1.408);
+    display.castShadow = display.receiveShadow = false;
     // Marquee bulb row: one instanced draw call, per-bulb color for chases.
     // Kept out of the static batch so instance colors stay addressable.
     this.marqueeBulbs = new T.InstancedMesh(new T.SphereGeometry(1, 10, 8), new T.MeshBasicMaterial({ toneMapped: false }), 11);
@@ -374,7 +379,7 @@ export class ArcadeScene {
   }
 
   updateMarquee(phase, plan, time, motion, attract = false) {
-    const palette = this.marqueePalette ??= { dim: new T.Color('#5a4a33'), warm: new T.Color('#e8bd7a'), bright: new T.Color('#ffe9b0') };
+    const palette = this.marqueePalette ??= { dim: new T.Color('#302b23'), warm: new T.Color('#b19361'), bright: new T.Color('#ffe9b0') };
     const delivering = Boolean(plan?.prize) && ['transfer', 'release', 'deliver', 'reveal'].includes(phase);
     const jackpot = delivering && phase === 'reveal' && plan.prize.family === 'star';
     // Repaint and re-upload only when the lit pattern actually changes.
@@ -407,7 +412,7 @@ export class ArcadeScene {
     this.look.set(-.25, 2.65, 0);
     const playScale = Math.max(1, .9 / this.camera.aspect);
     this.playCamera.set((this.angledView ? 1.8 : .45) * playScale, 3.05 + 1.65 * playScale, 8.0 * playScale);
-    this.playLook.set(0, 3.05, 0);
+    this.playLook.set(0, 3.35, 0);
   }
 
   // Simple quality lowers pixel ratio and halves the shadow map. Shadows stay
@@ -415,7 +420,7 @@ export class ArcadeScene {
   // starve the camera worker's own inference for seconds.
   setQuality(low) {
     this.lowQuality = low;
-    this.renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, 1.5));
+    this.renderer.setPixelRatio(nativeAndroid ? tomkoRendering.pixelRatio : low ? 1 : Math.min(devicePixelRatio, 1.5));
     const size = low ? 1024 : 2048;
     if (this.key && this.key.shadow.mapSize.x !== size) { this.key.shadow.mapSize.set(size, size); this.key.shadow.map?.dispose(); this.key.shadow.map = null; this.renderer.shadowMap.needsUpdate = true; }
     this.resize();
@@ -516,7 +521,7 @@ export class ArcadeScene {
     this.stick.rotation.set(stickInput.z * .24, 0, -stickInput.x * .24); this.button.position.y = 1.72 - .05 * (phase === 'anticipate' ? 1 : phase === 'descend' ? Math.max(0, 1 - elapsed / .18) : 0);
     this.joystickHand.update(phase, elapsed, dt, feedback, this.reducedMotion);
     this.stick.visible = this.button.visible = presentation.machineControls || ['idle', 'result'].includes(phase);
-    if (presentation.machineControls && ['dual', 'grab-release'].includes(feedback.profile)) this.joystickHand.root.visible = false;
+    if (this.cabinetHands || (presentation.machineControls && ['dual', 'grab-release'].includes(feedback.profile))) this.joystickHand.root.visible = false;
     if (presentation.machineControls && phase === 'aim' && feedback.grab?.stage === 'pressing') this.button.position.y -= .04 * feedback.progress;
     const activeControl = phase === 'aim' && feedback.controlEnabled && ['tracking', 'clenching'].includes(feedback.kind);
     this.dropReady = Boolean(activeControl && (feedback.profile === 'dual'
@@ -616,6 +621,7 @@ export class ArcadeScene {
     // matching every other effect's per-frame motion read.
     if (!motion && this.burst.visible) { this.burst.visible = false; this.burst.count = 0; this.burstParticles = []; }
     else if (this.burst.visible) this.updateBurst(dt);
+    this.marqueeDisplay.update(presentation.marqueeCue);
     this.updateMarquee(phase, plan, time, motion, Boolean(presentation.attract));
     this.courier.visible = this.deliveryTray.visible;
     if (this.courier.visible) { const p = this.deliveryTray.position; this.courier.scale.set(this.deliveryTray.scale.x, 1, this.deliveryTray.scale.z); this.courier.position.set(p.x, 0, 1.69); this.courierMast.scale.y = Math.max(.1, p.y - .44); this.courierMast.position.y = .44 + (p.y - .44) / 2; this.courierArm.scale.y = Math.max(.025, 1.69 - p.z); this.courierArm.position.set(0, p.y - .08, -(1.69 - p.z) / 2); }
@@ -673,11 +679,16 @@ export class ArcadeScene {
     if (punch) { this.camera.position.y += punch; this.camera.position.x += punch * .4; }
   }
 
+  // The cabinet is the announcement surface on phones and desktop alike.
+  get marqueeAvailable() {
+    return this.canvas.clientWidth > 0 && this.canvas.clientHeight > 0;
+  }
+
   draw(time, capped) {
     // The governor asks for the 30 Hz cap only when a machine is measured slow;
     // a healthy machine animates at display rate with the camera on. Only draw
     // submission is capped; transforms and contact response still update.
-    const frame = Math.floor((time + .000001) * 30);
+    const frame = Math.floor((time + .000001) * (nativeAndroid ? tomkoRendering.drawHz : 30));
     if (capped && frame === this.cameraRenderFrame) return;
     this.cameraRenderFrame = capped ? frame : undefined;
     if (this.bloom && !this.lowQuality) this.bloom.render(); else this.renderer.render(this.scene, this.camera);

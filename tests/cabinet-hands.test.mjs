@@ -5,12 +5,12 @@ import * as T from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { CabinetHands } from '../src/cabinet-hands.js';
 
-async function rig() {
+async function rig(singleHand = false) {
   const scene = new T.Scene();
   const hands = new CabinetHands(scene, { async loadAsync(url) {
     const bytes = await readFile(new URL(`../public${url}`, import.meta.url));
     return new GLTFLoader().parseAsync(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), '');
-  } });
+  } }, { singleHand });
   await hands.ready;
   assert.equal(hands.error, null);
   const stick = new T.Object3D(), button = new T.Object3D();
@@ -138,4 +138,33 @@ test('a failed sibling disposes an already initialized hand without exposing it'
   rejectRight(new Error('Network unavailable')); await hands.ready;
   assert.equal(hands.state, 'error'); assert.equal(disposed, 1);
   assert.equal(hands.root.children.length, 0); assert.deepEqual(hands.hands, {});
+});
+
+// Contract: one-hand artwork shares the fitted grip, follows acquired identity,
+// and remains visible while confirming DROP. Existing dual tests cannot cover
+// the mirrored geometry or single-hand visibility; no production hook is needed.
+test('single-hand grip mirrors safely and keeps confirmation separate from artwork', async () => {
+  const r = await rig(true);
+  assert.deepEqual(Object.keys(r.hands.hands), ['left'], 'no unused DROP hand is loaded');
+  for (const physicalHand of ['left', 'right']) {
+    for (const pitch of [-.24, 0, .24]) for (const roll of [-.24, 0, .24]) {
+      r.stick.rotation.set(pitch, 0, roll);
+      r.hands.update('aim', 0, 1, { profile: 'hold-drop', kind: 'tracking', controlEnabled: true, physicalHand }, true, r.stick, r.button, true);
+      const hand = r.hands.hands.left;
+      assert.equal(hand.pivot.visible, true);
+      assert.equal(Math.sign(hand.pivot.scale.x), physicalHand === 'right' ? -1 : 1);
+      const result = clearance(r, 'left');
+      assert.ok(result.ball >= .001 && result.ball < .004, JSON.stringify({ physicalHand, pitch, roll, ...result }));
+      assert.equal(result.shaftHits, 0); assert.equal(result.cabinetHits, 0);
+      r.hands.update('aim', 0, 1, { profile: 'hold-drop', kind: 'clenching', progress: .6, controlEnabled: true, physicalHand }, true, r.stick, r.button, false);
+      assert.equal(hand.pivot.visible, true); assert.equal(hand.curl, 1);
+      assert.equal(r.hands.progress, .6);
+    }
+  }
+  for (const kind of ['delayed', 'blocked', 'off', 'lost']) {
+    r.hands.update('aim', 0, 1, { kind, controlEnabled: true }, true, r.stick, r.button, false);
+    assert.equal(r.hands.root.visible, false, kind);
+  }
+  r.hands.update('descend', 0, 1, { kind: 'tracking', controlEnabled: true }, true, r.stick, r.button, false);
+  assert.equal(r.hands.root.visible, false, 'no phantom DROP hand during delivery');
 });

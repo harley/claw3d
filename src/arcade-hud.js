@@ -28,12 +28,12 @@ const deliveryPhases = new Set(['anticipate', 'descend', 'grip', 'lift', 'transf
 export { nextTurnSeconds } from './turn-controller.js';
 
 export function nextTurnCue(elapsed, round, caught = true) {
-  if (!caught) return elapsed < .6 ? 'MISSED' : 'PLAY!';
+  if (!caught) return elapsed < .6 ? 'MISSED' : 'START!';
   if (elapsed < .7) return `ROUND ${round}`;
   if (elapsed < 1.2) return '3';
   if (elapsed < 1.7) return '2';
   if (elapsed < 2.2) return '1';
-  return 'PLAY!';
+  return 'START!';
 }
 
 export function firstTurnCue(elapsed) {
@@ -41,7 +41,7 @@ export function firstTurnCue(elapsed) {
   if (elapsed < 1.7) return '3';
   if (elapsed < 2.7) return '2';
   if (elapsed < 3.7) return '1';
-  return 'PLAY!';
+  return 'START!';
 }
 
 export function playFirstTurnCueTone(audio, cue, allowed = true) {
@@ -50,7 +50,7 @@ export function playFirstTurnCueTone(audio, cue, allowed = true) {
     '3': [[659, .12, 0]],
     '2': [[784, .12, 0]],
     '1': [[988, .14, 0]],
-    'PLAY!': [[880, .12, 0], [1175, .18, .08]],
+    'START!': [[880, .12, 0], [1175, .18, .08]],
   }[cue];
   if (!notes) return false;
   for (const [frequency, duration, delay] of notes) audio.note(frequency, duration, delay, 'sine', frequency, .022);
@@ -113,9 +113,9 @@ function presentMessage(title, hint, key, duration = 0) {
 }
 
 export function createHud({ audio, phaseSound }) {
-  let lastCue = '', lastStatus = '', lastFirstTurnCue = null;
+  let lastCue = '', lastStatus = '', lastFirstTurnCue = null, marqueeCue = null;
   function update(view, feedback, modal) {
-    const { game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, firstTurnPreparationElapsed, firstTurnControlReady, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, publicTry, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus, storageError, aligned } = view;
+    const { game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, firstTurnPreparationElapsed, firstTurnControlReady, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, publicTry, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus, storageError, aligned, marqueeAvailable } = view;
   const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
   const turns = run?.rules?.turns ?? completedRun?.rules?.turns ?? RULES.turns;
   const preparingFirstTurn = Boolean(run && firstTurnPreparationElapsed !== null);
@@ -244,13 +244,19 @@ export function createHud({ audio, phaseSound }) {
   $('camera-preview').classList.toggle('guided', cameraGuidance);
   $('camera-preview').classList.toggle('in-play', Boolean(run));
   $('action-copy').classList.toggle('gesture-guide', Boolean(steering && !nearPickup));
-  const countdown = Boolean(run && !paused && !modal && !recovering && !startingRun &&
+  const countdown = Boolean(run && !paused && !modal && !document.hidden && !recovering && !startingRun &&
     ((phase === 'idle' && preparingFirstTurn && firstTurnControlReady) || phase === 'result') &&
-    /^(ROUND [1-3]|[1-3]|PLAY!)$/.test(title));
+    /^(ROUND [1-3]|[1-3]|START!)$/.test(title));
   $('action-copy').classList.toggle('countdown', countdown);
-  $('action-copy').dataset.countdown = countdown ? title === 'PLAY!' ? 'play' : title.startsWith('ROUND') ? 'round' : 'digit' : '';
+  $('action-copy').dataset.countdown = countdown ? title === 'START!' ? 'play' : title.startsWith('ROUND') ? 'round' : 'digit' : '';
   // A miss keeps one message surface from the empty lift through the next-turn cue.
   presentMessage(title, hint, `${title === 'MISSED' ? 'missed' : ['anticipate', 'descend'].includes(phase) ? 'drop' : phase}:${turnNumber}:${title}:${hint}`, timed ? 1600 : 0);
+  const shortAnnouncement = /^(READY|CONNECTING|DROP!|GOT IT!|MISSED)$/.test(title);
+  const onSign = Boolean(marqueeAvailable && !paused && !modal && !document.hidden && !recovering &&
+    (countdown || shortAnnouncement) && !$('action-copy').classList.contains('expired'));
+  marqueeCue = onSign ? title : null;
+  $('action-copy').classList.toggle('marquee-countdown', onSign && !hint);
+  $('action-copy').classList.toggle('marquee-with-hint', onSign && Boolean(hint));
   if ($('arcade').dataset.phase !== phase) $('arcade').dataset.phase = phase;
   const signature = [title, hint, button, kicker, total, run?.name, pendingPlayer?.name, completedRun?.id, paused].join('');
   if (signature === lastStatus) return; lastStatus = signature;
@@ -275,7 +281,7 @@ export function createHud({ audio, phaseSound }) {
     $('turn-chips').append(chip);
   }
   }
-  return { update, invalidate: () => { lastStatus = ''; } };
+  return { update, get marqueeCue() { return marqueeCue; }, invalidate: () => { lastStatus = ''; } };
 }
 
 export { $, setText, setHidden };

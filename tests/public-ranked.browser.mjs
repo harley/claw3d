@@ -143,9 +143,41 @@ try {
       assert.deepEqual({ ...app.database.db.prepare('SELECT * FROM runs WHERE id=?').get(receipt.id) }, { ...receipt, name: 'Winner Linh' });
       await page.waitForTimeout(2200);
       assert.equal(await page.locator('#final-name-input').inputValue(), 'Winner Linh', 'background refresh retains saved name');
+      assert.equal(await page.locator('#next-player').textContent(), 'Next Play');
+      assert.equal(await page.locator('#play-again').isVisible(), false);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.locator('#booth-invite summary').click();
+      await page.locator('#booth-invite').screenshot({ path: '.screenshots/booth-invite-refined-mobile.png' });
+      await page.locator('#invite-name').fill('Private Linh');
+      await page.locator('#invite-contact').fill('linh@example.com');
+      await page.waitForTimeout(2200);
+      assert.equal(await page.locator('#invite-contact').inputValue(), 'linh@example.com', 'rank refresh preserves private draft');
+      let releaseContact;
+      const contactGate = new Promise(resolve => { releaseContact = resolve; });
+      await page.route('**/api/play/runs/*/contact', async route => {
+        await contactGate; await route.fulfill({ status: 503, json: { error: 'Temporary outage.' } });
+      });
+      await page.locator('#invite-submit').click();
+      await page.waitForFunction(() => document.getElementById('invite-status').textContent === 'Saving request…');
+      await page.locator('#next-player').click();
+      assert.equal(await page.locator('#registration').isVisible(), false, 'replay cannot race contact submission');
+      assert.equal(await page.locator('#final').isVisible(), true);
+      releaseContact();
+      await page.waitForFunction(() => document.getElementById('invite-status').textContent.includes('Please retry'));
+      assert.equal(await page.locator('#invite-contact').inputValue(), 'linh@example.com', 'retry retains private draft');
+      assert.equal(await page.evaluate(() => Object.values(localStorage).some(value => value.includes('linh@example.com'))), false);
+      await page.screenshot({ path: '.screenshots/booth-invite-mobile.png' });
+      await page.unroute('**/api/play/runs/*/contact');
+      await page.locator('#invite-submit').click();
+      await page.waitForFunction(() => document.getElementById('invite-status').textContent.startsWith('Request saved'));
+      assert.equal(app.database.db.prepare('SELECT contact FROM public_contacts').get().contact, 'linh@example.com');
+      await page.waitForTimeout(2200);
+      assert.equal(await page.locator('#invite-form').isVisible(), false, 'rank refresh does not reopen a submitted form');
+      assert.equal(app.database.db.prepare('SELECT name FROM runs WHERE id=?').get(receipt.id).name, 'Winner Linh');
+      await page.setViewportSize({ width: 1440, height: 900 });
       await page.locator('#next-player').click();
       await page.locator('#registration').waitFor();
-      assert.notEqual(await page.locator('#name').inputValue(), name);
+      assert.equal(await page.locator('#name').inputValue(), 'Winner Linh', 'Next Play retains nickname while creating a separate run');
     }
   }
   await page.locator('#final-leaderboard').click();

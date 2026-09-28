@@ -10,10 +10,11 @@ const joints = ['metacarpal', 'phalanx-proximal', 'phalanx-intermediate', 'phala
 // Meshes are MIT-licensed WebXR anatomical assets. Only their rendering rig is
 // reused: camera acquisition/recognition and event-session scoring stay unchanged.
 export class CabinetHands {
-  constructor(scene, loader = new GLTFLoader()) {
+  constructor(scene, loader = new GLTFLoader(), { singleHand = false } = {}) {
     this.root = new T.Group(); scene.add(this.root); this.root.visible = false;
+    this.singleHand = singleHand; this.mode = 'off'; this.progress = 0;
     this.hands = {}; this.error = null; this.state = 'loading';
-    this.ready = Promise.all(['left', 'right'].map(async role => {
+    this.ready = Promise.all((singleHand ? ['left'] : ['left', 'right']).map(async role => {
       const gltf = await loader.loadAsync(`/models/hands/${role}.glb`);
       const model = gltf.scene;
       if (this.state === 'error') { disposeModel(model); return; }
@@ -83,7 +84,11 @@ export class CabinetHands {
   }
 
   update(phase, elapsed, dt, feedback, enabled, stick, button, reduced) {
-    this.root.visible = this.state === 'ready' && enabled && feedback.profile === 'dual';
+    const single = this.singleHand;
+    const active = phase === 'aim' && feedback.controlEnabled && ['tracking', 'clenching'].includes(feedback.kind);
+    this.mode = active ? feedback.kind : 'off';
+    this.progress = active && feedback.kind === 'clenching' ? clamp(feedback.progress) : 0;
+    this.root.visible = this.state === 'ready' && enabled && (single ? active : feedback.profile === 'dual');
     // A paused/modal frame preserves the committed progress but changes kind.
     const slam = Number.isFinite(feedback.slamProgress);
     const contact = phase === 'anticipate' || (phase === 'descend' && elapsed < .16);
@@ -92,9 +97,12 @@ export class CabinetHands {
       const evidence = feedback.hands?.[role] || {};
       const fresh = !['delayed','off','error','blocked','accepted'].includes(feedback.kind);
       hand.pivot.visible = this.root.visible && (((phase === 'aim' || role === 'left') && fresh && !!evidence.pointer && ['tracking','clenching','calibrating'].includes(evidence.kind)) || slam || contact);
+      if (single) hand.pivot.visible = this.root.visible;
       if (role === 'right' && !slam && !contact) hand.pivot.visible = false;
+      // Reflect the fitted left grip as a whole; recognition owns handedness.
+      hand.pivot.scale.x = single && feedback.physicalHand === 'right' ? -4.7 : 4.7;
       const left = role === 'left';
-      const gripped = ['gripped','grabbing'].includes(evidence.grab?.stage) || slam || contact;
+      const gripped = single || ['gripped','grabbing'].includes(evidence.grab?.stage) || slam || contact;
       const target = left && gripped ? 1 : .08;
       hand.curl += (target-hand.curl)*(reduced ? 1 : Math.min(1,dt*22));
       hand.thumb.quaternion.copy(hand.thumbRest).multiply(new T.Quaternion().setFromAxisAngle(hand.thumbAxis, (left ? .30 : -.12)*hand.curl));

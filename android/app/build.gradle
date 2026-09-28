@@ -1,0 +1,74 @@
+plugins { id 'com.android.application' }
+
+def version = new Properties()
+rootProject.file('version.properties').withInputStream { version.load(it) }
+def revision = System.getenv('CLAW_ANDROID_COMMIT') ?: 'unknown'
+if (!(revision ==~ /[a-f0-9]{40}|unknown/)) throw new GradleException('Invalid CLAW_ANDROID_COMMIT')
+def signingNames = ['CLAW_KEYSTORE', 'CLAW_STORE_PASSWORD', 'CLAW_KEY_ALIAS', 'CLAW_KEY_PASSWORD']
+def hasSigning = signingNames.every { System.getenv(it) }
+def releaseRequested = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
+if (releaseRequested && (!hasSigning || revision == 'unknown')) {
+ throw new GradleException('Release requires build identity and all four CLAW signing environment variables. Use npm run android:release.')
+}
+
+android {
+ namespace 'com.coderpush.cloudclaw'
+ compileSdk 35
+ defaultConfig {
+  applicationId 'com.coderpush.cloudclaw'
+  minSdk 26
+  targetSdk 35
+  versionCode version.getProperty('versionCode').toInteger()
+  versionName version.getProperty('versionName')
+  buildConfigField 'String', 'SOURCE_COMMIT', '"' + revision + '"'
+  buildConfigField 'boolean', 'SOURCE_DIRTY', System.getenv('CLAW_ANDROID_DIRTY') == 'false' ? 'false' : 'true'
+ }
+ buildFeatures { buildConfig true }
+ signingConfigs {
+  if (hasSigning) {
+   release {
+    storeFile file(System.getenv('CLAW_KEYSTORE'))
+    storePassword System.getenv('CLAW_STORE_PASSWORD')
+    keyAlias System.getenv('CLAW_KEY_ALIAS')
+    keyPassword System.getenv('CLAW_KEY_PASSWORD')
+   }
+  }
+ }
+ buildTypes {
+  debug {
+   applicationIdSuffix '.test'
+   versionNameSuffix '-test'
+   resValue 'string', 'app_name', 'Cloud Claw Test'
+  }
+  release {
+   if (hasSigning) signingConfig signingConfigs.release
+   resValue 'string', 'app_name', 'Cloud Claw'
+   debuggable false
+  }
+ }
+ sourceSets.main.assets.srcDirs = [layout.buildDirectory.dir('generated/gameAssets')]
+ compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+
+dependencies {
+ testImplementation 'junit:junit:4.13.2'
+ implementation 'androidx.webkit:webkit:1.12.1'
+ implementation 'androidx.activity:activity:1.10.0'
+ implementation 'androidx.camera:camera-camera2:1.4.2'
+ implementation 'androidx.camera:camera-lifecycle:1.4.2'
+ implementation 'androidx.camera:camera-view:1.4.2'
+ implementation 'com.google.mediapipe:tasks-vision:1.0.0'
+}
+
+// Direct Gradle invocations must not silently emit a shell with missing assets.
+tasks.named('preBuild').configure {
+ doFirst {
+  def assets = layout.buildDirectory.dir('generated/gameAssets').get().asFile
+  if (!new File(assets, 'web/index.html').isFile() || !new File(assets, 'gesture_recognizer.task').isFile()) {
+   throw new GradleException('Game assets missing. Run npm run android:build from the repository root.')
+  }
+  def metadata = new groovy.json.JsonSlurper().parse(new File(assets, 'asset-manifest.json'))
+  if (releaseRequested && metadata.dirty) throw new GradleException('Release game assets contain local changes.')
+  if (metadata.commit != revision) throw new GradleException('Game assets and Android source revision differ. Rebuild with npm run android:build.')
+ }
+}
