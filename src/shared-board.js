@@ -39,6 +39,7 @@ export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, 
       role = session.role; station = session.station;
       if (!version) board = session.board;
       status = readyStatus(); onBoard();
+      sync?.recovered();
       return session;
     }).catch(error => {
       initialization = null;

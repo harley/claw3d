@@ -12,7 +12,7 @@ let browser, app;
 try {
   await mkdir(join(directory, 'assets'));
   await writeFile(join(directory, 'index.html'), '<head></head><title>Public journal contract</title>');
-  for (const file of ['session-api.js', 'public-run-journal.js', 'event-session.js']) await cp(`src/${file}`, join(directory, 'assets', file));
+  for (const file of ['session-api.js', 'public-run-journal.js', 'event-session.js', 'shared-board.js', 'score-sync.js']) await cp(`src/${file}`, join(directory, 'assets', file));
   const origin = 'http://127.0.0.1:4298';
   app = await createPilotServer({ filename: ':memory:', origin, dist: directory, staffCode: 'journal-browser-staff', hostCode: 'journal-host-code', publicTryEnabled: true, secure: false });
   await new Promise(resolve => app.server.listen(4298, '127.0.0.1', resolve));
@@ -68,7 +68,29 @@ try {
   page = await context.newPage(); await initialize(page);
   assert.equal(await page.evaluate(() => api.state().pending), 0);
   assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM runs').get().n, 4);
-  console.log('PASS real IndexedDB commit/restart, exclusive Web Lock, lost-start read-only lookup, interrupted turns and complete receipt recovery');
+  // Exercise the page coordinator as well as the API: a successful Retry START
+  // must release its initialization hold and automatically drain queued scores.
+  const retryPage = await context.newPage(); await retryPage.goto(origin);
+  await retryPage.evaluate(async () => {
+    const { createSharedBoard } = await import('/assets/shared-board.js');
+    window.board = createSharedBoard({ enabled: true, publicPlay: true, isPlaying: () => true,
+      getCompletedRun: () => null, onBoard() {}, onSyncState() {},
+      onConnectError: error => { window.connectError = error.message; },
+      onSaved: receipt => { window.saved = receipt; } });
+    board.connect();
+  });
+  await retryPage.waitForFunction(() => window.connectError?.includes('Another tab'));
+  await page.close();
+  await retryPage.evaluate(async () => {
+    const run = await board.start('Retry player', crypto.randomUUID());
+    run.turns = [1, 2, 3].map(turn => ({ turn, prizeId: null, remainingMs: 0, score: 0 }));
+    await board.queue(run);
+  });
+  await retryPage.waitForFunction(() => window.saved?.status === 'complete' && board.state().pending === 0);
+  assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM runs').get().n, 5);
+  assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM turns').get().n, 9);
+  await retryPage.evaluate(() => board.dispose());
+  console.log('PASS real IndexedDB restart, lock Retry, automatic coordinator drainage, lost-start lookup and interrupted/complete recovery');
 } finally {
   await browser?.close();
   if (app) { await new Promise(resolve => app.server.close(resolve)); app.database.close(); }
