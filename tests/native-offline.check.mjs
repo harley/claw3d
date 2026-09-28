@@ -38,13 +38,28 @@ async function launch() {
  });
  await context.setOffline(true);
  await context.addInitScript(()=>{
-  globalThis.__nativeMessages=[];
+  globalThis.__nativeMessages=[];globalThis.__pose=null;
+  let generation=null,timer,id=0;
   globalThis.TomkoNative={postMessage(value){
    const message=JSON.parse(value);globalThis.__nativeMessages.push(message);
-   if(message.type==='start')setTimeout(()=>{
-    TomkoNative.onmessage({data:JSON.stringify({type:'clock',generation:message.generation,jsTime:message.jsTime,nativeTime:message.jsTime})});
-    TomkoNative.onmessage({data:JSON.stringify({type:'ready',generation:message.generation})});
-   },150);
+   if(message.type==='stop' && message.generation===generation){clearInterval(timer);generation=null;}
+   if(message.type==='start'){
+    clearInterval(timer);generation=message.generation;
+    setTimeout(()=>{
+     if(generation!==message.generation)return;
+     TomkoNative.onmessage({data:JSON.stringify({type:'clock',generation,jsTime:message.jsTime,nativeTime:message.jsTime})});
+     TomkoNative.onmessage({data:JSON.stringify({type:'ready',generation})});
+     // A real camera keeps reporting empty frames when hands leave view. Keep
+     // that liveness after every start/reload, without fabricating control input.
+     timer=setInterval(()=>{
+      const points=Array.from({length:21},()=>({x:.5,y:.5,z:0}));
+      points[0].y=.56;points[9].y=.44;points[5].x=.44;points[17].x=.56;
+      const present=__pose!==null;
+      TomkoNative.onmessage({data:JSON.stringify({type:'result',generation,id:++id,capturedAt:performance.now(),width:640,height:480,
+       result:{landmarks:present?[points]:[],handedness:present?[[{categoryName:'Left',score:.99}]]:[],gestures:present?[[{categoryName:__pose,score:.99}]]:[]}})});
+     },65);
+    },150);
+   }
   }};
  });
  return context;
@@ -113,19 +128,8 @@ try {
   return page.evaluate(()=>__nativeMessages.filter(m=>m.type==='start').at(-1));
  };
  assert.equal((await startCamera()).applyPreview,true,'between-run start can apply a pending preview');
- await page.evaluate(()=>{
-  // Deliver synthetic results through the packaged native adapter, not a stub
-  // controller. No physical recognition or camera-device claims are made.
-  globalThis.__pose='Open_Palm';let id=0;
-  globalThis.__feed=setInterval(()=>{
-   const start=__nativeMessages.filter(m=>m.type==='start').at(-1);if(!start)return;
-   const landmarks=Array.from({length:21},()=>({x:.5,y:.5,z:0}));
-   landmarks[0].y=.56;landmarks[9].y=.44;landmarks[5].x=.44;landmarks[17].x=.56;
-   const present=__pose!==null;
-   TomkoNative.onmessage({data:JSON.stringify({type:'result',generation:start.generation,id:++id,capturedAt:performance.now(),width:640,height:480,
-    result:{landmarks:present?[landmarks]:[],handedness:present?[[{categoryName:'Left',score:.99}]]:[],gestures:present?[[{categoryName:__pose,score:.99}]]:[]}})});
-  },65);
- });
+ // Synthetic poses pass through the packaged native adapter, not a stub controller.
+ await page.evaluate(()=>globalThis.__pose='Open_Palm');
  await page.locator('#play').click();await page.locator('#name').fill('Preview timing');await page.locator('#register-play').click();
  await page.waitForFunction(()=>tomkoStatus().phase==='aim',{},{timeout:15000});
  assert.equal((await startCamera(true)).applyPreview,false,'active aiming cannot apply a preview change');
@@ -142,6 +146,8 @@ try {
  }),1,'accepted drop finishes exactly once through camera restart and hand loss');
  await page.reload();await page.waitForFunction(()=>document.documentElement.dataset.arcadeReady==='true');
  assert.equal((await startCamera()).applyPreview,false,'recovered run keeps the preview configuration locked');
+ await page.waitForTimeout(7200);
+ assert.equal(await page.locator('#camera-toggle').textContent(),'STOP CAMERA','empty frames keep acquisition alive beyond the seven-second watchdog after reload');
  await page.locator('#operator-open').click();await page.locator('#reset').click();
  assert.equal((await startCamera(true)).applyPreview,true,'ending the run permits the next camera start to apply preview');
  await page.goto(origin+'/privacy');
