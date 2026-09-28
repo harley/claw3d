@@ -22,6 +22,7 @@ try {
   browser = await chromium.launch(browserOptions);
   const context = await browser.newContext();
   const host = await context.newPage();
+  host.on('console', msg => { if (msg.text().startsWith('LIFECYCLE')) console.log(msg.text()); });
   await host.goto(origin + '/privacy');
   const first = await prepare(host);
   assert.equal(first.prepared.complete, true);
@@ -180,6 +181,14 @@ try {
   assert.notEqual(replacement.prepared.id, manifest.id);
   await page.reload();
   assert.equal((await status(page)).id, manifest.id, 'mode/reload remains on one build');
+  await host.evaluate(async () => {
+    const r = await navigator.serviceWorker.getRegistration('/prepared/');
+    for (const key of ['installing', 'waiting', 'active']) {
+      const worker = r?.[key];
+      console.log('LIFECYCLE', key, worker?.state);
+      worker?.addEventListener('statechange', () => console.log('LIFECYCLE', key, worker.state));
+    }
+  });
   await page.close();
   await host.waitForFunction(async () => !(await navigator.serviceWorker.getRegistration('/prepared/'))?.waiting);
   const updated = await context.newPage();
@@ -187,7 +196,27 @@ try {
     const getContext = HTMLCanvasElement.prototype.getContext;
     HTMLCanvasElement.prototype.getContext = function(type, ...args) { return /webgl/.test(type) ? null : getContext.call(this, type, ...args); };
   });
-  await updated.goto(origin + '/prepared/index.html?setup=manual');
+  const pending = new Map();
+  updated.on('request', r => { pending.set(r, new URL(r.url()).pathname); console.log('REQUEST', r.resourceType(), new URL(r.url()).pathname); });
+  updated.on('requestfinished', r => { pending.delete(r); console.log('FINISHED', new URL(r.url()).pathname); });
+  updated.on('requestfailed', r => { pending.delete(r); console.log('FAILED', new URL(r.url()).pathname, r.failure()); });
+  updated.on('response', r => console.log('RESPONSE', r.status(), new URL(r.url()).pathname, 'SW', r.fromServiceWorker()));
+  updated.on('domcontentloaded', () => console.log('DOMCONTENTLOADED'));
+  updated.on('load', () => console.log('LOAD'));
+  updated.on('pageerror', e => console.log('PAGEERROR', e.message));
+  const cdp = await context.newCDPSession(updated);
+  await cdp.send('ServiceWorker.enable');
+  cdp.on('ServiceWorker.workerVersionUpdated', e => console.log('WORKERS', JSON.stringify(e)));
+  try {
+    await updated.goto(origin + '/prepared/index.html?setup=manual');
+  } catch (error) {
+    console.log('PENDING', [...pending.values()]);
+    console.log('REGISTRATION', await host.evaluate(async () => {
+      const r = await navigator.serviceWorker.getRegistration('/prepared/');
+      return { active: r?.active?.state, waiting: r?.waiting?.state, installing: r?.installing?.state };
+    }));
+    throw error;
+  }
   assert.equal((await status(updated)).id, replacement.prepared.id);
   assert.equal(await updated.locator('meta[name="pack-test"]').getAttribute('content'), 'second');
   await context.setOffline(true);
