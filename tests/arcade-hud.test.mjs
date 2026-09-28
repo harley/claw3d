@@ -12,14 +12,14 @@ test('aimed point plaques stay inside the overlay at every screen edge', () => {
 
 test('after a catch the next round keeps every cue and returns control in 2.5 s', () => {
   assert.equal(nextTurnSeconds(true), 2.5);
-  for (const [elapsed, cue] of [[0, 'ROUND 2'], [.699, 'ROUND 2'], [.7, '3'], [1.199, '3'], [1.2, '2'], [1.7, '1'], [2.2, 'START!'], [2.499, 'START!']]) {
+  for (const [elapsed, cue] of [[0, 'ROUND 2'], [.699, 'ROUND 2'], [.7, '3'], [1.199, '3'], [1.2, '2'], [1.7, '1'], [2.2, 'PLAY!'], [2.499, 'PLAY!']]) {
     assert.equal(nextTurnCue(elapsed, 2, true), cue);
   }
 });
 
 test('first-round prep gives each digit about one second and finishes with a short START cue', () => {
   assert.equal(firstTurnCue(0), 'ROUND 1');
-  for (const [elapsed, cue] of [[.699, 'ROUND 1'], [.7, '3'], [1.699, '3'], [1.7, '2'], [2.699, '2'], [2.7, '1'], [3.699, '1'], [3.7, 'START!'], [3.999, 'START!']]) {
+  for (const [elapsed, cue] of [[.699, 'ROUND 1'], [.7, '3'], [1.699, '3'], [1.7, '2'], [2.699, '2'], [2.7, '1'], [3.699, '1'], [3.7, 'PLAY!'], [3.999, 'PLAY!']]) {
     assert.equal(firstTurnCue(elapsed), cue);
   }
 });
@@ -29,7 +29,7 @@ test('first-turn tones are finite cue notes and remain behind permission and pau
   assert.equal(playFirstTurnCueTone(audio, 'ROUND 1'), false);
   assert.equal(playFirstTurnCueTone(audio, '3', false), false);
   assert.equal(notes.length, 0, 'no sound is scheduled before user activation or while blocked');
-  for (const cue of ['3', '2', '1', 'START!']) assert.equal(playFirstTurnCueTone(audio, cue), true);
+  for (const cue of ['3', '2', '1', 'PLAY!']) assert.equal(playFirstTurnCueTone(audio, cue), true);
   assert.deepEqual(notes.map(note => note[0]), [659, 784, 988, 880, 1175]);
   assert.ok(notes.every(note => note[1] <= .18), 'each synthesized note is short');
 });
@@ -46,7 +46,7 @@ test('waiting copy asks for the active controller without advancing the count', 
 
 test('after a miss the next round names the outcome and starts within 1.2 s', () => {
   assert.equal(nextTurnSeconds(false), 1.2);
-  for (const [elapsed, cue] of [[0, 'MISSED'], [.599, 'MISSED'], [.6, 'START!'], [1.199, 'START!']]) {
+  for (const [elapsed, cue] of [[0, 'MISSED'], [.599, 'MISSED'], [.6, 'PLAY!'], [1.199, 'PLAY!']]) {
     assert.equal(nextTurnCue(elapsed, 3, false), cue);
   }
 });

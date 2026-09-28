@@ -85,7 +85,7 @@ async function catchTurn({ timeout = false } = {}){
   const next = (await snap()).event.turn + 1;
   assert.equal(await page.locator('#status').textContent(), caught ? `ROUND ${next}` : 'MISSED');
   assert.equal(await cameraDrop(page), false, 'round announcement cannot accept another drop');
-  await page.waitForFunction(() => document.getElementById('status').textContent === 'START!');
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'PLAY!');
   assert.equal((await snap()).phase, 'result', 'start cue precedes active aiming');
  }
 }
