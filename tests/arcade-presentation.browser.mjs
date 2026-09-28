@@ -24,17 +24,8 @@ try {
     fits: box.left >= stage.left && box.right <= stage.right && box.top >= stage.top && box.bottom <= stage.bottom };
   });
   assert.equal(panel.active, true, 'count-in remains available to the live region');
-  if (viewport.width === 1440) {
-   assert.equal(panel.marquee.text, panel.text, 'scene and live region use the same cue');
-   assert.equal(panel.opacity, '0', 'no duplicate central countdown over the claw');
-  } else {
-   assert.equal(panel.marquee.text, 'CLAW', 'small-screen fallback never duplicates the cue');
-   assert.equal(panel.opacity, '1', 'small-screen countdown remains readable');
-  }
-  assert.equal(panel.background, 'rgb(11, 23, 48)', 'the panel is opaque navy');
-  assert.ok(panel.fontSize >= 88, 'digits remain large on every orientation');
-  assert.ok(Math.abs(panel.dx) < 2 && Math.abs(panel.dy) < 2, `panel is centred on the scene: ${JSON.stringify(panel)}`);
-  assert.equal(panel.fits, true, 'the compact panel fits within the game view');
+  assert.equal(panel.marquee.text, panel.text, 'scene and live region use the same cue on every viewport');
+  assert.equal(panel.opacity, '0', 'no duplicate central countdown over the claw on phones or desktop');
   await page.screenshot({ path: `.screenshots/countdown-${viewport.width}.png` });
  }
  await page.setViewportSize({ width: 1440, height: 900 });
@@ -66,6 +57,7 @@ try {
  await page.screenshot({ path: '.screenshots/arcade-drop.png' });
  await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'lift');
  assert.match(await page.locator('#status').textContent(), /^(GOT IT!|MISSED)$/);
+ assert.equal(await page.evaluate(() => window.__littleCloud.snapshot().marquee.text), await page.locator('#status').textContent(), 'outcome headline lives on the LED');
  const liftCamera = await page.evaluate(() => window.__littleCloud.snapshot().camera);
  assert.ok(Math.hypot(...liftCamera.map((v, i) => v - aimCamera[i])) < .12, 'the lift keeps the close viewpoint apart from a brief catch punch');
  assert.equal(await page.evaluate(() => window.__littleCloud.snapshot().event.run.turns.length), 0);

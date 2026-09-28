@@ -569,3 +569,15 @@ dialog .menu-guide-hand { font-size: 52px; }
 #final-name-actions button { min-height: 44px; padding: 8px 20px; }
 #final-name-status { font-size: 12px; color: #b5c9df; margin: 6px 0 0; }
 #final-name-status:empty { display: none; }
+
+/* Miss detail stays readable while its headline lives on the LED. */
+#arcade #action-copy.marquee-with-hint #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); padding: 0; }
+#booth-invite { margin: 20px 0 12px; padding: 16px; border: 1px solid #426087; border-radius: 12px; text-align: left; }
+#booth-invite summary { cursor: pointer; color: #ffc14d; font-weight: 700; min-height: 32px; }
+#booth-invite p { font-size: 14px; line-height: 1.5; }
+#booth-invite label { display: block; margin: 12px 0 4px; font-size: 14px; }
+#booth-invite input { width: 100%; box-sizing: border-box; font-size: 16px; }
+#booth-invite button { margin-top: 12px; min-height: 44px; }
+#invite-status { color: #b4ef52; }
+#booth-invite a { color: #68d4fa; }
+#invite-status[data-state="error"] { color: #ffba60; }

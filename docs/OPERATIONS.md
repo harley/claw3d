@@ -239,3 +239,9 @@ Use the 0.4.1 candidate’s exact commit/checksum from its distribution JSON. Th
 7. Export each mode separately using the document picker, open each JSON, and match a recorded name/score. Cancel one export and verify scores remain. If there is no document provider, export is unavailable; keep app data and do not call it backed up.
 
 Stop and preserve the prototype if GPU/camera binding fails, orientation is unusable, most input is stale, scores do not survive, or a new player cannot complete the run. Record a pass/fail per check with the exact BUILD; code delivery, APK distribution and physical acceptance are separate decisions.
+
+### Optional booth contact requests
+
+Host setup (`/staff`) provides “Download contact requests (JSON)” after host sign-in. The host-only `GET /api/host/contacts` export contains private contact name, email/phone, channel, consent purpose, submission time, linked run, public nickname, saved score, event membership where available, and `eligible` (score strictly greater than 300). These requests authorize result and booth-invitation follow-up only. The service does not send messages or redeem attempts. Hosts reconcile repeated contact details and badge records before any invitation; a browser identity or nickname does not identify a visitor.
+
+Active `public_contacts` rows expire after 30 days through startup, hourly maintenance and export pruning. Exports and SQLite backups may retain contacts: restrict access and remove those copies when fulfilling a withdrawal/removal request. To remove an active request, first follow the existing backup/access procedure, then use a parameterized deletion against `public_contacts` by its exact `run_id`, preserving the score. Never commit exports or private contact details to GitHub.

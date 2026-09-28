@@ -1,3 +1,4 @@
+import { createBoothInvite } from './booth-invite.js';
 import { nativeBridge } from './native-bridge.js';
 import { nativeAndroid, tomkoRendering } from './runtime-platform.js';
 import { RIGHT_SLAM_MS } from './dual-hand-controls.js';
@@ -23,6 +24,11 @@ const publicSurface = publicPlay || publicTry;
 const publicOfficial = globalThis.__PUBLIC_OFFICIAL__ === true;
 const shared = publicPlay || !publicTry && (publicOfficial || globalThis.__SHARED_PILOT__ === true);
 const official = publicOfficial || !publicPlay && shared && globalThis.__OFFICIAL_EVENTS__ === true && new URLSearchParams(location.search).get('play') === 'official';
+const boothInvite = publicPlay ? createBoothInvite() : null;
+if (publicPlay || !shared && !publicTry) {
+  $('next-player').textContent = 'Next Play';
+  $('play-again').hidden = true;
+}
 let officialBlocked = false;
 let noticeReady = !publicSurface;
 const phoneViewport = () => ({
@@ -90,7 +96,7 @@ if (dualEnabled) $('camera-menu-help').textContent = 'Use your left hand and hol
 const glove = createJoystickCursor(() => cabinetEnabled ? scene?.controlTargets() : null, () => { if (cabinetEnabled) gestureDrop(); });
 let previousMenuMode = '', editingResultName = false, savingResultName = false;
 function menuMode() {
-  if (startingRun || frozen || stopped || document.hidden || editingResultName) return '';
+  if (startingRun || frozen || stopped || document.hidden || editingResultName || boothInvite?.editing || boothInvite?.busy) return '';
   if ((recovering || paused) && shared) return '';
   const dialogs = [...document.querySelectorAll('dialog[open]')];
   if (dialogs.length) return dialogs.length === 1 && ['registration', 'final', 'scores-dialog'].includes(dialogs[0].id) ? dialogs[0].id : '';
@@ -315,7 +321,7 @@ async function startScoredRun() {
     }
     turnReasons = [];
     track('run_start', { steering, ...(holdMs ? { holdMs } : {}) }, run);
-    pendingPlayer = null; completedRun = null; persist(); freshGame(); beginFirstTurnPreparation(flow, run.rules.seconds);
+    pendingPlayer = null; completedRun = null; boothInvite?.show(null); persist(); freshGame(); beginFirstTurnPreparation(flow, run.rules.seconds);
     $('shared-start').close();
   } catch (error) {
     if (shared) {
@@ -427,7 +433,7 @@ $('final-name-form').addEventListener('submit', async event => {
 });
 
 async function replay(samePlayer) {
-  if (editingResultName || startingRun || ((run || cameraLoading) && !(official && officialPlayer.state().canHandoff))) return;
+  if (editingResultName || boothInvite?.busy || startingRun || ((run || cameraLoading) && !(official && officialPlayer.state().canHandoff))) return;
   if (official) {
     try { await officialPlayer.handoff(); location.replace(publicOfficial ? '/official' : '/staff'); }
     catch (error) { setText('final-sync', error.message); }
@@ -441,7 +447,7 @@ async function replay(samePlayer) {
   if (cameraControls?.running) openRegistration(name);
 }
 $('play-again').addEventListener('click', () => { void replay(true); });
-$('next-player').addEventListener('click', () => { void replay(false); });
+$('next-player').addEventListener('click', () => { void replay(publicPlay || !shared); });
 $('result-open').addEventListener('click', () => {
   if (!completedRun || startingRun || run || cameraLoading) return;
   cancelAnimationFrame(scoreAnimation);
@@ -776,6 +782,7 @@ function updateSavedRank(saved) {
     updateUI();
   }
   if (completedRun?.id !== saved.id || saved.status !== 'complete' || !Number.isInteger(saved.rank)) return;
+  boothInvite?.show(saved);
   completedRun.rank = saved.rank;
   completedRun.name = saved.name;
   setText('final-name', saved.name.toUpperCase());
