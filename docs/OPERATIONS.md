@@ -239,3 +239,23 @@ Use the 0.4.1 candidate’s exact commit/checksum from its distribution JSON. Th
 7. Export each mode separately using the document picker, open each JSON, and match a recorded name/score. Cancel one export and verify scores remain. If there is no document provider, export is unavailable; keep app data and do not call it backed up.
 
 Stop and preserve the prototype if GPU/camera binding fails, orientation is unusable, most input is stale, scores do not survive, or a new player cannot complete the run. Record a pass/fail per check with the exact BUILD; code delivery, APK distribution and physical acceptance are separate decisions.
+
+## Booth-day usage counts
+
+Report visitor activity from **29 September 2026, 09:00 Asia/Ho_Chi_Minh** (02:00 UTC). Setup runs started before that time are excluded even if they finish later. Counts refer to plays, not unique people. Website phone classification is a browser-header estimate; it does not establish practice intent or location. A phone used at the booth still counts as a phone.
+
+Website instrumentation version 1 stores one coarse device category on the existing public run-start transaction. It adds no client request, timer or frame-loop work and retains no raw user-agent header. Retries keep the original category. Earlier runs remain unknown; no historical device backfill is inferred. The protected host export includes this metadata and identifies the public board independently of its name. Staff boards are excluded by the report. No new public analytics endpoint is exposed.
+
+Tomko Android needs no app change for completed-play counts. It already saves start/completion timestamps, turns, score and mode locally. Confirm the TV clock before visitors arrive. During a break, use **EXPORT THIS MODE’S SESSIONS** for **each mode** from the intended installed package, then transfer both JSON files. Keep app data intact. Export may stop the camera, so do it between players and restart the camera afterward. Different Android package installations have separate records. A missing export is not evidence of zero plays; historical abandoned Android starts are not complete enough for a completion-rate claim.
+
+Download a fresh protected website score export using the existing host controls (`/api/host/export`). Run the report locally against exported files, outside the game and server process:
+
+```sh
+node scripts/usage-report.mjs --web host-export.json \
+  --android cloud-claw-one-hand-2026-09-29.json \
+  --android cloud-claw-two-hand-2026-09-29.json
+```
+
+Either source can be omitted when unavailable; the report states which inputs were supplied. Repeat `--android` for additional snapshots; run IDs prevent double-counting and completed receipts supersede earlier unfinished snapshots. Supply one latest website export. Defaults cover 09:00 through midnight on 29 September; `--since` and `--until` accept ISO timestamps with explicit offsets and select runs by start time (inclusive/exclusive). Completion is as of each supplied export, not a reconstructed historical cutoff. Output groups by source, coarse device, mode and Hanoi hour, with completed plays, recorded starts and unfinished records. It contains no names or ownership identifiers. Keep the original score exports private and outside Git.
+
+`firstClassifiedWebStart` and `startsWithoutDeviceInstrumentation` expose partial collection when instrumentation is installed during the day; the first observed classified run is not a deployment timestamp. Android scores can be reported retrospectively from existing exports. Additional future metrics need their own explicit coverage/version; never treat missing historical instrumentation as zero. Unique people and phone-to-TV conversion remain unavailable without a separate participant process. Do not infer either from nicknames or Android's per-run player IDs.
