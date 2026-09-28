@@ -26,7 +26,7 @@ R5. Permission, background and renderer failure stop acquisition safely and offe
 
 ## Planning Contract
 
-Retain index → arcade, native-vision acquisition adapter, CameraX/MediaPipe and the bounded two-inflight/latest queue. Use a small native bridge dispatcher so export and tracking coexist. Validate camera IDs against current inventory. Preview changes restart acquisition with a new generation. Keep bitmap ownership straightforward until device profiling justifies pooling; do not risk native image lifetime for an unmeasured optimization.
+Retain index → arcade, native-vision acquisition adapter, CameraX/MediaPipe and the bounded two-inflight/latest queue. Use a small native bridge dispatcher so export and tracking coexist. Validate camera IDs against current inventory. Preview requests never interrupt acquisition. Apply them on the next camera start only when the game reports between runs; freeze the binding choice before asynchronous startup. Native results skip unused web canvas drawing while retaining shared recognition callbacks. Keep bitmap ownership straightforward until device profiling justifies pooling; do not risk native image lifetime for an unmeasured optimization.
 
 Use a bounded export payload and request ID tied to page lifetime. Write on a separate I/O executor. Do not put export contents in logs. Keep test-package distribution usable tonight; permanent release signing and an independent key backup require an owner-controlled destination. Do not fabricate a backed-up release identity.
 

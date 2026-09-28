@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { HandController } from '../src/native-vision.js';
+import { HandController as BrowserHandController } from '../src/vision.js';
+import { inDropArea } from '../src/hand-workspace.js';
 
 function fixture() {
   const c = Object.create(HandController.prototype), messages=[], handled=[];
@@ -68,13 +70,6 @@ test('camera inventory uses only native entries and preserves the chosen ID',()=
     c.receive({type:'cameras',generation:7,cameras:[]});assert.equal(c.select.options.length,0);assert.equal(c.select.disabled,true);
   } finally {globalThis.Option=previousOption;}
 });
-test('preview restart requests affect active acquisition only, with generation guard',()=>{
-  const {c}=fixture();let starts=0;c.start=()=>starts++;
-  c.receive({type:'restart',generation:6});assert.equal(starts,0);
-  c.receive({type:'restart',generation:7});assert.equal(starts,1);
-  c.running=false;c.starting=false;c.receive({type:'restart',generation:7});assert.equal(starts,1);
-  c.starting=true;c.receive({type:'restart',generation:7});assert.equal(starts,2);
-});
 test('diagnostic age percentiles use the latest interval, not historical stalls',()=>{
   globalThis.document={hidden:false};const {c,messages}=fixture();
   c.lastReport=performance.now()-6000;c.receive(result(performance.now()-900));
@@ -104,7 +99,7 @@ test('native start awaits matching readiness and settles after running becomes t
     ready(c);await started;assert.equal(settled,true);
   } finally {c.stop();}
 });
-test('preview/camera replacement keeps the original game await pending until new readiness',async()=>{
+test('camera replacement keeps the original game await pending until new readiness',async()=>{
   const {c}=startupFixture();let settled=false;
   try {
     const original=c.start().then(()=>{settled=true;});const old=c.generation;
@@ -131,4 +126,83 @@ test('one camera selection creates one replacement session, including during sta
     assert.equal(messages.filter(m=>m.type==='start').length,2);
     assert.equal(messages.at(-1).cameraId,'2');
   } finally {c.stop();delete globalThis.TomkoNative;}
+});
+
+// Contract: the real native handler emits exactly the browser's gameplay/role
+// feedback, with no per-result canvas access. Older fixtures stubbed draw/handle.
+for (const profile of ['hold-drop', 'dual']) test(`native ${profile} control callbacks match browser without overlay drawing`, t => {
+  globalThis.document = { hidden: false, addEventListener() {} };
+  globalThis.TomkoNative = { postMessage() {} };
+  let now = 1000, phase = 'recognizing';
+  t.mock.method(performance, 'now', () => now);
+  const create = Controller => {
+    const output = [], messages = []; let canvasCalls = 0;
+    const context = new Proxy({}, { get: () => () => { canvasCalls++; } });
+    const c = new Controller({ video: { videoWidth: 640, videoHeight: 480 },
+      overlay: { width: 640, height: 480, dataset: {}, getContext: () => { canvasCalls++; return context; } },
+      select: new EventTarget(), getPhase: () => phase, getControlProfile: () => profile,
+      getControlTarget: p => ({ overTarget: p.x < .5, overDrop: p.x > .5 && p.y >= .6, aboveDrop: p.x > .5 && p.y < .6, nearDrop: inDropArea(p) }),
+      onInput: value => output.push(['input', structuredClone(value)]),
+      onState: value => output.push(['state', structuredClone(value)]),
+      onGesture: (...args) => output.push(['gesture', ...args]),
+      onDrop: () => { output.push(['drop']); return true; }, onStart() {},
+    });
+    c.running = true; c.generation = 7; c.offset = 100;
+    c.send = value => messages.push(value);
+    return { c, output, messages, calls: () => canvasCalls };
+  };
+  const native = create(HandController), browser = create(BrowserHandController);
+  const hand = (x, side, gesture = 'Open_Palm', y = .6) => {
+    const points = Array.from({ length: 21 }, () => ({ x: 1-x, y, z: 0 }));
+    points[0].y += .06; points[9].y -= .06; points[5].x -= .06; points[17].x += .06;
+    return { points, side, gesture };
+  };
+  let id = 0;
+  const frames = (hands, count = 1, age = 0) => {
+    for (let i = 0; i < count; i++) {
+      now += 65;
+      const sample = { landmarks: hands.map(h => h.points), handedness: hands.map(h => [{categoryName:h.side,score:.99}]), gestures: hands.map(h => [{categoryName:h.gesture,score:.99}]) };
+      native.c.receive(result(now-age, { id: ++id, result: sample }));
+      browser.c.acceptResult(sample, now-age, 7);
+      assert.deepEqual(native.output, browser.output, 'player input, role states, hold progress, gestures and drops stay identical');
+      assert.equal(native.messages.at(-1).type, 'ack');
+    }
+  };
+  try {
+    const left = hand(.35, 'Left'), right = hand(.65, 'Right');
+    frames(profile === 'dual' ? [left, right] : [left], 12);
+    phase = 'aim'; frames(profile === 'dual' ? [left, right] : [left], 12);
+    if (profile === 'hold-drop') frames([hand(.48, 'Left')], 6);
+    const closed = hand(.35, 'Left', 'Closed_Fist');
+    frames(profile === 'dual' ? [closed, right] : [closed], 16);
+    if (profile === 'dual') {
+      frames([hand(.43, 'Left', 'Closed_Fist'), right], 6);
+      frames([hand(.43, 'Left', 'Closed_Fist'), hand(.65, 'Right', 'Open_Palm', .5)], 5);
+    }
+    assert.ok(native.output.some(([type, input]) => type === 'input' && Math.abs(input.x) > 0), 'sequence exercises steering');
+    assert.equal(native.output.filter(([type]) => type === 'drop').length, 1);
+    if (profile === 'dual') assert.ok(native.output.some(([type, state]) => type === 'state' && state.hands?.left?.ready && state.hands?.right?.ready));
+    frames([], 2); frames([left], 1, 400); phase = 'blocked'; frames([], 8);
+    assert.equal(native.calls(), 0, 'native results never access the hidden canvas');
+    assert.ok(browser.calls() > 100, 'browser continues drawing the same sequences');
+  } finally { delete globalThis.TomkoNative; }
+});
+
+test('native ACK follows control processing, including a thrown handler', () => {
+  globalThis.document = { hidden: false };
+  const { c, messages } = fixture();
+  c.handle = () => { assert.equal(messages.length, 0); throw new Error('handler failed'); };
+  assert.throws(() => c.receive(result(performance.now()-10)), /handler failed/);
+  assert.equal(messages.at(-1).type, 'ack');
+});
+
+test('preview eligibility is sampled from game state at each start and defaults closed', async () => {
+  const { c, messages } = startupFixture();
+  try {
+    let pending = c.start(); assert.equal(messages.at(-1).applyPreview, false); ready(c); await pending;
+    let betweenRuns = true; c.canConfigureCamera = () => betweenRuns;
+    pending = c.start(); assert.equal(messages.at(-1).applyPreview, true);
+    betweenRuns = false; ready(c); await pending;
+    pending = c.start(); assert.equal(messages.at(-1).applyPreview, false); ready(c); await pending;
+  } finally { c.stop(); }
 });

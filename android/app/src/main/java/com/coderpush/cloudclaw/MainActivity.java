@@ -36,11 +36,12 @@ public class MainActivity extends ComponentActivity {
  final ExecutorService executor=Executors.newSingleThreadExecutor();
  final ExecutorService fileExecutor=Executors.newSingleThreadExecutor();
  final Handler main=new Handler(Looper.getMainLooper());
- WebView web; PreviewView preview; TextView status; ProcessCameraProvider provider;
+ WebView web; PreviewView preview; TextView status, previewStatus; Button previewToggle; ProcessCameraProvider provider;
  GestureRecognizer recognizer; JavaScriptReplyProxy client;
  final LatestResultQueue<JSONObject> deliveries=new LatestResultQueue<>();
  volatile long epoch=0; volatile boolean active=false;
- long frameId=0,lastTimestamp=0; int clientGeneration; boolean foreground=true, destroyed=false, previewVisible=false, trackingRequested=false;
+ long frameId=0,lastTimestamp=0; int clientGeneration; boolean foreground=true, destroyed=false;
+ PreviewConfiguration previewConfiguration;
  String selectedCamera="", nativeStats="", deliveryStats="";
  long pageEpoch=0;
  ExportRequest pendingExport;
@@ -57,21 +58,21 @@ public class MainActivity extends ComponentActivity {
  static JSONObject json(Object... pairs){JSONObject o=new JSONObject();try{for(int i=0;i<pairs.length;i+=2)o.put((String)pairs[i],pairs[i+1]);}catch(JSONException e){throw new IllegalArgumentException(e);}return o;}
  static boolean trusted(Uri u){return "https".equals(u.getScheme())&&"appassets.androidplatform.net".equals(u.getHost())&&(u.getPort()==-1||u.getPort()==443);}
  @Override public void onCreate(Bundle state){
-  super.onCreate(state);pickerOutstanding=state!=null&&state.getBoolean("pickerOutstanding",false);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+  super.onCreate(state);
+  previewConfiguration=new PreviewConfiguration(state!=null&&state.getBoolean("previewRequested",false),state!=null&&state.getBoolean("previewApplied",false));
+  pickerOutstanding=state!=null&&state.getBoolean("pickerOutstanding",false);getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
   getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
   FrameLayout root=new FrameLayout(this);root.setBackgroundColor(Color.BLACK);
   web=new WebView(this);root.addView(web,new FrameLayout.LayoutParams(-1,-1));
   LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);panel.setBackgroundColor(0xdd10151f);
-  Button toggle=new Button(this);toggle.setText("CAMERA VIEW · SHOW");panel.addView(toggle);
+  previewToggle=new Button(this);panel.addView(previewToggle);
+  previewStatus=new TextView(this);previewStatus.setTextColor(Color.WHITE);previewStatus.setTextSize(12);panel.addView(previewStatus);
+  updatePreviewStatus();
   preview=new PreviewView(this);preview.setImplementationMode(PreviewView.ImplementationMode.PERFORMANCE);preview.setVisibility(View.GONE);
   panel.addView(preview,new LinearLayout.LayoutParams(300,225));
   status=new TextView(this);status.setTextColor(Color.WHITE);status.setTextSize(12);status.setText(buildLabel()+"\n"+(state!=null&&state.getBoolean("exportInterrupted",false)?"Export interrupted by restart. Retry export and verify the file.":"Start camera in the game"));panel.addView(status);
   FrameLayout.LayoutParams position=new FrameLayout.LayoutParams(300,-2,Gravity.TOP|Gravity.RIGHT);position.topMargin=65;position.rightMargin=12;root.addView(panel,position);
-  toggle.setOnClickListener(v->{
-   previewVisible=!previewVisible;preview.setVisibility(previewVisible?View.VISIBLE:View.GONE);
-   toggle.setText(previewVisible?"CAMERA VIEW · HIDE":"CAMERA VIEW · SHOW");
-   if(trackingRequested){send(json("type","restart","generation",clientGeneration));stopTracking();}
-  });
+  previewToggle.setOnClickListener(v->{previewConfiguration.toggleRequested();updatePreviewStatus();});
   Button reload=new Button(this);reload.setText("RELOAD GAME");reload.setVisibility(View.GONE);panel.addView(reload);
   reload.setOnClickListener(v->recreate());setContentView(root);
   WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);s.setMediaPlaybackRequiresUserGesture(false);
@@ -110,7 +111,9 @@ public class MainActivity extends ComponentActivity {
      stopTracking();client=reply;clientGeneration=gen;double receipt=now();
      send(json("type","clock","generation",gen,"jsTime",jsTime,"nativeTime",receipt));
      if(checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.CAMERA},1);send(json("type","error","generation",gen,"message","Allow camera permission, then start the camera again."));return;}
-     trackingRequested=true;startTracking(hands,epoch,o.optString("cameraId",""));
+     boolean sessionPreview=previewConfiguration.beginSession(o.optBoolean("applyPreview",false));
+     preview.setVisibility(sessionPreview?View.VISIBLE:View.GONE);updatePreviewStatus();
+     startTracking(hands,epoch,o.optString("cameraId",""),sessionPreview);
     }else if(type.equals("sync")&&o.optInt("generation",-1)==clientGeneration){
      double jsTime=o.getDouble("jsTime");if(Double.isFinite(jsTime))send(json("type","clock","generation",clientGeneration,"jsTime",jsTime,"nativeTime",now()));
     }else if(type.equals("stop")&&o.optInt("generation",-1)==clientGeneration){stopTracking();}
@@ -125,6 +128,10 @@ public class MainActivity extends ComponentActivity {
   web.loadUrl(ORIGIN+"/?hands=manual");
  }
  void send(JSONObject value){if(client!=null&&!destroyed)client.postMessage(value.toString());}
+ void updatePreviewStatus(){
+  previewToggle.setText(previewConfiguration.requested()?"CAMERA VIEW · REQUEST OFF":"CAMERA VIEW · REQUEST ON");
+  previewStatus.setText("Session preview: "+(previewConfiguration.applied()?"ON":"OFF")+(previewConfiguration.pending()?"\nPending: "+(previewConfiguration.requested()?"ON":"OFF")+" · stop/start camera between runs to apply.":""));
+ }
  void updateStatus(){status.setText(buildLabel()+"\n"+nativeStats+"\n"+deliveryStats);}
  String cameraId(CameraInfo info){return Camera2CameraInfo.from(info).getCameraId();}
  JSONArray cameraInventory(){
@@ -175,10 +182,10 @@ public class MainActivity extends ComponentActivity {
    String outcome=result,detail=message;main.post(()->finishExport(request,outcome,detail));
   });
  }
- synchronized void stopTracking(){active=false;trackingRequested=false;epoch++;deliveries.reset(epoch);if(provider!=null)provider.unbindAll();if(!executor.isShutdown())executor.execute(()->{if(recognizer!=null){recognizer.close();recognizer=null;}});}
+ synchronized void stopTracking(){active=false;epoch++;deliveries.reset(epoch);if(provider!=null)provider.unbindAll();if(!executor.isShutdown())executor.execute(()->{if(recognizer!=null){recognizer.close();recognizer=null;}});}
  void deliver(long token){if(token!=epoch||!active)return;JSONObject payload=deliveries.take(token);if(payload!=null)send(payload);}
  void fail(long token,Exception e){Log.e("TomkoGame","Tracking error",e);main.post(()->{if(token!=epoch)return;send(json("type","error","generation",clientGeneration,"message","Native tracking failed. Restart the camera."));stopTracking();status.setText("Tracking error · restart camera");});}
- void startTracking(int hands,long token,String requestedCamera){executor.execute(()->{try{
+ void startTracking(int hands,long token,String requestedCamera,boolean sessionPreview){executor.execute(()->{try{
   if(token!=epoch)return;
   recognizer=GestureRecognizer.createFromOptions(this,GestureRecognizer.GestureRecognizerOptions.builder().setBaseOptions(BaseOptions.builder().setModelAssetPath("gesture_recognizer.task").setDelegate(Delegate.GPU).build()).setNumHands(hands).setMinHandDetectionConfidence(.65f).setMinHandPresenceConfidence(.5f).setMinTrackingConfidence(.5f).setRunningMode(RunningMode.VIDEO).build());
   main.post(()->{if(token!=epoch||!foreground||destroyed)return;var future=ProcessCameraProvider.getInstance(this);future.addListener(()->{try{
@@ -198,10 +205,10 @@ public class MainActivity extends ComponentActivity {
    }).build();
    ImageAnalysis a=new ImageAnalysis.Builder().setTargetResolution(new Size(640,480)).setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888).build();
    samples=seen=two=0;durations.clear();reportStart=SystemClock.elapsedRealtime();active=true;
-   a.setAnalyzer(executor,frame->analyze(frame,token));if(previewVisible){Preview p=new Preview.Builder().build();p.setSurfaceProvider(preview.getSurfaceProvider());provider.bindToLifecycle(this,selector,p,a);}
+   a.setAnalyzer(executor,frame->analyze(frame,token));if(sessionPreview){Preview p=new Preview.Builder().build();p.setSurfaceProvider(preview.getSurfaceProvider());provider.bindToLifecycle(this,selector,p,a);}
    else provider.bindToLifecycle(this,selector,a);
    send(json("type","cameras","generation",clientGeneration,"cameras",cameraInventory(),"selected",selectedCamera));
-   send(json("type","ready","generation",clientGeneration));nativeStats="GPU · "+hands+" hand mode · camera "+selectedCamera+" · preview "+(previewVisible?"on":"off");deliveryStats="Analysis age excludes sensor queue time";updateStatus();
+   send(json("type","ready","generation",clientGeneration));nativeStats="GPU · "+hands+" hand mode · camera "+selectedCamera+" · preview "+(sessionPreview?"on":"off");deliveryStats="Analysis age excludes sensor queue time";updateStatus();
   }catch(Exception e){fail(token,e);}},ContextCompat.getMainExecutor(this));});
  }catch(Exception e){fail(token,e);}});}
  void analyze(ImageProxy frame,long token){Bitmap raw=null,rotated=null;MPImage image=null;try{
@@ -229,6 +236,7 @@ public class MainActivity extends ComponentActivity {
   if(durations.size()>300)durations.remove(0);
  }catch(Exception e){fail(token,e);}finally{if(image!=null)image.close();if(rotated!=null&&rotated!=raw)rotated.recycle();if(raw!=null)raw.recycle();frame.close();}}
  @Override protected void onSaveInstanceState(Bundle state){
+  state.putBoolean("previewRequested",previewConfiguration.requested());state.putBoolean("previewApplied",previewConfiguration.applied());
   state.putBoolean("pickerOutstanding",pickerOutstanding);state.putBoolean("exportInterrupted",pendingExport!=null||pickerOutstanding);
   super.onSaveInstanceState(state);
  }

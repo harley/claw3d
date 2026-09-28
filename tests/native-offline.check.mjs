@@ -100,11 +100,55 @@ try {
   assert.equal(await page.locator('#export').isDisabled(),false);
   await page.screenshot({path:join(root,'.screenshots',`android-packaged-${mode}.png`)});
  }
+ // Contract: the packaged game's real caller grants preview changes only between
+ // runs, including explicit camera restarts during accepted-drop delivery/recovery.
+ // Unit/JVM tests cannot catch a missing or permanently-true caller callback.
+ await page.goto(origin+'/?setup=manual&hands=manual');
+ await page.waitForFunction(()=>document.documentElement.dataset.arcadeReady==='true');
+ const startCamera=async(restart=false)=>{
+  await page.locator('#camera-open').click();
+  if(restart)await page.locator('#camera-toggle').click();
+  await page.locator('#camera-toggle').click();
+  await page.waitForFunction(()=>!document.querySelector('#camera-setup').open && document.querySelector('#camera-toggle').textContent==='STOP CAMERA');
+  return page.evaluate(()=>__nativeMessages.filter(m=>m.type==='start').at(-1));
+ };
+ assert.equal((await startCamera()).applyPreview,true,'between-run start can apply a pending preview');
+ await page.evaluate(()=>{
+  // Deliver synthetic results through the packaged native adapter, not a stub
+  // controller. No physical recognition or camera-device claims are made.
+  globalThis.__pose='Open_Palm';let id=0;
+  globalThis.__feed=setInterval(()=>{
+   const start=__nativeMessages.filter(m=>m.type==='start').at(-1);if(!start)return;
+   const landmarks=Array.from({length:21},()=>({x:.5,y:.5,z:0}));
+   landmarks[0].y=.56;landmarks[9].y=.44;landmarks[5].x=.44;landmarks[17].x=.56;
+   const present=__pose!==null;
+   TomkoNative.onmessage({data:JSON.stringify({type:'result',generation:start.generation,id:++id,capturedAt:performance.now(),width:640,height:480,
+    result:{landmarks:present?[landmarks]:[],handedness:present?[[{categoryName:'Left',score:.99}]]:[],gestures:present?[[{categoryName:__pose,score:.99}]]:[]}})});
+  },65);
+ });
+ await page.locator('#play').click();await page.locator('#name').fill('Preview timing');await page.locator('#register-play').click();
+ await page.waitForFunction(()=>tomkoStatus().phase==='aim',{},{timeout:15000});
+ assert.equal((await startCamera(true)).applyPreview,false,'active aiming cannot apply a preview change');
+ await page.waitForFunction(()=>tomkoStatus().camera==='tracking');
+ // Allow fresh open-hand arming after the explicit camera restart.
+ await page.waitForTimeout(500);await page.evaluate(()=>globalThis.__pose='Closed_Fist');
+ await page.waitForFunction(()=>['anticipate','descend'].includes(tomkoStatus().phase));
+ await page.evaluate(()=>globalThis.__pose=null);
+ assert.equal((await startCamera(true)).applyPreview,false,'accepted drop cannot apply a preview change');
+ const storageKey=await page.evaluate(async()=>(await import('/__testsrc/event-session.js')).STORAGE_KEY);
+ await page.waitForFunction(key=>JSON.parse(localStorage.getItem(key)).active?.turns.length===1,storageKey,{timeout:30000});
+ assert.equal(await page.evaluate(async()=>{
+  const e=await import('/__testsrc/event-session.js');return JSON.parse(localStorage.getItem(e.STORAGE_KEY)).active.turns.length;
+ }),1,'accepted drop finishes exactly once through camera restart and hand loss');
+ await page.reload();await page.waitForFunction(()=>document.documentElement.dataset.arcadeReady==='true');
+ assert.equal((await startCamera()).applyPreview,false,'recovered run keeps the preview configuration locked');
+ await page.locator('#operator-open').click();await page.locator('#reset').click();
+ assert.equal((await startCamera(true)).applyPreview,true,'ending the run permits the next camera start to apply preview');
  await page.goto(origin+'/privacy');
  assert.match(await page.locator('body').innerText(),/Names and scores stay on this device/);
  await page.getByRole('link',{name:'Return to Cloud Claw'}).click();
  await page.waitForFunction(()=>document.documentElement.dataset.arcadeReady==='true');
  assert.deepEqual(failures,[],'every requested packaged asset exists');
  assert.deepEqual(external,[],'local play does not request external resources');
- console.log('PASS: packaged BUILD, delayed native readiness, camera-off/on export, offline boot, both mode leaderboards, duplicate-turn rejection, and persistence across browser process restart. Synthetic scores; not physical gameplay or Android force-stop validation.');
+ console.log('PASS: packaged BUILD, between-run preview eligibility, accepted-drop completion through restart, recovery lock, delayed native readiness, camera-off/on export, offline boot, both mode leaderboards, duplicate-turn rejection, and persistence across browser process restart. Synthetic scores; not physical gameplay or Android force-stop validation.');
 } finally {await context.close();}

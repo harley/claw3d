@@ -572,7 +572,7 @@ function showCameraView(open) {
 function updateCameraView(message = 'Camera is off') {
   if (nativeAndroid) {
     $('camera-view-toggle').hidden = true;
-    setText('camera-view-status', 'Use CAMERA VIEW on the Android panel to show the built-in camera.');
+    setText('camera-view-status', 'Set CAMERA VIEW on the Android panel, then stop/start camera between runs to apply.');
     return;
   }
   const track = $('camera-video').srcObject?.getVideoTracks()[0];
@@ -601,6 +601,7 @@ async function startCamera() {
       const { createCameraControls } = await import('./camera-controls.js');
       cameraControls = await createCameraControls({ video: $('camera-video'), overlay: $('camera-overlay'), select: $('camera-select'), maxHands: dualEnabled ? 2 : 1, holdMs, steering,
         getControlProfile: () => dualEnabled ? menuMode() ? 'menu-left' : 'dual' : grabEnabled && !menuMode() ? 'grab-release' : 'hold-drop',
+        canConfigureCamera: () => !run && !recovering && !pendingPlayer && !startingRun,
         getControlTarget: (pointer, role, origin) => glove.targetAt(pointer, role, origin),
         canControl: () => Boolean(menuMode() || (!flow.pendingSlam && !startingRun && run && game.phase === 'aim' && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]'))),
         canObserve: () => Boolean(dualEnabled && !menuMode() && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]')),

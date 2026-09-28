@@ -6,6 +6,7 @@ export class HandController extends BrowserHandController {
   constructor(options) {
     super(options);
     this.bridge = nativeBridge();
+    this.canConfigureCamera = options.canConfigureCamera || (() => false);
     this.cameraElement = this.video;
     this.video = { videoWidth: 640, videoHeight: 480, srcObject: null };
     this.bridge.subscribe(message => this.receive(message));
@@ -14,12 +15,15 @@ export class HandController extends BrowserHandController {
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.stop(); });
     this.listCameras();
   }
+  // Android owns the framing preview. The hidden web canvas has no native UI consumers;
+  // inherited recognition still supplies all game/hand feedback through its callbacks.
+  draw() {}
   send(message) { this.bridge.send(message); }
   async listCameras() {
     this.send({ type: 'cameras', generation: this.generation });
   }
   async start() {
-    // An internal camera/preview switch replaces acquisition while the game's
+    // An internal camera switch replaces acquisition while the game's
     // original await still waits for a usable camera. Explicit stop cancels it.
     const previous = this.pendingStart;
     this.pendingStart = null;
@@ -34,7 +38,7 @@ export class HandController extends BrowserHandController {
     this.lastCapture = this.lastResponseCapture = undefined;
     this.onState({ kind: 'loading', message: 'Starting native camera…' });
     this.startTimeout = setTimeout(() => { if (this.starting) this.fail(new Error('Native camera timed out. Start it again.')); }, 25000);
-    try { this.send({ type: 'start', generation: this.generation, hands: this.maxHands, cameraId: this.select.value, jsTime: performance.now() }); }
+    try { this.send({ type: 'start', generation: this.generation, hands: this.maxHands, cameraId: this.select.value, applyPreview: this.canConfigureCamera?.() === true, jsTime: performance.now() }); }
     catch (error) { this.fail(error); }
     return pending.promise;
   }
@@ -54,8 +58,6 @@ export class HandController extends BrowserHandController {
       this.select.replaceChildren(...cameras.map(camera => new Option(camera.label, camera.id)));
       if (cameras.some(camera => camera.id === selected)) this.select.value = selected;
       this.select.disabled = cameras.length < 2;
-    } else if (message.type === 'restart' && (this.running || this.starting)) {
-      this.start();
     } else if (message.type === 'clock' && (this.starting || this.running)) {
       // Conservatively includes request transit; never erase delivery delay.
       const candidate = message.jsTime - message.nativeTime;
