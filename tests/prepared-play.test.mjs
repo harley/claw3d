@@ -33,7 +33,7 @@ test('slot and immutable intent commit together; abort cannot consume capacity; 
   const input = { name: 'Lan', controlMode: 'one-hand', attemptKey: id(), packId: pack.id };
   try { await assert.rejects(j.reservePrepared(input), /abort/i); } finally { proto.add = original; db.close(); }
   assert.deepEqual(await j.all(), []);
-  const entry = await j.reservePrepared(input); assert.equal(entry.run.id, grant.slots[0].runId);
+  const entry = await j.reservePrepared(input); assert.equal(entry.run.id, grant.slots[0].runId); assert.equal(entry.grant.packId, pack.id);
   await assert.rejects(j.reservePrepared(input), /already reserved/);
   await j.installPool(grant, pack.id);
   await assert.rejects(j.reservePrepared({ ...input, attemptKey: id() }), /No usable/);

@@ -12,7 +12,7 @@ function validate(record) {
   if (record.version !== 1 || typeof record.liveAttempted !== 'boolean' || !record.liveAttempted || typeof record.settled !== 'boolean' || !uuid(record.requestKey) || !['reserved', 'playing', 'interrupted', 'complete'].includes(record.physical)
     || !Array.isArray(record.turns) || record.turns.length > 3 || !Number.isInteger(record.acknowledged) || record.acknowledged < 0 || record.acknowledged > record.turns.length
     || typeof record.name !== 'string' || !record.name.trim() || record.name.length > 24 || !['one-hand', 'two-hand'].includes(record.controlMode)) throw Error('Public journal is incompatible or damaged. Keep browser data and ask the host.');
-  if (record.grant && (!uuid(record.grant.poolId) || typeof record.grant.slotId !== 'string' || !uuid(record.attemptKey) || typeof record.admitted !== 'boolean' || !record.run)) throw Error('Prepared intent is damaged. Keep browser data.');
+  if (record.grant && (!uuid(record.grant.poolId) || typeof record.grant.slotId !== 'string' || typeof record.grant.packId !== 'string' || !record.grant.packId || !uuid(record.attemptKey) || typeof record.admitted !== 'boolean' || !record.run)) throw Error('Prepared intent is damaged. Keep browser data.');
   if (record.run) {
     const rules = record.run.rules;
     const { controlMode, controlVersion, ...frozen } = rules || {};
@@ -120,7 +120,7 @@ export async function openPublicRunJournal({ indexedDB = globalThis.indexedDB, l
           const rules = { ...pool.rules, controlMode, controlVersion: controlMode === 'two-hand' ? 'camera-dual-raise-v1' : pool.rules.controlVersion };
           const run = { id: slot.runId, boardId: pool.boardId, name, rules, status: 'active', turns: [], prepared: true };
           const record = validate({ name, controlMode, requestKey: slot.requestKey, attemptKey, version: 1, physical: 'playing', liveAttempted: true,
-            turns: [], acknowledged: 0, settled: false, admitted: false, grant: { slotId: slot.id, poolId: pool.id }, run });
+            turns: [], acknowledged: 0, settled: false, admitted: false, grant: { slotId: slot.id, poolId: pool.id, packId }, run });
           slot.consumed = true; pool.lastSeen = time;
           pools.put(pool); store.add(record); return structuredClone(record);
         });
