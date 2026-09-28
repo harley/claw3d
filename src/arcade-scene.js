@@ -189,7 +189,6 @@ export class ArcadeScene {
       this.button.scale.set(.21, .135, .21);
       this.button.material.dispose();
       this.button.material = new T.MeshPhysicalMaterial({ color:'#ed941d',roughness:.18,metalness:.12,clearcoat:1,clearcoatRoughness:.1 });
-      const capLabel = label(cab, 'DROP', .28, .085, [dropX, 1.665, 1.77], { color: '#e1d6ba', font: 'Arial', weight: 'bold', size: 155 }); capLabel.rotation.x = -Math.PI / 2;
     } else {
       const capLabel = label(this.button, 'DROP', .28, .10, [0, .054, 0], { color: '#fff4dd', font: 'Arial', weight: 'bold', size: 155 }); capLabel.rotation.x = -Math.PI / 2;
     }
