@@ -139,7 +139,7 @@ export async function createPilotServer(options) {
         }
         if (req.method === 'GET' && path === '/api/session') return json(res, 200, { role: auth.role, board: database.board() });
         if (req.method === 'GET' && path === '/api/board') return json(res, 200, database.board());
-        const runMatch = /^\/api\/runs\/([a-f0-9-]{36})(?:\/(turns|abandon))?$/.exec(path);
+        const runMatch = /^\/api\/runs\/([a-f0-9-]{36})(?:\/(turns|abandon|name))?$/.exec(path);
         if (req.method === 'GET' && runMatch && !runMatch[2]) return json(res, 200, database.getRun(runMatch[1], auth.owner_id));
         if (req.method === 'GET' && path === '/api/host/export') {
           if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');
@@ -178,6 +178,7 @@ export async function createPilotServer(options) {
         }
         if (path === '/api/runs') return json(res, 201, database.createRun(auth.owner_id, input));
         if (runMatch?.[2] === 'turns') return json(res, 200, database.record(runMatch[1], auth.owner_id, input));
+        if (runMatch?.[2] === 'name') return json(res, 200, database.rename(runMatch[1], auth.owner_id, input));
         if (runMatch?.[2] === 'abandon') return json(res, 200, database.abandon(runMatch[1], auth.owner_id));
         throw new ApiError(404, 'Route not found.');
       }

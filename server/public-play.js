@@ -95,7 +95,7 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
         return json(res, 200, { role: 'public', board: board(), station: this.stationStatus(req) });
       }
       const player = owner(req);
-      const match = /^\/api\/play\/runs\/([a-f0-9-]{36})(?:\/(turns|abandon))?$/.exec(path);
+      const match = /^\/api\/play\/runs\/([a-f0-9-]{36})(?:\/(turns|abandon|name))?$/.exec(path);
       if (match && !match[2] && req.method === 'GET') return json(res, 200, result(match[1], player));
       if (req.method !== 'POST') throw new ApiError(404, 'Route not found.');
       budget.take(`public-write:${player}`, 120);
@@ -115,6 +115,7 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
       if (match?.[2]) {
         result(match[1], player);
         if (match[2] === 'turns') database.record(match[1], player, input);
+        else if (match[2] === 'name') database.rename(match[1], player, input);
         else database.abandon(match[1], player);
         return json(res, 200, result(match[1], player));
       }
