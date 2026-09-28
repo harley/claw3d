@@ -500,11 +500,12 @@ dialog .menu-guide-hand { font-size: 52px; }
 #arcade:has(#try-notice:not([hidden])) { --camera-bottom: 100px; }
 
 /* Keep both start choices readable and reachable by the hand cursor. */
-.start-modes { display: grid; gap: 12px; margin-top: 18px; }
-#registration .start-modes .play-button { justify-items: start; text-shadow: none; display: grid; gap: 6px; width: 100%; margin: 0; padding: 14px 18px; text-align: left; white-space: normal; }
-.start-modes strong { font-size: 20px; }
-.start-modes span { font-size: 14px; }
-.start-modes small { font: 14px/1.4 Arial, sans-serif; letter-spacing: 0; text-transform: none; }
+.start-modes { display: grid; grid-auto-rows: 1fr; gap: 12px; margin-top: 18px; }
+#registration .start-modes .play-button { justify-items: start; text-shadow: none; display: grid; grid-template-columns: 1fr auto; align-content: center; gap: 6px 12px; width: 100%; margin: 0; padding: 14px 18px; text-align: left; white-space: normal; }
+.start-modes strong { display: flex; align-items: center; gap: 8px; font-size: 20px; white-space: nowrap; }
+.start-modes strong span { width: 2.5em; text-align: center; }
+.start-modes .start-bonus { align-self: center; font-size: 14px; white-space: nowrap; }
+.start-modes small { grid-column: 1 / -1; font: 14px/1.4 Arial, sans-serif; letter-spacing: 0; text-transform: none; }
 @media (max-width: 480px), (max-height: 760px) {
   #registration { padding: 16px; }
   #registration #menu-guide { flex-direction: row; gap: 8px; margin-bottom: 8px; padding: 0; }
