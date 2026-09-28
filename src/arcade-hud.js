@@ -211,6 +211,7 @@ export function createHud({ audio, phaseSound }) {
   $('reset').disabled = startingRun;
   setText('timer', String(Math.ceil(remaining)).padStart(2, '0'));
   setText('speed-bonus', game.collectionPreview ? 'OFF-CENTRE −50%' : `SPEED +${Math.floor((run?.rules.speedBonus ?? 50) * remaining / (run?.rules.seconds || 15))}`);
+  setText('score-cue', game.collectionPreview ? 'Centre the claw for full points. Off-centre catches earn half.' : 'Catch faster. Earn more points.');
   $('arcade').classList.toggle('last-claw', Boolean(run && turnNumber === turns)); $('arcade').classList.toggle('urgent', phase === 'aim' && remaining <= 5);
   setText('mode-label', shared ? sharedStatus : publicTry ? 'PRACTICE · NO EVENT RANKING' : `LOCAL PREVIEW${game.collectionPreview ? ' · COLLECTION' : ''} · ${dualEnabled ? '2 HANDS' : '1 HAND'}${storageError ? ' · UNSAVED' : ''}`);
   setHidden($('mode-label'), !$('mode-label').textContent);

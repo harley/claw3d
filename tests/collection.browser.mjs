@@ -15,6 +15,7 @@ try {
   await page.goto('http://127.0.0.1:4196/?setup=manual&toys=collection');
   await page.waitForFunction(() => window.__littleCloud);
   assert.match(await page.locator('#mode-label').textContent(), /COLLECTION/);
+  assert.match(await page.locator('#score-cue').textContent(), /Off-centre catches earn half/);
   const report = await page.evaluate(async () => {
     const { ArcadeScene } = await import('/src/arcade-scene.js');
     const M = await import('/src/arcade-mechanics.js');
