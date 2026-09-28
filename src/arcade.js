@@ -15,7 +15,7 @@ import { createSharedBoard } from './shared-board.js';
 import { createSessionApi } from './session-api.js';
 import { createScoreSync } from './score-sync.js';
 import { createPlaytestClient, createPublicPlaytestClient } from './playtest-client.js';
-import { createArcadeAudio } from './arcade-audio.js';
+import { createArcadeAudio, playCollectionCue } from './arcade-audio.js';
 import { createHud, $, setText, setHidden, finaleHeadline, missCopy, TROPHY_ICONS, clampOverlayPoint } from './arcade-hud.js';
 import { createTurnState, beginTurnState, beginFirstTurnPreparation, requestDrop, stepTurn } from './turn-controller.js';
 import { createMovementMusic } from './movement-music.js';
@@ -41,17 +41,18 @@ const phoneViewport = () => ({
 // local attempt must remain reachable in the profile in which it was started.
 let savedModeLocked = false;
 if (!shared && !publicTry) {
-  try { savedModeLocked = Boolean(loadStore({ getItem: () => localStorage.getItem(resolvePlayMode(location.search).storageKey) }).active); }
+  try { savedModeLocked = Boolean(loadStore({ getItem: () => localStorage.getItem(resolvePlayMode(location.search).storageKey) }, resolvePlayMode(location.search).collection ? COLLECTION_RULES : RULES).active); }
   catch { savedModeLocked = true; }
 }
 const initialSearch = phonePlaySearch(location.search, { ...phoneViewport(), locked: savedModeLocked, official });
 if (initialSearch !== location.search) history.replaceState(null, '', `${location.pathname}${initialSearch}${location.hash}`);
 // One resolution of the play mode: input profile, storage namespace, experiment flags.
 const mode = resolvePlayMode(official ? '' : location.search, shared || publicTry);
+const localRules = mode.collection ? COLLECTION_RULES : RULES;
 const { dual: dualEnabled, grab: grabEnabled, cabinet: cabinetEnabled, holdMs, steering, storageKey: scoreKey } = mode;
 import { ArcadeScene } from './arcade-scene.js';
-import { createGame, begin, drop, advance, move, moveToward, homeClaw, planGrab, clawPose, PHASES, MAX_FRAME_DELTA, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
-import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, scoreTurn, turnContext, handBonus, renameCompletedRun } from './event-session.js';
+import { createGame, begin, drop, advance, move, moveToward, homeClaw, planGrab, clawPose, PHASES, MAX_FRAME_DELTA, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget, catchQuality } from './arcade-mechanics.js';
+import { RULES, COLLECTION_RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, scoreTurn, turnContext, handBonus, renameCompletedRun } from './event-session.js';
 
 if (publicSurface) {
   $('try-notice').hidden = false;
@@ -73,7 +74,7 @@ if (publicSurface) {
 
 $('build-info').textContent = `${globalThis.__OFFLINE_SHELL__ ? 'LOCAL PREPARED BUILD' : 'BUILD'} ${__BUILD_INFO__.commit}${__BUILD_INFO__.dirty ? ' · uncommitted changes' : ''} · ${__BUILD_INFO__.branch}`;
 let savingTurn = false, pendingTurnOutcome = null, savingTurnPromise = null;
-let game = createGame({ carousel: true, suspendedClaw: mode.suspendedClaw }), scene, previous = 0, stopped = false, frozen = false;
+let game = createGame({ carousel: true, suspendedClaw: mode.suspendedClaw, collection: mode.collection }), scene, previous = 0, stopped = false, frozen = false;
 let cameraControls, cameraLoading = false;
 const handMenu = createHandMenu({ leftHand: dualEnabled });
 document.body.classList.toggle('machine-controls', cabinetEnabled);
@@ -137,7 +138,7 @@ let scoreAnimation;
 let lastSoundPhase = '', lastMovementSound = -Infinity;
 let aligned = null, paused = false;
 let store, storageError = '', storageBlocked = false;
-try { store = shared || publicTry ? newStore() : loadStore({ getItem: () => localStorage.getItem(scoreKey) }); } catch (error) { store = newStore(); storageError = error.message; storageBlocked = true; }
+try { store = shared || publicTry ? newStore() : loadStore({ getItem: () => localStorage.getItem(scoreKey) }, localRules); } catch (error) { store = newStore(localRules); storageError = error.message; storageBlocked = true; }
 let run = store.active, completedRun = null, turnNumber = run ? run.turns.length + 1 : 0;
 let recovering = Boolean(run);
 if (run) selectedStart = null;
@@ -167,7 +168,7 @@ const performanceGovernor = new PerformanceGovernor({ onChange: (mode, source) =
   if (scene) $('quality').textContent = `QUALITY: ${mode === 'simple' ? (nativeAndroid ? `SIMPLE · ${tomkoRendering.drawHz} FPS CAP` : 'SIMPLE · 30 FPS CAP') : 'FULL'}${source === 'auto' ? ' · AUTO' : ''}`;
 } });
 const tags = game.toys.map(toy => {
-  const element = document.createElement('span'); element.className = 'prize-tag'; element.dataset.points = RULES.points[toy.id]; element.textContent = RULES.points[toy.id]; $('prize-tags').append(element); return { toy, element };
+  const element = document.createElement('span'); element.className = 'prize-tag'; element.dataset.points = localRules.points[toy.id]; element.textContent = localRules.points[toy.id]; $('prize-tags').append(element); return { toy, element };
 });
 function persist() {
   if (shared || publicTry) return;
@@ -207,6 +208,10 @@ function phaseSound(phase, modal) {
   if (phase === lastSoundPhase) return;
   lastSoundPhase = phase;
   if (paused || document.hidden || modal) return;
+  if (mode.collection && ['anticipate', 'descend', 'grip', 'lift', 'deliver', 'release'].includes(phase)) {
+    playCollectionCue(audio, phase === 'lift' ? catchQuality(game.plan) : phase);
+    return;
+  }
   if (phase === 'anticipate') { audio.note(95, .2, 0, 'sine', 38, .06); audio.note(880, .22, 0, 'square', 110); audio.fanfare('drop'); }
   else if (phase === 'descend') [360, 280, 200].forEach((f, i) => audio.note(f, .1, i * .09, 'square', f / 2));
   else if (phase === 'grip') { audio.note(64, .14, 0, 'triangle', 42, .05); audio.note(120, .08, 0, 'square', 60); audio.note(180, .08, .09, 'square', 90); }
@@ -216,7 +221,7 @@ function phaseSound(phase, modal) {
   } else if (phase === 'deliver' && game.plan?.prize) audio.fanfare('shelf');
   else if (phase === 'release' && game.plan?.prize) { audio.note(740, .1, 0, 'sine'); audio.note(980, .14, .1, 'sine'); }
 }
-function freshGame() { flow.pendingSlam = flow.contactFeedback = null; flow.firstTurnPreparationElapsed = null; turnNumber = 0; cameraControls?.reset(); game = createGame({ carousel: true, pushContact: mode.pushContact, suspendedClaw: mode.suspendedClaw }); scene?.groundToys(game); aligned = null; hud.invalidate(); }
+function freshGame() { flow.pendingSlam = flow.contactFeedback = null; flow.firstTurnPreparationElapsed = null; turnNumber = 0; cameraControls?.reset(); game = createGame({ carousel: true, pushContact: mode.pushContact, suspendedClaw: mode.suspendedClaw, collection: mode.collection }); scene?.groundToys(game); aligned = null; hud.invalidate(); }
 function restoreTrophies() {
   for (const turn of run?.turns || []) {
     const toy = game.toys.find(toy => toy.id === turn.prizeId);
@@ -257,7 +262,7 @@ function openRegistration(name = $('name').value) {
 }
 function finishTurn() {
   if (!run) return;
-  const outcome = recordTurn(store, turnNumber, game.plan?.prize?.id || null, flow.dropRemainingMs); if (!outcome) return;
+  const outcome = recordTurn(store, turnNumber, game.plan?.prize?.id || null, flow.dropRemainingMs, mode.collection ? catchQuality(game.plan) : undefined); if (!outcome) return;
   turnReasons[turnNumber - 1] = game.plan ? { reason: game.plan.reason, touched: game.plan.touched, blocker: game.plan.blocker } : null;
   persist();
   track('turn_complete', { turn: turnNumber, score: outcome.run.turns.at(-1).score, prizeId: outcome.run.turns.at(-1).prizeId, outcome: game.plan?.reason }, outcome.run);
@@ -287,7 +292,7 @@ $('score-storage-retry').addEventListener('click', () => { void savePublicTurn()
 function presentTurn(outcome) {
   const points = outcome.run.turns.at(-1).score;
   if (outcome.completed) audio.fanfare('complete');
-  else if (points) { [523, 659, 784, 1047].forEach((f, i) => audio.note(f, .18, i * .11)); } else audio.note(165, .25, 0, 'triangle');
+  else if (!mode.collection && points) { [523, 659, 784, 1047].forEach((f, i) => audio.note(f, .18, i * .11)); } else if (!mode.collection) audio.note(165, .25, 0, 'triangle');
   if (outcome.completed) {
     track('run_complete', { score: outcome.run.total }, outcome.run);
     completedRun = outcome.run; run = null; renderBoard();
@@ -303,7 +308,7 @@ function presentTurn(outcome) {
       const chip = document.createElement('span'); chip.className = `turn-chip scored catch-card${toy ? '' : ' miss'}`;
       if (toy) { chip.dataset.prize = toy.id; chip.style.setProperty('--toy', toy.color); }
       const parts = toy
-        ? [['catch-icon', TROPHY_ICONS[toy.family]], ['catch-name', toy.name.toUpperCase()], ['catch-points', `+${turn.score}`], ['catch-detail', `${completedRun.rules.points[toy.id]}${handBonus(completedRun.rules) ? ` + ${handBonus(completedRun.rules)} TWO HANDS` : ''} + ${turn.score - completedRun.rules.points[toy.id] - handBonus(completedRun.rules)} SPEED`]]
+        ? [['catch-icon', TROPHY_ICONS[toy.family]], ['catch-name', toy.name.toUpperCase()], ['catch-points', `+${turn.score}`], ['catch-detail', `${completedRun.rules.points[toy.id]}${handBonus(completedRun.rules) ? ` + ${handBonus(completedRun.rules)} TWO HANDS` : ''}${completedRun.rules.imperfectDeduction ? (turn.quality === 'perfect' ? ' · PERFECT' : ` − ${completedRun.rules.points[toy.id] - turn.score} OFF-CENTRE`) : ` + ${turn.score - completedRun.rules.points[toy.id] - handBonus(completedRun.rules)} ${completedRun.rules.precisionBonus ? 'PRECISION' : 'SPEED'}`}`]]
         : [['catch-icon', '—'], ['catch-name', 'MISS'], ['catch-points', '+0'], ['catch-detail', turnReasons[i] ? missCopy(turnReasons[i], game.toys) : `TURN ${i + 1}`]];
       for (const [className, text] of parts) { const part = document.createElement('span'); part.className = className; part.textContent = text; chip.append(part); }
       $('final-turns').append(chip);
@@ -536,7 +541,7 @@ $('new-board').addEventListener('click', async () => {
     finally { $('new-board').disabled = false; }
     return;
   }
-  try { rotateBoard(store, $('session-name').value); persist(); completedRun = null; renderBoard(); $('operator-message').textContent = 'New leaderboard started. Previous results are preserved.'; }
+  try { rotateBoard(store, $('session-name').value, localRules); persist(); completedRun = null; renderBoard(); $('operator-message').textContent = 'New leaderboard started. Previous results are preserved.'; }
   catch (error) { $('operator-message').textContent = error.message; }
 });
 if (nativeAndroid) $('export').textContent = 'EXPORT THIS MODE’S SESSIONS';
@@ -716,7 +721,7 @@ function frame(time) {
       else if (effect.type === 'tick') audio.note(effect.remaining < 1 ? 220 : 440, .08);
       else if (effect.type === 'drop') track('drop', { trigger: effect.trigger, phase: game.phase, turn: turnNumber });
       else if (effect.type === 'nextTurn') beginTurn({ prepared: effect.initial === true });
-      else if (effect.type === 'scorePop') showScorePop(scoreTurn(run?.rules || { ...RULES, controlMode: mode.controlMode }, turnContext(run?.turns || [], effect.prizeId, flow.dropRemainingMs)));
+      else if (effect.type === 'scorePop') showScorePop(scoreTurn(run?.rules || { ...localRules, controlMode: mode.controlMode }, turnContext(run?.turns || [], effect.prizeId, flow.dropRemainingMs, mode.collection ? catchQuality(game.plan) : undefined)));
       else if (effect.type === 'finish') finishTurn();
     }
   } else input.x = input.z = 0;
@@ -779,7 +784,7 @@ function frame(time) {
       setHidden(element, !isTarget);
       element.classList.toggle('targeted', isTarget);
       if (!isTarget) continue;
-      element.textContent = scoreTurn(run?.rules || { ...RULES, controlMode: mode.controlMode }, turnContext(run?.turns || [], toy.id, Math.floor(flow.remaining * 1000)));
+      element.textContent = scoreTurn(run?.rules || { ...localRules, controlMode: mode.controlMode }, turnContext(run?.turns || [], toy.id, Math.floor(flow.remaining * 1000), mode.collection ? 'perfect' : undefined)) + (mode.collection ? ' MAX' : '');
       const position = clampOverlayPoint(target, tagOrigin, element.getBoundingClientRect());
       element.style.transform = `translate(${Math.round(position.x - tagOrigin.left)}px, ${Math.round(position.y - tagOrigin.top)}px) translate(-50%, -50%)`;
     }
@@ -962,7 +967,7 @@ $('shared-start').addEventListener('cancel', event => event.preventDefault());
 const loadingTimeout = setTimeout(() => fail('The arcade took too long to open. Reload the page to try again.'), 15000);
 try {
   await new Promise(resolve => requestAnimationFrame(resolve));
-  scene = new ArcadeScene($('scene'), { wideControls: cabinetEnabled && new URLSearchParams(location.search).get('controls') !== 'grab', anatomicalHands: !grabEnabled || dualEnabled, singleHand: !dualEnabled, suspendedClaw: mode.suspendedClaw });
+  scene = new ArcadeScene($('scene'), { wideControls: cabinetEnabled && new URLSearchParams(location.search).get('controls') !== 'grab', anatomicalHands: !grabEnabled || dualEnabled, singleHand: !dualEnabled, suspendedClaw: mode.suspendedClaw, ...(mode.collection ? { assortment: game.toys } : {}) });
   if (scene.cabinetHands) {
     const status = $('hand-art-status');
     status.textContent = '3D hands are loading. Camera tracking and game controls remain available.';

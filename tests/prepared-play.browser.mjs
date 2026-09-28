@@ -14,8 +14,13 @@ let browser, app;
 const deadline = setTimeout(() => browser?.close(), 600000);
 try {
   await cp('dist', directory, { recursive: true });
-  const vision = (await readdir(join(directory, 'assets'))).find(file => /^vision-[\w-]+\.js$/.test(file));
-  assert.ok(vision); assert.match(await readFile(join(directory, 'assets', vision), 'utf8'), / as HandController/);
+  const visionCandidates = (await readdir(join(directory, 'assets'))).filter(file => /^vision-[\w-]+\.js$/.test(file));
+  const visionEntries = [];
+  for (const file of visionCandidates) {
+    if (/ as HandController/.test(await readFile(join(directory, 'assets', file), 'utf8'))) visionEntries.push(file);
+  }
+  assert.equal(visionEntries.length, 1, 'exactly one production camera entry exports HandController');
+  const [vision] = visionEntries;
   await writeFile(join(directory, 'assets', vision), cameraFixtureModule());
   // Setup imports the same journal module before loading the production arcade.
   for (const file of ['public-run-journal.js', 'event-session.js']) await cp(`src/${file}`, join(directory, 'assets', file));
@@ -66,7 +71,23 @@ try {
       }
     }
     await page.locator('#final').waitFor();
-    const run = await page.evaluate(() => window.__littleCloud.snapshot().event.complete); local.push(run);
+    // Production deliberately omits development snapshots. Read the durable
+    // journal and compare its completed result with the visible UI and server.
+    const run = await page.evaluate(async name => {
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('cloud-claw:public-journal:v1', 2);
+        request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+      });
+      try {
+        const entries = await new Promise((resolve, reject) => {
+          const request = db.transaction('intents', 'readonly').objectStore('intents').getAll();
+          request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+        });
+        const entry = entries.find(value => value.name === name && value.physical === 'complete');
+        if (!entry) throw Error('Completed run missing from durable journal');
+        return { ...entry.run, turns: entry.turns, total: entry.turns.reduce((sum, turn) => sum + turn.score, 0) };
+      } finally { db.close(); }
+    }, `Offline ${player}`); local.push(run);
     assert.equal(run.turns.length, 3); assert.equal(run.rules.controlMode, player % 2 ? 'two-hand' : 'one-hand');
     assert.equal(Number(await page.locator('#final-score').textContent()), run.total);
     assert.equal(await page.locator('#final-turns .catch-card').count(), 3);

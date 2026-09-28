@@ -91,7 +91,19 @@ export const ASSORTMENT = [
   { id: 'cirrus', family: 'cloud', name: 'Cirrus', color: '#eee7d7', tone: 'Warm ivory · cloud cushion', x: .36, z: .73, yaw: -.10, scale: .88 },
   { id: 'otto', family: 'robot', name: 'Otto', color: '#81b7a8', tone: 'Seafoam · satin vinyl', x: 1.12, z: -.05, yaw: -.26, scale: .86 },
 ];
+// Local collection preview. Six reachable targets; meshes and envelopes share
+// each family's proportions. The premium panda is physically smaller.
+export const COLLECTION_TOYS = Object.freeze([
+  { ...ASSORTMENT.find(t => t.id === 'bonbon'), scale: .80 },
+  { ...ASSORTMENT.find(t => t.id === 'miso') },
+  { id: 'bramble', family: 'bear', name: 'Bramble', color: '#c79b71', tone: 'Honey · soft plush', x: -.84, z: .06, yaw: .12, scale: .90 },
+  { ...ASSORTMENT.find(t => t.id === 'butter'), scale: .82 },
+  { id: 'mochi', family: 'panda', name: 'Mochi', color: '#eee8d9', tone: 'Cream · panda plush', x: .20, z: .72, yaw: -.12, scale: .82 },
+  { ...ASSORTMENT.find(t => t.id === 'sprout') },
+]);
 export const BODY = {
+  bear: { rx: .30, rz: .235, cy: .30, ry: .27, grip: .24, height: .80 },
+  panda: { rx: .23, rz: .19, cy: .30, ry: .27, grip: .24, height: .80 },
   bunny: { rx: .245, rz: .22, cy: .31, ry: .29, grip: .24, height: .95 },
   capybara: { rx: .31, rz: .235, cy: .29, ry: .255, grip: .23, height: .66 },
   cloud: { rx: .345, rz: .19, cy: .31, ry: .27, grip: .26, height: .61 },
@@ -99,7 +111,7 @@ export const BODY = {
   robot: { rx: .235, rz: .19, cy: .30, ry: .235, grip: .23, height: .86 },
 };
 export const SHELF_LEVELS = [.64, 1.49, 2.42, 3.46];
-const SHELF_PLACES = { miso: [0, 0], cocoa: [0, 1], 'blue-hour': [0, 2], cirrus: [1, 0], peach: [1, 1], sprout: [1, 2], pip: [2, 0], otto: [2, 1], bonbon: [3, 0], butter: [3, 1], lilac: [3, 2] };
+const SHELF_PLACES = { bramble: [0, 2], mochi: [1, 1], miso: [0, 0], cocoa: [0, 1], 'blue-hour': [0, 2], cirrus: [1, 0], peach: [1, 1], sprout: [1, 2], pip: [2, 0], otto: [2, 1], bonbon: [3, 0], butter: [3, 1], lilac: [3, 2] };
 export function collectionSlot(id) { const [row, column] = SHELF_PLACES[id]; return { x: -2.92 + (column - 1) * .67, y: SHELF_LEVELS[row], z: .12 }; }
 
 // Drive toward an absolute target at a bounded speed; the field clamp still applies.
@@ -174,11 +186,27 @@ export function planGrab(position, toys) {
   // Why the grab did (not) succeed, for the player and for telemetry. Contact
   // sweeps may later downgrade a plan to 'bumped'; they never upgrade one.
   const reason = prize ? 'supported' : toy ? (blocker ? 'crowded' : points.every(Boolean) ? 'near' : 'slipped') : blocker ? 'blocked' : 'empty';
-  return { position: { ...position }, low, contacts, radii: contacts.map(r => r ?? .075), prize, touched: toy, blocker: blocker?.id ?? null, reason, offset: prize ? { x: prize.x - position.x, z: prize.z - position.z, y: low - BED - (prize.elevation || 0) - (prize.restPose?.lift || 0) } : null, stop: toy ? 'toy' : low > BED + FINGER_DEPTH + .022 ? 'neighbour' : 'bed' };
+  // Normalized offset within the supporting cross-section, evaluated at the
+  // actual contact pose (including suspended-claw displacement), never a roll.
+  let precision = null;
+  if (prize) {
+    const dx = position.x - (prize.support?.x ?? prize.x), dz = position.z - (prize.support?.z ?? prize.z);
+    if (prize.support) {
+      const { xx, xz, zz } = prize.support;
+      precision = Math.sqrt(Math.max(0, xx * dx * dx + 2 * xz * dx * dz + zz * dz * dz));
+    } else {
+      const shape = BODY[prize.family], c = Math.cos(prize.yaw), s = Math.sin(prize.yaw);
+      const slice = Math.sqrt(1 - ((shape.grip - shape.cy) / shape.ry) ** 2) * prize.scale;
+      precision = Math.hypot((c * dx - s * dz) / (shape.rx * slice), (s * dx + c * dz) / (shape.rz * slice));
+    }
+  }
+  return { position: { ...position }, low, contacts, precision, radii: contacts.map(r => r ?? .075), prize, touched: toy, blocker: blocker?.id ?? null, reason, offset: prize ? { x: prize.x - position.x, z: prize.z - position.z, y: low - BED - (prize.elevation || 0) - (prize.restPose?.lift || 0) } : null, stop: toy ? 'toy' : low > BED + FINGER_DEPTH + .022 ? 'neighbour' : 'bed' };
 }
+// A later mesh-contact failure always overrides the earlier envelope estimate.
+export const catchQuality = plan => !plan?.prize ? 'miss' : Number.isFinite(plan.precision) && plan.precision <= .28 ? 'perfect' : 'ordinary';
 export const MISS_REASONS = Object.freeze(['near', 'slipped', 'crowded', 'blocked', 'bumped', 'platform', 'empty']);
 
-export function createGame({ carousel = false, pushContact = false, suspendedClaw = false } = {}) { const game = { carousel, pushContact: pushContact && !suspendedClaw, suspendedClaw, suspension: suspendedClaw ? createSuspension() : null, carouselTime: 0, phase: 'idle', elapsed: 0, position: { ...START }, plan: null, rounds: 0, collection: [], toys: ASSORTMENT.filter(t => !carousel || EVENT_TOYS.includes(t.id)).map(t => ({ ...t, ...(carousel && t.id === 'peach' ? { x: .20, z: .72, scale: .82 } : {}), elevation: carousel && t.id === CAROUSEL.id ? CAROUSEL.height : 0, claimed: false })), rider: carousel ? CAROUSEL.id : null }; moveCarousel(game, 0); return game; }
+export function createGame({ carousel = false, pushContact = false, suspendedClaw = false, collection = false } = {}) { const game = { carousel, collectionPreview: collection, pushContact: pushContact && !suspendedClaw, suspendedClaw, suspension: suspendedClaw ? createSuspension() : null, carouselTime: 0, phase: 'idle', elapsed: 0, position: { ...START }, plan: null, rounds: 0, collection: [], toys: (collection ? COLLECTION_TOYS : ASSORTMENT).filter(t => collection || !carousel || EVENT_TOYS.includes(t.id)).map(t => ({ ...t, ...(carousel && t.id === 'peach' ? { x: .20, z: .72, scale: .82 } : {}), elevation: carousel && t.id === CAROUSEL.id ? CAROUSEL.height : 0, claimed: false })), rider: carousel ? CAROUSEL.id : null }; moveCarousel(game, 0); return game; }
 // A miss continues over its drop; a catch or a fresh run starts at the bed centre.
 export function begin(game) { if (!['idle', 'result'].includes(game.phase)) return false; if (game.collection.length === game.toys.length) return false; const pose = carriagePose(game); game.position = game.plan && !game.plan.prize ? { x: pose.x, z: pose.z } : { ...START }; game.phase = 'aim'; game.elapsed = 0; game.plan = null; return true; }
 // After a delivery the empty claw drives from the chute to the start while the next round is announced.
@@ -232,6 +260,7 @@ export function resolveSuspendedGrab(game, pose) {
   const actual = planGrab({ x: 0, z: 0 }, localToys);
   const prize = !plan.blockedDescent && actual.prize ? game.toys.find(t => t.id === actual.prize.id) : null;
   plan.contacts = actual.contacts;
+  plan.precision = actual.precision;
   // The envelope includes the old pad clearance. Pointed fingers must travel
   // beyond that estimate until the mesh sweep finds the real metal contact.
   plan.radii = actual.contacts.map(r => r == null ? .055 : Math.max(.055, r - .035));

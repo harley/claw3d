@@ -116,6 +116,31 @@ export function createToy(data, mats) {
     blink = eyes(body, mats, .135, .54, .219, true); smile(face, mats, .405, .286, .032);
     if (data.id === 'miso') { ball(parts, material('#d08b31', .83), [0, .694, .035], [.079, .065, .075]); const leaf = ball(parts, material('#6c8c54'), [.024, .754, .037], [.043, .008, .019]); leaf.rotation.z = -.35; }
     for (const side of [-1, 1]) for (let i = 0; i < 2; i++) line(parts, seam, [[side * .185 + i * .03 - .015, .074, .20], [side * .185 + i * .03 - .015, .042, .203]], .004);
+  } else if (data.family === 'bear' || data.family === 'panda') {
+    // The panda has a narrower supporting torso in both mesh and BODY.
+    const panda = data.family === 'panda', rx = panda ? .23 : .30, rz = panda ? .19 : .235;
+    const dark = mats.plush('#354050'), paws = panda ? dark : fabric;
+    ball(parts, fabric, [0, .30, 0], [rx, .27, rz]);
+    ball(parts, light, [0, .29, rz * .87], [rx * .65, .17, .04]);
+    ball(parts, fabric, [0, .60, .005], [panda ? .205 : .24, .19, panda ? .165 : .195]);
+    for (const side of [-1, 1]) {
+      const ear = group(body, side * (panda ? .15 : .18), .745, 0);
+      ball(ear, paws, [0, 0, 0], [.075, .075, .044]);
+      ball(ear, light, [0, 0, .037], [.037, .04, .012]);
+      batch(ear); articulation.push({ object: ear, rest: ear.rotation.clone(), side });
+      ball(parts, paws, [side * rx * .62, .072, .10], [.105, .073, .12]);
+      // Arms remain still until delivery; grip contacts must not be decorative.
+      const arm = group(body, side * rx * .90, .36, 0);
+      ball(arm, paws, [side * .015, -.07, .02], [.065, .13, .075]);
+      batch(arm); articulation.push({ object: arm, rest: arm.rotation.clone(), side, kind: 'paw' });
+      if (panda) { const patch = ball(parts, dark, [side * .073, .626, .152], [.052, .065, .020]); patch.rotation.z = side * -.30; }
+    }
+    const faceZ = panda ? .174 : .204;
+    ball(parts, light, [0, .546, faceZ - .004], [.086, .053, .034]);
+    ball(face, mats.ink, [0, .566, faceZ + .028], [.026, .017, .014]);
+    smile(face, mats, .527, faceZ + .030, .03);
+    blink = eyes(body, mats, .073, .628, faceZ);
+    cheeks(face, blush, .135, .561, faceZ - .03);
   } else if (data.family === 'cloud') {
     mesh(parts, cloudGeometry(), fabric);
     const piping = [];

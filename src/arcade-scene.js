@@ -19,7 +19,7 @@ const SHADOW_FRUSTUM = {
 };
 
 export class ArcadeScene {
-  constructor(canvas, { wideControls = false, anatomicalHands = false, singleHand = false, suspendedClaw = false } = {}) {
+  constructor(canvas, { wideControls = false, anatomicalHands = false, singleHand = false, suspendedClaw = false, assortment = ASSORTMENT } = {}) {
     this.wideControls = wideControls;
     this.suspendedClaw = suspendedClaw;
     this.canvas = canvas;
@@ -41,7 +41,7 @@ export class ArcadeScene {
     const rim = new T.DirectionalLight('#dceee3', 1.65); rim.position.set(4, 5, -4); this.scene.add(rim); this.rim = rim; this.rimTarget = new T.Color('#dceee3');
     const front = new T.DirectionalLight('#ffe8df', .5); front.position.set(0, 3, 7); this.scene.add(front);
     this.mats = createArtMaterials(); this.toys = new Map(); this.buildWorld(); this.buildCabinet(); this.buildClaw();
-    for (const toy of ASSORTMENT) { const object = createToy(toy, this.mats); object.position.set(toy.x, BED, toy.z); this.scene.add(object); this.toys.set(toy.id, object); }
+    for (const toy of assortment) { const object = createToy(toy, this.mats); object.position.set(toy.x, BED, toy.z); this.scene.add(object); this.toys.set(toy.id, object); }
     this.contacts = new ToyContacts(this.toys);
     if (anatomicalHands) this.cabinetHands = new CabinetHands(this.scene, undefined, { singleHand });
     this.buildCarousel();
@@ -586,14 +586,20 @@ export class ArcadeScene {
       }
       if (game.pushContact && held && ['lift', 'transfer', 'release', 'deliver', 'reveal'].includes(phase)) this.contacts.hang(toy, object, plan, phase, dt, elapsed);
       body.scale.set(1 + compression * .65, 1 - compression, 1 + compression * .45); body.rotation.z = wobble;
-      const seed = ASSORTMENT.findIndex(t => t.id === toy.id);
+      const catalogIndex = ASSORTMENT.findIndex(t => t.id === toy.id);
+      const seed = catalogIndex < 0 ? ASSORTMENT.length + game.toys.indexOf(toy) : catalogIndex;
       // Attract mode: on the empty machine each toy takes an occasional turn to
       // wave — ears wiggle, the candy star ripples — inviting a passer-by to play.
       let attract = 0;
       if (motion && phase === 'idle' && index < 0) { const beat = (time + seed * 2.83) % 11; if (beat < 1.1) attract = Math.sin(beat / 1.1 * Math.PI); }
       if (blink) { const tick = (time + seed * 1.317) % (4.1 + seed * .23); blink.scale.y = motion && tick < .13 ? .15 + Math.abs(tick - .065) / .065 * .85 : 1; }
       if (motion && blink && held && phase === 'reveal' && elapsed > .32 && elapsed < .52) blink.scale.y = .13;
-      for (const ear of articulation) { ear.object.rotation.copy(ear.rest); const lag = motion * (held && ['lift', 'transfer'].includes(phase) ? Math.sin(elapsed * 6 + ear.side) * .14 * Math.exp(-elapsed * 1.2) : wobble * 2) + attract * Math.sin(time * 9 + ear.side) * .15; ear.object.rotation.x += lag; ear.object.rotation.z += wobble; }
+      for (const ear of articulation) {
+        ear.object.rotation.copy(ear.rest);
+        if (ear.kind === 'paw') {
+          if (motion && held && phase === 'reveal') ear.object.rotation.z += ear.side * Math.sin(Math.min(1, elapsed / PHASES.reveal) * Math.PI) * .6;
+          continue;
+        } const lag = motion * (held && ['lift', 'transfer'].includes(phase) ? Math.sin(elapsed * 6 + ear.side) * .14 * Math.exp(-elapsed * 1.2) : wobble * 2) + attract * Math.sin(time * 9 + ear.side) * .15; ear.object.rotation.x += lag; ear.object.rotation.z += wobble; }
       if (motion && plan && !affected && phase === 'lift' && Math.hypot(toy.x - plan.position.x, toy.z - plan.position.z) < .85 && !toy.claimed) body.rotation.z = Math.sin(elapsed * 4) * .026 * Math.exp(-elapsed * 1.7);
       if (motion && aligned?.id === toy.id && phase === 'aim') body.rotation.x = -.035;
       if (wave) { wave.value = motion * (Math.abs(wobble) * .32 + compression * .18 + attract * .09); waveTime.value = time; const drift = Math.sin(.4 * 11 - time * 13) * wave.value * .7; face.position.x = drift; blink.position.x = drift; }

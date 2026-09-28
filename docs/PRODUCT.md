@@ -18,6 +18,22 @@ The wow moment is direct control followed by a believable grab, a tense lift and
 - The leaderboard is for fun and comparison only; rank earns no additional prize. Physical giveaway rules are separate. The proposed ball artwork and 20/30/50-point proposal still need alignment with the game before adoption or printing.
 
 
+## Local collection and precision preview
+
+`?toys=collection` enables the owner-approved six-toy direction for local review in the existing arcade. Hosted public, staff, official and practice entries ignore the flag. The preview always uses the suspended steel claw and disables the separate pushing experiment. It keeps three turns and 15 seconds of aiming, with its own `collection-v1` browser namespace and immutable `cloud-claw-collection-v2` rules; ordinary boards and older receipts are unchanged.
+
+The observed problem was that five equal-value stationary prizes gave visitors few meaningful choices. Acceptance: a first-time player can identify a forgiving target, see why an off-centre catch loses points, and predict the correction after a miss; 300 is a difficult precision milestone, with higher scores possible. Physical feel remains **needs-physical-test** on the Tomko and intended camera.
+
+- Bramble the bear and Miso the capybara are forgiving targets worth up to 50 points.
+- Bonbon and Butter are physically smaller precision rabbits worth up to 100 each.
+- Mochi is a compact stationary panda worth up to 150; its narrower supporting torso is shared by artwork and the grab envelope.
+- Sprout is the single moving star worth up to 200 points. Its repeatable carousel timing remains; after it is caught the platform stays empty.
+- A successful grab whose centre lies within 28% of the supporting ellipse radius earns the full toy value. The offset is measured in the actual claw contact plane, including suspended-head displacement. All three mesh contacts must still support the prize at lift; a failed contact scores zero. Misses score zero. Off-centre successful catches deduct 50% of the toy value. There are no speed or two-hand bonuses in this preview. The three-turn ceiling is 450: perfect catches of Sprout (200), Mochi (150), and either rabbit (100). Three ordinary catches can earn at most 225, so 300 requires precision on valuable targets. This is a scoring constraint, not a measured player success rate. Earlier v1 scores and interrupted runs remain in their old board/export; v2 starts a separate leaderboard.
+
+The original held offset and the claw's tilt remain authoritative. No random slipping or artificial post-grip tilt is added. New animals use the existing fabric, face, ear and compression systems, with a short paw reaction after delivery. The target plaque shows maximum catch points; confirmed lift says PERFECT GRAB when earned. Result cards show the full value for a perfect catch or the off-centre deduction. These are tuning values for review, not a new physical-gift policy.
+
+Original finite audio phrases build tension during closing, then distinguish ordinary catch, perfect catch and miss at confirmed lift. Catches use a bass impact and major chord; perfect grabs add a higher flourish, while misses use a brief descending phrase. The drop itself no longer plays a success fanfare in this preview. Existing sound activation, mute, zero volume, host pause, dialogs and hidden-page cancellation remain. Speaker mix and perceived drama require listening on the intended display.
+
 ## Suspended steel claw
 
 The normal game uses the approved chrome claw with slender, curved, pointed fingers. The suspended head and fingers lag behind carriage movement, overshoot a stop, bob during vertical motion and settle with damping. Cabinet limits constrain the whole finger envelope. The floor marker follows the physical claw. The vertical aiming line is removed; players judge the suspended claw against the scene and floor cue. This is a bounded pendulum/contact approximation, not a full rigid-body simulation.
