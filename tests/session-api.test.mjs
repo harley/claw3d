@@ -179,3 +179,14 @@ test('inaccessible retained public scores cannot block a new owner from saving',
   assert.ok(local.getItem(`cloud-claw:public:pending:v1:${oldId}:run`));
   assert.equal(api.state().pending, 1); assert.match(api.state().error, /new scores can still save/);
 });
+
+test('host authentication can explicitly recover after an incorrect host code', async () => {
+  let calls = 0;
+  const api = createSessionApi({ storage: storage(), tabStorage: storage(), fetcher: async () => {
+    return ++calls === 1 ? Response.json({ error: 'Incorrect code' }, { status: 401 }) : Response.json({ role: 'host' });
+  } });
+  await assert.rejects(api.request('/host/login', { code: 'wrong' }), /Incorrect code/);
+  await api.flush(); assert.equal(calls, 1);
+  await api.request('/host/login', { code: 'correct' });
+  assert.equal(calls, 2); assert.equal(api.state().accessBlocked, false);
+});

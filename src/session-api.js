@@ -50,7 +50,7 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
   async function request(path, data) {
     // Every caller, including START/manual/online signals, shares this deadline.
     if (now() < retryAt) throw retryError;
-    if (accessError && !['/login', '/session'].includes(path)) throw accessError;
+    if (accessError && !['/login', '/host/login', '/session'].includes(path)) throw accessError;
     const startedVersion = failureVersion;
     let response;
     try {
@@ -61,7 +61,7 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
         return {};
       });
       if (!response.ok) {
-        const error = new Error(result.error || 'Score service unavailable.'); error.status = response.status;
+        const error = new Error(result?.error || 'Score service unavailable.'); error.status = response.status;
         const header = response.headers?.get?.('Retry-After');
         const seconds = header?.trim() ? Number(header) : NaN;
         const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - now();
@@ -70,7 +70,7 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
       }
       // An older in-flight success cannot cancel a newer throttle/refusal.
       if (startedVersion === failureVersion) { failures = 0; retryAt = 0; retryError = null; }
-      if (startedVersion === failureVersion && (path === '/login' || path === '/session')) { accessError = null; needsLogin = false; lastError = ''; blocked.clear(); notify(); }
+      if (startedVersion === failureVersion && ['/login', '/host/login', '/session'].includes(path)) { accessError = null; needsLogin = false; lastError = ''; blocked.clear(); notify(); }
       return result;
     } catch (error) {
       if (error.status === 401) {

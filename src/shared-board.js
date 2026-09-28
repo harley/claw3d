@@ -58,7 +58,7 @@ export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, 
     finally { version++; rotating = false; }
   }
   async function loginStaff(code) { await api.request('/login', { code }); sync.recovered(); }
-  async function loginHost(code) { await api.request('/host/login', { code }); role = 'host'; }
+  async function loginHost(code) { await api.request('/host/login', { code }); role = 'host'; sync.recovered(); }
   return {
     connect, refresh, dispose: () => sync?.dispose(), rotate, loginStaff, loginHost,
     async rename(id, name) {
