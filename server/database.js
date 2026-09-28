@@ -25,6 +25,8 @@ export function openDatabase(filename) {
       board_id TEXT NOT NULL REFERENCES boards(id), name TEXT NOT NULL, rules TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'active', total INTEGER, started_at TEXT NOT NULL, completed_at TEXT,
       UNIQUE(owner_id, request_key));
+    CREATE TABLE IF NOT EXISTS run_usage (
+      run_id TEXT PRIMARY KEY REFERENCES runs(id), device_class TEXT NOT NULL, recorded_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS turns (
       run_id TEXT NOT NULL REFERENCES runs(id), turn INTEGER NOT NULL CHECK(turn BETWEEN 1 AND 3),
       prize_id TEXT, score INTEGER NOT NULL, PRIMARY KEY(run_id, turn));
@@ -129,7 +131,10 @@ export function openDatabase(filename) {
   function exportData() {
     return { version: 1, exportedAt: now(), current: currentId(), boards: db.prepare('SELECT id FROM boards ORDER BY created_at').all().map(({ id }) => {
       const result = board(id);
+      if (id === db.prepare("SELECT value FROM settings WHERE key='public-board-v1'").get()?.value) result.usageSource = 'public-web';
       result.interruptedRuns = db.prepare("SELECT * FROM runs WHERE board_id=? AND status!='complete'").all(id).map(row => runData(row));
+      const usage = new Map(db.prepare('SELECT u.* FROM run_usage u JOIN runs r ON r.id=u.run_id WHERE r.board_id=?').all(id).map(row => [row.run_id, { version: 1, deviceClass: row.device_class, recordedAt: row.recorded_at }]));
+      for (const run of [...result.runs, ...result.interruptedRuns]) if (usage.has(run.id)) run.usage = usage.get(run.id);
       return result;
     }) };
   }

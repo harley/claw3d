@@ -28,7 +28,7 @@ export class HandController {
       this.onInput({ x: 0, z: 0 });
     });
     navigator.mediaDevices?.addEventListener('devicechange', this.deviceChange);
-    select.addEventListener('change', () => { if (this.running) this.start(); });
+    select.addEventListener('change', () => { if (this.running || this.starting) this.start(); });
   }
 
   get neutral() { return this.steer?.neutral ?? null; }

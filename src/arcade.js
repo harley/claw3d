@@ -1,4 +1,7 @@
 import { assetStatus } from './offline-assets.js';
+import { createBoothInvite } from './booth-invite.js';
+import { nativeBridge } from './native-bridge.js';
+import { nativeAndroid, tomkoRendering } from './runtime-platform.js';
 import { RIGHT_SLAM_MS } from './dual-hand-controls.js';
 import { resolvePlayMode, phonePlaySearch, cueLeadSeconds, dualStartReadiness, firstTurnControlReady as isFirstTurnControlReady } from './play-mode.js';
 import { ABSOLUTE_SPEED } from './steering.js';
@@ -23,6 +26,11 @@ const publicSurface = publicPlay || publicTry;
 const publicOfficial = globalThis.__PUBLIC_OFFICIAL__ === true;
 const shared = publicPlay || !publicTry && (publicOfficial || globalThis.__SHARED_PILOT__ === true);
 const official = publicOfficial || !publicPlay && shared && globalThis.__OFFICIAL_EVENTS__ === true && new URLSearchParams(location.search).get('play') === 'official';
+const boothInvite = publicPlay ? createBoothInvite() : null;
+if (publicPlay || !shared && !publicTry) {
+  $('next-player').textContent = 'Next Play';
+  $('play-again').hidden = true;
+}
 let officialBlocked = false;
 let noticeReady = !publicSurface;
 const phoneViewport = () => ({
@@ -91,7 +99,7 @@ if (dualEnabled) $('camera-menu-help').textContent = 'Use your left hand and hol
 const glove = createJoystickCursor(() => cabinetEnabled ? scene?.controlTargets() : null, () => { if (cabinetEnabled) gestureDrop(); });
 let previousMenuMode = '', editingResultName = false, savingResultName = false;
 function menuMode() {
-  if (savingTurn || startingRun || frozen || stopped || document.hidden || editingResultName) return '';
+  if (savingTurn || startingRun || frozen || stopped || document.hidden || editingResultName || boothInvite?.editing || boothInvite?.busy) return '';
   if ((recovering || paused) && shared) return '';
   const dialogs = [...document.querySelectorAll('dialog[open]')];
   if (dialogs.length) return dialogs.length === 1 && ['registration', 'final', 'scores-dialog'].includes(dialogs[0].id) ? dialogs[0].id : '';
@@ -156,7 +164,7 @@ let cueLead = cueLeadSeconds(mode);
 const performanceGovernor = new PerformanceGovernor({ onChange: (mode, source) => {
   scene?.setQuality(mode === 'simple');
   cameraControls?.setPerformanceMode(mode);
-  if (scene) $('quality').textContent = `QUALITY: ${mode === 'simple' ? 'SIMPLE · 30 FPS CAP' : 'FULL'}${source === 'auto' ? ' · AUTO' : ''}`;
+  if (scene) $('quality').textContent = `QUALITY: ${mode === 'simple' ? (nativeAndroid ? `SIMPLE · ${tomkoRendering.drawHz} FPS CAP` : 'SIMPLE · 30 FPS CAP') : 'FULL'}${source === 'auto' ? ' · AUTO' : ''}`;
 } });
 const tags = game.toys.map(toy => {
   const element = document.createElement('span'); element.className = 'prize-tag'; element.dataset.points = RULES.points[toy.id]; element.textContent = RULES.points[toy.id]; $('prize-tags').append(element); return { toy, element };
@@ -339,7 +347,7 @@ async function startScoredRun() {
     }
     turnReasons = [];
     track('run_start', { steering, ...(holdMs ? { holdMs } : {}) }, run);
-    pendingPlayer = null; completedRun = null; persist(); freshGame(); beginFirstTurnPreparation(flow, run.rules.seconds);
+    pendingPlayer = null; completedRun = null; boothInvite?.show(null); persist(); freshGame(); beginFirstTurnPreparation(flow, run.rules.seconds);
     $('shared-start').close();
   } catch (error) {
     if (shared) {
@@ -452,7 +460,7 @@ $('final-name-form').addEventListener('submit', async event => {
 });
 
 async function replay(samePlayer) {
-  if (editingResultName || startingRun || ((run || cameraLoading) && !(official && officialPlayer.state().canHandoff))) return;
+  if (editingResultName || boothInvite?.busy || startingRun || ((run || cameraLoading) && !(official && officialPlayer.state().canHandoff))) return;
   if (official) {
     try { await officialPlayer.handoff(); location.replace(publicOfficial ? '/official' : '/staff'); }
     catch (error) { setText('final-sync', error.message); }
@@ -466,7 +474,7 @@ async function replay(samePlayer) {
   if (cameraControls?.running) openRegistration(name);
 }
 $('play-again').addEventListener('click', () => { void replay(true); });
-$('next-player').addEventListener('click', () => { void replay(false); });
+$('next-player').addEventListener('click', () => { void replay(publicPlay || !shared); });
 $('result-open').addEventListener('click', () => {
   if (!completedRun || startingRun || run || cameraLoading) return;
   cancelAnimationFrame(scoreAnimation);
@@ -531,7 +539,26 @@ $('new-board').addEventListener('click', async () => {
   try { rotateBoard(store, $('session-name').value); persist(); completedRun = null; renderBoard(); $('operator-message').textContent = 'New leaderboard started. Previous results are preserved.'; }
   catch (error) { $('operator-message').textContent = error.message; }
 });
-$('export').addEventListener('click', () => { if (shared) { window.location.assign('/api/host/export'); return; } let data = JSON.stringify(store, null, 2); if (storageBlocked) { try { data = localStorage.getItem(scoreKey) || data; } catch { /* In-memory export remains available. */ } } const url = URL.createObjectURL(new Blob([data], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = `cloud-claw-sessions-${new Date().toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
+if (nativeAndroid) $('export').textContent = 'EXPORT THIS MODE’S SESSIONS';
+$('export').addEventListener('click', async () => {
+  if (shared) { window.location.assign('/api/host/export'); return; }
+  let data = JSON.stringify(store, null, 2);
+  if (storageBlocked) { try { data = localStorage.getItem(scoreKey) || data; } catch { /* In-memory export remains available. */ } }
+  const filename = `cloud-claw-${nativeAndroid ? dualEnabled ? 'two-hand' : 'one-hand' : 'sessions'}-${new Date().toISOString().slice(0, 10)}.json`;
+  if (nativeAndroid) {
+    $('export').disabled = true;
+    setText('operator-message', 'Choose a file for this mode’s scores…');
+    try {
+      const outcome = await nativeBridge().exportScores(data, filename);
+      setText('operator-message', outcome === 'saved' ? 'This mode’s scores saved. Restart the camera when ready.' : 'Export cancelled. Scores remain on this device.');
+    } catch (error) { setText('operator-message', error.message); }
+    finally { $('export').disabled = false; }
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+  const link = document.createElement('a'); link.href = url; link.download = filename; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
 $('quality').addEventListener('click', () => { if (!scene) return; performanceGovernor.setMode(scene.lowQuality ? 'full' : 'simple', 'operator'); });
 $('sound').addEventListener('click', () => { if (audio.enabled && !audio.ready) audio.unlock(); else audio.toggle(); });
 document.addEventListener('pointerdown', event => { if (event.target.closest('#sound')) return; audio.unlock(); });
@@ -568,6 +595,29 @@ $('feedback-form').addEventListener('submit', async event => {
 });
 $('fullscreen').addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { $('status').textContent = 'FULLSCREEN UNAVAILABLE'; } });
 $('camera-open').addEventListener('click', () => $('camera-setup').showModal());
+function showCameraView(open) {
+  // A closed dialog must not hide the capture video on mobile browsers.
+  // Move the same element back to its clipped home; never replace its stream.
+  $(open ? 'camera-view-image' : 'camera-capture-home').append(document.querySelector('.camera-image'));
+  $('camera-view').hidden = !open;
+  $('camera-view-toggle').setAttribute('aria-expanded', String(open));
+  setText('camera-view-toggle', open ? 'Hide camera' : 'Show camera');
+}
+function updateCameraView(message = 'Camera is off') {
+  if (nativeAndroid) {
+    $('camera-view-toggle').hidden = true;
+    setText('camera-view-status', 'Set CAMERA VIEW on the Android panel, then stop/start camera between runs to apply.');
+    return;
+  }
+  const track = $('camera-video').srcObject?.getVideoTracks()[0];
+  const live = track?.readyState === 'live';
+  $('camera-view').classList.toggle('live', live);
+  setText('camera-view-status', live ? `Active camera: ${track.label || 'Default camera'}` : message);
+}
+$('camera-view-toggle').addEventListener('click', () => showCameraView($('camera-view').hidden));
+$('camera-setup').addEventListener('close', () => showCameraView(false));
+$('camera-video').addEventListener('loadedmetadata', () => updateCameraView());
+
 function reportCameraFailure(code) {
   if (cameraFailureReported) return;
   cameraFailureReported = true;
@@ -577,6 +627,7 @@ async function startCamera() {
   if (cameraLoading || !noticeReady) return;
   cameraFailureReported = false;
   track('camera_start');
+  updateCameraView('Starting camera…');
   cameraLoading = true; $('camera-toggle').disabled = true; $('camera-status').textContent = 'Starting camera…';
   updateUI();
   try {
@@ -584,6 +635,7 @@ async function startCamera() {
       const { createCameraControls } = await import('./camera-controls.js');
       cameraControls = await createCameraControls({ video: $('camera-video'), overlay: $('camera-overlay'), select: $('camera-select'), maxHands: dualEnabled ? 2 : 1, holdMs, steering,
         getControlProfile: () => dualEnabled ? menuMode() ? 'menu-left' : 'dual' : grabEnabled && !menuMode() ? 'grab-release' : 'hold-drop',
+        canConfigureCamera: () => !run && !recovering && !pendingPlayer && !startingRun,
         getControlTarget: (pointer, role, origin) => glove.targetAt(pointer, role, origin),
         canControl: () => Boolean(menuMode() || (!flow.pendingSlam && !startingRun && run && game.phase === 'aim' && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]'))),
         canObserve: () => Boolean(dualEnabled && !menuMode() && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]')),
@@ -600,6 +652,7 @@ async function startCamera() {
           if (state.kind === 'loading') cameraFailureReported = false;
           if (state.kind === 'error') reportCameraFailure(state.code || 'unknown');
           $('camera-status').textContent = state.message;
+          updateCameraView(state.message);
           const active = cameraControls?.running || state.kind === 'tracking';
           $('camera-preview').hidden = !active;
           $('camera-open').setAttribute('aria-label', active ? 'Camera settings — camera on' : 'Camera settings');
@@ -625,7 +678,7 @@ async function startCamera() {
       adaptationFrames = []; adaptationVisibleMs = 0;
     }
     else { reportCameraFailure('camera_unavailable'); $('camera-setup').showModal(); }
-  } catch (error) { reportCameraFailure('camera_unavailable'); $('camera-status').textContent = `Camera unavailable: ${error.message}`; $('camera-setup').showModal(); }
+  } catch (error) { updateCameraView('Camera unavailable. Open Camera settings to retry.'); reportCameraFailure('camera_unavailable'); $('camera-status').textContent = `Camera unavailable: ${error.message}`; $('camera-setup').showModal(); }
   finally { cameraLoading = false; $('camera-toggle').disabled = false; updateUI(); }
 }
 $('camera-toggle').addEventListener('click', () => {
@@ -640,7 +693,7 @@ $('scene').addEventListener('webglcontextlost', event => { event.preventDefault(
 function frame(time) {
   if (stopped) return;
   const raw = previous ? (time - previous) / 1000 : 1 / 60, dt = Math.min(raw, MAX_FRAME_DELTA); previous = time;
-  if (import.meta.env.DEV && !document.hidden) { frames.push(raw * 1000); if (frames.length > 1800) frames.shift(); }
+  if ((import.meta.env.DEV || nativeAndroid) && !document.hidden) { frames.push(raw * 1000); if (frames.length > 1800) frames.shift(); }
   // One dialog query per frame; every consumer below shares it.
   const nextMenuMode = menuMode();
   if (nextMenuMode !== previousMenuMode) { cameraControls?.reset(); handMenu.clear(); previousMenuMode = nextMenuMode; }
@@ -737,7 +790,7 @@ function frame(time) {
 // Read-only development diagnostics.
 function snapshot(includeBounds = false) {
   const sorted = [...frames].sort((a, b) => a - b), average = frames.reduce((a, b) => a + b, 0) / (frames.length || 1);
-  return { phase: game.phase, elapsed: game.elapsed, position: { ...game.position }, rounds: game.rounds, event: { run, remaining: flow.remaining, turn: turnNumber, paused, firstTurnPreparationElapsed: flow.firstTurnPreparationElapsed, firstTurnControlReady: flow.firstTurnControlReady, board: shared ? pilot.board : currentBoard(store), complete: completedRun, storageError, handCamera: { running: cameraControls?.running || false, waiting: cameraControls?.waiting || false, feedback: cameraControls?.feedback, diagnostic: cameraControls?.diagnostic }, carouselTime: game.carouselTime, rider: game.rider, pendingSlam: flow.pendingSlam ? { elapsed: flow.pendingSlam.elapsed } : null, controlProfile: dualEnabled ? 'dual' : grabEnabled ? 'grab-release' : 'hold-drop', holdMs: holdMs ?? null, steering, attract: document.body.classList.contains('attract'), cue: carouselCue(game.carouselTime, cueLead) }, aligned: aligned?.id || null, caught: game.plan?.prize?.id || null, contacts: game.plan?.contacts || null, claw: clawPose(game), stop: game.plan?.stop || null, collection: [...game.collection], reducedMotion: scene?.reducedMotion, camera: scene?.camera.position.toArray(), cameraLook: scene?.currentLook.toArray(), marquee: scene ? { text: scene.marqueeDisplay.text, available: scene.marqueeAvailable, textureVersion: scene.marqueeDisplay.texture.version, cloudTop: scene.screenPoint(-.08, 5.617, .03), top: scene.screenPoint(0, 5.1295, 1.408), bottom: scene.screenPoint(0, 4.7625, 1.408) } : null, lowQuality: scene?.lowQuality, machineControls: cabinetEnabled ? scene?.controlTargets() : null, joystick: { mode: scene?.joystickHand.mode, visible: scene?.joystickHand.root.visible, progress: scene?.joystickHand.progress }, effects: { clawLean: scene?.claw.rotation.toArray().slice(0, 3), fingerRadius: scene?.fingers[0].radius ?? scene?.fingers[0].pad.position.x + .017, burst: scene?.burst.count ?? 0 }, errors: [...errors], render: { calls: scene?.renderer.info.render.calls, triangles: scene?.renderer.info.render.triangles }, performance: { frames: frames.length, averageFps: +(1000 / average).toFixed(1), p95FrameMs: sorted[Math.floor(sorted.length * .95)], framesOver33ms: frames.filter(t => t > 33.4).length }, toys: game.toys.map(toy => ({ id: toy.id, family: toy.family, claimed: toy.claimed, position: scene?.toys.get(toy.id).position.toArray(), scale: scene?.toys.get(toy.id).scale.toArray(), bounds: includeBounds ? scene?.toyBounds(toy.id) : undefined })) };
+  return { phase: game.phase, elapsed: game.elapsed, position: { ...game.position }, rounds: game.rounds, event: { run, remaining: flow.remaining, turn: turnNumber, paused, firstTurnPreparationElapsed: flow.firstTurnPreparationElapsed, firstTurnControlReady: flow.firstTurnControlReady, board: shared ? pilot.board : currentBoard(store), complete: completedRun, storageError, handCamera: { running: cameraControls?.running || false, waiting: cameraControls?.waiting || false, feedback: cameraControls?.feedback, diagnostic: cameraControls?.diagnostic }, carouselTime: game.carouselTime, rider: game.rider, pendingSlam: flow.pendingSlam ? { elapsed: flow.pendingSlam.elapsed } : null, controlProfile: dualEnabled ? 'dual' : grabEnabled ? 'grab-release' : 'hold-drop', holdMs: holdMs ?? null, steering, attract: document.body.classList.contains('attract'), cue: carouselCue(game.carouselTime, cueLead) }, aligned: aligned?.id || null, caught: game.plan?.prize?.id || null, contacts: game.plan?.contacts || null, claw: clawPose(game), stop: game.plan?.stop || null, collection: [...game.collection], reducedMotion: scene?.reducedMotion, camera: scene?.camera.position.toArray(), cameraLook: scene?.currentLook.toArray(), marquee: scene ? { text: scene.marqueeDisplay.text, available: scene.marqueeAvailable, textureVersion: scene.marqueeDisplay.texture.version, cloudTop: scene.screenPoint(-.08, 5.617, .03), top: scene.screenPoint(0, 5.1295, 1.408), bottom: scene.screenPoint(0, 4.7625, 1.408) } : null, lowQuality: scene?.lowQuality, machineControls: cabinetEnabled ? scene?.controlTargets() : null, joystick: { mode: scene?.cabinetHands?.mode || scene?.joystickHand.mode, visible: Boolean(scene?.cabinetHands ? scene.cabinetHands.root.visible && scene.cabinetHands.singleHand : scene?.joystickHand.root.visible), progress: scene?.cabinetHands?.progress ?? scene?.joystickHand.progress }, effects: { clawLean: scene?.claw.rotation.toArray().slice(0, 3), fingerRadius: scene?.fingers[0].radius ?? scene?.fingers[0].pad.position.x + .017, burst: scene?.burst.count ?? 0 }, errors: [...errors], render: { calls: scene?.renderer.info.render.calls, triangles: scene?.renderer.info.render.triangles }, performance: { frames: frames.length, averageFps: +(1000 / average).toFixed(1), p95FrameMs: sorted[Math.floor(sorted.length * .95)], framesOver33ms: frames.filter(t => t > 33.4).length }, toys: game.toys.map(toy => ({ id: toy.id, family: toy.family, claimed: toy.claimed, position: scene?.toys.get(toy.id).position.toArray(), scale: scene?.toys.get(toy.id).scale.toArray(), bounds: includeBounds ? scene?.toyBounds(toy.id) : undefined })) };
 }
 
 function updateSavedRank(saved) {
@@ -760,6 +813,7 @@ function updateSavedRank(saved) {
   if (globalThis.__OFFLINE_SHELL__ && (saved.total !== completedRun.total || saved.turns?.length !== 3 || saved.turns.some((turn, i) => turn.score !== completedRun.turns[i]?.score))) {
     setText('final-sync', 'Server score differs. Keep this computer’s result and ask the host.'); return;
   }
+  boothInvite?.show(saved);
   completedRun.rank = saved.rank;
   completedRun.name = saved.name;
   setText('final-name', saved.name.toUpperCase());
@@ -908,7 +962,7 @@ $('shared-start').addEventListener('cancel', event => event.preventDefault());
 const loadingTimeout = setTimeout(() => fail('The arcade took too long to open. Reload the page to try again.'), 15000);
 try {
   await new Promise(resolve => requestAnimationFrame(resolve));
-  scene = new ArcadeScene($('scene'), { wideControls: cabinetEnabled && new URLSearchParams(location.search).get('controls') !== 'grab', anatomicalHands: dualEnabled, suspendedClaw: mode.suspendedClaw });
+  scene = new ArcadeScene($('scene'), { wideControls: cabinetEnabled && new URLSearchParams(location.search).get('controls') !== 'grab', anatomicalHands: !grabEnabled || dualEnabled, singleHand: !dualEnabled, suspendedClaw: mode.suspendedClaw });
   if (scene.cabinetHands) {
     const status = $('hand-art-status');
     status.textContent = '3D hands are loading. Camera tracking and game controls remain available.';
@@ -917,6 +971,10 @@ try {
       status.hidden = scene.cabinetHands.state === 'ready';
       if (!status.hidden) status.textContent = '3D hands are unavailable. Camera tracking and game controls remain available. Reload to retry the artwork.';
     });
+  }
+  if (nativeAndroid) {
+    performanceGovernor.setMode('simple', 'operator');
+    globalThis.tomkoStatus = () => ({ phase: game.phase, turn: turnNumber, rounds: game.rounds, completed: Boolean(completedRun), camera: cameraControls?.feedback.kind, lowQuality: scene.lowQuality, render: { calls: scene.renderer.info.render.calls, triangles: scene.renderer.info.render.triangles }, performance: snapshot().performance });
   }
   scene.groundToys(game);
   restoreTrophies();

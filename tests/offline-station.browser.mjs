@@ -181,7 +181,15 @@ try {
   await page.reload();
   assert.equal((await status(page)).id, manifest.id, 'mode/reload remains on one build');
   await page.close();
-  await host.waitForFunction(async () => !(await navigator.serviceWorker.getRegistration('/prepared/'))?.waiting);
+  // A disappearing waiting worker is only a transition, not proof that the
+  // replacement has activated. Observe its identity before opening a new client.
+  await host.waitForFunction(async expected => {
+    const registration = await navigator.serviceWorker.getRegistration('/prepared/');
+    if (registration?.installing || registration?.waiting || registration?.active?.state !== 'activated') return false;
+    const { assetStatus } = await import('/prepared/client.js');
+    const active = await assetStatus(registration.active);
+    return active.complete && active.id === expected;
+  }, replacement.prepared.id);
   const updated = await context.newPage();
   await updated.addInitScript(() => {
     const getContext = HTMLCanvasElement.prototype.getContext;

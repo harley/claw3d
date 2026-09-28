@@ -412,3 +412,71 @@ in `test:shared`, exercises the production arcade, real service worker/cache,
 IndexedDB, both control modes and the same workload. Only its camera input module
 is replaced by the synthetic fixture in a temporary, rehashed test pack. Neither
 suite establishes physical camera accuracy or sudden-power-loss durability.
+
+## Android distribution
+
+### Source and build identity
+
+Web and Android share root `src/`, `public/` and tests. Never edit or distribute a second copied game directory. `npm run android:build` creates a test APK from the current checkout; `npm run android:release` requires a clean checkout and signing credentials. Both bundle a fresh Vite build and checksum-verified model, record the full source commit and dirty status, and produce APK SHA256 and JSON identity files in `android/build/distributions/`. Native operator text shows app version and commit; web operator BUILD shows the same source commit and dirty marker. Build tooling is pinned; this is a repeatable source-to-artifact process, not a promise of byte-identical APKs across build times or signing keys.
+
+Use Java 17, Node per package.json, Android platform 35 and the checked-in Gradle wrapper. Build outputs, local SDK paths and signing files are ignored. Before releasing, increment both `versionCode` and `versionName` in `android/version.properties`; Android rejects lower version codes, and published `android-v<versionName>` releases must never be overwritten.
+
+### Signing and release channels
+
+CI builds test APK artifacts for PRs/main with no release credentials. Test builds use a development certificate and `com.coderpush.cloudclaw.test`, not the installed production app. CI development certificates may differ between runners; test APKs are disposable and must not hold important scores. Keep the last physically verified signed APK independently of these temporary artifacts.
+
+The permanent release package is `com.coderpush.cloudclaw`. It installs alongside the earlier `com.coderpush.tomkogame` prototype rather than attempting an incompatible signing-key upgrade. Neither prototype nor test scores are copied or erased. There is no score migration/import tool in this change. Start a new release-app leaderboard deliberately; retain the prototype until its scores are no longer needed.
+
+Before the first signed release, the owner must provision and securely back up a persistent signing keystore and passwords outside Git. Do not use the Android debug keystore for releases. Configure an `android-release` GitHub environment restricted to main with the desired owner approval, and these environment secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_STORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. The workflow fails without them; this code change does not create a key or claim the environment is configured. Local signing uses absolute `CLAW_KEYSTORE`, `CLAW_STORE_PASSWORD`, `CLAW_KEY_ALIAS`, `CLAW_KEY_PASSWORD` environment variables. Never print or commit them.
+
+Run the **Android APK** workflow manually on main with `publish_prerelease=true`. After tests and environment approval, it attaches the signed APK, checksum and source metadata to a new `android-v<versionName>` GitHub prerelease. Existing releases are not replaced. A GitHub prerelease identifies a test build, not successful physical acceptance. Record the tested APK checksum, commit, camera/display and outcomes before manually designating a release physically verified. This does not change website deployment authorization.
+
+### Install, upgrade and offline checks
+
+Use ADB for development, or transfer the signed APK to the TV and use Android's installer. Normal upgrades require the same package ID, signing certificate and an increased version code. Install over the existing release app; do not uninstall or clear app data as an update procedure. Preserve the signing key for every future update. Rollback generally requires a new APK with a higher version code; installing an old APK is not a reliable data-preserving rollback.
+
+All game/model assets are bundled; the APK has no INTERNET permission. Scores use WebView local storage under the fixed appassets HTTPS origin. Browser-level persistence is tested, but physical Android force-stop, reboot and upgrade preservation still need acceptance. In Operator controls, EXPORT THIS MODE’S SESSIONS opens the Android document picker. Save each mode separately and verify the resulting JSON is readable before treating it as a backup. Success appears only after the stream closes. Cancellation, missing picker and write failure leave scores in place. If Android restarts the activity while the picker is open, retry the interrupted export; the first chosen file may be empty. The export limit is 2 MB; restore/import is not implemented. Returning from the picker requires an explicit camera start. Retain the existing app/data.
+
+Before use at an event: complete three turns in each mode; check deliberate drops and loss/reacquisition; turn Wi-Fi off; force-stop/reopen and reboot to verify stored scores; perform a same-key upgrade without uninstalling and verify scores again; then measure a sustained session. Keep physical acceptance separate from CI results.
+
+### September 29, 07:00 Tomko acceptance
+
+Use the 0.4.1 candidate’s exact commit/checksum from its distribution JSON. This is a test-package candidate, not physical acceptance or a permanent signed release. Preserve the existing prototype and its data. Do not use a CI test certificate to overwrite an app with a different certificate; never uninstall to resolve a signature mismatch.
+
+1. With the owner present, obtain the TV’s current ADB endpoint or transfer the APK using Android’s installer. Install alongside the old prototype. Record app version, native commit, web Operator BUILD, screen and selected camera. All must describe the same candidate.
+2. Grant Camera permission, then press Start again. Confirm the listed camera exists and framing/mirroring is usable. External USB is supported only if CameraX lists it; no USB driver is bundled. Preview starts off. Before registering a player, request ON in CAMERA VIEW, then stop/start the camera in game settings to apply it for framing. Request OFF and stop/start again for analysis-only play. The native panel shows the session setting and any pending change. Toggling during startup or a run must not restart acquisition; pending changes wait for a new camera start between runs. A camera restart during an active/recovering run keeps the previous preview setting.
+3. Prioritize one-hand: finish exactly three turns with intentional fist drops. Remove hands after a drop and verify it completes. Reacquire without a phantom drop. Repeat for two-hand, checking left/right roles. If two-hand fails, keep that acceptance open and make a one-hand-only booth decision explicitly.
+4. Compare preview off/on on the same camera and mode for at least 60 seconds each; then sustain the selected configuration for ten minutes. Record native processing rate/p95 and delivered/fresh rate/analyzer-age p95. Sensor age is unavailable. Judge visible responsiveness and a first-time visitor’s ability to finish without coaching; no automated check proves either.
+5. Deny/regrant camera permission, background/return, and restart tracking. Existing scores remain; camera input must require explicit restart. If the renderer stops, use Reload game and check stored scores; an unfinished run may need operator recovery.
+6. Disable Wi-Fi. Complete and save a run in each mode, force-stop/reopen, then reboot. Check both boards. Install the same locally signed candidate over itself with `adb install -r` and confirm scores remain; a later higher-version upgrade still needs its own verification.
+7. Export each mode separately using the document picker, open each JSON, and match a recorded name/score. Cancel one export and verify scores remain. If there is no document provider, export is unavailable; keep app data and do not call it backed up.
+
+Stop and preserve the prototype if GPU/camera binding fails, orientation is unusable, most input is stale, scores do not survive, or a new player cannot complete the run. Record a pass/fail per check with the exact BUILD; code delivery, APK distribution and physical acceptance are separate decisions.
+
+### Optional booth contact requests
+
+Host setup (`/staff`) provides “Download contact requests (JSON)” after host sign-in. The host-only `GET /api/host/contacts` export contains private contact name, email/phone, channel, consent purpose, submission time, linked run, public nickname, saved score, event membership where available, and `eligible` (score strictly greater than 300). These requests authorize result and booth-invitation follow-up only. The service does not send messages or redeem attempts. Hosts reconcile repeated contact details and badge records before any invitation; a browser identity or nickname does not identify a visitor.
+
+Active `public_contacts` rows expire after 30 days through startup, hourly maintenance and export pruning. Exports and SQLite backups may retain contacts: restrict access and remove those copies when fulfilling a withdrawal/removal request. To remove an active request, first follow the existing backup/access procedure, then use a parameterized deletion against `public_contacts` by its exact `run_id`, preserving the score. Never commit exports or private contact details to GitHub.
+
+## Booth-day usage counts
+
+Report visitor activity from **29 September 2026, 09:00 Asia/Ho_Chi_Minh** (02:00 UTC). Setup runs started before that time are excluded even if they finish later. Counts refer to plays, not unique people. Website phone classification is a browser-header estimate; it does not establish practice intent or location. A phone used at the booth still counts as a phone.
+
+Website instrumentation version 1 stores one coarse device category on the existing public run-start transaction. It adds no client request, timer or frame-loop work and retains no raw user-agent header. Retries keep the original category. Earlier runs remain unknown; no historical device backfill is inferred. The protected host export includes this metadata and identifies the public board independently of its name. Staff boards are excluded by the report. No new public analytics endpoint is exposed.
+
+Tomko Android needs no app change for completed-play counts. It already saves start/completion timestamps, turns, score and mode locally. Confirm the TV clock before visitors arrive. During a break, use **EXPORT THIS MODE’S SESSIONS** for **each mode** from the intended installed package, then transfer both JSON files. Keep app data intact. Export may stop the camera, so do it between players and restart the camera afterward. Different Android package installations have separate records. A missing export is not evidence of zero plays; historical abandoned Android starts are not complete enough for a completion-rate claim.
+
+Download a fresh protected website score export using the existing host controls (`/api/host/export`). Run the report locally against exported files, outside the game and server process:
+
+```sh
+node scripts/usage-report.mjs --web host-export.json \
+  --android cloud-claw-one-hand-2026-09-29.json \
+  --android cloud-claw-two-hand-2026-09-29.json
+```
+
+Either source can be omitted when unavailable; the report states which inputs were supplied. Repeat `--android` for additional snapshots; run IDs prevent double-counting and completed receipts supersede earlier unfinished snapshots. Supply one latest website export. Defaults cover 09:00 through midnight on 29 September; `--since` and `--until` accept ISO timestamps with explicit offsets and select runs by start time (inclusive/exclusive). Completion is as of each supplied export, not a reconstructed historical cutoff. Output groups by source, coarse device, mode and Hanoi hour, with completed plays, recorded starts and unfinished records. It contains no names or ownership identifiers. Keep the original score exports private and outside Git.
+
+`firstClassifiedWebStart` and `startsWithoutDeviceInstrumentation` expose partial collection when instrumentation is installed during the day; the first observed classified run is not a deployment timestamp. Android scores can be reported retrospectively from existing exports. Additional future metrics need their own explicit coverage/version; never treat missing historical instrumentation as zero. Unique people and phone-to-TV conversion remain unavailable without a separate participant process. Do not infer either from nicknames or Android's per-run player IDs.
+
+Prepared live starts use the same coarse device classification as ordinary web starts. Deferred prepared runs have no device-at-start evidence; they remain unknown. Their server `startedAt` records reconciliation time, so the usage report cannot establish their actual offline start hour or inclusion in the 09:00 booth window. Keep deferred prepared totals separate from booth-day start-time claims until a reviewed offline timestamp/reporting contract exists. This does not affect native Android exports, which retain local run timestamps.

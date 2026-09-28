@@ -28,7 +28,8 @@ try {
  await page.goto('http://127.0.0.1:4196/');
  await page.waitForFunction(()=>document.getElementById('button-text').textContent==='PLAY · 1 HAND');
  assert.equal(await page.locator('#mode-two').textContent(),'2 Hands');
- assert.deepEqual(modelRequests, [], 'one-hand play must not fetch either anatomical model');
+ assert.equal(modelRequests.length, 2, 'each one-hand page loads the shared grip');
+ assert.ok(modelRequests.every(url => url.endsWith('/left.glb')), 'one-hand play needs only the grip asset');
  // Contract: the dialog choice, not the previous header mode, controls the
  // immutable run. This covers the reload/name/hand-menu wiring unit tests cannot.
  await page.locator('#play').click(); await page.locator('#registration').waitFor();
@@ -66,7 +67,7 @@ try {
  assert.equal(await page.evaluate(()=>window.__littleCloud.snapshot().event.controlProfile),'dual');
  assert.equal(await page.evaluate(()=>window.__littleCloud.snapshot().event.run.rules.twoHandBonus),25);
  await page.waitForFunction(()=>document.getElementById('hand-art-status').hidden);
- assert.equal(modelRequests.length,2);
+ assert.equal(modelRequests.length,4);
  await assertLocalLabel(page, '2 HANDS');
  assert.equal(await page.locator('#mode-one').isDisabled(),true,'mode cannot change inside an active run');
  const id=await page.evaluate(()=>window.__littleCloud.snapshot().event.run.id);

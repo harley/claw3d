@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { ApiError, label } from './database.js';
+import { deviceClass } from './usage.js';
 import { RULES } from '../src/event-session.js';
 
 export const PERMIT_PROTOCOL = 1;
@@ -101,6 +102,8 @@ export function createPublicPermits({ database, boardId, policy, now, owner, gen
       if (existing) fail(409, 'permit_conflict', 'Reserved identity already belongs to another admission.');
       db.prepare('INSERT INTO runs (id,owner_id,request_key,board_id,name,rules,started_at) VALUES (?,?,?,?,?,?,?)')
         .run(slot.run_id, player, slot.request_key, slot.board_id, name, JSON.stringify(rules), new Date(now()).toISOString());
+      if (source === 'live') db.prepare('INSERT INTO run_usage (run_id,device_class,recorded_at) VALUES (?,?,?)')
+        .run(slot.run_id, deviceClass(req.headers['user-agent']), new Date(now()).toISOString());
       db.prepare('UPDATE public_permit_slots SET start_name=?,control_mode=?,admission_source=?,registered_at=? WHERE id=?')
         .run(name, input.controlMode, source, now(), slot.id);
       if (source === 'live' && eventToday(req)) db.prepare('INSERT INTO public_run_events VALUES (?,?)').run(slot.run_id, eventId);

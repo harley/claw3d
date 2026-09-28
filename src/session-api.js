@@ -35,6 +35,13 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
     finally { notify(); }
   }
   let flushing = null, activeId = null, lastError = '', needsLogin = false;
+  let preparationError = null, preparationVersion = 0;
+  async function holdPreparation(error) {
+    // Refusal is authoritative even if storage fails; never turn it into an outage.
+    preparationError = error; preparationVersion++;
+    try { await updateJournal(journal => journal.holdPreparation(`Preparation on hold: ${error.message}`)); }
+    catch { /* updateJournal retains the storage warning; the refusal must survive. */ }
+  }
   const unsaved = new Map(), blocked = new Map();
   let failures = 0, retryAt = 0, retryError = null, accessError = null, failureVersion = 0;
   const pendingEntry = entry => entry.turns.length > entry.acknowledged || entry.interrupted;
@@ -112,7 +119,7 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
       return result;
     } catch (error) {
       if (prepared && (error.status === 401 || error.code && ![429].includes(error.status))) {
-        await updateJournal(journal => journal.holdPreparation(`Preparation on hold: ${error.message}`));
+        await holdPreparation(error);
       }
       if (error.status === 401) {
         failureVersion++; accessError = error; needsLogin = !publicPlay;
@@ -197,6 +204,7 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
     return pack.id;
   }
   async function startPrepared(name, attemptKey, controlMode) {
+    if (preparationError) throw preparationError;
     if (accessError) throw accessError;
     if (publicStarting || activeId) throw Error('Finish the current physical attempt before starting another.');
     publicStarting = true;
@@ -210,8 +218,9 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
         try { admitted = await request('/permits/live', permitInput(entry), { timeout: 1000 }); }
         catch (error) {
           if (error.status && error.status !== 429 && !(error.status >= 500 && !error.code)) {
-            await updateJournal(journal => journal.holdPreparation(`Preparation on hold: ${error.message}`));
-            await updateJournal(journal => journal.interrupt(entry.requestKey)); throw error;
+            if (preparationError !== error) await holdPreparation(error);
+            try { await updateJournal(journal => journal.interrupt(entry.requestKey)); } catch { /* Retain the authority refusal. */ }
+            throw error;
           }
         }
       }
@@ -219,6 +228,7 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
         await updateJournal(journal => journal.admission(entry.requestKey, admitted), entry.requestKey);
         if (admitted.status !== 'active' || admitted.turns.length) throw Error('This physical attempt is already used. Keep pending data.');
       }
+      if (preparationError) throw preparationError;
       if (disposed) throw Error('The game page closed before admission.');
       activeId = entry.run.id;
       return { ...entry.run, ...(admitted?.event ? { event: admitted.event } : {}) };
@@ -228,9 +238,18 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
     request, flush, state,
     async preparePermit(poolId) {
       if (!prepared) throw Error('Open the prepared game before preparing permits.');
+      const version = preparationVersion;
       const packId = await checkedPack();
       const pool = await request(`/permits/${poolId}`);
-      return updateJournal(journal => journal.installPool(pool, packId, now()));
+      const installed = await updateJournal(journal => journal.installPool(pool, packId, now()));
+      // A concurrent newer refusal cannot be cleared by an older preparation.
+      if (preparationError && version !== preparationVersion) {
+        const refusal = preparationError;
+        await holdPreparation(refusal);
+        throw refusal;
+      }
+      preparationError = null;
+      return installed;
     },
     dispose() { disposed = true; journal?.close(); journalOpening?.then(value => value.close()).catch(() => {}); },
     async recover() {

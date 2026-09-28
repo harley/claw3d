@@ -80,17 +80,79 @@ test('one-second live budget ignores late response without changing the current 
 });
 
 test('known live refusals hold future local admission across reload; throttling only imposes shared backoff', async () => {
-  for (const status of [401, 403, 409, 429]) {
+  for (const status of [401, 403, 409, 429, 503]) {
+    const transient = status === 429 || status === 503;
     const f = journalFixture(); await seed(f); let calls = 0;
-    let api = apiFor(f, { online: () => true, fetcher: async () => { calls++; return Response.json({ error: 'Stopped', code: status === 429 ? undefined : 'admission_paused' }, { status, headers: { 'Retry-After': '60' } }); } });
+    let api = apiFor(f, { online: () => true, fetcher: async () => { calls++; return Response.json({ error: 'Stopped', code: transient ? undefined : 'admission_paused' }, { status, headers: { 'Retry-After': '60' } }); } });
     await api.initialize();
-    if (status === 429) { const run = await api.start('Lan', id()); await complete(api, run); await api.start('Binh', id()); assert.equal(calls, 1); }
+    if (transient) { const run = await api.start('Lan', id()); await complete(api, run); await api.start('Binh', id()); assert.equal(calls, 1); }
     else {
       await assert.rejects(api.start('Lan', id()), /Stopped/); api.dispose(); await Promise.resolve(); api = apiFor(f);
       await api.initialize(); await assert.rejects(api.start('Binh', id()), /Preparation on hold/);
     }
     api.dispose();
   }
+});
+
+// Contract: an authority refusal must stop admission even when its durable hold
+// cannot be saved. Existing refusal coverage assumes all journal writes succeed.
+test('failed durable holds retain authority refusals and block later offline starts until preparation succeeds', async () => {
+  for (const status of [401, 403, 503]) {
+    const f = journalFixture(), grant = await seed(f); let connected = true, refuse = true, holdAttempts = 0, failInstall = false;
+    const api = apiFor(f, {
+      online: () => connected,
+      journalFactory: async () => {
+        const journal = await f.open();
+        return { ...journal, holdPreparation: async () => { holdAttempts++; throw Error('Disk unavailable'); },
+          installPool: async (...args) => { if (failInstall) throw Error('Install unavailable'); return journal.installPool(...args); } };
+      },
+      fetcher: async path => {
+        if (path.endsWith('/session')) return Response.json({});
+        if (refuse) return Response.json({ error: 'Authority stopped', ...(status === 401 ? {} : { code: 'admission_paused' }) }, { status });
+        return Response.json(grant);
+      },
+    });
+    await api.initialize();
+    const refusal = error => error.status === status && error.message === 'Authority stopped';
+    await assert.rejects(api.start('Lan', id()), refusal);
+    assert.ok(holdAttempts > 0);
+    connected = false;
+    await assert.rejects(api.start('Binh', id()), refusal);
+    await api.request('/session', {}); // Authentication recovery alone cannot clear the preparation hold.
+    await assert.rejects(api.start('Binh', id()), refusal);
+    await assert.rejects(api.preparePermit(grant.id), refusal);
+    await assert.rejects(api.start('Binh', id()), refusal);
+    refuse = false;
+    await api.request('/session', {});
+    failInstall = true;
+    await assert.rejects(api.preparePermit(grant.id), /Install unavailable/);
+    await assert.rejects(api.start('Binh', id()), refusal);
+    failInstall = false;
+    await api.preparePermit(grant.id);
+    const run = await api.start('Binh', id());
+    assert.notEqual(run.id, grant.slots[0].runId, 'the refused slot cannot be reused');
+    api.dispose();
+  }
+});
+
+test('a preparation response started before a newer refusal cannot release its hold', async () => {
+  const f = journalFixture(), grant = await seed(f); let release, started;
+  const pending = new Promise(resolve => { started = resolve; });
+  let api = apiFor(f, { fetcher: async path => {
+    if (path.endsWith(grant.id)) { started(); await new Promise(resolve => { release = resolve; }); return Response.json(grant); }
+    return Response.json({ error: 'Newer refusal', code: 'admission_paused' }, { status: 403 });
+  } });
+  await api.initialize();
+  const preparing = api.preparePermit(grant.id);
+  const rejected = assert.rejects(preparing, /Newer refusal/);
+  await pending;
+  await assert.rejects(api.request('/permits/live', {}), /Newer refusal/);
+  release(); await rejected;
+  await assert.rejects(api.start('Lan', id()), /Newer refusal/);
+  api.dispose(); await Promise.resolve();
+  api = apiFor(f); await api.initialize();
+  await assert.rejects(api.start('Binh', id()), /Preparation on hold/);
+  api.dispose();
 });
 
 test('20 offline players / 60 frozen scored turns survive reload and reconcile once through real HTTP and SQLite', async t => {
