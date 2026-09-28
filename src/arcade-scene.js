@@ -7,6 +7,7 @@ import { ASSORTMENT, CAROUSEL, carouselCue, carouselRider, BED, HIGH, FINGER_ANG
 import { palette, material, group, mesh, ball, box, cylinder, line, rod, batch, label, createArtMaterials, createToy } from './arcade-art.js';
 import { createBloom, BLOOM_LAYER, rimColorFor, marqueeGlowFor } from './arcade-fx.js';
 import { buildSteelClaw, updateSteelClaw } from './suspended-claw-art.js';
+import { createMarqueeDisplay } from './marquee-display.js';
 import { clawWorldPoint } from './claw-suspension.js';
 
 const v = (x, y, z) => new T.Vector3(x, y, z);
@@ -198,9 +199,8 @@ export class ArcadeScene {
     box(cab, m.ivory, [0, 4.61, 0], [3.78, .24, 2.75], .12).castShadow = true;
     box(cab, m.red, [0, 4.94, .00], [3.83, .57, 2.73], .15);
     box(cab, m.brass, [0, 4.946, 1.373], [3.39, .433, .022], .09);
-    box(cab, m.ivory, [0, 4.946, 1.394], [3.32, .367, .018], .08);
-    label(cab, 'CLAW', 2.62, .29, [0, 4.965, 1.408], { color: '#e52948', font: 'Arial', weight: 'bold', size: 59 });
-    for (const x of [-1.54, 1.54]) ball(cab, m.glow, [x, 4.957, 1.413], [.035, .035, .019]);
+    box(cab, m.darkMetal, [0, 4.946, 1.394], [3.32, .367, .018], .04);
+    for (const x of [-1.54, 1.54]) ball(cab, m.brass, [x, 4.957, 1.413], [.035, .035, .019]);
     // Original cloud finial; silhouette stays readable at a distance.
     for (const [x, y, r] of [[-.29, 5.337, .15], [-.08, 5.397, .22], [.17, 5.364, .18], [.33, 5.315, .11]]) ball(cab, m.ivory, [x, y, .03], [r, r, .12]);
     box(cab, m.ivory, [.005, 5.275, .03], [.71, .13, .22], .06);
@@ -210,6 +210,10 @@ export class ArcadeScene {
     for (const z of [-1.05, 1.05]) box(cab, m.glow, [0, 4.48, z], [2.88, .025, .034], .009);
     for (const x of [-1.758, 1.758]) for (const y of [2.08, 3.93]) box(cab, m.brass, [x, y, 1.16], [.045, .16, .09], .012);
     batch(cab);
+    // Dynamic sign stays outside the static geometry batch.
+    this.marqueeDisplay = createMarqueeDisplay();
+    const display = mesh(this.scene, new T.PlaneGeometry(3.28, .347), new T.MeshBasicMaterial({ map: this.marqueeDisplay.texture, toneMapped: false }), 0, 4.946, 1.408);
+    display.castShadow = display.receiveShadow = false;
     // Marquee bulb row: one instanced draw call, per-bulb color for chases.
     // Kept out of the static batch so instance colors stay addressable.
     this.marqueeBulbs = new T.InstancedMesh(new T.SphereGeometry(1, 10, 8), new T.MeshBasicMaterial({ toneMapped: false }), 11);
@@ -374,7 +378,7 @@ export class ArcadeScene {
   }
 
   updateMarquee(phase, plan, time, motion, attract = false) {
-    const palette = this.marqueePalette ??= { dim: new T.Color('#5a4a33'), warm: new T.Color('#e8bd7a'), bright: new T.Color('#ffe9b0') };
+    const palette = this.marqueePalette ??= { dim: new T.Color('#302b23'), warm: new T.Color('#b19361'), bright: new T.Color('#ffe9b0') };
     const delivering = Boolean(plan?.prize) && ['transfer', 'release', 'deliver', 'reveal'].includes(phase);
     const jackpot = delivering && phase === 'reveal' && plan.prize.family === 'star';
     // Repaint and re-upload only when the lit pattern actually changes.
@@ -407,7 +411,7 @@ export class ArcadeScene {
     this.look.set(-.25, 2.65, 0);
     const playScale = Math.max(1, .9 / this.camera.aspect);
     this.playCamera.set((this.angledView ? 1.8 : .45) * playScale, 3.05 + 1.65 * playScale, 8.0 * playScale);
-    this.playLook.set(0, 3.05, 0);
+    this.playLook.set(0, 3.35, 0);
   }
 
   // Simple quality lowers pixel ratio and halves the shadow map. Shadows stay
@@ -616,6 +620,7 @@ export class ArcadeScene {
     // matching every other effect's per-frame motion read.
     if (!motion && this.burst.visible) { this.burst.visible = false; this.burst.count = 0; this.burstParticles = []; }
     else if (this.burst.visible) this.updateBurst(dt);
+    this.marqueeDisplay.update(presentation.marqueeCue);
     this.updateMarquee(phase, plan, time, motion, Boolean(presentation.attract));
     this.courier.visible = this.deliveryTray.visible;
     if (this.courier.visible) { const p = this.deliveryTray.position; this.courier.scale.set(this.deliveryTray.scale.x, 1, this.deliveryTray.scale.z); this.courier.position.set(p.x, 0, 1.69); this.courierMast.scale.y = Math.max(.1, p.y - .44); this.courierMast.position.y = .44 + (p.y - .44) / 2; this.courierArm.scale.y = Math.max(.025, 1.69 - p.z); this.courierArm.position.set(0, p.y - .08, -(1.69 - p.z) / 2); }
@@ -671,6 +676,11 @@ export class ArcadeScene {
     this.camera.lookAt(this.currentLook);
     const punch = this.punchOffset(time);
     if (punch) { this.camera.position.y += punch; this.camera.position.x += punch * .4; }
+  }
+
+  // Small displays retain the central cue instead of miniaturising the lettering.
+  get marqueeAvailable() {
+    return this.canvas.clientWidth > 700 && this.canvas.clientHeight >= 480;
   }
 
   draw(time, capped) {

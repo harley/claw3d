@@ -49,7 +49,7 @@ function countIn({ digits = [1000, 1000, 1000], round = 700, start = 300, omit =
   const delayedThreeAt = now;
   nextFrame(); // No new cue: do not build another scene snapshot.
   let transitionAt = threeAt;
-  for (const [index, nextCue] of ['2', '1', 'PLAY!'].entries()) {
+  for (const [index, nextCue] of ['2', '1', 'START!'].entries()) {
     transitionAt += digits[index]; now = transitionAt; cue = nextCue;
     if (cue !== omit) nextFrame();
   }
