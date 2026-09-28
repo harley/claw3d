@@ -572,12 +572,21 @@ dialog .menu-guide-hand { font-size: 52px; }
 
 /* Miss detail stays readable while its headline lives on the LED. */
 #arcade #action-copy.marquee-with-hint #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); padding: 0; }
-#booth-invite { margin: 20px 0 12px; padding: 16px; border: 1px solid #426087; border-radius: 12px; text-align: left; }
-#booth-invite summary { cursor: pointer; color: #ffc14d; font-weight: 700; min-height: 32px; }
-#booth-invite p { font-size: 14px; line-height: 1.5; }
-#booth-invite label { display: block; margin: 12px 0 4px; font-size: 14px; }
-#booth-invite input { width: 100%; box-sizing: border-box; font-size: 16px; }
-#booth-invite button { margin-top: 12px; min-height: 44px; }
-#invite-status { color: #b4ef52; }
-#booth-invite a { color: #68d4fa; }
+#booth-invite { margin: 24px 0 0; padding: 18px 0 0; border: 0; border-top: 1px solid #2a3b52; text-align: left; }
+#booth-invite summary { display: flex; align-items: center; gap: 10px; min-height: 32px; color: #edf3ff; font-size: 16px; font-weight: 700; cursor: pointer; list-style: none; }
+#booth-invite summary::-webkit-details-marker { display: none; }
+#booth-invite summary small { margin-left: auto; color: #93a7c0; font-size: 11px; font-weight: 400; }
+#booth-invite summary::after { content: '+'; color: #b4ef52; font-size: 22px; font-weight: 400; }
+#booth-invite[open] summary::after { content: '−'; }
+#invite-form { margin-top: 16px; }
+#booth-invite .invite-field + .invite-field { margin-top: 12px; }
+#booth-invite label { display: block; margin: 0 0 6px; font-size: 12px; color: #c3d1e2; }
+#booth-invite input { width: 100%; box-sizing: border-box; padding: 12px 14px; border: 1px solid #33465f; border-radius: 9px; background: #142237; font-size: 16px; }
+#booth-invite input::placeholder { color: #8095af; }
+#booth-invite .invite-consent { margin: 12px 0; font-size: 11px; line-height: 1.5; color: #93a7c0; }
+#booth-invite a { color: #c3d1e2; text-underline-offset: 2px; }
+#booth-invite button { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 44px; padding: 11px 14px; border: 1px solid #b4ef5266; border-radius: 9px; background: #b4ef5210; color: #c2f579; font-size: 14px; }
+#booth-invite button:disabled { opacity: .6; }
+#invite-status { color: #b4ef52; font-size: 13px; line-height: 1.5; }
+#invite-status:empty { display: none; }
 #invite-status[data-state="error"] { color: #ffba60; }

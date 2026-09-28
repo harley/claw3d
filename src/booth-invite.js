@@ -21,13 +21,13 @@ export function createBoothInvite() {
       if (runId !== submittedRun) return;
       status.dataset.state = 'saved';
       status.textContent = result.eligible
-        ? 'Request saved. Your score is over 300. CoderPush can contact you about another booth try.'
-        : 'Request saved for CoderPush follow-up. Keep playing to score over 300 for another booth try.';
+        ? 'Request saved. You qualify for another booth try.'
+        : 'Request saved. Beat 300 for another booth try.';
       form.reset(); form.hidden = true;
     } catch (error) {
       if (runId === submittedRun) {
         status.dataset.state = 'error';
-        status.textContent = `${error.name === 'TypeError' || error.name === 'TimeoutError' ? 'Could not connect.' : error.message} Please retry. No invitation has been sent.`;
+        status.textContent = `${error.name === 'TypeError' || error.name === 'TimeoutError' ? 'Could not connect.' : error.message} Please retry.`;
       }
     } finally {
       busy = false; button.disabled = false;

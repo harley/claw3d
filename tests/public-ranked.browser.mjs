@@ -141,6 +141,7 @@ try {
       assert.equal(await page.locator('#play-again').isVisible(), false);
       await page.setViewportSize({ width: 390, height: 844 });
       await page.locator('#booth-invite summary').click();
+      await page.locator('#booth-invite').screenshot({ path: '.screenshots/booth-invite-refined-mobile.png' });
       await page.locator('#invite-name').fill('Private Linh');
       await page.locator('#invite-contact').fill('linh@example.com');
       await page.waitForTimeout(2200);
