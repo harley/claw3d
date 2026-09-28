@@ -76,6 +76,9 @@ async function register(page, name) {
     assert.equal(await page.locator('#turn').textContent(), '— / 3');
     const issued = app.database.db.prepare('SELECT id FROM runs WHERE name=?').get(name);
     assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM turns WHERE run_id=?').get(issued.id).n, 0);
+    // The lost acknowledgement now starts the shared jittered two-second
+    // cooldown. Retry the same identity only after that budget has elapsed.
+    await page.waitForTimeout(2500);
     await page.locator('#shared-retry').click();
   }
   await page.waitForFunction(() => document.getElementById('turn').textContent === '1 / 3');
@@ -305,6 +308,9 @@ try {
   await page.locator('#operator-open').click(); assert.equal(await page.locator('#host-access').isVisible(), true);
   await page.locator('#host-access [aria-label="Close host access"]').click();
   app.database.db.prepare('UPDATE sessions SET expires=0').run();
+  // Visibility recovery asks for a fresh read; this is no longer a two-second
+  // poll. Keep the existing prompt deadline and expired-access assertions.
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await page.locator('#shared-reauth').waitFor({ timeout: 10000 });
   await page.waitForTimeout(2200); assert.equal(await page.locator('#shared-reauth').isVisible(), true);
   await page.locator('#shared-reauth').click(); await page.locator('#staff-code').fill(staffCode); await page.locator('#staff-form button').click();
@@ -383,6 +389,7 @@ try {
     await new Promise(resolve => { releasePoll = resolve; });
     await route.fulfill({ response });
   }, { times: 1 });
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await oldPoll;
   const boardsBefore = app.database.db.prepare('SELECT COUNT(*) AS n FROM boards').get().n;
   await page.locator('#session-name').fill('Rotation regression');
