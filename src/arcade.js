@@ -1,3 +1,4 @@
+import { createBoothInvite } from './booth-invite.js';
 import { nativeBridge } from './native-bridge.js';
 import { nativeAndroid, tomkoRendering } from './runtime-platform.js';
 import { RIGHT_SLAM_MS } from './dual-hand-controls.js';
@@ -23,6 +24,11 @@ const publicSurface = publicPlay || publicTry;
 const publicOfficial = globalThis.__PUBLIC_OFFICIAL__ === true;
 const shared = publicPlay || !publicTry && (publicOfficial || globalThis.__SHARED_PILOT__ === true);
 const official = publicOfficial || !publicPlay && shared && globalThis.__OFFICIAL_EVENTS__ === true && new URLSearchParams(location.search).get('play') === 'official';
+const boothInvite = publicPlay ? createBoothInvite() : null;
+if (publicPlay || !shared && !publicTry) {
+  $('next-player').textContent = 'Next Play';
+  $('play-again').hidden = true;
+}
 let officialBlocked = false;
 let noticeReady = !publicSurface;
 const phoneViewport = () => ({
@@ -91,7 +97,7 @@ if (dualEnabled) $('camera-menu-help').textContent = 'Use your left hand and hol
 const glove = createJoystickCursor(() => cabinetEnabled ? scene?.controlTargets() : null, () => { if (cabinetEnabled) gestureDrop(); });
 let previousMenuMode = '', editingResultName = false, savingResultName = false;
 function menuMode() {
-  if (startingRun || frozen || stopped || document.hidden || editingResultName) return '';
+  if (startingRun || frozen || stopped || document.hidden || editingResultName || boothInvite?.editing || boothInvite?.busy) return '';
   if ((recovering || paused) && shared) return '';
   const dialogs = [...document.querySelectorAll('dialog[open]')];
   if (dialogs.length) return dialogs.length === 1 && ['registration', 'final', 'scores-dialog'].includes(dialogs[0].id) ? dialogs[0].id : '';
@@ -320,7 +326,7 @@ async function startScoredRun() {
     }
     turnReasons = [];
     track('run_start', { steering, ...(holdMs ? { holdMs } : {}) }, run);
-    pendingPlayer = null; completedRun = null; persist(); freshGame(); beginFirstTurnPreparation(flow, run.rules.seconds);
+    pendingPlayer = null; completedRun = null; boothInvite?.show(null); persist(); freshGame(); beginFirstTurnPreparation(flow, run.rules.seconds);
     $('shared-start').close();
   } catch (error) {
     if (shared) {
@@ -432,7 +438,7 @@ $('final-name-form').addEventListener('submit', async event => {
 });
 
 async function replay(samePlayer) {
-  if (editingResultName || startingRun || ((run || cameraLoading) && !(official && officialPlayer.state().canHandoff))) return;
+  if (editingResultName || boothInvite?.busy || startingRun || ((run || cameraLoading) && !(official && officialPlayer.state().canHandoff))) return;
   if (official) {
     try { await officialPlayer.handoff(); location.replace(publicOfficial ? '/official' : '/staff'); }
     catch (error) { setText('final-sync', error.message); }
@@ -446,7 +452,7 @@ async function replay(samePlayer) {
   if (cameraControls?.running) openRegistration(name);
 }
 $('play-again').addEventListener('click', () => { void replay(true); });
-$('next-player').addEventListener('click', () => { void replay(false); });
+$('next-player').addEventListener('click', () => { void replay(publicPlay || !shared); });
 $('result-open').addEventListener('click', () => {
   if (!completedRun || startingRun || run || cameraLoading) return;
   cancelAnimationFrame(scoreAnimation);
@@ -761,7 +767,7 @@ function frame(time) {
 // Read-only development diagnostics.
 function snapshot(includeBounds = false) {
   const sorted = [...frames].sort((a, b) => a - b), average = frames.reduce((a, b) => a + b, 0) / (frames.length || 1);
-  return { phase: game.phase, elapsed: game.elapsed, position: { ...game.position }, rounds: game.rounds, event: { run, remaining: flow.remaining, turn: turnNumber, paused, firstTurnPreparationElapsed: flow.firstTurnPreparationElapsed, firstTurnControlReady: flow.firstTurnControlReady, board: shared ? pilot.board : currentBoard(store), complete: completedRun, storageError, handCamera: { running: cameraControls?.running || false, waiting: cameraControls?.waiting || false, feedback: cameraControls?.feedback, diagnostic: cameraControls?.diagnostic }, carouselTime: game.carouselTime, rider: game.rider, pendingSlam: flow.pendingSlam ? { elapsed: flow.pendingSlam.elapsed } : null, controlProfile: dualEnabled ? 'dual' : grabEnabled ? 'grab-release' : 'hold-drop', holdMs: holdMs ?? null, steering, attract: document.body.classList.contains('attract'), cue: carouselCue(game.carouselTime, cueLead) }, aligned: aligned?.id || null, caught: game.plan?.prize?.id || null, contacts: game.plan?.contacts || null, claw: clawPose(game), stop: game.plan?.stop || null, collection: [...game.collection], reducedMotion: scene?.reducedMotion, camera: scene?.camera.position.toArray(), cameraLook: scene?.currentLook.toArray(), marquee: scene ? { text: scene.marqueeDisplay.text, available: scene.marqueeAvailable, textureVersion: scene.marqueeDisplay.texture.version, cloudTop: scene.screenPoint(-.08, 5.617, .03), top: scene.screenPoint(0, 5.1295, 1.408), bottom: scene.screenPoint(0, 4.7625, 1.408) } : null, lowQuality: scene?.lowQuality, machineControls: cabinetEnabled ? scene?.controlTargets() : null, joystick: { mode: scene?.joystickHand.mode, visible: scene?.joystickHand.root.visible, progress: scene?.joystickHand.progress }, effects: { clawLean: scene?.claw.rotation.toArray().slice(0, 3), fingerRadius: scene?.fingers[0].radius ?? scene?.fingers[0].pad.position.x + .017, burst: scene?.burst.count ?? 0 }, errors: [...errors], render: { calls: scene?.renderer.info.render.calls, triangles: scene?.renderer.info.render.triangles }, performance: { frames: frames.length, averageFps: +(1000 / average).toFixed(1), p95FrameMs: sorted[Math.floor(sorted.length * .95)], framesOver33ms: frames.filter(t => t > 33.4).length }, toys: game.toys.map(toy => ({ id: toy.id, family: toy.family, claimed: toy.claimed, position: scene?.toys.get(toy.id).position.toArray(), scale: scene?.toys.get(toy.id).scale.toArray(), bounds: includeBounds ? scene?.toyBounds(toy.id) : undefined })) };
+  return { phase: game.phase, elapsed: game.elapsed, position: { ...game.position }, rounds: game.rounds, event: { run, remaining: flow.remaining, turn: turnNumber, paused, firstTurnPreparationElapsed: flow.firstTurnPreparationElapsed, firstTurnControlReady: flow.firstTurnControlReady, board: shared ? pilot.board : currentBoard(store), complete: completedRun, storageError, handCamera: { running: cameraControls?.running || false, waiting: cameraControls?.waiting || false, feedback: cameraControls?.feedback, diagnostic: cameraControls?.diagnostic }, carouselTime: game.carouselTime, rider: game.rider, pendingSlam: flow.pendingSlam ? { elapsed: flow.pendingSlam.elapsed } : null, controlProfile: dualEnabled ? 'dual' : grabEnabled ? 'grab-release' : 'hold-drop', holdMs: holdMs ?? null, steering, attract: document.body.classList.contains('attract'), cue: carouselCue(game.carouselTime, cueLead) }, aligned: aligned?.id || null, caught: game.plan?.prize?.id || null, contacts: game.plan?.contacts || null, claw: clawPose(game), stop: game.plan?.stop || null, collection: [...game.collection], reducedMotion: scene?.reducedMotion, camera: scene?.camera.position.toArray(), cameraLook: scene?.currentLook.toArray(), marquee: scene ? { text: scene.marqueeDisplay.text, available: scene.marqueeAvailable, textureVersion: scene.marqueeDisplay.texture.version, cloudTop: scene.screenPoint(-.08, 5.617, .03), top: scene.screenPoint(0, 5.1295, 1.408), bottom: scene.screenPoint(0, 4.7625, 1.408) } : null, lowQuality: scene?.lowQuality, machineControls: cabinetEnabled ? scene?.controlTargets() : null, joystick: { mode: scene?.cabinetHands?.mode || scene?.joystickHand.mode, visible: Boolean(scene?.cabinetHands ? scene.cabinetHands.root.visible && scene.cabinetHands.singleHand : scene?.joystickHand.root.visible), progress: scene?.cabinetHands?.progress ?? scene?.joystickHand.progress }, effects: { clawLean: scene?.claw.rotation.toArray().slice(0, 3), fingerRadius: scene?.fingers[0].radius ?? scene?.fingers[0].pad.position.x + .017, burst: scene?.burst.count ?? 0 }, errors: [...errors], render: { calls: scene?.renderer.info.render.calls, triangles: scene?.renderer.info.render.triangles }, performance: { frames: frames.length, averageFps: +(1000 / average).toFixed(1), p95FrameMs: sorted[Math.floor(sorted.length * .95)], framesOver33ms: frames.filter(t => t > 33.4).length }, toys: game.toys.map(toy => ({ id: toy.id, family: toy.family, claimed: toy.claimed, position: scene?.toys.get(toy.id).position.toArray(), scale: scene?.toys.get(toy.id).scale.toArray(), bounds: includeBounds ? scene?.toyBounds(toy.id) : undefined })) };
 }
 
 function updateSavedRank(saved) {
@@ -781,6 +787,7 @@ function updateSavedRank(saved) {
     updateUI();
   }
   if (completedRun?.id !== saved.id || saved.status !== 'complete' || !Number.isInteger(saved.rank)) return;
+  boothInvite?.show(saved);
   completedRun.rank = saved.rank;
   completedRun.name = saved.name;
   setText('final-name', saved.name.toUpperCase());
@@ -926,7 +933,7 @@ $('shared-start').addEventListener('cancel', event => event.preventDefault());
 const loadingTimeout = setTimeout(() => fail('The arcade took too long to open. Reload the page to try again.'), 15000);
 try {
   await new Promise(resolve => requestAnimationFrame(resolve));
-  scene = new ArcadeScene($('scene'), { wideControls: cabinetEnabled && new URLSearchParams(location.search).get('controls') !== 'grab', anatomicalHands: dualEnabled, suspendedClaw: mode.suspendedClaw, ...(mode.collection ? { assortment: game.toys } : {}) });
+  scene = new ArcadeScene($('scene'), { wideControls: cabinetEnabled && new URLSearchParams(location.search).get('controls') !== 'grab', anatomicalHands: !grabEnabled || dualEnabled, singleHand: !dualEnabled, suspendedClaw: mode.suspendedClaw, ...(mode.collection ? { assortment: game.toys } : {}) });
   if (scene.cabinetHands) {
     const status = $('hand-art-status');
     status.textContent = '3D hands are loading. Camera tracking and game controls remain available.';

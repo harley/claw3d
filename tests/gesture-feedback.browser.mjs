@@ -11,6 +11,10 @@ try {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await installCameraFixture(page);
+  await page.route('**/src/arcade.js*', async route => {
+    const response = await route.fetch();
+    await route.fulfill({ response, body: (await response.text()) + '\nwindow.testGrip = () => ({ ready: scene.cabinetHands.state, oldVisible: scene.joystickHand.root.visible, hands: Object.keys(scene.cabinetHands.hands), scale: scene.cabinetHands.hands.left?.pivot.scale.x, visible: scene.cabinetHands.hands.left?.pivot.visible });' });
+  });
   await page.goto(process.env.GESTURE_TEST_ORIGIN || 'http://127.0.0.1:4196/?setup=manual');
   await page.waitForFunction(() => window.__littleCloud);
   const snap = () => page.evaluate(() => window.__littleCloud.snapshot());
@@ -24,6 +28,17 @@ try {
   await page.waitForFunction(() => window.__littleCloud.snapshot().joystick.mode === 'tracking');
   await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
   assert.equal(await page.locator('#status').textContent(), 'Clench & hold to drop');
+  // Actual scene wiring: the shared rig replaces the old glove in both
+  // acquired orientations, while existing checks cover the same drop journey.
+  await page.waitForFunction(() => window.testGrip().ready === 'ready');
+  for (const physicalHand of ['left', 'right']) {
+    await feedback({ kind: 'tracking', physicalHand });
+    await page.waitForFunction(hand => Math.sign(window.testGrip().scale) === (hand === 'right' ? -1 : 1), physicalHand);
+    const grip = await page.evaluate(() => window.testGrip());
+    assert.deepEqual(grip.hands, ['left']); assert.equal(grip.visible, true);
+    assert.equal(grip.oldVisible, false, 'no duplicate legacy glove');
+    await page.screenshot({ path: `.screenshots/gesture-${physicalHand}-grip.png` });
+  }
   await page.screenshot({ path: '.screenshots/gesture-tracking.png' });
 
   // A closed hand must first open to arm a new drop.
