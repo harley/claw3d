@@ -4,8 +4,8 @@ import { HAND_ACQUIRE_MS, RIGHT_SLAM_MS } from './dual-hand-controls.js';
 // and the phase-to-sound mapping are injected.
 import { PRESS_MS } from './grab-release.js';
 import { cueLeadSeconds, dualStartReadiness } from './play-mode.js';
-import { ASSORTMENT, CAROUSEL, carouselCue, carouselRider } from './arcade-mechanics.js';
-import { RULES, handBonus } from './event-session.js';
+import { CAROUSEL, carouselCue, carouselRider, catchQuality } from './arcade-mechanics.js';
+import { RULES, COLLECTION_RULES, handBonus } from './event-session.js';
 
 const elements = new Map();
 const $ = id => { if (!elements.has(id)) elements.set(id, document.getElementById(id)); return elements.get(id); };
@@ -74,7 +74,7 @@ export function firstTurnWaitingMessage(feedback = {}, dualEnabled = false) {
   return 'SHOW ONE HAND';
 }
 
-export const TROPHY_ICONS = Object.freeze({ bunny: '🐰', capybara: '🐾', cloud: '☁️', star: '⭐', robot: '🤖' });
+export const TROPHY_ICONS = Object.freeze({ bear: '🐻', panda: '🐼', bunny: '🐰', capybara: '🐾', cloud: '☁️', star: '⭐', robot: '🤖' });
 // The finale headline reads the run: rank first, then how the three turns went.
 export function finaleHeadline(turns, rank, points = {}) {
   const catches = turns.filter(turn => turn.prizeId).length;
@@ -131,7 +131,7 @@ export function createHud({ audio, phaseSound }) {
   else if (phase === 'aim') { kicker = turnNumber === turns ? 'LAST CLAW!' : `TURN ${turnNumber} OF ${turns}`; title = 'Clench & hold to drop'; hint = ''; button = '';  }
   else if (phase === 'result' && run) { kicker = `ROUND ${turnNumber + 1} OF ${turns}`; title = nextTurnCue(nextTurnElapsed, turnNumber + 1, Boolean(game.plan?.prize)); hint = title === 'MISSED' ? missCopy(game.plan, game.toys) : ''; button = ''; }
   else if (phase in phaseCopy) {
-    title = phase === 'lift' && !game.plan?.prize ? 'MISSED' : phaseCopy[phase];
+    title = phase === 'lift' && !game.plan?.prize ? 'MISSED' : game.collectionPreview && phase === 'lift' && catchQuality(game.plan) === 'perfect' ? 'PERFECT GRAB!' : phaseCopy[phase];
     kicker = `TURN ${turnNumber} OF ${turns}`;
     hint = title === 'MISSED' ? missCopy(game.plan, game.toys) : '';
     button = '';
@@ -147,7 +147,7 @@ export function createHud({ audio, phaseSound }) {
   $('action-copy').classList.toggle('attract', phase === 'idle' && !run && !paused && !recovering && (!cameraControls?.running || cameraControls.waiting));
   const cue = carouselCue(game.carouselTime, cueLeadSeconds({ dual: dualEnabled, grab: grabEnabled, holdMs }, feedback)), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
   const gripStage = feedback.grab?.stage;
-  const scoreRules = run?.rules || { ...RULES, controlMode: dualEnabled ? 'two-hand' : 'one-hand' };
+  const scoreRules = run?.rules || { ...(game.collectionPreview ? COLLECTION_RULES : RULES), controlMode: dualEnabled ? 'two-hand' : 'one-hand' };
   const rider = carouselRider(game), starAvailable = Boolean(rider), riderPoints = rider ? scoreRules.points[rider.id] + handBonus(scoreRules) : 0;
   const cueVisible = starAvailable && (!grabEnabled || (feedback.profile === 'dual' ? feedback.dropEnabled : gripStage !== 'gripped')) && phase === 'aim' && nearPickup && !paused && !frozen && !document.hidden && !modal && cameraControls?.running && !cameraControls.waiting;
   setHidden($('jackpot-signal'), !cueVisible);
@@ -210,9 +210,9 @@ export function createHud({ audio, phaseSound }) {
   if ($('camera-preview').dataset.state !== feedback.kind) $('camera-preview').dataset.state = feedback.kind;
   $('reset').disabled = startingRun;
   setText('timer', String(Math.ceil(remaining)).padStart(2, '0'));
-  setText('speed-bonus', `SPEED +${Math.floor((run?.rules.speedBonus ?? 50) * remaining / (run?.rules.seconds || 15))}`);
+  setText('speed-bonus', game.collectionPreview ? 'PERFECT GRAB +50' : `SPEED +${Math.floor((run?.rules.speedBonus ?? 50) * remaining / (run?.rules.seconds || 15))}`);
   $('arcade').classList.toggle('last-claw', Boolean(run && turnNumber === turns)); $('arcade').classList.toggle('urgent', phase === 'aim' && remaining <= 5);
-  setText('mode-label', shared ? sharedStatus : publicTry ? 'PRACTICE · NO EVENT RANKING' : `LOCAL PREVIEW · ${dualEnabled ? '2 HANDS' : '1 HAND'}${storageError ? ' · UNSAVED' : ''}`);
+  setText('mode-label', shared ? sharedStatus : publicTry ? 'PRACTICE · NO EVENT RANKING' : `LOCAL PREVIEW${game.collectionPreview ? ' · COLLECTION' : ''} · ${dualEnabled ? '2 HANDS' : '1 HAND'}${storageError ? ' · UNSAVED' : ''}`);
   setHidden($('mode-label'), !$('mode-label').textContent);
   setHidden($('result-open'), !completedRun || startingRun || Boolean(run) || cameraLoading);
   if (!run && !recovering) button = cameraLoading ? 'Starting…' : !shared ? (dualEnabled ? 'PLAY · 2 HANDS' : 'PLAY · 1 HAND') : cameraControls?.running ? 'Play' : 'Start camera';
@@ -262,7 +262,7 @@ export function createHud({ audio, phaseSound }) {
   $('play').disabled = cameraLoading;
   $('turn-chips').replaceChildren();
   for (let i = 0; i < turns; i++) {
-    const turn = run?.turns[i] || completedRun?.turns[i], toy = ASSORTMENT.find(toy => toy.id === turn?.prizeId);
+    const turn = run?.turns[i] || completedRun?.turns[i], toy = game.toys.find(toy => toy.id === turn?.prizeId);
     const chip = document.createElement('span'); chip.className = `turn-chip ${turn?.score ? 'scored' : ''}`;
     chip.classList.toggle('current', Boolean(run && i === (preparingFirstTurn ? 0 : turnNumber - 1)));
     chip.setAttribute('aria-label', `Turn ${i + 1}: ${turn ? turn.score ? `${turn.score} points` : 'miss' : 'not scored'}`);

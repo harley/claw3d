@@ -62,3 +62,39 @@ export function createArcadeAudio({ onChange = () => {}, enabledByDefault = fals
   function setVolume(value) { volume = value; apply(); onChange(); }
   return { note, fanfare, silence, toggle, unlock, setVolume, get ready() { return Boolean(context && context.state === 'running'); }, get enabled() { return enabled; }, get volume() { return volume; } };
 }
+
+// Collection preview: a restrained wind-up, then a deliberately larger payoff.
+// All voices use the existing master/mute and cancellation lifecycle. These
+// original phrases end before the next aiming turn and never choose a result.
+export function playCollectionCue(audio, kind) {
+  const n = (...args) => audio.note(...args);
+  const chord = (frequencies, delay, duration, level = .016) => frequencies.forEach(f => n(f, duration, delay, 'triangle', f, level));
+  if (kind === 'anticipate') {
+    n(92, .20, 0, 'sine', 45, .08);
+    n(880, .22, 0, 'square', 110, .018);
+  } else if (kind === 'descend') {
+    [220, 196, 165].forEach((f, i) => n(f, .14, i * .19, 'triangle', f * .75, .016));
+  } else if (kind === 'grip') {
+    n(85, .18, 0, 'sine', 42, .07);
+    // A rising, unresolved pair builds tension without announcing a catch.
+    chord([220, 233], .15, .23, .012);
+    chord([294, 311], .43, .24, .014);
+  } else if (kind === 'ordinary' || kind === 'perfect') {
+    n(110, .32, 0, 'sine', 55, .10);
+    chord([262, 330, 392], .02, .38, .025);
+    const melody = kind === 'perfect' ? [523, 659, 784, 1047, 1319, 1568] : [392, 523, 659, 784];
+    melody.forEach((f, i) => n(f, i === melody.length - 1 ? .40 : .15, .12 + i * .12, 'square', f, .018));
+    if (kind === 'perfect') {
+      n(165, .40, .42, 'triangle', 165, .024);
+      chord([523, 659, 784], .72, .48, .020);
+    }
+  } else if (kind === 'miss') {
+    n(90, .20, 0, 'sine', 38, .09);
+    [330, 247, 165].forEach((f, i) => n(f, .24, i * .18, 'sawtooth', f * .78, .021));
+    n(110, .25, .42, 'triangle', 73, .025);
+  } else if (kind === 'release') {
+    n(740, .10, 0, 'sine', 740, .012);
+  } else if (kind === 'deliver') {
+    chord([392, 523, 659], 0, .32, .012);
+  }
+}
