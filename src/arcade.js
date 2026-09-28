@@ -276,7 +276,7 @@ function finishTurn() {
       const chip = document.createElement('span'); chip.className = `turn-chip scored catch-card${toy ? '' : ' miss'}`;
       if (toy) { chip.dataset.prize = toy.id; chip.style.setProperty('--toy', toy.color); }
       const parts = toy
-        ? [['catch-icon', TROPHY_ICONS[toy.family]], ['catch-name', toy.name.toUpperCase()], ['catch-points', `+${turn.score}`], ['catch-detail', `${completedRun.rules.points[toy.id]}${handBonus(completedRun.rules) ? ` + ${handBonus(completedRun.rules)} TWO HANDS` : ''} + ${turn.score - completedRun.rules.points[toy.id] - handBonus(completedRun.rules)} ${completedRun.rules.precisionBonus ? (turn.quality === 'perfect' ? 'PERFECT' : 'PRECISION') : 'SPEED'}`]]
+        ? [['catch-icon', TROPHY_ICONS[toy.family]], ['catch-name', toy.name.toUpperCase()], ['catch-points', `+${turn.score}`], ['catch-detail', `${completedRun.rules.points[toy.id]}${handBonus(completedRun.rules) ? ` + ${handBonus(completedRun.rules)} TWO HANDS` : ''}${completedRun.rules.imperfectDeduction ? (turn.quality === 'perfect' ? ' · PERFECT' : ` − ${completedRun.rules.points[toy.id] - turn.score} OFF-CENTRE`) : ` + ${turn.score - completedRun.rules.points[toy.id] - handBonus(completedRun.rules)} ${completedRun.rules.precisionBonus ? 'PRECISION' : 'SPEED'}`}`]]
         : [['catch-icon', '—'], ['catch-name', 'MISS'], ['catch-points', '+0'], ['catch-detail', turnReasons[i] ? missCopy(turnReasons[i], game.toys) : `TURN ${i + 1}`]];
       for (const [className, text] of parts) { const part = document.createElement('span'); part.className = className; part.textContent = text; chip.append(part); }
       $('final-turns').append(chip);
@@ -750,7 +750,7 @@ function frame(time) {
       setHidden(element, !isTarget);
       element.classList.toggle('targeted', isTarget);
       if (!isTarget) continue;
-      element.textContent = scoreTurn(run?.rules || { ...localRules, controlMode: mode.controlMode }, turnContext(run?.turns || [], toy.id, Math.floor(flow.remaining * 1000), mode.collection ? 'ordinary' : undefined)) + (mode.collection ? ' · PERFECT +50' : '');
+      element.textContent = scoreTurn(run?.rules || { ...localRules, controlMode: mode.controlMode }, turnContext(run?.turns || [], toy.id, Math.floor(flow.remaining * 1000), mode.collection ? 'perfect' : undefined)) + (mode.collection ? ' MAX' : '');
       const position = clampOverlayPoint(target, tagOrigin, element.getBoundingClientRect());
       element.style.transform = `translate(${Math.round(position.x - tagOrigin.left)}px, ${Math.round(position.y - tagOrigin.top)}px) translate(-50%, -50%)`;
     }

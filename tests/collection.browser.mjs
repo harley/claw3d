@@ -77,13 +77,14 @@ try {
   }
   const done = await page.evaluate(() => window.__littleCloud.snapshot().event);
   assert.deepEqual(done.complete.turns.map(t => t.quality), ['perfect', 'ordinary', 'miss']);
-  assert.deepEqual(done.complete.turns.map(t => t.score), [200, 150, 0]);
-  assert.equal(done.complete.total, 350); assert.equal(done.board.runs.length, 1);
-  assert.match(await page.locator('#final-turns').textContent(), /50 PERFECT/);
+  assert.deepEqual(done.complete.turns.map(t => t.score), [100, 50, 0]);
+  assert.equal(done.complete.total, 150); assert.equal(done.board.runs.length, 1);
+  assert.match(await page.locator('#final-turns').textContent(), /100 · PERFECT/);
+  assert.match(await page.locator('#final-turns').textContent(), /100 − 50 OFF-CENTRE/);
   assert.doesNotMatch(await page.locator('#final-turns').textContent(), /SPEED/);
   await page.screenshot({ path: '.screenshots/collection-results.png' });
   await page.reload(); await page.waitForFunction(() => window.__littleCloud);
-  assert.equal(await page.evaluate(() => window.__littleCloud.snapshot().event.board.runs[0].total), 350);
+  assert.equal(await page.evaluate(() => window.__littleCloud.snapshot().event.board.runs[0].total), 150);
   await page.goto('http://127.0.0.1:4196/?setup=manual'); await page.waitForFunction(() => window.__littleCloud);
   assert.equal(await page.evaluate(() => window.__littleCloud.snapshot().event.board.runs.length), 0);
   assert.deepEqual(errors, []);

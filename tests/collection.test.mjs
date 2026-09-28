@@ -60,10 +60,10 @@ test('precision scores survive reload and exactly three turns, separate from spe
   assert.equal(recordTurn(store, 1, 'butter', 0, 'perfect'), null);
   store = loadStore({ getItem: () => JSON.stringify(store) }, COLLECTION_RULES);
   assert.equal(store.active.turns[0].quality, 'perfect');
-  assert.equal(store.active.turns[0].score, 200);
+  assert.equal(store.active.turns[0].score, 100);
   recordTurn(store, 2, 'miso', 15000, 'ordinary');
   const result = recordTurn(store, 3, null, 15000, 'miss');
-  assert.equal(result.run.total, 300); assert.equal(currentBoard(store).runs.length, 1);
+  assert.equal(result.run.total, 125); assert.equal(currentBoard(store).runs.length, 1);
   assert.equal(recordTurn(store, 4, 'sprout', 0, 'perfect'), null);
   rotateBoard(store, 'Next collection', COLLECTION_RULES);
   assert.equal(currentBoard(store).rules.version, COLLECTION_RULES.version);
@@ -92,4 +92,36 @@ test('dramatic outcomes have distinct finite phrases without changing the audio 
   }
   assert.ok(phrases.perfect.length > phrases.ordinary.length);
   assert.ok(phrases.miss.every(([f, , , , end]) => end < f));
+});
+
+// Contract: 300 is a precision milestone, not the ceiling. Even the three
+// highest-value ordinary catches fall short, with no control-mode bonus.
+test('300 milestone needs precision and a flawless jackpot run can earn 450', () => {
+  for (const controlMode of ['one-hand', 'two-hand']) {
+    const rules = { ...COLLECTION_RULES, controlMode };
+    const total = (ids, quality) => ids.reduce((sum, id) => sum + scoreTurn(rules, { prizeId: id, quality, remainingMs: 15000 }), 0);
+    assert.equal(total(['sprout', 'mochi', 'butter'], 'perfect'), 450);
+    assert.equal(total(['sprout', 'mochi', 'butter'], 'ordinary'), 225);
+    assert.equal(total(['bramble', 'miso', 'butter'], 'perfect'), 200);
+    assert.equal(total(['sprout', 'mochi'], 'perfect') + scoreTurn(rules, { prizeId: 'butter', quality: 'ordinary' }), 400);
+    const ids = Object.keys(rules.points);
+    for (const a of ids) for (const b of ids) for (const c of ids) {
+      if (new Set([a, b, c]).size !== 3) continue;
+      assert.ok(total([a, b, c], 'perfect') <= 450);
+      assert.ok(total([a, b, c], 'ordinary') < 300);
+    }
+  }
+});
+
+test('previous generous collection rules remain readable but start a separate board', () => {
+  const oldRules = { version: 'cloud-claw-collection-v1', turns: 3, seconds: 15,
+    points: { bramble: 100, miso: 100, bonbon: 150, butter: 150, mochi: 200, sprout: 250 },
+    speedBonus: 0, precisionBonus: 50, twoHandBonus: 25 };
+  const store = newStore(oldRules); startRun(store, 'Earlier preview');
+  recordTurn(store, 1, 'butter', 0, 'perfect');
+  const recovered = loadStore({ getItem: () => JSON.stringify(store) }, COLLECTION_RULES);
+  assert.equal(recovered.active, null);
+  assert.equal(recovered.boards[0].interruptedRuns[0].turns[0].score, 200);
+  assert.equal(currentBoard(recovered).rules.version, COLLECTION_RULES.version);
+  assert.deepEqual(currentBoard(recovered).runs, []);
 });
