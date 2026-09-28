@@ -551,3 +551,6 @@ dialog .menu-guide-hand { font-size: 52px; }
   #registration .start-modes .play-button { padding: 10px 12px; }
   #registration .start-modes strong { font-size: 18px; }
 }
+
+/* Keep the single live region available while its cue is drawn on the cabinet. */
+#arcade #action-copy.marquee-countdown { opacity: 0; pointer-events: none; animation: none; }

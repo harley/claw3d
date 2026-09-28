@@ -15,7 +15,7 @@ export function recordStartCue() {
     record.diagnostics.frames++;
     record.diagnostics.maxGapMs = Math.max(record.diagnostics.maxGapMs, gap);
     if (gap > 100) record.diagnostics.gapsOver100ms++;
-    const changed = ['ROUND 1', '3', '2', '1', 'PLAY!'].includes(cue) && record.cues.at(-1)?.cue !== cue;
+    const changed = ['ROUND 1', '3', '2', '1', 'START!'].includes(cue) && record.cues.at(-1)?.cue !== cue;
     const aiming = record.start && document.getElementById('arcade').dataset.phase === 'aim';
     if (changed || aiming) {
       // Full snapshots sort frame history and build scene diagnostics. Only
@@ -24,7 +24,7 @@ export function recordStartCue() {
       record.diagnostics.snapshots++;
       record.diagnostics.maxSnapshotMs = Math.max(record.diagnostics.maxSnapshotMs, performance.now() - beforeSnapshot);
       if (changed) record.cues.push({ cue, at, state });
-      if (!record.start && cue === 'PLAY!') record.start = { at, state, dropAccepted: window.testCamera.clench() };
+      if (!record.start && cue === 'START!') record.start = { at, state, dropAccepted: window.testCamera.clench() };
       if (aiming) { record.aim = { at, state }; return; }
     }
     record.frame = requestAnimationFrame(sample);
@@ -40,7 +40,7 @@ function timingEvidence({ diagnostics, cues }) {
 
 export function assertPreparationTiming(record) {
   const { cues, reacquiredAt } = record;
-  assert.deepEqual(cues.map(({ cue }) => cue), ['ROUND 1', '3', '2', '1', 'PLAY!'],
+  assert.deepEqual(cues.map(({ cue }) => cue), ['ROUND 1', '3', '2', '1', 'START!'],
     'the first count-in displays every cue in order');
   const roundDuration = cues[1].at - reacquiredAt;
   assert.ok(roundDuration >= 450 && roundDuration <= 1250,

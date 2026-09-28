@@ -104,8 +104,8 @@ try {
   assert.equal((await snap()).phase, 'result', 'host pause holds the announcement');
   assert.equal(await cameraDrop(page), false);
   await page.locator('#operator-open').click(); await page.locator('#pause').click();
-  await page.waitForFunction(() => document.getElementById('status').textContent === 'PLAY!');
-  assert.equal(await cameraDrop(page), false, 'PLAY! cue rejects drops');
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'START!');
+  assert.equal(await cameraDrop(page), false, 'START! cue rejects drops');
   assert.deepEqual((await snap()).camera, aimingCamera, 'close view is ready before aiming resumes');
   await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
   assert.equal((await snap()).event.turn, 2);
