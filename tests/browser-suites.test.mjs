@@ -17,7 +17,7 @@ test('--shard selects its configured suite group', () => {
 
 test('CI shards cover every browser suite exactly once', () => {
   // The real-server journeys run sequentially in the required shared job.
-  const shared = ['connection-policy', 'release-probe', 'shared-session', 'public-try', 'public-ranked', 'host-events', 'official-player'];
+  const shared = ['connection-policy', 'release-probe', 'shared-session', 'public-try', 'public-ranked', 'host-events', 'official-player', 'offline-station'];
   const scripts = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).scripts;
   assert.equal(scripts['test:shared'], shared.map(name => `node tests/${name}.browser.mjs`).join(' && '));
   const entries = readdirSync(new URL('.', import.meta.url))

@@ -61,7 +61,7 @@ if (publicSurface) {
   document.querySelector('#feedback-form .playtest-notice').textContent = 'Category and limited gameplay diagnostics only. No video or names.';
 }
 
-$('build-info').textContent = `BUILD ${__BUILD_INFO__.commit}${__BUILD_INFO__.dirty ? ' · uncommitted changes' : ''} · ${__BUILD_INFO__.branch}`;
+$('build-info').textContent = `${globalThis.__OFFLINE_SHELL__ ? 'LOCAL PREPARED BUILD' : 'BUILD'} ${__BUILD_INFO__.commit}${__BUILD_INFO__.dirty ? ' · uncommitted changes' : ''} · ${__BUILD_INFO__.branch}`;
 let game = createGame({ carousel: true, suspendedClaw: mode.suspendedClaw }), scene, previous = 0, stopped = false, frozen = false;
 let cameraControls, cameraLoading = false;
 const handMenu = createHandMenu({ leftHand: dualEnabled });

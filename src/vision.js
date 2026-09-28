@@ -134,7 +134,9 @@ export class HandController {
   }
 
   initializeWorker(delegate) {
-    const worker = this.worker = new Worker(new URL('./vision-worker.js', import.meta.url), { type: 'module' });
+    const worker = this.worker = globalThis.__OFFLINE_SHELL__
+      ? new Worker(new URL('./prepared-vision-worker.js', import.meta.url), { type: 'module' })
+      : new Worker(new URL('./vision-worker.js', import.meta.url), { type: 'module' });
     return new Promise((resolve, reject) => {
       const finish = (value, error) => {
         clearTimeout(timeout);
