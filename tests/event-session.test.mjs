@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { turnContext, scoreTurn, RULES, SPEED_RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard } from '../src/event-session.js';
+import { turnContext, scoreTurn, RULES, SPEED_RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, renameCompletedRun } from '../src/event-session.js';
 import { createGame, planGrab, FIELD } from '../src/arcade-mechanics.js';
 test('three drops produce exactly one total; duplicate and extra results are ignored', () => {
   const store = newStore(); startRun(store, ' Linh ');
@@ -112,4 +112,15 @@ test('an unfinished speed-v3 run retains its rules until completion, then new ru
   assert.equal(next.rules.version, RULES.version);
   assert.equal(restored.boards[0].runs[0].total, 300);
   assert.equal(recordTurn(restored, 1, 'butter', 0).run.turns[0].score, 125);
+});
+
+test('renaming a completed receipt preserves identity, scores, ordering and persistence', () => {
+  const store = newStore(); const active = startRun(store, 'Taro');
+  assert.throws(() => renameCompletedRun(store, active.id, 'Linh'), /not found/);
+  for (const turn of [1, 2, 3]) recordTurn(store, turn, null);
+  const before = structuredClone(leaderboard(currentBoard(store)));
+  for (const name of ['', ' ', 'x'.repeat(25), 'bad\nname']) assert.throws(() => renameCompletedRun(store, active.id, name));
+  renameCompletedRun(store, active.id, ' Linh ');
+  assert.deepEqual(leaderboard(currentBoard(store)), before.map(run => ({ ...run, name: 'Linh' })));
+  assert.deepEqual(loadStore({ getItem: () => JSON.stringify(store) }), store);
 });

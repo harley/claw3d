@@ -124,6 +124,19 @@ try {
     assert.equal(await page.locator('#final-turns .catch-card').count(), 3);
     await page.screenshot({ path: `.screenshots/public-ranked-result-${attempt}.png` });
     if (attempt === 1) {
+      const receipt = app.database.db.prepare("SELECT * FROM runs WHERE status='complete'").get();
+      await page.route('**/api/play/runs/*/name', route => route.fulfill({ status: 503, json: { error: 'Temporary outage.' } }));
+      await page.locator('#final-name-input').fill('Winner Linh');
+      await page.locator('#final-name-input').press('Enter');
+      await page.waitForFunction(() => document.getElementById('final-name-status').textContent.includes('Retry Save'));
+      assert.equal(await page.locator('#final-name-input').inputValue(), 'Winner Linh', 'failed save retains draft');
+      assert.equal(app.database.db.prepare('SELECT name FROM runs WHERE id=?').get(receipt.id).name, name);
+      await page.unroute('**/api/play/runs/*/name');
+      await page.locator('#final-name-save').click();
+      await page.waitForFunction(() => document.getElementById('final-name-status').textContent === 'Name saved');
+      assert.deepEqual({ ...app.database.db.prepare('SELECT * FROM runs WHERE id=?').get(receipt.id) }, { ...receipt, name: 'Winner Linh' });
+      await page.waitForTimeout(2200);
+      assert.equal(await page.locator('#final-name-input').inputValue(), 'Winner Linh', 'background refresh retains saved name');
       await page.locator('#next-player').click();
       await page.locator('#registration').waitFor();
       assert.notEqual(await page.locator('#name').inputValue(), name);
@@ -140,7 +153,7 @@ try {
   await page.waitForFunction(() => document.getElementById('board-name').textContent.includes('Hanoi'));
   assert.equal(await page.locator('#leaders li').count(), 2);
   const rows = app.database.db.prepare("SELECT name,status FROM runs WHERE status='complete'").all();
-  assert.equal(rows.length, 2); assert.ok(rows.every(row => row.name === name));
+  assert.equal(rows.length, 2); assert.deepEqual(rows.map(row => row.name).sort(), [name, 'Winner Linh'].sort());
   assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM turns').get().n, 6);
   assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM public_run_events').get().n, 2);
   // A retained completed journal must drain after a service restart that pauses

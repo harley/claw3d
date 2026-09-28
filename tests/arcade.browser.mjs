@@ -201,6 +201,18 @@ try {
  assert.equal(await page.locator('#mode-label').textContent(),'LOCAL PREVIEW · 1 HAND');
  assert.equal(await page.locator('#final-turns .catch-card').count(),3);
  assert.deepEqual(await page.locator('#final-turns .catch-name').allTextContents(),['BUTTER','MISS','PEACH']);
+ // UI contract: direct editing, cancellation and persistence must touch one receipt only.
+ const beforeRename=(await snap()).event.complete;
+ await page.locator('#final-name-input').fill('Cancelled');
+ await page.locator('#final-name-input').press('Escape');
+ assert.equal(await page.locator('#final-name-input').inputValue(),beforeRename.name);
+ assert.equal(await page.locator('#final').isVisible(),true);
+ await page.locator('#final-name-input').fill('Linh Winner');
+ assert.equal(await page.locator('#next-player').isDisabled(),true);
+ await page.locator('#final-name-input').press('Enter');
+ await page.waitForFunction(()=>document.getElementById('final-name-status').textContent==='Name saved');
+ assert.deepEqual((await snap()).event.complete,{...beforeRename,name:'Linh Winner'});
+ assert.deepEqual((await snap()).event.board.runs,[{...beforeRename,name:'Linh Winner'}]);
  const completed=(await snap()).event.complete;
  assert.equal(completed.turns[2].remainingMs,0,'the final turn expires naturally');
  assert.equal(completed.turns[2].score,100,'a timed-out catch earns base points without speed bonus');

@@ -307,8 +307,6 @@ export class ArcadeScene {
     for (let i = 0; i < 4; i++) { const tick = box(this.target, this.targetMat, [Math.cos(i * Math.PI / 2) * .227, 0, Math.sin(i * Math.PI / 2) * .227], [.09, .008, .016], .005); tick.rotation.y = -i * Math.PI / 2; }
     batch(this.target);
     this.target.traverse(m => { if (m.isMesh) m.castShadow = m.receiveShadow = false; });
-    this.beamMat = new T.LineBasicMaterial({ color: '#698d79', transparent: true, opacity: .34, depthWrite: false });
-    this.beam = new T.Line(new T.BufferGeometry().setFromPoints([v(0, 0, 0), v(0, 1, 0)]), this.beamMat); this.scene.add(this.beam);
   }
 
   buildEffects() {
@@ -529,7 +527,6 @@ export class ArcadeScene {
     this.cabinetHands?.update(phase, elapsed, dt, feedback, presentation.machineControls, this.stick, this.button, this.reducedMotion);
     const aim = game.suspendedClaw ? clawWorldPoint(pose, { x: 0, y: -.98, z: 0 }) : game.position;
     this.target.visible = ['idle', 'aim'].includes(phase); this.target.position.set(aim.x, BED + (game.carousel && Math.hypot(aim.x - CAROUSEL.x, aim.z - CAROUSEL.z) < .55 ? CAROUSEL.height : 0) + .014, aim.z); this.targetMat.color.set(aligned ? '#547e69' : '#bb5b49');
-    this.beam.visible = this.target.visible; this.beam.position.set(aim.x, BED + .02, aim.z); this.beam.scale.y = HIGH - BED - 1.01; this.beamMat.color.copy(this.targetMat.color);
     this.deliveryTray.visible = false; this.deliveryTray.scale.setScalar(1);
     const hatchOpen = plan?.prize && ['release', 'deliver', 'reveal', 'result'].includes(phase);
     this.hatch.rotation.x = hatchOpen ? (phase === 'release' ? ease(elapsed / .18) : 1) * Math.PI / 2 : phase === 'idle' ? 0 : Math.max(0, this.hatch.rotation.x - dt * 9);

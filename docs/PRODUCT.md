@@ -20,7 +20,7 @@ The wow moment is direct control followed by a believable grab, a tense lift and
 
 ## Suspended steel claw
 
-The normal game uses the approved chrome claw with slender, curved, pointed fingers. The suspended head and fingers lag behind carriage movement, overshoot a stop, bob during vertical motion and settle with damping. Cabinet limits constrain the whole finger envelope. The floor marker follows the physical claw. This is a bounded pendulum/contact approximation, not a full rigid-body simulation.
+The normal game uses the approved chrome claw with slender, curved, pointed fingers. The suspended head and fingers lag behind carriage movement, overshoot a stop, bob during vertical motion and settle with damping. Cabinet limits constrain the whole finger envelope. The floor marker follows the physical claw. The vertical aiming line is removed; players judge the suspended claw against the scene and floor cue. This is a bounded pendulum/contact approximation, not a full rigid-body simulation.
 
 The moving finger profile drives both rendering and swept mesh contacts. A catch requires support beneath the displaced claw and contact from all three fingers; carriage alignment alone cannot award it. A held prize follows the claw's position and tilt without snapping its fingers inward. The carriage waits 0.7 seconds over the chute for the loaded swing to settle before release. Three turns and scoring stay unchanged.
 
@@ -41,6 +41,8 @@ Unattended, the machine attracts: with nobody registered, no dialog open and no 
 ## Finale
 
 The results dialog reads the run in one line (TOP OF THE BOARD!, CLEAN SWEEP!, JACKPOT RUN!, RUN COMPLETE, or THE CLAW WINS THIS ONE for no catch) above the counted total, then shows the three turns as catch cards: the toy's icon, name and colour with base plus speed points, or MISS with the same reason line the player saw during the miss. Reasons are held in memory for the current run only; a recovered run shows plain MISS. Cards fit within the result dialog on narrow screens. Rank and board lines are unchanged.
+
+Completed local, public-ranked and shared staff runs let players type directly in the name on the results card. Save and Cancel appear while editing; Enter saves and Escape cancels. A rename updates the existing completed run, preserving identity, turns, score and ranking. Shared changes require the owning browser and server confirmation; failed saves keep the draft available to retry. Camera menu selection pauses while typing. Official ticket names remain host-issued and Try keeps its anonymous label. The line removal and inline editor still need physical booth review.
 
 ## Light that answers the player
 

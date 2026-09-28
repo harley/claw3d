@@ -52,6 +52,7 @@ test('protected shared runs: ownership, ordered idempotency, ties, rotation, rea
     assert.equal(ra.id, json(duplicate).id); assert.notEqual(ra.id, rb.id);
     assert.equal((await a.request('/api/runs', { name: 'Other', requestKey })).status, 409);
     assert.equal((await b.request(`/api/runs/${ra.id}`)).status, 404);
+    assert.equal((await a.request(`/api/runs/${ra.id}/name`, { name: 'New' })).status, 409);
     assert.equal((await b.request(`/api/runs/${ra.id}/turns`, { turn: 1, prizeId: 'butter' })).status, 404);
     const send = (client, run, turn, prizeId) => client.request(`/api/runs/${run.id}/turns`, { turn, prizeId });
     assert.equal((await send(a, ra, 2, null)).status, 409);
@@ -66,6 +67,12 @@ test('protected shared runs: ownership, ordered idempotency, ties, rotation, rea
     assert.notEqual(rotated.id, ra.boardId);
     for (const turn of [2, 3]) await Promise.all([send(a, ra, turn, 'butter'), send(b, rb, turn, 'butter')]);
     const saved = json(await a.request(`/api/runs/${ra.id}`));
+    assert.equal((await b.request(`/api/runs/${ra.id}/name`, { name: 'Stolen' })).status, 404);
+    for (const name of ['', ' ', 'x'.repeat(25), 'bad\nname']) assert.equal((await a.request(`/api/runs/${ra.id}/name`, { name })).status, 400);
+    for (let retry = 0; retry < 2; retry++) {
+      const renamed = json(await a.request(`/api/runs/${ra.id}/name`, { name: ' Linh ' }));
+      assert.deepEqual(renamed, { ...saved, name: 'Linh' });
+    }
     assert.equal(saved.total, 400); assert.equal(saved.rank, 1); assert.equal(saved.turns.length, 3);
     assert.equal(json(await b.request(`/api/runs/${rb.id}`)).rank, 1);
     assert.equal((await send(a, ra, 4, 'butter')).status, 400);

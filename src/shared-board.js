@@ -7,7 +7,7 @@ export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, 
   let event = false, station = null;
   const readyStatus = () => publicPlay ? station?.active ? 'HANOI · 29 SEP · RANKED' : 'ALL PLAYS · RANKED' : 'SHARED STAFF LEADERBOARD';
   let board = null, role = 'staff', status = 'Connecting to shared leaderboard…';
-  let refreshing = null, version = 0, rotating = false;
+  let refreshing = null, version = 0, rotating = false, renaming = false;
   const api = enabled ? createSessionApi({ publicPlay, onChange: state => {
     if (state.saved) { onSaved(state.saved); void refresh(); return; }
     status = state.error || (state.pending ? 'Score waiting to sync' : readyStatus());
@@ -15,7 +15,7 @@ export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, 
     onSyncState(state);
   } }) : null;
   async function refresh() {
-    if (!api || rotating) return;
+    if (!api || rotating || renaming) return;
     if (refreshing) return refreshing;
     const current = version;
     refreshing = Promise.resolve().then(async () => {
@@ -68,6 +68,19 @@ export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, 
   async function loginHost(code) { await api.request('/host/login', { code }); role = 'host'; }
   return {
     connect, refresh, rotate, loginStaff, loginHost,
+    async rename(id, name) {
+      renaming = true;
+      try {
+        // Drain earlier reads and score writes before publishing a new name.
+        await refreshing;
+        await api.flush();
+        const saved = await api.request(`/runs/${id}/name`, { name });
+        onSaved(saved);
+        if (board) board.runs = board.runs.map(run => run.id === id ? { ...run, name: saved.name } : run);
+        onBoard();
+        return saved;
+      } finally { renaming = false; }
+    },
     async selectEvent(selected) { event = selected; version++; await refreshing; return refresh(); },
     get station() { return station; },
     start: async (name, key, controlMode) => { if (publicPlay) await initialize(); return api.start(name, key, controlMode); },

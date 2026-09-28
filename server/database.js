@@ -112,6 +112,15 @@ export function openDatabase(filename) {
       return getRun(id, owner);
     });
   }
+  function rename(id, owner, input) {
+    const name = label(input.name);
+    return transaction(() => {
+      const row = owned(id, owner);
+      if (row.status !== 'complete') throw new ApiError(409, 'Wait for your score to save before changing your name.');
+      db.prepare('UPDATE runs SET name=? WHERE id=?').run(name, id);
+      return getRun(id, owner);
+    });
+  }
   function abandon(id, owner) {
     owned(id, owner);
     db.prepare("UPDATE runs SET status='abandoned' WHERE id=? AND status='active'").run(id);
@@ -126,5 +135,5 @@ export function openDatabase(filename) {
   }
   if (!currentId()) rotate('Cloud Claw · Staff pilot');
   if (JSON.stringify(boardMetadata().rules) !== JSON.stringify(PILOT_RULES)) rotate('Cloud Claw · Updated rules');
-  return { db, board, createRun, getRun, record, abandon, rotate, exportData, close: () => db.close() };
+  return { db, board, createRun, getRun, record, rename, abandon, rotate, exportData, close: () => db.close() };
 }
