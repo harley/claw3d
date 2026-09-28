@@ -1,4 +1,4 @@
-import { openPublicRunJournal, PUBLIC_JOURNAL } from './public-run-journal.js';
+import { openPublicRunJournal, PUBLIC_JOURNAL, PublicJournalReceiptConflict } from './public-run-journal.js';
 // Only names and completed turn results enter this client. Camera data never does.
 const PREFIX = 'cloud-claw:pending:v2:';
 const ACTIVE = 'cloud-claw:active:v2';
@@ -11,16 +11,27 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
   const activeKey = publicPlay ? 'cloud-claw:public:active:v1' : ACTIVE;
   let journalOpening, journal, journalEntries = [], journalFailure = '', publicStarting = false, lastIntentKey = null, disposed = false;
   const journalReady = async () => {
-    journalOpening ||= journalFactory();
-    journal = await journalOpening;
+    journalOpening ||= Promise.resolve().then(() => journalFactory());
+    const opening = journalOpening;
+    try { journal = await opening; }
+    catch (error) {
+      // Only a failed open may be retried; keep a successfully acquired owner.
+      // Concurrent callers of an older failure must not clear a newer attempt.
+      if (journalOpening === opening) journalOpening = null;
+      throw error;
+    }
     if (disposed) { journal.close(); throw Error('This game page has closed.'); }
     journalEntries = await journal.all();
     return journal;
   };
   const journalPending = entry => !entry.settled && (entry.physical === 'interrupted' || entry.turns.length > entry.acknowledged);
-  async function updateJournal(action) {
+  async function updateJournal(action, receiptKey) {
     try { const result = await action(await journalReady()); journalEntries = await journal.all(); journalFailure = ''; return result; }
-    catch (error) { journalFailure = 'Score storage unavailable. Keep this page open and retry saving; closing it risks loss.'; throw error; }
+    catch (error) {
+      if (error instanceof PublicJournalReceiptConflict) { blocked.set(receiptKey, error); journalFailure = ''; }
+      else journalFailure = 'Score storage unavailable. Keep this page open and retry saving; closing it risks loss.';
+      throw error;
+    }
     finally { notify(); }
   }
   let flushing = null, activeId = null, lastError = '', needsLogin = false;
@@ -53,7 +64,8 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
       canFlush = !accessError && (pendingEntries.some(entry => !blocked.has(entry.run.id)) || journalEntries.some(entry => journalPending(entry) && !blocked.has(entry.requestKey)));
     }
     catch { lastError = 'Pending scores could not be read. Keep this page open and ask the host.'; }
-    return { pending, canFlush, blocked: blocked.size, error: journalFailure || lastError, needsLogin, retryAt, accessBlocked: Boolean(accessError) };
+    return { pending, canFlush, blocked: blocked.size, error: journalFailure || (accessError ? lastError : [...blocked.values()].some(error => error instanceof PublicJournalReceiptConflict)
+      ? 'A server receipt differs from the retained score. Keep browser data and ask the host for recovery; new scores can still save.' : lastError), needsLogin, retryAt, accessBlocked: Boolean(accessError) };
   }
   function notify() { onChange(state()); }
   function postpone(error) {
@@ -123,7 +135,7 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
               if (entry.physical === 'interrupted' && !entry.settled) entry = await journal.acknowledge(entry.requestKey, await request(`/runs/${entry.run.id}/abandon`, {}));
               if (entry.settled && entry.receipt?.status === 'complete') onChange({ saved: entry.receipt });
             } catch (error) {
-              if (![400, 403, 404, 409].includes(error.status)) throw error;
+              if (!(error instanceof PublicJournalReceiptConflict) && ![400, 403, 404, 409].includes(error.status)) throw error;
               blocked.set(initial.requestKey, error);
             }
           }
@@ -195,7 +207,7 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
           // Once the durable marker exists, every retry is read-only. A lost
           // response or reload can never replay live creation/classification.
           const run = intent.first ? await request('/runs', { name, requestKey, controlMode }) : await request(`/intents/${requestKey}`);
-          await updateJournal(journal => journal.admission(requestKey, run));
+          await updateJournal(journal => journal.admission(requestKey, run), requestKey);
           if (run.status !== 'active' || run.turns.length || intent.record.physical === 'interrupted') throw Error('This physical attempt is already used. Start a new player.');
           activeId = run.id;
           return run;

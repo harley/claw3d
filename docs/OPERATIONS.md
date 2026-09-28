@@ -205,7 +205,9 @@ Replacement secrets appear only in the response and open panel memory/field. Cop
 Public ranked pages use `cloud-claw:public-journal:v1` in IndexedDB. A page
 holds an origin Web Lock for physical play; another tab must wait until the
 owner closes. Missing locking/storage, incompatible database/record versions
-and failed writes refuse unsafe admission without deleting evidence. Writes
+and failed writes refuse unsafe admission without deleting evidence. Opening
+can be retried after a temporary refusal (for example, after the other
+tab closes); a retry still validates retained records before allowing play. Writes
 request strict durability and resolve only after transaction completion, not
 individual request success. Browser persistence cannot guarantee survival of
 power loss, disk failure or manual site-data clearing.
@@ -225,6 +227,9 @@ Every public turn commits before the next turn or result handoff. A mid-run
 write failure holds at that safe boundary, retains the outcome in page memory
 and offers Retry saving, explicitly warning against closing the page. Server
 receipts must match the retained turn payloads, scores and frozen rules.
+Conflicting receipts are held for host recovery with a visible mismatch message;
+later valid journal and legacy outbox records still drain. Transport and storage
+failures remain retriable rather than being classified as receipt conflicts.
 Acknowledgements advance monotonically without deleting other turns. Payloads
 and terminal receipts are retained; host export/retention remains later work.
 

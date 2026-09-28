@@ -30,10 +30,17 @@ try {
   await initialize(page);
   const second = await context.newPage(); await second.goto(origin);
   assert.match(await second.evaluate(async () => {
-    try { await (await import('/assets/public-run-journal.js')).openPublicRunJournal(); return 'unexpected owner'; }
+    const { createSessionApi } = await import('/assets/session-api.js');
+    window.api = createSessionApi({ publicPlay: true, onWork: () => {} });
+    try { await api.initialize(); return 'unexpected owner'; }
     catch (error) { return error.message; }
   }), /Another tab/);
-  await second.close();
+  await page.evaluate(() => api.dispose());
+  await page.close();
+  // Retry on the same API/page must acquire the newly released real Web Lock.
+  await second.evaluate(() => api.initialize());
+  page = second;
+  assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM runs').get().n, 0);
   let creations = 0;
   await page.route('**/api/play/runs', async route => { creations++; await route.fetch(); await route.abort('failed'); });
   const lostKey = crypto.randomUUID();

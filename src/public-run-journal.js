@@ -1,5 +1,7 @@
 import { scoreTurn, turnContext, RULES, SPEED_RULES, CAROUSEL_RULES } from './event-session.js';
 
+export class PublicJournalReceiptConflict extends Error {}
+
 export const PUBLIC_JOURNAL = 'cloud-claw:public-journal:v1';
 const uuid = value => typeof value === 'string' && /^[a-f0-9-]{36}$/.test(value);
 const canonical = value => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b))) : item);
@@ -88,8 +90,13 @@ export async function openPublicRunJournal({ indexedDB = globalThis.indexedDB, l
         });
       },
       admission: (key, run) => change(key, record => {
-        if (record.run && (record.run.id !== run.id || !same(record.run.rules, run.rules))) throw Error('Admission receipt changed identity or rules.');
-        if (run.name !== record.name || run.rules?.controlMode && run.rules.controlMode !== record.controlMode) throw Error('Admission receipt conflicts with saved input.');
+        if (!run || typeof run !== 'object') throw new PublicJournalReceiptConflict('Invalid admission receipt.');
+        if (record.run && (record.run.id !== run.id || !same(record.run.rules, run.rules))) throw new PublicJournalReceiptConflict('Admission receipt changed identity or rules.');
+        if (run.name !== record.name || run.rules?.controlMode && run.rules.controlMode !== record.controlMode) throw new PublicJournalReceiptConflict('Admission receipt conflicts with saved input.');
+        // Classify invalid server identity/rules separately from damaged local data
+        // (change() validates the existing record before applying any receipt).
+        try { validate({ ...record, run }); }
+        catch (error) { throw new PublicJournalReceiptConflict(error.message); }
         record.run ||= structuredClone(run);
         if (record.physical === 'reserved') record.physical = 'playing';
       }),
@@ -109,12 +116,12 @@ export async function openPublicRunJournal({ indexedDB = globalThis.indexedDB, l
         });
       },
       acknowledge: (key, receipt) => change(key, record => {
-        if (receipt.id !== record.run?.id || !Array.isArray(receipt.turns)) throw Error('Invalid score receipt.');
+        if (!receipt || receipt.id !== record.run?.id || !Array.isArray(receipt.turns)) throw new PublicJournalReceiptConflict('Invalid score receipt.');
         for (let i = 0; i < receipt.turns.length; i++) {
           const local = record.turns[i], remote = receipt.turns[i];
-          if (!local || local.turn !== remote.turn || local.prizeId !== remote.prizeId || local.remainingMs !== (remote.remainingMs ?? 0) || local.score !== remote.score) throw Error('Server score differs from the retained local result.');
+          if (!local || !remote || local.turn !== remote.turn || local.prizeId !== remote.prizeId || local.remainingMs !== (remote.remainingMs ?? 0) || local.score !== remote.score) throw new PublicJournalReceiptConflict('Server score differs from the retained local result.');
         }
-        if (!same(receipt.rules, record.run.rules) || receipt.status === 'complete' && receipt.total !== record.turns.reduce((sum, turn) => sum + turn.score, 0)) throw Error('Server receipt differs from frozen scoring rules or total.');
+        if (!same(receipt.rules, record.run.rules) || receipt.status === 'complete' && receipt.total !== record.turns.reduce((sum, turn) => sum + turn.score, 0)) throw new PublicJournalReceiptConflict('Server receipt differs from frozen scoring rules or total.');
         record.acknowledged = Math.max(record.acknowledged, receipt.turns.length);
         if (!record.receipt || receipt.turns.length > record.receipt.turns.length || receipt.turns.length === record.receipt.turns.length && (record.receipt.status === 'active' || receipt.status === 'complete')) record.receipt = structuredClone(receipt);
         if (receipt.status === 'complete' && record.acknowledged === 3 || receipt.status === 'abandoned' && record.physical === 'interrupted' && record.acknowledged === record.turns.length) record.settled = true;

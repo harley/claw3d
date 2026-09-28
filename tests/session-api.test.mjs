@@ -218,3 +218,140 @@ test('lost public admission is looked up after restart, never recreated or resum
   await assert.rejects(api.start('Lan', inputKey), /already used/);
   api.dispose();
 });
+
+for (const mismatch of ['admission name', 'admission rules', 'receipt identity', 'receipt rules', 'receipt turn', 'receipt total']) {
+  test(`public ${mismatch} conflict retains evidence and lets journal/legacy scores drain across wakes`, async () => {
+    const fixture = journalFixture(), seed = await fixture.open(), local = storage(), calls = [];
+    const turns = [1, 2, 3].map(turn => ({ turn, prizeId: null, remainingMs: 0, score: 0 }));
+    const records = [];
+    for (const name of ['Conflicting', 'Valid']) {
+      const input = { name, requestKey: name === 'Conflicting' ? '00000000-0000-4000-8000-000000000001' : '00000000-0000-4000-8000-000000000002', controlMode: 'one-hand' };
+      const run = { id: crypto.randomUUID(), name, rules: RULES, status: 'active', turns: [] };
+      await seed.reserve(input);
+      if (name === 'Valid' || !mismatch.startsWith('admission')) {
+        await seed.admission(input.requestKey, run); await seed.turns({ ...run, turns });
+      }
+      records.push({ input, run });
+    }
+    seed.close(); await Promise.resolve();
+    const legacyId = crypto.randomUUID(), prefix = `cloud-claw:public:pending:v1:${legacyId}:`;
+    local.setItem(prefix + 'run', JSON.stringify({ id: legacyId }));
+    for (const turn of turns) local.setItem(prefix + `turn:${turn.turn}`, JSON.stringify(turn));
+    let owned;
+    const api = createSessionApi({ publicPlay: true, storage: local, tabStorage: storage(), onWork() {},
+      journalFactory: async () => (owned = await fixture.open()), fetcher: async (url, options) => {
+        calls.push(url);
+        if (url.endsWith('/session')) return Response.json({ role: 'public' });
+        if (url.includes(legacyId)) return Response.json({ id: legacyId, status: 'complete', turns });
+        const item = records.find(({ input, run }) => url.includes(input.requestKey) || url.includes(run.id));
+        assert.ok(item, url);
+        const receipt = { ...item.run, turns: turns.slice(0, JSON.parse(options.body || '{}').turn || 0) };
+        if (receipt.turns.length === 3) Object.assign(receipt, { status: 'complete', total: 0 });
+        if (item === records[0]) {
+          if (mismatch === 'admission name') receipt.name = 'Different';
+          if (mismatch === 'admission rules') receipt.rules = { ...RULES, version: 'unsupported' };
+          if (mismatch === 'receipt identity') receipt.id = crypto.randomUUID();
+          if (mismatch === 'receipt rules') receipt.rules = { ...RULES, version: 'different' };
+          if (mismatch === 'receipt turn') receipt.turns[0] = { ...turns[0], score: 100 };
+          if (mismatch === 'receipt total' && receipt.status === 'complete') receipt.total = 100;
+        }
+        return Response.json(receipt);
+      } });
+    await api.initialize();
+    const before = await owned.all();
+    assert.deepEqual(before.map(entry => entry.name), ['Conflicting', 'Valid']);
+    const original = before[0];
+    await api.flush();
+    const retained = (await owned.all()).find(entry => entry.requestKey === records[0].input.requestKey);
+    assert.deepEqual(retained.turns, original.turns); assert.deepEqual(retained.run, original.run);
+    assert.equal(retained.settled, false);
+    assert.equal((await owned.all()).find(entry => entry.requestKey === records[1].input.requestKey).settled, true);
+    assert.equal(local.length, 0); assert.equal(api.state().blocked, 1); assert.equal(api.state().pending, 1);
+    assert.equal(api.state().retryAt, 0); assert.equal(api.state().canFlush, false);
+    assert.match(api.state().error, /receipt differs.*host.*recovery/);
+    const requestCount = calls.length;
+    await api.flush(); await api.flush();
+    assert.equal(calls.length, requestCount); api.dispose();
+  });
+}
+
+test('same public API retries refused lock after its owner closes, shares opening and admits once', async () => {
+  const fixture = journalFixture(), owner = await fixture.open();
+  let opens = 0, starts = 0;
+  const api = createSessionApi({ publicPlay: true, storage: storage(), tabStorage: storage(), onWork() {},
+    journalFactory: () => { opens++; return fixture.open(); }, fetcher: async (url, options) => {
+      if (url.endsWith('/session')) return Response.json({ role: 'public' });
+      assert.equal(url, '/api/play/runs'); starts++;
+      return Response.json({ id: crypto.randomUUID(), name: JSON.parse(options.body).name, rules: RULES, status: 'active', turns: [] });
+    } });
+  const failed = await Promise.allSettled([api.initialize(), api.initialize()]);
+  assert.ok(failed.every(result => result.status === 'rejected' && /Another tab/.test(result.reason.message)));
+  assert.equal(opens, 1); assert.equal(starts, 0);
+  owner.close(); await Promise.resolve();
+  await Promise.all([api.initialize(), api.initialize()]);
+  const key = crypto.randomUUID();
+  const results = await Promise.allSettled([api.start('Lan', key), api.start('Lan', key)]);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(opens, 2); assert.equal(starts, 1);
+  await assert.rejects(fixture.open(), /Another tab/);
+  api.dispose(); await Promise.resolve(); const next = await fixture.open(); next.close();
+});
+
+test('journal acknowledgement storage failure stays transient and retries without blocking the record', async () => {
+  const fixture = journalFixture(), notices = [];
+  let clock = 1000, owned, fail = true;
+  const run = { id: crypto.randomUUID(), name: 'Lan', rules: RULES, status: 'active', turns: [] };
+  const turns = [1, 2, 3].map(turn => ({ turn, prizeId: null, remainingMs: 0, score: 0 }));
+  const api = createSessionApi({ publicPlay: true, storage: storage(), tabStorage: storage(), onWork() {}, now: () => clock, random: () => .5,
+    journalFactory: async () => {
+      owned = await fixture.open();
+      return { ...owned, acknowledge: async (...args) => {
+        if (fail) throw new DOMException('Storage unavailable', 'UnknownError');
+        return owned.acknowledge(...args);
+      } };
+    }, onChange: notice => { if (notice.saved) notices.push(notice.saved); }, fetcher: async (url, options) => {
+      if (url.endsWith('/session')) return Response.json({ role: 'public' });
+      if (url === '/api/play/runs') return Response.json(run);
+      const count = JSON.parse(options.body).turn;
+      return Response.json({ ...run, turns: turns.slice(0, count), status: count === 3 ? 'complete' : 'active', total: 0 });
+    } });
+  await api.initialize(); await api.start(run.name, crypto.randomUUID()); await api.queue({ ...run, turns });
+  await api.flush();
+  assert.equal(api.state().blocked, 0); assert.equal(api.state().pending, 1); assert.equal(api.state().retryAt, 3000);
+  assert.equal((await owned.all())[0].acknowledged, 0); assert.equal(notices.length, 0);
+  fail = false; clock = 3000; await api.flush();
+  assert.equal(api.state().pending, 0); assert.equal(api.state().blocked, 0); assert.equal(notices.length, 1); api.dispose();
+});
+
+test('failed journal validation can be retried but never admits or erases incompatible data', async () => {
+  const fixture = journalFixture(), seed = await fixture.open(); seed.close(); await Promise.resolve();
+  const input = { requestKey: crypto.randomUUID(), version: 999 };
+  const opening = fixture.indexedDB.open('cloud-claw:public-journal:v1', 1);
+  const db = await new Promise(resolve => { opening.onsuccess = () => resolve(opening.result); });
+  await new Promise(resolve => { const tx = db.transaction('intents', 'readwrite'); tx.objectStore('intents').put(input); tx.oncomplete = resolve; });
+  let opens = 0, requests = 0;
+  const api = createSessionApi({ publicPlay: true, storage: storage(), tabStorage: storage(),
+    journalFactory: () => { opens++; return fixture.open(); }, fetcher: async () => { requests++; return Response.json({}); } });
+  await assert.rejects(api.initialize(), /incompatible/);
+  await assert.rejects(api.initialize(), /incompatible/);
+  await assert.rejects(api.start('Lan', crypto.randomUUID()), /incompatible/);
+  assert.equal(opens, 3); assert.equal(requests, 0);
+  const retained = await new Promise(resolve => { const get = db.transaction('intents').objectStore('intents').get(input.requestKey); get.onsuccess = () => resolve(get.result); });
+  assert.deepEqual(retained, input); db.close(); api.dispose();
+});
+
+test('a read failure after successful opening keeps the same journal owner for retry', async () => {
+  const fixture = journalFixture(); let opens = 0, failRead = true;
+  const api = createSessionApi({ publicPlay: true, storage: storage(), tabStorage: storage(), onWork() {},
+    journalFactory: async () => {
+      opens++; const journal = await fixture.open();
+      return { ...journal, all: () => {
+        if (failRead) throw Error('Journal read unavailable');
+        return journal.all();
+      } };
+    }, fetcher: async () => Response.json({ role: 'public' }) });
+  await assert.rejects(api.initialize(), /Journal read unavailable/);
+  await assert.rejects(fixture.open(), /Another tab/);
+  failRead = false; await api.initialize();
+  assert.equal(opens, 1); api.dispose();
+});
