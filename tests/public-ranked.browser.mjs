@@ -130,6 +130,12 @@ try {
     }
   }
   await page.locator('#final-leaderboard').click();
+  await page.locator('#scores-dialog[open]').waitFor();
+  await page.locator('#result-open').click();
+  await page.locator('#final[open]').waitFor();
+  assert.equal(await page.locator('#scores-dialog').isVisible(), false, 'Your result replaces the scores dialog');
+  await page.locator('#final-leaderboard').click();
+  await page.locator('#scores-dialog[open] #leaders').waitFor();
   await page.locator('#board-scope').selectOption('event');
   await page.waitForFunction(() => document.getElementById('board-name').textContent.includes('Hanoi'));
   assert.equal(await page.locator('#leaders li').count(), 2);
