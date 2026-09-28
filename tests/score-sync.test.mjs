@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setImmediate } from 'node:timers/promises';
 import { createSessionApi } from '../src/session-api.js';
+import { journalFixture } from './public-journal-fixture.mjs';
 import { createScoreSync } from '../src/score-sync.js';
 
 const prefix = 'cloud-claw:public:pending:v1:';
@@ -18,16 +19,16 @@ function harness(t, fetcher, { board = true, initialize = false } = {}) {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1000 });
   const local = storage(), events = new EventTarget(), visibility = new EventTarget(), calls = [], saved = [];
   let sync, visible = true, playing = false;
-  const api = createSessionApi({ publicPlay: true, storage: local, tabStorage: storage(), random: () => .5,
+  const api = createSessionApi({ publicPlay: true, journalFactory: journalFixture().open, storage: local, tabStorage: storage(), random: () => .5,
     onWork: () => sync.wake(), onChange: state => { if (state.saved) { saved.push(state.saved); sync.wake(true); } },
     fetcher: async (url, options) => { calls.push({ url, time: Date.now() }); return fetcher(url, options); } });
   sync = createScoreSync({ api, events, visibility, initialize: initialize ? () => api.initialize() : undefined,
     refresh: board ? () => api.request('/board') : undefined, canRefresh: () => visible && !playing });
-  t.after(() => sync.dispose());
+  t.after(() => { sync.dispose(); api.dispose(); });
   return { api, sync, local, events, visibility, calls, saved,
     visible: value => { visible = value; visibility.dispatchEvent(new Event('visibilitychange')); },
     playing: value => { playing = value; },
-    advance: async ms => { t.mock.timers.tick(ms); await setImmediate(); },
+    advance: async ms => { t.mock.timers.tick(ms); for (let i = 0; i < 10; i++) await setImmediate(); },
   };
 }
 const receipt = (url, options) => Response.json(url.endsWith('/turns')
@@ -44,7 +45,7 @@ test('120-second throttle survives START, flush, online and visibility storms', 
   assert.equal(h.calls.length, 1);
   for (let i = 0; i < 59; i++) {
     h.events.dispatchEvent(new Event('online')); h.visible(true);
-    await assert.rejects(h.api.start('Player', 'request'), /Slow down/);
+    await assert.rejects(h.api.start('Player', '12345678-1234-1234-1234-123456789abc'), /Slow down/);
     await h.api.flush(); await h.advance(2000);
   }
   assert.equal(h.calls.length, 1);
@@ -150,9 +151,9 @@ test('an older in-flight success cannot clear a newer throttle', async t => {
     return Response.json({ error: 'Wait' }, { status: 429, headers: { 'Retry-After': '120' } });
   });
   const read = h.api.request('/board');
-  await assert.rejects(h.api.start('Player', 'request'), /Wait/);
+  await assert.rejects(h.api.start('Player', '12345678-1234-1234-1234-123456789abc'), /Wait/);
   release(); await read;
   assert.equal(h.api.state().retryAt, 121000);
-  await assert.rejects(h.api.start('Player', 'request'), /Wait/);
+  await assert.rejects(h.api.start('Player', '12345678-1234-1234-1234-123456789abc'), /Wait/);
   assert.equal(h.calls.length, 2);
 });

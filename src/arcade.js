@@ -63,6 +63,7 @@ if (publicSurface) {
 }
 
 $('build-info').textContent = `BUILD ${__BUILD_INFO__.commit}${__BUILD_INFO__.dirty ? ' · uncommitted changes' : ''} · ${__BUILD_INFO__.branch}`;
+let savingTurn = false, pendingTurnOutcome = null, savingTurnPromise = null;
 let game = createGame({ carousel: true, suspendedClaw: mode.suspendedClaw }), scene, previous = 0, stopped = false, frozen = false;
 let cameraControls, cameraLoading = false;
 const handMenu = createHandMenu({ leftHand: dualEnabled });
@@ -89,7 +90,7 @@ if (dualEnabled) $('camera-menu-help').textContent = 'Use your left hand and hol
 const glove = createJoystickCursor(() => cabinetEnabled ? scene?.controlTargets() : null, () => { if (cabinetEnabled) gestureDrop(); });
 let previousMenuMode = '', editingResultName = false, savingResultName = false;
 function menuMode() {
-  if (startingRun || frozen || stopped || document.hidden || editingResultName) return '';
+  if (savingTurn || startingRun || frozen || stopped || document.hidden || editingResultName) return '';
   if ((recovering || paused) && shared) return '';
   const dialogs = [...document.querySelectorAll('dialog[open]')];
   if (dialogs.length) return dialogs.length === 1 && ['registration', 'final', 'scores-dialog'].includes(dialogs[0].id) ? dialogs[0].id : '';
@@ -251,7 +252,30 @@ function finishTurn() {
   turnReasons[turnNumber - 1] = game.plan ? { reason: game.plan.reason, touched: game.plan.touched, blocker: game.plan.blocker } : null;
   persist();
   track('turn_complete', { turn: turnNumber, score: outcome.run.turns.at(-1).score, prizeId: outcome.run.turns.at(-1).prizeId, outcome: game.plan?.reason }, outcome.run);
+  if (publicPlay) {
+    savingTurn = true; pendingTurnOutcome = outcome;
+    void savePublicTurn(); return;
+  }
   if (shared) pilot.queue(outcome.run);
+  presentTurn(outcome);
+}
+async function savePublicTurn() {
+  if (savingTurnPromise || !pendingTurnOutcome) return savingTurnPromise;
+  const outcome = pendingTurnOutcome;
+  savingTurnPromise = Promise.resolve().then(async () => {
+    try {
+      await pilot.queue(outcome.run);
+    } catch {
+      $('score-storage').showModal(); return;
+    }
+    pendingTurnOutcome = null; savingTurn = false;
+    $('score-storage').close(); presentTurn(outcome);
+  }).finally(() => { savingTurnPromise = null; });
+  return savingTurnPromise;
+}
+$('score-storage').addEventListener('cancel', event => event.preventDefault());
+$('score-storage-retry').addEventListener('click', () => { void savePublicTurn(); });
+function presentTurn(outcome) {
   const points = outcome.run.turns.at(-1).score;
   if (outcome.completed) audio.fanfare('complete');
   else if (points) { [523, 659, 784, 1047].forEach((f, i) => audio.note(f, .18, i * .11)); } else audio.note(165, .25, 0, 'triangle');
@@ -297,7 +321,7 @@ async function play() {
   updateUI();
 }
 async function startScoredRun() {
-  if (startingRun || !pendingPlayer || officialBlocked) return;
+  if (savingTurn || startingRun || !pendingPlayer || officialBlocked) return;
   startingRun = true; updateUI();
   try {
     if (publicSurface) $('try-notice').open = false;
@@ -490,7 +514,7 @@ function syncPhoneMode(start = false) {
 addEventListener('resize', () => { if (!completedRun) syncPhoneMode(); });
 $('operator-open').addEventListener('click', openOperator);
 $('pause').addEventListener('click', () => { if (officialBlocked) return; if (recovering) { resumeRecoveredRun(); paused = false; } else paused = !paused; $('operator').close(); $('scene').focus(); updateUI(); });
-$('reset').addEventListener('click', () => { if (startingRun) return; if (official) { officialBlocked = paused = true; void officialPlayer.interrupt().catch(error => setText('sync-message', error.message)); $('operator').close(); updateUI(); return; } if (shared && run) pilot.abandon(run); if (store.active) { store.active.abortedAt = new Date().toISOString(); store.active = null; } run = null; pendingPlayer = null; completedRun = null; recovering = paused = frozen = false; persist(); freshGame(); $('operator').close(); updateUI(); });
+$('reset').addEventListener('click', () => { if (savingTurn || startingRun) return; if (official) { officialBlocked = paused = true; void officialPlayer.interrupt().catch(error => setText('sync-message', error.message)); $('operator').close(); updateUI(); return; } if (shared && run) void Promise.resolve(pilot.abandon(run)).catch(() => {}); if (store.active) { store.active.abortedAt = new Date().toISOString(); store.active = null; } run = null; pendingPlayer = null; completedRun = null; recovering = paused = frozen = false; persist(); freshGame(); $('operator').close(); updateUI(); });
 $('new-board').addEventListener('click', async () => {
   if (shared) {
     if (pilot.rotating) return;
@@ -624,7 +648,7 @@ function frame(time) {
   const modalBeyondFinal = modal && [...openDialogs].some(dialog => dialog.id !== 'final');
   const cameraWaiting = aiming && !flow.pendingSlam && (!cameraControls?.running || cameraControls.waiting);
   // Only explicit operator pause stops a drop already in flight.
-  const blocked = paused || (aiming && !flow.pendingSlam && (cameraWaiting || modal || document.hidden));
+  const blocked = savingTurn || paused || (aiming && !flow.pendingSlam && (cameraWaiting || modal || document.hidden));
   movementMusic?.update(aiming && !flow.pendingSlam && !blocked && !frozen && !document.hidden, dt);
   if (paused || modalBeyondFinal || document.hidden) audio.silence();
   const input = { ...cameraControls?.input || { x: 0, z: 0 } };
@@ -818,7 +842,8 @@ const pilot = official ? {
   },
   onConnectError: error => { $('sync-message').textContent = error.message; $('shared-reauth').hidden = publicPlay || error.status !== 401; renderBoard(); },
 });
-if (shared && !official) window.addEventListener('pagehide', event => { if (!event.persisted) pilot.dispose(); });
+if (shared && !official) window.addEventListener('pagehide', event => { if (publicPlay || !event.persisted) pilot.dispose(); });
+if (publicPlay) window.addEventListener('pageshow', event => { if (event.persisted) location.reload(); });
 const hostEvents = !publicSurface && !publicOfficial && shared && globalThis.__OFFICIAL_EVENTS__ === true ? createHostEvents($('host-events'), { onUnauthorized: () => { $('operator').close(); $('host-access').showModal(); $('host-message').textContent = 'Host access expired. Sign in again.'; } }) : null;
 if (!publicSurface && shared && globalThis.__OFFICIAL_EVENTS__ === true && !official) {
   $('shared-access').hidden = false; $('official-entry').hidden = false;
@@ -917,11 +942,13 @@ try {
         if (state.saved) updateSavedRank(state.saved);
         else setText('sync-message', state.pending ? state.error || 'Score waiting to sync' : '');
       } });
-      if (recovery.state().pending) {
-        recoverySync = createScoreSync({ api: recovery });
-        recoverySync.start();
-        window.addEventListener('pagehide', event => { if (!event.persisted) recoverySync.dispose(); });
-      }
+      void recovery.recover().then(() => {
+        if (recovery.state().pending) {
+          recoverySync = createScoreSync({ api: recovery });
+          recoverySync.start();
+        } else recovery.dispose();
+      }).catch(error => setText('sync-message', error.message));
+      window.addEventListener('pagehide', event => { if (!event.persisted) { recoverySync?.dispose(); recovery.dispose(); } });
     }
   }
   if ((!manualSetup || autoPlay || selectedStart) && !frozen) {

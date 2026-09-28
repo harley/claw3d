@@ -206,3 +206,18 @@ test('public result rename is owner-only, repeatable and preserves the ranked re
   const board = await (await f.request('/api/play/board')).json();
   assert.deepEqual(board.runs, [{ id: run.id, name: 'Linh', total: saved.total, rank: saved.rank }]);
 });
+
+test('read-only start receipt lookup is owner scoped and never creates or reclassifies admission', async t => {
+  const f = await fixture(t), owner = await f.player(), other = await f.player(), key = randomUUID();
+  const path = `/api/play/intents/${key}`;
+  assert.equal((await f.request(path, { cookie: owner })).status, 404);
+  assert.equal(f.app.database.db.prepare('SELECT COUNT(*) AS n FROM runs').get().n, 0);
+  const admitted = await (await f.start(owner, key)).json();
+  const station = await f.enroll();
+  const receipt = await (await f.request(path, { cookie: `${owner}; ${station}` })).json();
+  assert.equal(receipt.id, admitted.id); assert.equal(receipt.event, undefined);
+  assert.equal((await f.request(path, { cookie: other })).status, 404);
+  await f.pause();
+  assert.equal((await f.request(path, { cookie: owner })).status, 200);
+  assert.equal(f.app.database.db.prepare('SELECT COUNT(*) AS n FROM runs').get().n, 1);
+});

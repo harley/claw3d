@@ -95,6 +95,12 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
         return json(res, 200, { role: 'public', board: board(), station: this.stationStatus(req) });
       }
       const player = owner(req);
+      const intent = /^\/api\/play\/intents\/([a-f0-9-]{36})$/.exec(path);
+      if (intent && req.method === 'GET') {
+        const row = db.prepare('SELECT id FROM runs WHERE owner_id=? AND request_key=? AND board_id=?').get(player, intent[1], boardId);
+        if (!row) throw new ApiError(404, 'No admission receipt for this owner and request. Keep the saved intent.');
+        return json(res, 200, result(row.id, player));
+      }
       const match = /^\/api\/play\/runs\/([a-f0-9-]{36})(?:\/(turns|abandon|name))?$/.exec(path);
       if (match && !match[2] && req.method === 'GET') return json(res, 200, result(match[1], player));
       if (req.method !== 'POST') throw new ApiError(404, 'Route not found.');

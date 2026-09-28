@@ -4,13 +4,13 @@
 import { createSessionApi } from './session-api.js';
 import { createScoreSync } from './score-sync.js';
 
-export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, onSyncState, onConnectError, publicPlay = false, isPlaying = () => false }) {
+export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, onSyncState, onConnectError, publicPlay = false, journalFactory, isPlaying = () => false }) {
   let event = false, station = null;
   const readyStatus = () => publicPlay ? station?.active ? 'HANOI · 29 SEP · RANKED' : 'ALL PLAYS · RANKED' : 'SHARED STAFF LEADERBOARD';
   let board = null, role = 'staff', status = 'Connecting to shared leaderboard…';
   let sync;
   let refreshing = null, version = 0, rotating = false, renaming = false;
-  const api = enabled ? createSessionApi({ publicPlay, onWork: () => sync?.wake(), onChange: state => {
+  const api = enabled ? createSessionApi({ publicPlay, journalFactory, onWork: () => sync?.wake(), onChange: state => {
     if (state.saved) { onSaved(state.saved); sync?.wake(true); return; }
     status = state.error || (state.pending ? 'Score waiting to sync' : readyStatus());
     if (state.needsLogin) role = 'staff';
@@ -60,7 +60,7 @@ export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, 
   async function loginStaff(code) { await api.request('/login', { code }); sync.recovered(); }
   async function loginHost(code) { await api.request('/host/login', { code }); role = 'host'; sync.recovered(); }
   return {
-    connect, refresh, dispose: () => sync?.dispose(), rotate, loginStaff, loginHost,
+    connect, refresh, dispose: () => { sync?.dispose(); api?.dispose(); }, rotate, loginStaff, loginHost,
     async rename(id, name) {
       renaming = true;
       try {

@@ -199,3 +199,43 @@ Ticket plaintext exists only in the successful response and the open panel’s m
 Session storage `cloud-claw:host-recovery:v1:<eventId>` retains selected attempt ID and a journal of operation kind, original request key, exact target/reason, participant ID and secret-free receipt or definitive rejection. Writes/readback precede consuming requests. Keep the original tab/browser data and owner cookie; authorization can be renewed without changing that owner. Transport, authorization, service-pause and receipt-storage failures preserve pending intent. Exact retries recover one receipt, including after closure if already committed; new grants remain forbidden. An expired event or paused admission service can prevent receipt retrieval: preserve the journal and reconcile with the host, never issue a blind duplicate. No automatic cleanup is performed.
 
 Replacement secrets appear only in the response and open panel memory/field. Copy is explicit; close, refresh, selection and errors clear the code. A lost response returns no secret on replay; explicitly revoke/reissue the retained unused replacement. If that replacement was redeemed, inspect its own attempt rather than treating reissue as run recovery. Host voiding does not clear the player's retained admission/outbox. The player must explicitly acknowledge the server-confirmed terminal attempt using the handoff above before a replacement can be admitted; multi-station procedures remain separate. Do not delete browser data to bypass that hold. No server policy, admission flags, production configuration or retention maintenance changes are included.
+
+### Public scored-play journal
+
+Public ranked pages use `cloud-claw:public-journal:v1` in IndexedDB. A page
+holds an origin Web Lock for physical play; another tab must wait until the
+owner closes. Missing locking/storage, incompatible database/record versions
+and failed writes refuse unsafe admission without deleting evidence. Writes
+request strict durability and resolve only after transaction completion, not
+individual request success. Browser persistence cannot guarantee survival of
+power loss, disk failure or manual site-data clearing.
+
+A canonical name/mode/request identity and live-attempt marker are committed
+before the one original online start. Uncertain attempts use the owner-scoped
+GET `/api/play/intents/:requestKey`; it cannot create a run or add an event
+association. Reload/browser restart discovers all journal entries without a
+sessionStorage pointer, interrupts old physics, drains only committed turns
+and abandons unfinished runs. It never invents missing turns or replays live
+creation. A completed three-turn result remains completable after restart.
+Unknown/inaccessible receipts stay retained for host recovery; independent
+new results can still drain. Offline admission remains unavailable until the
+separate grant/reconciliation integration is complete.
+
+Every public turn commits before the next turn or result handoff. A mid-run
+write failure holds at that safe boundary, retains the outcome in page memory
+and offers Retry saving, explicitly warning against closing the page. Server
+receipts must match the retained turn payloads, scores and frozen rules.
+Acknowledgements advance monotonically without deleting other turns. Payloads
+and terminal receipts are retained; host export/retention remains later work.
+
+The public v1 localStorage outbox keeps its existing read/drain adapter.
+Staff, official and standalone-preview namespaces are not migrated. The new
+read-only receipt route uses the original public owner cookie and normal
+request budgets; it grants no recovery access to a replacement owner.
+
+`tests/public-journal.browser.mjs` verifies real IndexedDB, exclusive Web Locks,
+response-loss lookup, interrupted turns and a persistent browser restart
+against a disposable service. Unit fault injection covers quota refusal,
+abort after request success, stale acknowledgements and incompatible data.
+These tests do not establish physical camera/display or sudden-power-loss
+acceptance; the rendered public-ranked journey remains a required shared gate.

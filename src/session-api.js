@@ -1,3 +1,4 @@
+import { openPublicRunJournal, PUBLIC_JOURNAL } from './public-run-journal.js';
 // Only names and completed turn results enter this client. Camera data never does.
 const PREFIX = 'cloud-claw:pending:v2:';
 const ACTIVE = 'cloud-claw:active:v2';
@@ -5,9 +6,23 @@ const browserStorage = name => ({
   get length() { return globalThis[name].length; }, key: i => globalThis[name].key(i),
   getItem: key => globalThis[name].getItem(key), setItem: (key, value) => globalThis[name].setItem(key, value), removeItem: key => globalThis[name].removeItem(key),
 });
-export function createSessionApi({ storage = browserStorage('localStorage'), tabStorage = browserStorage('sessionStorage'), fetcher = fetch, onChange = () => {}, onWork, publicPlay = false, now = Date.now, random = Math.random } = {}) {
+export function createSessionApi({ storage = browserStorage('localStorage'), tabStorage = browserStorage('sessionStorage'), fetcher = fetch, onChange = () => {}, onWork, publicPlay = false, now = Date.now, random = Math.random, journalFactory = openPublicRunJournal } = {}) {
   const prefix = publicPlay ? 'cloud-claw:public:pending:v1:' : PREFIX;
   const activeKey = publicPlay ? 'cloud-claw:public:active:v1' : ACTIVE;
+  let journalOpening, journal, journalEntries = [], journalFailure = '', publicStarting = false, lastIntentKey = null, disposed = false;
+  const journalReady = async () => {
+    journalOpening ||= journalFactory();
+    journal = await journalOpening;
+    if (disposed) { journal.close(); throw Error('This game page has closed.'); }
+    journalEntries = await journal.all();
+    return journal;
+  };
+  const journalPending = entry => !entry.settled && (entry.physical === 'interrupted' || entry.turns.length > entry.acknowledged);
+  async function updateJournal(action) {
+    try { const result = await action(await journalReady()); journalEntries = await journal.all(); journalFailure = ''; return result; }
+    catch (error) { journalFailure = 'Score storage unavailable. Keep this page open and retry saving; closing it risks loss.'; throw error; }
+    finally { notify(); }
+  }
   let flushing = null, activeId = null, lastError = '', needsLogin = false;
   const unsaved = new Map(), blocked = new Map();
   let failures = 0, retryAt = 0, retryError = null, accessError = null, failureVersion = 0;
@@ -34,11 +49,11 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
     let pending = 0, canFlush = false;
     try {
       const pendingEntries = entries().filter(pendingEntry);
-      pending = pendingEntries.length;
-      canFlush = !accessError && pendingEntries.some(entry => !blocked.has(entry.run.id));
+      pending = pendingEntries.length + journalEntries.filter(journalPending).length;
+      canFlush = !accessError && (pendingEntries.some(entry => !blocked.has(entry.run.id)) || journalEntries.some(entry => journalPending(entry) && !blocked.has(entry.requestKey)));
     }
     catch { lastError = 'Pending scores could not be read. Keep this page open and ask the host.'; }
-    return { pending, canFlush, blocked: blocked.size, error: lastError, needsLogin, retryAt, accessBlocked: Boolean(accessError) };
+    return { pending, canFlush, blocked: blocked.size, error: journalFailure || lastError, needsLogin, retryAt, accessBlocked: Boolean(accessError) };
   }
   function notify() { onChange(state()); }
   function postpone(error) {
@@ -95,6 +110,24 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
     if (accessError || now() < retryAt) return;
     flushing = Promise.resolve().then(async () => {
       try {
+        if (publicPlay && journal) {
+          for (const initial of await journal.all()) {
+            if (!journalPending(initial) || blocked.has(initial.requestKey)) continue;
+            try {
+              let entry = initial;
+              if (!entry.run) entry = await journal.admission(entry.requestKey, await request(`/intents/${entry.requestKey}`));
+              for (const turn of entry.turns.slice(entry.acknowledged)) {
+                const saved = await request(`/runs/${entry.run.id}/turns`, { turn: turn.turn, prizeId: turn.prizeId, remainingMs: turn.remainingMs });
+                entry = await journal.acknowledge(entry.requestKey, saved);
+              }
+              if (entry.physical === 'interrupted' && !entry.settled) entry = await journal.acknowledge(entry.requestKey, await request(`/runs/${entry.run.id}/abandon`, {}));
+              if (entry.settled && entry.receipt?.status === 'complete') onChange({ saved: entry.receipt });
+            } catch (error) {
+              if (![400, 403, 404, 409].includes(error.status)) throw error;
+              blocked.set(initial.requestKey, error);
+            }
+          }
+        }
         for (const initial of entries()) {
           const id = initial.run.id;
           if (blocked.has(id)) continue;
@@ -128,12 +161,18 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
         lastError = accessError ? (publicPlay ? 'Session expired. Keep pending score data and reload.' : 'Sign in again to save pending scores.') : error.status === 403 || error.status === 404 || error.status === 409
           ? `${error.message} Keep this browser’s data and ask the host.` : 'Score waiting to sync. Keep this page open; it will retry.';
       }
-    }).finally(() => { flushing = null; notify(); });
+    }).finally(async () => { if (journal) { try { journalEntries = await journal.all(); } catch { journalFailure = 'Public score journal cannot be read. Keep browser data.'; } } flushing = null; notify(); });
     return flushing;
   }
   return {
     request, flush, state,
+    dispose() { disposed = true; journal?.close(); journalOpening?.then(value => value.close()).catch(() => {}); },
+    async recover() {
+      const databases = await globalThis.indexedDB?.databases?.();
+      if (publicPlay && globalThis.indexedDB && (!databases || databases.some(db => db.name === PUBLIC_JOURNAL))) await journalReady();
+    },
     async initialize() {
+      if (publicPlay) await journalReady();
       const interruptedId = tabStorage.getItem(activeKey);
       if (interruptedId) {
         if (read(interruptedId, 'run')) write(interruptedId, 'interrupted', true);
@@ -144,6 +183,24 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
       return session;
     },
     async start(name, requestKey, controlMode = 'one-hand') {
+      if (publicPlay) {
+        if (now() < retryAt) throw retryError;
+        if (accessError) throw accessError;
+        if (publicStarting || activeId) throw Error('Finish the current physical attempt before starting another.');
+        publicStarting = true;
+        try {
+          if (lastIntentKey && lastIntentKey !== requestKey) await updateJournal(journal => journal.interrupt(lastIntentKey));
+          const intent = await updateJournal(journal => journal.reserve({ name, requestKey, controlMode }));
+          lastIntentKey = requestKey;
+          // Once the durable marker exists, every retry is read-only. A lost
+          // response or reload can never replay live creation/classification.
+          const run = intent.first ? await request('/runs', { name, requestKey, controlMode }) : await request(`/intents/${requestKey}`);
+          await updateJournal(journal => journal.admission(requestKey, run));
+          if (run.status !== 'active' || run.turns.length || intent.record.physical === 'interrupted') throw Error('This physical attempt is already used. Start a new player.');
+          activeId = run.id;
+          return run;
+        } finally { publicStarting = false; }
+      }
       storage.setItem('cloud-claw:storage-probe', '1'); storage.removeItem('cloud-claw:storage-probe');
       const run = await request('/runs', { name, requestKey, controlMode });
       if (run.status !== 'active' || run.turns.length) throw new Error('This start request was already used. Enter a new run.');
@@ -152,6 +209,7 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
       return run;
     },
     queue(run) {
+      if (publicPlay) return updateJournal(journal => journal.turns(run)).then(() => { if (run.turns.length === 3) activeId = null; if (onWork) onWork(); else void flush(); });
       if (!read(run.id, 'run')) throw new Error('Run ownership was not saved in this browser.');
       for (const turn of run.turns) {
         try { if (!read(run.id, `turn:${turn.turn}`)) write(run.id, `turn:${turn.turn}`, turn); }
@@ -160,6 +218,10 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
       notify(); if (onWork) onWork(); else void flush();
     },
     abandon(run) {
+      if (publicPlay) return updateJournal(async journal => {
+        const entry = (await journal.all()).find(entry => entry.run?.id === run.id);
+        if (entry) await journal.interrupt(entry.requestKey);
+      }).then(() => { activeId = null; if (onWork) onWork(); else void flush(); });
       if (!read(run.id, 'run')) return;
       activeId = null; tabStorage.removeItem(activeKey);
       try { write(run.id, 'interrupted', true); } catch { lastError = 'Keep this page open while results save.'; }

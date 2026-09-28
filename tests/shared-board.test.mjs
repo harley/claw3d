@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { journalFixture } from './public-journal-fixture.mjs';
 import { createSharedBoard } from '../src/shared-board.js';
 
 // A shared-IP throttle must not be retried by every timer tick or START click.
@@ -18,8 +19,9 @@ test('public initialization honors Retry-After and backs off subsequent outages'
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage');
   Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, value: { getItem: () => null } });
   t.after(() => { if (previous) Object.defineProperty(globalThis, 'sessionStorage', previous); else delete globalThis.sessionStorage; });
-  const board = createSharedBoard({ enabled: true, publicPlay: true,
+  const board = createSharedBoard({ enabled: true, publicPlay: true, journalFactory: journalFixture().open,
     getCompletedRun: () => null, onSaved: () => {}, onBoard: () => {}, onSyncState: () => {}, onConnectError: () => {} });
+  t.after(() => board.dispose());
   const start = () => assert.rejects(board.start('Player', 'request'), /Temporarily unavailable/);
   await start();
   for (let i = 0; i < 29; i++) { t.mock.timers.tick(2000); await start(); }

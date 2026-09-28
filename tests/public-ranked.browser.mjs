@@ -111,7 +111,21 @@ try {
       await page.waitForFunction(turn => document.getElementById('turn').textContent === `${turn} / 3` && document.getElementById('arcade').dataset.phase === 'aim' && !document.getElementById('phase-label').textContent.includes('COMPLETE'), turn);
       if (turn === 1) readsAtAim = boardReads;
       else assert.equal(boardReads, readsAtAim, 'the real arcade suppresses board polling throughout active play');
+      if (attempt === 1 && turn === 1) await page.evaluate(() => {
+        const original = IDBObjectStore.prototype.put;
+        IDBObjectStore.prototype.put = function(value, ...args) {
+          if (this.name === 'intents' && value.turns?.length && !window.allowScoreWrite) throw new DOMException('Synthetic quota refusal', 'QuotaExceededError');
+          return original.call(this, value, ...args);
+        };
+      });
       assert.equal(await page.evaluate(() => { window.testCamera.tick(); return window.testCamera.clench(); }), true);
+      if (attempt === 1 && turn === 1) {
+        await page.locator('#score-storage').waitFor();
+        assert.equal(await page.locator('#turn').textContent(), '1 / 3', 'storage refusal holds the physical turn boundary');
+        await page.evaluate(() => { window.allowScoreWrite = true; });
+        await page.locator('#score-storage-retry').click();
+        await page.locator('#score-storage').waitFor({ state: 'hidden' });
+      }
       if (turn < 3) await page.waitForFunction(turn => document.getElementById('turn').textContent === `${turn + 1} / 3`, turn);
     }
     await page.locator('#final').waitFor();
