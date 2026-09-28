@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { ApiError } from './database.js';
 import { createBudget } from './request-budget.js';
+import { deviceClass } from './usage.js';
 import { RULES, SPEED_RULES } from '../src/event-session.js';
 
 export const HANOI_EVENT = { id: 'hanoi-2026-09-29', name: 'Hanoi · 29 Sep 2026', date: '2026-09-29', timeZone: 'Asia/Ho_Chi_Minh' };
@@ -109,6 +110,7 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
         const event = eventToday(req);
         const run = database.createRun(player, input, boardId, id => {
           if (event) db.prepare('INSERT INTO public_run_events VALUES (?,?)').run(id, HANOI_EVENT.id);
+          db.prepare('INSERT INTO run_usage (run_id, device_class, recorded_at) VALUES (?,?,?)').run(id, deviceClass(req.headers['user-agent']), new Date(now()).toISOString());
         });
         return json(res, 201, result(run.id, player));
       }

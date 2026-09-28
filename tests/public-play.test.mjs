@@ -206,3 +206,25 @@ test('public result rename is owner-only, repeatable and preserves the ranked re
   const board = await (await f.request('/api/play/board')).json();
   assert.deepEqual(board.runs, [{ id: run.id, name: 'Linh', total: saved.total, rank: saved.rank }]);
 });
+
+// Contract: instrumentation adds one bounded receipt at start, survives retries,
+// and is only visible in host exports. Existing rank tests have no device data.
+test('usage is captured once on the existing start request and remains private', async t => {
+  const f = await fixture(t), cookie = await f.player(), requestKey = randomUUID();
+  const response = await f.request('/api/play/runs', { cookie, data: { name: 'Mochi', requestKey }, headers: { 'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)' } });
+  assert.equal(response.status, 201);
+  const issued = await response.json(); assert.equal(issued.usage, undefined);
+  await f.start(cookie, requestKey); // Different UA on retry must not relabel.
+  const rows = f.app.database.db.prepare('SELECT * FROM run_usage').all();
+  assert.equal(rows.length, 1); assert.equal(rows[0].device_class, 'phone');
+  assert.deepEqual(Object.keys(rows[0]).sort(), ['device_class', 'recorded_at', 'run_id']);
+  let exported = f.app.database.exportData().boards.find(b => b.usageSource === 'public-web');
+  assert.equal(exported.interruptedRuns[0].usage.deviceClass, 'phone');
+  await f.complete(cookie, issued.id);
+  exported = f.app.database.exportData().boards.find(b => b.usageSource === 'public-web');
+  assert.equal(exported.runs[0].usage.deviceClass, 'phone');
+  const publicBoard = await (await f.request('/api/play/board')).json();
+  assert.equal(publicBoard.runs[0].usage, undefined);
+  await f.pause(); // Additive table survives restart; metadata is not recreated.
+  assert.equal(f.app.database.db.prepare('SELECT COUNT(*) AS n FROM run_usage').get().n, 1);
+});
