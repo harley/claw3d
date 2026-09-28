@@ -5,11 +5,13 @@ const browserStorage = name => ({
   get length() { return globalThis[name].length; }, key: i => globalThis[name].key(i),
   getItem: key => globalThis[name].getItem(key), setItem: (key, value) => globalThis[name].setItem(key, value), removeItem: key => globalThis[name].removeItem(key),
 });
-export function createSessionApi({ storage = browserStorage('localStorage'), tabStorage = browserStorage('sessionStorage'), fetcher = fetch, onChange = () => {}, publicPlay = false } = {}) {
+export function createSessionApi({ storage = browserStorage('localStorage'), tabStorage = browserStorage('sessionStorage'), fetcher = fetch, onChange = () => {}, onWork, publicPlay = false, now = Date.now, random = Math.random } = {}) {
   const prefix = publicPlay ? 'cloud-claw:public:pending:v1:' : PREFIX;
   const activeKey = publicPlay ? 'cloud-claw:public:active:v1' : ACTIVE;
   let flushing = null, activeId = null, lastError = '', needsLogin = false;
-  const unsaved = new Map();
+  const unsaved = new Map(), blocked = new Map();
+  let failures = 0, retryAt = 0, retryError = null, accessError = null, failureVersion = 0;
+  const pendingEntry = entry => entry.turns.length > entry.acknowledged || entry.interrupted;
   const key = (id, part) => `${prefix}${id}:${part}`;
   function read(id, part) {
     const name = key(id, part);
@@ -29,25 +31,57 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
       acknowledged: [1, 2, 3].filter(n => read(id, `ack:${n}`)).length, interrupted: Boolean(read(id, 'interrupted')) }));
   }
   function state() {
-    let pending = 0;
-    try { pending = entries().filter(entry => entry.turns.length > entry.acknowledged || entry.interrupted).length; }
+    let pending = 0, canFlush = false;
+    try {
+      const pendingEntries = entries().filter(pendingEntry);
+      pending = pendingEntries.length;
+      canFlush = !accessError && pendingEntries.some(entry => !blocked.has(entry.run.id));
+    }
     catch { lastError = 'Pending scores could not be read. Keep this page open and ask the host.'; }
-    return { pending, error: lastError, needsLogin };
+    return { pending, canFlush, blocked: blocked.size, error: lastError, needsLogin, retryAt, accessBlocked: Boolean(accessError) };
   }
   function notify() { onChange(state()); }
+  function postpone(error) {
+    const backoff = Math.min(60000, 2000 * 2 ** Math.min(failures++, 5));
+    failureVersion++;
+    retryAt = Math.max(retryAt, now() + Math.max(error.retryAfterMs || 0, Math.min(60000, backoff * (.8 + random() * .4))));
+    retryError = error;
+  }
   async function request(path, data) {
-    const response = await fetcher(`/api${publicPlay ? '/play' : ''}${path}`, { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(8000),
-      ...(data === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }) });
-    if (response.status === 401) { needsLogin = !publicPlay; lastError = publicPlay ? 'Session expired. Keep pending score data and reload.' : 'Sign in again to continue and save pending scores.'; notify(); }
-    const result = await response.json();
-    if (!response.ok) {
-      const error = new Error(result.error || 'Score service unavailable.'); error.status = response.status;
-      const retryAfter = Number(response.headers?.get?.('Retry-After'));
-      if (Number.isFinite(retryAfter) && retryAfter > 0) error.retryAfterMs = retryAfter * 1000;
+    // Every caller, including START/manual/online signals, shares this deadline.
+    if (now() < retryAt) throw retryError;
+    if (accessError && !['/login', '/session'].includes(path)) throw accessError;
+    const startedVersion = failureVersion;
+    let response;
+    try {
+      response = await fetcher(`/api${publicPlay ? '/play' : ''}${path}`, { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(8000),
+        ...(data === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }) });
+      const result = await response.json().catch(() => {
+        if (response.ok) throw new Error('Invalid score service response.');
+        return {};
+      });
+      if (!response.ok) {
+        const error = new Error(result.error || 'Score service unavailable.'); error.status = response.status;
+        const header = response.headers?.get?.('Retry-After');
+        const seconds = header?.trim() ? Number(header) : NaN;
+        const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - now();
+        if (Number.isFinite(delay) && delay > 0) error.retryAfterMs = delay;
+        throw error;
+      }
+      // An older in-flight success cannot cancel a newer throttle/refusal.
+      if (startedVersion === failureVersion) { failures = 0; retryAt = 0; retryError = null; }
+      if (startedVersion === failureVersion && (path === '/login' || path === '/session')) { accessError = null; needsLogin = false; lastError = ''; blocked.clear(); notify(); }
+      return result;
+    } catch (error) {
+      if (error.status === 401) {
+        failureVersion++; accessError = error; needsLogin = !publicPlay;
+        lastError = publicPlay ? 'Session expired. Keep pending score data and reload.' : 'Sign in again to continue and save pending scores.';
+        notify();
+      } else if (!error.status || error.status === 429 || error.status >= 500) {
+        postpone(error);
+      }
       throw error;
     }
-    if (path === '/login' || path === '/session') { needsLogin = false; lastError = ''; notify(); }
-    return result;
   }
   function clear(id) {
     // Remove the run marker first. A late acknowledgement from another tab cannot resurrect a run.
@@ -58,11 +92,12 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
   }
   async function flush() {
     if (flushing) return flushing;
+    if (accessError || now() < retryAt) return;
     flushing = Promise.resolve().then(async () => {
       try {
-        let inaccessible = false;
         for (const initial of entries()) {
           const id = initial.run.id;
+          if (blocked.has(id)) continue;
           try {
             for (const n of [1, 2, 3]) {
               if (!read(id, 'run')) break;
@@ -81,15 +116,16 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
               await request(`/runs/${id}/abandon`, {}); clear(id);
             }
           } catch (error) {
-            // Lost/expired public cookies cannot recover another owner's run.
-            // Retain its journal for the host, but do not block new players.
-            if (!publicPlay || error.status !== 404) throw error;
-            inaccessible = true;
+            // A rejected record is retained and isolated, not retried every tick.
+            // Later valid runs still drain in order within their own identity.
+            if (![400, 403, 404, 409].includes(error.status)) throw error;
+            blocked.set(id, error);
           }
         }
-        if (!needsLogin) lastError = inaccessible ? 'An earlier score belongs to another browser session. Its data is retained; new scores can still save.' : '';
+        if (!accessError) lastError = blocked.size ? 'An earlier score needs host recovery. Its data is retained; new scores can still save.' : '';
       } catch (error) {
-        lastError = needsLogin ? 'Sign in again to save pending scores.' : error.status === 403 || error.status === 404 || error.status === 409
+        if (!error.status && retryAt <= now()) postpone(error);
+        lastError = accessError ? (publicPlay ? 'Session expired. Keep pending score data and reload.' : 'Sign in again to save pending scores.') : error.status === 403 || error.status === 404 || error.status === 409
           ? `${error.message} Keep this browser’s data and ask the host.` : 'Score waiting to sync. Keep this page open; it will retry.';
       }
     }).finally(() => { flushing = null; notify(); });
@@ -104,7 +140,8 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
         tabStorage.removeItem(activeKey);
       }
       const session = await request('/session', publicPlay ? {} : undefined);
-      await flush(); return session;
+      if (!onWork) await flush();
+      return session;
     },
     async start(name, requestKey, controlMode = 'one-hand') {
       storage.setItem('cloud-claw:storage-probe', '1'); storage.removeItem('cloud-claw:storage-probe');
@@ -120,13 +157,13 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
         try { if (!read(run.id, `turn:${turn.turn}`)) write(run.id, `turn:${turn.turn}`, turn); }
         catch { lastError = 'Browser storage is full. Keep this page open while the score saves.'; }
       }
-      notify(); void flush();
+      notify(); if (onWork) onWork(); else void flush();
     },
     abandon(run) {
       if (!read(run.id, 'run')) return;
       activeId = null; tabStorage.removeItem(activeKey);
       try { write(run.id, 'interrupted', true); } catch { lastError = 'Keep this page open while results save.'; }
-      void flush();
+      if (onWork) onWork(); else void flush();
     },
   };
 }

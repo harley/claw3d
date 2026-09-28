@@ -9,6 +9,7 @@ import { createOfficialPlayer } from './official-player.js';
 import { createHostEvents } from './host-events.js';
 import { createSharedBoard } from './shared-board.js';
 import { createSessionApi } from './session-api.js';
+import { createScoreSync } from './score-sync.js';
 import { createPlaytestClient, createPublicPlaytestClient } from './playtest-client.js';
 import { createArcadeAudio } from './arcade-audio.js';
 import { createHud, $, setText, setHidden, finaleHeadline, missCopy, TROPHY_ICONS, clampOverlayPoint } from './arcade-hud.js';
@@ -456,6 +457,7 @@ function openScores() {
   $('final').close();
   $('scores-dialog').append(scorePanel);
   $('scores-dialog').showModal();
+  if (shared) void pilot.refresh();
   $('scores-close').focus();
 }
 $('scores-open').addEventListener('click', openScores);
@@ -802,7 +804,7 @@ const pilot = official ? {
   get status() { return officialPlayer.state().error || 'OFFICIAL EVENT · SCORE PREVIEW'; },
   get board() { return { name: 'Official event leaderboard', runs: officialPlayer.state().board || [] }; },
 } : createSharedBoard({
-  enabled: shared, publicPlay,
+  enabled: shared, publicPlay, isPlaying: () => Boolean(run || startingRun),
   getCompletedRun: () => completedRun,
   onSaved: updateSavedRank,
   onBoard: renderBoard,
@@ -816,6 +818,7 @@ const pilot = official ? {
   },
   onConnectError: error => { $('sync-message').textContent = error.message; $('shared-reauth').hidden = publicPlay || error.status !== 401; renderBoard(); },
 });
+if (shared && !official) window.addEventListener('pagehide', event => { if (!event.persisted) pilot.dispose(); });
 const hostEvents = !publicSurface && !publicOfficial && shared && globalThis.__OFFICIAL_EVENTS__ === true ? createHostEvents($('host-events'), { onUnauthorized: () => { $('operator').close(); $('host-access').showModal(); $('host-message').textContent = 'Host access expired. Sign in again.'; } }) : null;
 if (!publicSurface && shared && globalThis.__OFFICIAL_EVENTS__ === true && !official) {
   $('shared-access').hidden = false; $('official-entry').hidden = false;
@@ -909,13 +912,15 @@ try {
     else {
       // Pausing new ranked starts must not strand already completed scores.
       // Flush with the retained owner cookie; never create a session or a run.
-      const recovery = createSessionApi({ publicPlay: true, onChange: state => {
+      let recoverySync;
+      const recovery = createSessionApi({ publicPlay: true, onWork: () => recoverySync?.wake(), onChange: state => {
         if (state.saved) updateSavedRank(state.saved);
         else setText('sync-message', state.pending ? state.error || 'Score waiting to sync' : '');
       } });
       if (recovery.state().pending) {
-        const retry = () => { void recovery.flush(); };
-        retry(); setInterval(retry, 2000); window.addEventListener('online', retry);
+        recoverySync = createScoreSync({ api: recovery });
+        recoverySync.start();
+        window.addEventListener('pagehide', event => { if (!event.persisted) recoverySync.dispose(); });
       }
     }
   }

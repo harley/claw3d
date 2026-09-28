@@ -6,6 +6,7 @@ import { createSharedBoard } from '../src/shared-board.js';
 // Session API tests do not exercise the board's initialization retry lifecycle.
 test('public initialization honors Retry-After and backs off subsequent outages', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: 1000 });
+  t.mock.method(Math, 'random', () => .5);
   let requests = 0;
   t.mock.method(globalThis, 'fetch', async () => {
     requests++;
@@ -25,8 +26,8 @@ test('public initialization honors Retry-After and backs off subsequent outages'
   assert.equal(requests, 1, 'the server-requested minute is respected');
   t.mock.timers.tick(2000); await start();
   assert.equal(requests, 2);
-  t.mock.timers.tick(4000); await start();
+  t.mock.timers.tick(2000); await start();
   assert.equal(requests, 2, 'the second failure backs off beyond the normal two-second tick');
-  t.mock.timers.tick(6000); await start();
+  t.mock.timers.tick(2000); await start();
   assert.equal(requests, 3, 'recovery is retried after the bounded backoff');
 });

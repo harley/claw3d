@@ -4,7 +4,8 @@ import { createSessionApi } from '../src/session-api.js';
 import { RULES } from '../src/event-session.js';
 
 function storage() { const data = new Map(); return { get length() { return data.size; }, key: i => [...data.keys()][i], getItem: k => data.get(k) ?? null, setItem: (k, v) => data.set(k, v), removeItem: k => data.delete(k) }; }
-test('outbox retries response loss, preserves ownership on reauth, and drains completed scores after reload', async () => {
+test('outbox retries response loss, preserves ownership on reauth, and drains completed scores after reload', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1000 });
   const local = storage(), tab = storage(), received = new Map(), notices = [];
   let lose = false, unauthorized = false;
   const issued = { id: crypto.randomUUID(), boardId: 'board', name: 'Lan', status: 'active', turns: [], rules: RULES };
@@ -25,6 +26,7 @@ test('outbox retries response loss, preserves ownership on reauth, and drains co
   const run = await api.start('Lan', crypto.randomUUID());
   lose = true; run.turns.push({ turn: 1, prizeId: 'butter', score: 125, remainingMs: 7500 }); api.queue(run); await api.flush();
   assert.equal(api.state().pending, 1); assert.equal(received.size, 1);
+  t.mock.timers.tick(2500);
   unauthorized = true;
   run.turns.push({ turn: 2, prizeId: 'butter', score: 100 }, { turn: 3, prizeId: 'butter', score: 100 }); api.queue(run); await api.flush();
   assert.equal(api.state().needsLogin, true); assert.equal(api.state().pending, 1);
@@ -104,7 +106,8 @@ test('unavailable browser storage prevents a shared start before any request', a
   assert.equal(calls, 0);
 });
 
-test('full storage after start retains all completed turns for same-page retry', async () => {
+test('full storage after start retains all completed turns for same-page retry', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1000 });
   const local = storage(), tab = storage(), notices = [], received = new Set();
   const write = local.setItem;
   let full = false, online = false;
@@ -122,7 +125,7 @@ test('full storage after start retains all completed turns for same-page retry',
   api.queue(run); await api.flush();
   assert.equal(api.state().pending, 1); assert.ok(api.state().error);
   assert.equal(notices.some(notice => notice.saved), false);
-  full = false; online = true; await api.flush();
+  full = false; online = true; t.mock.timers.tick(2500); await api.flush();
   assert.deepEqual([...received], [1, 2, 3]); assert.equal(api.state().pending, 0);
   assert.equal(notices.find(notice => notice.saved).saved.total, 0);
   assert.equal(local.length, 0); assert.equal(tab.length, 0);

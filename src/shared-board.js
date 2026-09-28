@@ -2,19 +2,21 @@
 // board, role, status line and refresh/rotation versioning. All DOM belongs to
 // the caller via callbacks; local (non-shared) mode never constructs the API.
 import { createSessionApi } from './session-api.js';
+import { createScoreSync } from './score-sync.js';
 
-export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, onSyncState, onConnectError, publicPlay = false }) {
+export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, onSyncState, onConnectError, publicPlay = false, isPlaying = () => false }) {
   let event = false, station = null;
   const readyStatus = () => publicPlay ? station?.active ? 'HANOI · 29 SEP · RANKED' : 'ALL PLAYS · RANKED' : 'SHARED STAFF LEADERBOARD';
   let board = null, role = 'staff', status = 'Connecting to shared leaderboard…';
+  let sync;
   let refreshing = null, version = 0, rotating = false, renaming = false;
-  const api = enabled ? createSessionApi({ publicPlay, onChange: state => {
-    if (state.saved) { onSaved(state.saved); void refresh(); return; }
+  const api = enabled ? createSessionApi({ publicPlay, onWork: () => sync?.wake(), onChange: state => {
+    if (state.saved) { onSaved(state.saved); sync?.wake(true); return; }
     status = state.error || (state.pending ? 'Score waiting to sync' : readyStatus());
     if (state.needsLogin) role = 'staff';
     onSyncState(state);
   } }) : null;
-  async function refresh() {
+  async function readBoard() {
     if (!api || rotating || renaming) return;
     if (refreshing) return refreshing;
     const current = version;
@@ -31,32 +33,23 @@ export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, 
     }).finally(() => { refreshing = null; });
     return refreshing;
   }
-  let initialization = null, initializationError = null, initializationFailures = 0, retryInitializationAt = 0;
+  let initialization = null;
   function initialize() {
-    if (!initialization && Date.now() < retryInitializationAt) return Promise.reject(initializationError);
     if (!initialization) initialization = api.initialize().then(session => {
-      initializationFailures = 0; retryInitializationAt = 0; initializationError = null;
       role = session.role; station = session.station;
       if (!version) board = session.board;
       status = readyStatus(); onBoard();
       return session;
     }).catch(error => {
-      initialization = null; initializationError = error;
-      const backoff = Math.min(60000, 2000 * 2 ** Math.min(++initializationFailures, 5));
-      retryInitializationAt = Date.now() + Math.max(error.retryAfterMs || 0, backoff * (.8 + Math.random() * .4));
+      initialization = null;
       status = 'SCORE SERVICE UNAVAILABLE'; onConnectError(error); throw error;
     });
     return initialization;
   }
-  function connect() {
-    void initialize().catch(() => {});
-    const retry = () => {
-      if (publicPlay) void initialize().then(() => { void api.flush(); void refresh(); }).catch(() => {});
-      else { void api.flush(); void refresh(); }
-    };
-    setInterval(retry, 2000);
-    window.addEventListener('online', retry);
-  }
+  if (api) sync = createScoreSync({ api, initialize, refresh: readBoard,
+    canRefresh: () => !globalThis.document?.hidden && !isPlaying() });
+  const refresh = () => sync?.refresh();
+  const connect = () => sync?.start();
   // Rotation owns the version bumps so an in-flight refresh can never publish
   // a stale board over the new one.
   async function rotate(name) {
@@ -64,10 +57,10 @@ export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, 
     try { board = await api.request('/host/boards', { name }); onBoard(); return board; }
     finally { version++; rotating = false; }
   }
-  async function loginStaff(code) { await api.request('/login', { code }); }
+  async function loginStaff(code) { await api.request('/login', { code }); sync.recovered(); }
   async function loginHost(code) { await api.request('/host/login', { code }); role = 'host'; }
   return {
-    connect, refresh, rotate, loginStaff, loginHost,
+    connect, refresh, dispose: () => sync?.dispose(), rotate, loginStaff, loginHost,
     async rename(id, name) {
       renaming = true;
       try {

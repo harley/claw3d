@@ -357,8 +357,8 @@ test('official client keeps void, expired and expired-capability outboxes for re
 test('official and legacy outboxes keep separate ownership when a browser capability changes', async t => {
   const { createSessionApi } = await import('../src/session-api.js');
   const o = await outbox(t), api = o.client(), run = await api.activate(o.run, o.input.nonce);
-  let legacyOffline = false;
-  const legacy = createSessionApi({ storage: o.local, tabStorage: o.tab, fetcher: async (url, options) => {
+  let legacyOffline = false, legacyNow = Date.now();
+  const legacy = createSessionApi({ storage: o.local, tabStorage: o.tab, now: () => legacyNow, fetcher: async (url, options) => {
     if (legacyOffline) throw Error('offline');
     const r = await o.s.staff.request(url, options.body ? JSON.parse(options.body) : undefined);
     return Response.json(r.data, { status: r.status });
@@ -372,7 +372,7 @@ test('official and legacy outboxes keep separate ownership when a browser capabi
   const start = o.calls.length; await api.flush();
   assert.deepEqual(o.calls.slice(start), ['/api/official/session']);
   assert.deepEqual(legacyKeys.map(k => o.local.getItem(k)), snapshot);
-  legacyOffline = false; await legacy.flush();
+  legacyOffline = false; legacyNow += 2500; await legacy.flush();
   assert.equal(legacy.state().pending, 0); assert.equal(api.state().attempts[0].pending, 1);
   assert.equal(o.f.app.database.db.prepare('SELECT COUNT(*) AS n FROM official_turns WHERE run_id=?').get(run.id).n, 0);
 });
