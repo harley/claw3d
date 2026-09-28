@@ -245,3 +245,23 @@ Stop and preserve the prototype if GPU/camera binding fails, orientation is unus
 Host setup (`/staff`) provides “Download contact requests (JSON)” after host sign-in. The host-only `GET /api/host/contacts` export contains private contact name, email/phone, channel, consent purpose, submission time, linked run, public nickname, saved score, event membership where available, and `eligible` (score strictly greater than 300). These requests authorize result and booth-invitation follow-up only. The service does not send messages or redeem attempts. Hosts reconcile repeated contact details and badge records before any invitation; a browser identity or nickname does not identify a visitor.
 
 Active `public_contacts` rows expire after 30 days through startup, hourly maintenance and export pruning. Exports and SQLite backups may retain contacts: restrict access and remove those copies when fulfilling a withdrawal/removal request. To remove an active request, first follow the existing backup/access procedure, then use a parameterized deletion against `public_contacts` by its exact `run_id`, preserving the score. Never commit exports or private contact details to GitHub.
+
+## Booth-day usage counts
+
+Report visitor activity from **29 September 2026, 09:00 Asia/Ho_Chi_Minh** (02:00 UTC). Setup runs started before that time are excluded even if they finish later. Counts refer to plays, not unique people. Website phone classification is a browser-header estimate; it does not establish practice intent or location. A phone used at the booth still counts as a phone.
+
+Website instrumentation version 1 stores one coarse device category on the existing public run-start transaction. It adds no client request, timer or frame-loop work and retains no raw user-agent header. Retries keep the original category. Earlier runs remain unknown; no historical device backfill is inferred. The protected host export includes this metadata and identifies the public board independently of its name. Staff boards are excluded by the report. No new public analytics endpoint is exposed.
+
+Tomko Android needs no app change for completed-play counts. It already saves start/completion timestamps, turns, score and mode locally. Confirm the TV clock before visitors arrive. During a break, use **EXPORT THIS MODE’S SESSIONS** for **each mode** from the intended installed package, then transfer both JSON files. Keep app data intact. Export may stop the camera, so do it between players and restart the camera afterward. Different Android package installations have separate records. A missing export is not evidence of zero plays; historical abandoned Android starts are not complete enough for a completion-rate claim.
+
+Download a fresh protected website score export using the existing host controls (`/api/host/export`). Run the report locally against exported files, outside the game and server process:
+
+```sh
+node scripts/usage-report.mjs --web host-export.json \
+  --android cloud-claw-one-hand-2026-09-29.json \
+  --android cloud-claw-two-hand-2026-09-29.json
+```
+
+Either source can be omitted when unavailable; the report states which inputs were supplied. Repeat `--android` for additional snapshots; run IDs prevent double-counting and completed receipts supersede earlier unfinished snapshots. Supply one latest website export. Defaults cover 09:00 through midnight on 29 September; `--since` and `--until` accept ISO timestamps with explicit offsets and select runs by start time (inclusive/exclusive). Completion is as of each supplied export, not a reconstructed historical cutoff. Output groups by source, coarse device, mode and Hanoi hour, with completed plays, recorded starts and unfinished records. It contains no names or ownership identifiers. Keep the original score exports private and outside Git.
+
+`firstClassifiedWebStart` and `startsWithoutDeviceInstrumentation` expose partial collection when instrumentation is installed during the day; the first observed classified run is not a deployment timestamp. Android scores can be reported retrospectively from existing exports. Additional future metrics need their own explicit coverage/version; never treat missing historical instrumentation as zero. Unique people and phone-to-TV conversion remain unavailable without a separate participant process. Do not infer either from nicknames or Android's per-run player IDs.

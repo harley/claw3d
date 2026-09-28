@@ -19,7 +19,7 @@ const SHADOW_FRUSTUM = {
 };
 
 export class ArcadeScene {
-  constructor(canvas, { wideControls = false, anatomicalHands = false, suspendedClaw = false } = {}) {
+  constructor(canvas, { wideControls = false, anatomicalHands = false, singleHand = false, suspendedClaw = false } = {}) {
     this.wideControls = wideControls;
     this.suspendedClaw = suspendedClaw;
     this.canvas = canvas;
@@ -43,7 +43,7 @@ export class ArcadeScene {
     this.mats = createArtMaterials(); this.toys = new Map(); this.buildWorld(); this.buildCabinet(); this.buildClaw();
     for (const toy of ASSORTMENT) { const object = createToy(toy, this.mats); object.position.set(toy.x, BED, toy.z); this.scene.add(object); this.toys.set(toy.id, object); }
     this.contacts = new ToyContacts(this.toys);
-    if (anatomicalHands) this.cabinetHands = new CabinetHands(this.scene);
+    if (anatomicalHands) this.cabinetHands = new CabinetHands(this.scene, undefined, { singleHand });
     this.buildCarousel();
     this.createTarget();
     this.buildEffects();
@@ -521,7 +521,7 @@ export class ArcadeScene {
     this.stick.rotation.set(stickInput.z * .24, 0, -stickInput.x * .24); this.button.position.y = 1.72 - .05 * (phase === 'anticipate' ? 1 : phase === 'descend' ? Math.max(0, 1 - elapsed / .18) : 0);
     this.joystickHand.update(phase, elapsed, dt, feedback, this.reducedMotion);
     this.stick.visible = this.button.visible = presentation.machineControls || ['idle', 'result'].includes(phase);
-    if (presentation.machineControls && ['dual', 'grab-release'].includes(feedback.profile)) this.joystickHand.root.visible = false;
+    if (this.cabinetHands || (presentation.machineControls && ['dual', 'grab-release'].includes(feedback.profile))) this.joystickHand.root.visible = false;
     if (presentation.machineControls && phase === 'aim' && feedback.grab?.stage === 'pressing') this.button.position.y -= .04 * feedback.progress;
     const activeControl = phase === 'aim' && feedback.controlEnabled && ['tracking', 'clenching'].includes(feedback.kind);
     this.dropReady = Boolean(activeControl && (feedback.profile === 'dual'
