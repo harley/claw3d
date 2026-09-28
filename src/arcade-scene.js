@@ -69,52 +69,64 @@ export class ArcadeScene {
 
   buildWorld() {
     const m = this.mats, world = this.surroundings = group(this.scene);
-    // A matte ground blends into the page; the separate shadow and lamp pool retain depth
+    // A matte ground blends into the page; contact shadows retain depth
     // and the cabinet sits in a space instead of on a void. Simple quality keeps it (one plane).
     const ground = mesh(this.scene, new T.PlaneGeometry(200, 200), new T.MeshBasicMaterial({ color: '#080e1c', toneMapped: false })); ground.rotation.x = -Math.PI / 2; ground.position.y = -.055; ground.castShadow = false;
     const shadow = mesh(this.scene, new T.PlaneGeometry(200, 200), new T.ShadowMaterial({ opacity: .16 })); shadow.rotation.x = -Math.PI / 2; shadow.position.y = -.05; shadow.castShadow = false;
-    box(world, material('#142c50', .88), [-.55, .12, .12], [7.75, .33, 4.7], .23);
-    box(world, m.ivory, [-.55, .285, .12], [7.64, .065, 4.58], .2);
-    // Warm miniature parquet, with real, restrained seams.
-    const tiles = ['#20344c', '#1b2d45', '#253b55', '#172a40'].map(tone => material(tone, .87));
-    for (let x = 0; x < 12; x++) for (let z = 0; z < 5; z++) {
-      box(world, tiles[(x * 3 + z) % 4], [-4.0 + x * .635, .328, -1.70 + z * .86], [.628, .024, .852], .008);
-    }
+    const boothBlue = material('#0755a0', .72), navy = material('#183569', .8);
+    const cyan = material('#65cddd', .55), white = material('#eef3f7', .7);
+    const lime = material('#99ce32', .75);
+    box(world, navy, [-.55, .12, .12], [7.75, .33, 4.7], .23);
+    // The real booth's quiet indigo carpet gives the miniature one continuous base.
+    box(world, material('#272b57', .98), [-.55, .305, .12], [7.64, .045, 4.58], .2);
     // Gallery: eleven full-size toys, collected across four shelves.
     const shelf = group(world, -2.92, 0, -.16);
-    for (const x of [-1.04, 1.04]) { box(shelf, m.wood, [x, 2.50, 0], [.105, 4.29, .62], .028); box(shelf, m.brass, [x, .47, .06], [.12, .25, .13], .025); }
-    box(shelf, material('#aa9478'), [0, 2.56, -.29], [2.08, 4.00, .07], .025);
-    for (const level of SHELF_LEVELS) { box(shelf, m.wood, [0, level - .05, .28], [2.18, .10, .86], .025); box(shelf, m.brass, [0, level, .65], [2.12, .025, .025], .008); }
-    box(shelf, m.ivory, [0, 4.65, .06], [2.18, .24, .64], .055);
-    label(shelf, 'PRIZES', 1.95, .15, [0, 4.66, .388], { color: '#625d4d', font: 'Arial', size: 29, tracking: 2.5 });
-    box(shelf, m.ivory, [.67, 2.64, .30], [.40, .29, .07], .025);
-    // A little lamp and its pool of light.
-    const lamp = group(world, 2.28, .35, -.42);
-    cylinder(lamp, m.brass, [0, .06, 0], .34, .12); cylinder(lamp, m.brass, [0, 1.57, 0], .037, 3.03);
-    mesh(lamp, new T.ConeGeometry(.56, .59, 40, 1, true), m.red, 0, 3.24, 0);
-    cylinder(lamp, m.glow, [0, 2.97, 0], .47, .018); ball(lamp, m.brass, [0, 3.565, 0], [.06, .055, .06]);
-    // Its light shaft and floor pool live on the world, not the lamp, so the courier's
-    // obstacle box for the lamp is unchanged. Additive, no depth write: cheap and soft.
-    const shaft = new T.MeshBasicMaterial({ color: '#ffd9a0', transparent: true, opacity: .16, blending: T.AdditiveBlending, depthWrite: false, side: T.DoubleSide, toneMapped: false });
-    const cone = mesh(world, new T.ConeGeometry(1.25, 2.95, 40, 1, true), shaft, 2.28, .35 + 1.475, -.42); cone.rotation.x = Math.PI; cone.castShadow = cone.receiveShadow = false;
-    const pool = mesh(world, new T.CircleGeometry(1.35, 48), new T.MeshBasicMaterial({ color: '#ffd9a0', transparent: true, opacity: .2, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false }), 2.28, -.045, -.42); pool.rotation.x = -Math.PI / 2; pool.castShadow = pool.receiveShadow = false;
-    const light = new T.PointLight('#ffe5b4', 3.5, 5, 2); light.position.set(2.28, 3.15, -.42); this.scene.add(light);
-    // A tiny stool and a saucer of tokens establish the scale.
-    const stool = group(world, 2.46, .35, 1.13);
-    cylinder(stool, m.red, [0, .66, 0], .40, .13, 48); cylinder(stool, m.ivory, [0, .585, 0], .365, .035);
-    for (let i = 0; i < 3; i++) { const a = i * Math.PI * 2 / 3; rod(stool, m.wood, [Math.cos(a) * .25, .55, Math.sin(a) * .25], [Math.cos(a) * .34, 0, Math.sin(a) * .34], .04); }
-    const dish = group(world, 1.98, .35, 1.62);
-    cylinder(dish, m.mint, [0, .05, 0], .25, .075, 48);
-    const rim = mesh(dish, new T.TorusGeometry(.233, .027, 8, 40), m.mint, 0, .096, 0); rim.rotation.x = Math.PI / 2;
-    for (let i = 0; i < 7; i++) { const token = cylinder(dish, m.brass, [Math.sin(i * 5) * .11, .10 + i * .009, Math.cos(i * 5) * .1], .073, .015); token.rotation.z = Math.sin(i) * .13; }
-    // A small illustrated postcard, original cloud mark and a potted sprig.
-    const card = group(world, 2.68, 1.13, 1.10); box(card, m.ivory, [0, 0, 0], [.29, .40, .025], .012); card.rotation.y = -.15; card.rotation.x = -.15;
+    for (const x of [-1.04, 1.04]) { box(shelf, boothBlue, [x, 2.50, 0], [.105, 4.29, .62], .028); box(shelf, cyan, [x, .47, .06], [.12, .25, .13], .025); }
+    box(shelf, navy, [0, 2.56, -.29], [2.08, 4.00, .07], .025);
+    for (const level of SHELF_LEVELS) { box(shelf, boothBlue, [0, level - .05, .28], [2.18, .10, .86], .025); box(shelf, cyan, [0, level, .65], [2.12, .025, .025], .008); }
+    box(shelf, white, [0, 4.65, .06], [2.18, .24, .64], .055);
+    label(shelf, 'PRIZES', 1.95, .15, [0, 4.66, .388], { color: '#183569', font: 'Arial', size: 29, tracking: 2.5 });
+    box(shelf, white, [.67, 2.64, .30], [.40, .29, .07], .025);
+    // Borrow the booth's nested arches and white-topped counter. The open arch
+    // stays beside the cabinet; no translucent light geometry crosses the scene.
+    const booth = group(world, 2.58, .35, -.82);
+    const arch = new T.Shape();
+    arch.moveTo(-.78, 0); arch.lineTo(-.78, 3.30);
+    arch.absarc(0, 3.30, .78, Math.PI, 0, true);
+    arch.lineTo(.78, 0); arch.lineTo(.62, 0); arch.lineTo(.62, 3.30);
+    arch.absarc(0, 3.30, .62, 0, Math.PI, false);
+    arch.lineTo(-.62, 0); arch.closePath();
+    mesh(booth, new T.ExtrudeGeometry(arch, { depth: .14, bevelEnabled: false, curveSegments: 24 }), navy);
+    box(booth, boothBlue, [0, 1.60, .06], [1.24, 3.20, .12], .025);
+    // A capsule display echoes the cyan inset on the physical stand. Keep it
+    // graphic-only so the cabinet and existing brand header retain the hierarchy.
+    for (const [width, height, depth, z, mat] of [
+      [1.13, 2.40, .16, .06, cyan], [.94, 2.18, .08, .22, material('#0f1726', .86)],
+    ]) {
+      const radius = width / 2, straight = height / 2 - radius, shape = new T.Shape();
+      shape.absarc(0, straight, radius, 0, Math.PI, false);
+      shape.absarc(0, -straight, radius, Math.PI, Math.PI * 2, false);
+      shape.closePath();
+      mesh(booth, new T.ExtrudeGeometry(shape, { depth, bevelEnabled: false, curveSegments: 24 }), mat, 0, 2.31, z);
+    }
+    for (const [x, y, r] of [[-.20, 2.61, .12], [-.04, 2.69, .17], [.15, 2.65, .14]]) {
+      ball(booth, white, [x, y, .31], [r, r, .035]);
+    }
+    box(booth, white, [-.015, 2.57, .31], [.52, .11, .06], .045);
+    box(booth, lime, [0, 1.93, .30], [.57, .07, .035], .016);
+    // Concealed fixture: a small luminous face, without a hard-edged fake beam.
+    box(booth, white, [0, 3.915, .18], [.38, .055, .24], .025);
+    box(booth, m.glow, [0, 3.883, .21], [.29, .012, .15], .006);
+    const counter = group(world, 2.58, .35, .72);
+    box(counter, boothBlue, [0, .54, 0], [.98, 1.08, .72], .035);
+    box(counter, white, [0, 1.11, 0], [1.08, .08, .82], .035);
+    box(counter, lime, [0, .82, .366], [.32, .055, .018], .009);
     // Keep decoration outside the courier lane along the front of the gallery.
-    const pot = group(world, 2.95, .35, -.95); mesh(pot, new T.CylinderGeometry(.17, .13, .23, 24), m.red, 0, .115, 0); cylinder(pot, material('#614d3d'), [0, .235, 0], .145, .01);
+    const pot = group(world, 2.95, .35, -.95); mesh(pot, new T.CylinderGeometry(.17, .13, .23, 24), white, 0, .115, 0); cylinder(pot, material('#614d3d'), [0, .235, 0], .145, .01);
     const leafMat = material('#6a8d69', .84);
     for (let i = 0; i < 5; i++) { const a = i * 2.4, x = Math.sin(a) * .16, z = Math.cos(a) * .16; rod(pot, leafMat, [0, .23, 0], [x, .46 + i * .037, z], .008); const leaf = ball(pot, leafMat, [x, .46 + i * .037, z], [.065, .14, .027]); leaf.rotation.set(.3, a, .6); }
     // Preserve geometry bounds before static batching removes individual meshes.
-    this.deliveryObstacles = Object.fromEntries(Object.entries({ plant: pot, lamp, stool, tokens: dish, postcard: card }).map(([name, object]) => [name, new T.Box3().setFromObject(object, true)]));
+    this.deliveryObstacles = Object.fromEntries(Object.entries({ plant: pot, booth, counter }).map(([name, object]) => [name, new T.Box3().setFromObject(object, true)]));
     batch(world);
   }
 
@@ -177,7 +189,6 @@ export class ArcadeScene {
       this.button.scale.set(.21, .135, .21);
       this.button.material.dispose();
       this.button.material = new T.MeshPhysicalMaterial({ color:'#ed941d',roughness:.18,metalness:.12,clearcoat:1,clearcoatRoughness:.1 });
-      const capLabel = label(cab, 'DROP', .28, .085, [dropX, 1.665, 1.77], { color: '#e1d6ba', font: 'Arial', weight: 'bold', size: 155 }); capLabel.rotation.x = -Math.PI / 2;
     } else {
       const capLabel = label(this.button, 'DROP', .28, .10, [0, .054, 0], { color: '#fff4dd', font: 'Arial', weight: 'bold', size: 155 }); capLabel.rotation.x = -Math.PI / 2;
     }

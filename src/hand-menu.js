@@ -5,7 +5,7 @@ const actions = {
   idle: ['play', 'mode-one', 'mode-two', 'result-open', 'scores-open'],
   resume: ['play'],
   'scores-dialog': ['scores-close', 'result-open'],
-  registration: ['register-play', 'register-cancel'],
+  registration: ['register-play', 'register-other', 'register-cancel'],
   final: ['play-again', 'next-player', 'final-leaderboard'],
 };
 export function createHandMenu({ leftHand = false } = {}) {

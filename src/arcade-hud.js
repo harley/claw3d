@@ -5,7 +5,7 @@ import { HAND_ACQUIRE_MS, RIGHT_SLAM_MS } from './dual-hand-controls.js';
 import { PRESS_MS } from './grab-release.js';
 import { cueLeadSeconds, dualStartReadiness } from './play-mode.js';
 import { ASSORTMENT, CAROUSEL, carouselCue, carouselRider } from './arcade-mechanics.js';
-import { RULES } from './event-session.js';
+import { RULES, handBonus } from './event-session.js';
 
 const elements = new Map();
 const $ = id => { if (!elements.has(id)) elements.set(id, document.getElementById(id)); return elements.get(id); };
@@ -28,12 +28,12 @@ const deliveryPhases = new Set(['anticipate', 'descend', 'grip', 'lift', 'transf
 export { nextTurnSeconds } from './turn-controller.js';
 
 export function nextTurnCue(elapsed, round, caught = true) {
-  if (!caught) return elapsed < .6 ? 'MISSED' : 'START!';
+  if (!caught) return elapsed < .6 ? 'MISSED' : 'PLAY!';
   if (elapsed < .7) return `ROUND ${round}`;
   if (elapsed < 1.2) return '3';
   if (elapsed < 1.7) return '2';
   if (elapsed < 2.2) return '1';
-  return 'START!';
+  return 'PLAY!';
 }
 
 export function firstTurnCue(elapsed) {
@@ -41,7 +41,7 @@ export function firstTurnCue(elapsed) {
   if (elapsed < 1.7) return '3';
   if (elapsed < 2.7) return '2';
   if (elapsed < 3.7) return '1';
-  return 'START!';
+  return 'PLAY!';
 }
 
 export function playFirstTurnCueTone(audio, cue, allowed = true) {
@@ -50,7 +50,7 @@ export function playFirstTurnCueTone(audio, cue, allowed = true) {
     '3': [[659, .12, 0]],
     '2': [[784, .12, 0]],
     '1': [[988, .14, 0]],
-    'START!': [[880, .12, 0], [1175, .18, .08]],
+    'PLAY!': [[880, .12, 0], [1175, .18, .08]],
   }[cue];
   if (!notes) return false;
   for (const [frequency, duration, delay] of notes) audio.note(frequency, duration, delay, 'sine', frequency, .022);
@@ -106,7 +106,7 @@ function presentMessage(title, hint, key, duration = 0) {
     messageKey = key; messageUntil = duration ? performance.now() + duration : 0;
     setText('status', title); setText('hint', hint);
     $('action-copy').classList.remove('strike');
-    if (duration && title) { void $('action-copy').offsetWidth; $('action-copy').classList.add('strike'); }
+    if ((duration || $('action-copy').classList.contains('countdown')) && title) { void $('action-copy').offsetWidth; $('action-copy').classList.add('strike'); }
   }
   // Opacity preserves the live region; timed announcements stay available to assistive tech.
   $('action-copy').classList.toggle('expired', Boolean(messageUntil && performance.now() >= messageUntil));
@@ -147,7 +147,8 @@ export function createHud({ audio, phaseSound }) {
   $('action-copy').classList.toggle('attract', phase === 'idle' && !run && !paused && !recovering && (!cameraControls?.running || cameraControls.waiting));
   const cue = carouselCue(game.carouselTime, cueLeadSeconds({ dual: dualEnabled, grab: grabEnabled, holdMs }, feedback)), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
   const gripStage = feedback.grab?.stage;
-  const rider = carouselRider(game), starAvailable = Boolean(rider), riderPoints = rider ? (run?.rules || RULES).points[rider.id] : 0;
+  const scoreRules = run?.rules || { ...RULES, controlMode: dualEnabled ? 'two-hand' : 'one-hand' };
+  const rider = carouselRider(game), starAvailable = Boolean(rider), riderPoints = rider ? scoreRules.points[rider.id] + handBonus(scoreRules) : 0;
   const cueVisible = starAvailable && (!grabEnabled || (feedback.profile === 'dual' ? feedback.dropEnabled : gripStage !== 'gripped')) && phase === 'aim' && nearPickup && !paused && !frozen && !document.hidden && !modal && cameraControls?.running && !cameraControls.waiting;
   setHidden($('jackpot-signal'), !cueVisible);
   const cueKey = `${phase}:${cue.lights}:${cue.now}`; if (cueKey !== lastCue) { if (cueVisible && cue.lights) audio.note(cue.now ? 880 : 440 + cue.lights * 110, .09); lastCue = cueKey; }
@@ -243,6 +244,11 @@ export function createHud({ audio, phaseSound }) {
   $('camera-preview').classList.toggle('guided', cameraGuidance);
   $('camera-preview').classList.toggle('in-play', Boolean(run));
   $('action-copy').classList.toggle('gesture-guide', Boolean(steering && !nearPickup));
+  const countdown = Boolean(run && !paused && !modal && !recovering && !startingRun &&
+    ((phase === 'idle' && preparingFirstTurn && firstTurnControlReady) || phase === 'result') &&
+    /^(ROUND [1-3]|[1-3]|PLAY!)$/.test(title));
+  $('action-copy').classList.toggle('countdown', countdown);
+  $('action-copy').dataset.countdown = countdown ? title === 'PLAY!' ? 'play' : title.startsWith('ROUND') ? 'round' : 'digit' : '';
   // A miss keeps one message surface from the empty lift through the next-turn cue.
   presentMessage(title, hint, `${title === 'MISSED' ? 'missed' : ['anticipate', 'descend'].includes(phase) ? 'drop' : phase}:${turnNumber}:${title}:${hint}`, timed ? 1600 : 0);
   if ($('arcade').dataset.phase !== phase) $('arcade').dataset.phase = phase;

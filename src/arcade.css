@@ -110,7 +110,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, #scene:focus-vi
   text-shadow: none;
   text-wrap: balance;
 }
-#arcade:is([data-phase="idle"], [data-phase="aim"]) #action-copy:not(.camera-guidance) #status { font-size: clamp(28px, 2.8vw, 40px); }
+#arcade:is([data-phase="idle"], [data-phase="aim"]) #action-copy:not(.camera-guidance, .countdown) #status { font-size: clamp(28px, 2.8vw, 40px); }
 #hint { font-size: 13px; line-height: 1.4; color: #dce7f8; background: #080e1c; padding: 4px 10px; border-radius: 4px; text-wrap: balance; }
 #hint:empty { display: none; }
 #action-copy.expired, #action-copy.quiet { opacity: 0; }
@@ -215,7 +215,7 @@ dialog .play-button { width: 100%; margin-top: 24px; }
 button.hand-hover { outline:4px solid #ffca45; outline-offset:6px; box-shadow:0 0 28px #ffca4570; }
 #registration h1 { font-size:clamp(28px,5vw,44px); }
 #registration #name { text-align:center; font-weight:900; font-size:28px; letter-spacing:.08em; }
-#registration #register-play { display:block; width:100%; min-height:76px; margin-top:24px; }
+#registration .start-modes .play-button { justify-items: start; text-shadow: none; display:grid; width:100%; min-height:76px; margin-top:0; }
 #registration #register-cancel, #final .text-button { min-height:48px; }
 #registration .playtest-notice { font-size:11px; opacity:.6; }
 
@@ -439,7 +439,7 @@ dialog .menu-guide-hand { font-size: 52px; }
   #arcade:not(.run-active) #scene { height: calc(100% - var(--hud-height) - 215px); }
   #camera-preview { left: 50%; transform: translateX(-50%); }
   .controls { top: 155px; width: calc(100% - 24px); }
-  #arcade:is([data-phase="idle"], [data-phase="aim"]) #action-copy:not(.camera-guidance) #status { font-size: 26px; }
+  #arcade:is([data-phase="idle"], [data-phase="aim"]) #action-copy:not(.camera-guidance, .countdown) #status { font-size: 26px; }
   #arcade:has(.camera-guidance) .controls { left: 50%; transform: translateX(-50%); }
   #arcade:has(.camera-guidance) #action-copy #status { font-size: 15px; }
   #arcade:has(.camera-guidance):has(#play:not([hidden])) .controls { bottom: 171px; }
@@ -498,3 +498,56 @@ dialog .menu-guide-hand { font-size: 52px; }
 
 /* Public privacy notice stays below compact camera guidance. */
 #arcade:has(#try-notice:not([hidden])) { --camera-bottom: 100px; }
+
+/* Count-in owns the centre of the rendered stage, then clears for aiming. */
+#arcade:has(#action-copy.countdown) .controls {
+  inset: var(--hud-height) 0 0;
+  width: auto;
+  transform: none;
+  justify-content: center;
+}
+#action-copy.countdown {
+  width: clamp(220px, 26vw, 320px);
+  min-height: clamp(160px, 22vw, 210px);
+  justify-content: center;
+  padding: 20px;
+  border: 2px solid #65cddd;
+  border-radius: 18px;
+  background: #0b1730;
+  box-shadow: 0 8px 0 #030914, 0 0 0 5px #65cddd20, 0 16px 40px #0008;
+}
+#arcade #action-copy.countdown #status {
+  padding: 0;
+  background: transparent;
+  color: #fff;
+  font: 900 clamp(88px, 10vw, 132px)/1 Arial, Helvetica, sans-serif;
+  text-shadow: 0 4px 0 #245171;
+}
+#arcade #action-copy[data-countdown="round"] #status { font-size: clamp(30px, 4vw, 44px); }
+#arcade #action-copy[data-countdown="play"] #status { font-size: clamp(48px, 6vw, 72px); color: #b4ef52; text-shadow: 0 4px 0 #31531b; }
+@media (max-width: 700px) and (orientation: portrait) {
+  #arcade:has(#action-copy.countdown) .controls { bottom: 160px; }
+}
+@media (max-height: 600px) and (orientation: landscape) {
+  #action-copy.countdown { min-height: 150px; padding: 14px; }
+}
+
+/* Keep both start choices readable and reachable by the hand cursor. */
+.start-modes { display: grid; grid-auto-rows: 1fr; gap: 12px; margin-top: 18px; }
+#registration .start-modes .play-button { justify-items: start; text-shadow: none; display: grid; grid-template-columns: 1fr auto; align-content: center; gap: 6px 12px; width: 100%; margin: 0; padding: 14px 18px; text-align: left; white-space: normal; }
+.start-modes strong { display: flex; align-items: center; gap: 8px; font-size: 20px; white-space: nowrap; }
+.start-modes strong span { width: 2.5em; text-align: center; }
+.start-modes .start-bonus { align-self: center; font-size: 14px; white-space: nowrap; }
+.start-modes small { grid-column: 1 / -1; font: 14px/1.4 Arial, sans-serif; letter-spacing: 0; text-transform: none; }
+@media (max-width: 480px), (max-height: 760px) {
+  #registration { padding: 16px; }
+  #registration #menu-guide { flex-direction: row; gap: 8px; margin-bottom: 8px; padding: 0; }
+  #registration .menu-guide-hand { font-size: 32px; }
+  #registration #menu-guide strong { font-size: 18px; }
+  #registration h1 { font-size: 26px; margin: 8px 0; }
+  #registration label { margin: 8px 0 4px; }
+  #registration #name { font-size: 22px; padding: 10px; }
+  #registration .start-modes { margin-top: 12px; gap: 12px; }
+  #registration .start-modes .play-button { padding: 10px 12px; }
+  #registration .start-modes strong { font-size: 18px; }
+}

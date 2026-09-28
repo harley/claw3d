@@ -29,22 +29,42 @@ try {
  await page.waitForFunction(()=>document.getElementById('button-text').textContent==='PLAY · 1 HAND');
  assert.equal(await page.locator('#mode-two').textContent(),'2 Hands');
  assert.deepEqual(modelRequests, [], 'one-hand play must not fetch either anatomical model');
- for(const size of [{width:1440,height:900},{width:390,height:700}]) {
+ // Contract: the dialog choice, not the previous header mode, controls the
+ // immutable run. This covers the reload/name/hand-menu wiring unit tests cannot.
+ await page.locator('#play').click(); await page.locator('#registration').waitFor();
+ await page.locator('#name').fill('Mode chooser');
+ for(const size of [{width:1440,height:900},{width:390,height:844},{width:320,height:700}]) {
   await page.setViewportSize(size);
-  const a=await page.locator('#mode-one').boundingBox(),b=await page.locator('#mode-two').boundingBox();
-  assert.ok(a.x>=0&&b.x+b.width<=size.width&&a.x+a.width<=b.x,'both choices fit without overlap');
+  for (const id of ['register-play', 'register-other']) {
+   await page.locator(`#${id}`).scrollIntoViewIfNeeded();
+   const b = await page.locator(`#${id}`).boundingBox();
+   assert.ok(b.x >= 0 && b.x+b.width <= size.width, 'start choice fits narrow screens');
+  }
   await page.screenshot({path:'.screenshots/play-modes-'+size.width+'.png',fullPage:true});
  }
  await page.setViewportSize({width:1440,height:900});
- await page.locator('#mode-two').click();await page.waitForFunction(()=>document.getElementById('mode-two').getAttribute('aria-pressed')==='true' && !document.getElementById('mode-two').disabled && window.testCamera?.running); await page.locator('#play').click();await page.locator('#registration').waitFor();
- await assertLocalLabel(page, '2 HANDS');
+ assert.equal(await page.evaluate(()=>window.__littleCloud.snapshot().event.run),null);
+ assert.match(await page.locator('#register-other').textContent(), /✋🤚 Play.*\+25 pts\/catch/);
+ // Select the alternate mode with the real menu adapter and synthetic hand data.
+ const box = await page.locator('#register-other').boundingBox();
+ await page.evaluate(({x,y})=>window.testCamera.setFeedback({kind:'tracking',pointer:{x,y}}), {
+  x:.18+(box.x+box.width/2)/1440*.64, y:.15+(box.y+box.height/2)/900*.70,
+ });
+ await page.waitForFunction(()=>document.getElementById('register-other').classList.contains('hand-hover'));
+ await page.evaluate(()=>window.testCamera.setFeedback({kind:'clenching',progress:.8,pointer:window.testCamera.feedback.pointer}));
+ await page.waitForFunction(()=>{
+  if(Number(document.getElementById('hand-cursor').style.getPropertyValue('--hold'))<=0) return false;
+  window.testCamera.tick(); return window.testCamera.clench();
+ });
+ await page.waitForFunction(()=>window.__littleCloud?.snapshot().event.run?.name==='Mode chooser');
  assert.equal(new URL(page.url()).searchParams.get('controls'),'dual');
- await page.waitForFunction(()=>document.getElementById('hand-art-status').hidden);
- assert.equal(modelRequests.length, 2, 'dual mode fetches one copy of each hand');
- assert.equal(new URL(page.url()).searchParams.has('start'),false,'one-shot start is removed from URL');
- await page.locator('#register-play').click();
+ assert.equal(new URL(page.url()).searchParams.has('start'),false,'start marker is consumed once');
+ assert.equal(await page.evaluate(()=>sessionStorage.getItem('claw:mode-start')),null,'selection is consumed once');
  await assertScoredStart(page);
  assert.equal(await page.evaluate(()=>window.__littleCloud.snapshot().event.controlProfile),'dual');
+ assert.equal(await page.evaluate(()=>window.__littleCloud.snapshot().event.run.rules.twoHandBonus),25);
+ await page.waitForFunction(()=>document.getElementById('hand-art-status').hidden);
+ assert.equal(modelRequests.length,2);
  await assertLocalLabel(page, '2 HANDS');
  assert.equal(await page.locator('#mode-one').isDisabled(),true,'mode cannot change inside an active run');
  const id=await page.evaluate(()=>window.__littleCloud.snapshot().event.run.id);
@@ -52,9 +72,10 @@ try {
  assert.equal(await page.evaluate(()=>window.__littleCloud.snapshot().event.run.id),id);
  assert.equal(await page.locator('#mode-one').isDisabled(),true);
  await page.locator('#operator-open').click();await page.locator('#reset').click();
- await page.locator('#mode-one').click();await page.waitForFunction(()=>document.getElementById('mode-one').getAttribute('aria-pressed')==='true' && !document.getElementById('mode-one').disabled && window.testCamera?.running); await page.locator('#play').click();await page.locator('#registration').waitFor();
+ await page.locator('#play').click();await page.locator('#registration').waitFor();
+ await page.locator('#register-other').click();
+ await page.waitForFunction(()=>window.__littleCloud?.snapshot().event.run && window.__littleCloud.snapshot().event.controlProfile==='hold-drop');
  assert.equal(new URL(page.url()).searchParams.has('controls'),false);
- await page.locator('#register-play').click();
  await assertScoredStart(page);
  assert.equal(await page.evaluate(()=>window.__littleCloud.snapshot().event.controlProfile),'hold-drop');
  await assertLocalLabel(page, '1 HAND');

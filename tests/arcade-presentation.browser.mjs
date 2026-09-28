@@ -9,7 +9,29 @@ try {
  await page.goto(process.env.PRESENTATION_TEST_ORIGIN || 'http://127.0.0.1:4196/?setup=manual'); await page.waitForFunction(() => window.__littleCloud);
  await page.locator('#play').click(); await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running && !document.getElementById('camera-setup').open);
  await page.locator('#play').click(); await page.locator('#name').press('Enter');
+ await page.waitForFunction(() => document.getElementById('status').textContent === '3');
+ for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
+  await page.setViewportSize(viewport);
+  const panel = await page.evaluate(() => {
+   const element = document.getElementById('action-copy'), status = document.getElementById('status');
+   const box = element.getBoundingClientRect(), stage = document.getElementById('scene').getBoundingClientRect();
+   return { active: element.classList.contains('countdown'), background: getComputedStyle(element).backgroundColor,
+    text: status.textContent, fontSize: parseFloat(getComputedStyle(status).fontSize),
+    dx: box.x + box.width / 2 - stage.x - stage.width / 2, dy: box.y + box.height / 2 - stage.y - stage.height / 2,
+    fits: box.left >= stage.left && box.right <= stage.right && box.top >= stage.top && box.bottom <= stage.bottom };
+  });
+  assert.equal(panel.active, true, 'count-in has its own contrast panel');
+  assert.equal(panel.background, 'rgb(11, 23, 48)', 'the panel is opaque navy');
+  assert.ok(panel.fontSize >= 88, 'digits remain large on every orientation');
+  assert.ok(Math.abs(panel.dx) < 2 && Math.abs(panel.dy) < 2, `panel is centred on the scene: ${JSON.stringify(panel)}`);
+  assert.equal(panel.fits, true, 'the compact panel fits within the game view');
+  await page.screenshot({ path: `.screenshots/countdown-${viewport.width}.png` });
+ }
+ await page.setViewportSize({ width: 1440, height: 900 });
+ await page.waitForFunction(() => document.getElementById('status').textContent === 'PLAY!');
+ assert.equal(await page.locator('#action-copy').getAttribute('data-countdown'), 'play');
  await page.waitForFunction(() => document.getElementById('status').textContent === 'Clench & hold to drop');
+ assert.equal(await page.locator('#action-copy').evaluate(el => el.classList.contains('countdown')), false, 'countdown panel clears before control begins');
  assert.equal(await page.locator('#status').textContent(), 'Clench & hold to drop');
  assert.equal(await page.locator('#hint').isVisible(), false, 'first turn teaches one gesture without a subtitle');
  assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).opacity), '1');
@@ -67,6 +89,9 @@ try {
  await page.locator('#operator-open').click(); await page.locator('#reset').click();
  await page.locator('#play').click(); await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running && !document.getElementById('camera-setup').open);
  await page.locator('#play').click(); await page.locator('#name').press('Enter');
+ await page.waitForFunction(() => document.getElementById('status').textContent === '3');
+ assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).animationName), 'none', 'reduced motion removes the countdown pulse');
+ await page.screenshot({ path: '.screenshots/countdown-reduced.png' });
  await page.waitForFunction(() => document.getElementById('status').textContent === 'Clench & hold to drop');
  assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).opacity), '1', 'a new run teaches the gesture again');
  await page.evaluate(() => { window.testCamera.visible = false; window.testCamera.tick(); });
