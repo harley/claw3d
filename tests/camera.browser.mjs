@@ -33,7 +33,7 @@ try {
   assert.equal(await page.evaluate(() => document.getElementById('camera-video').videoWidth > 0), true);
   await page.waitForFunction(() => document.getElementById('status').textContent === 'SHOW ONE HAND');
   assert.equal(await page.locator('#hint').isVisible(), false, 'camera recovery uses one clear status line');
-  assert.equal(await page.locator('#camera-recognition').textContent(), 'Camera view');
+  assert.equal(await page.locator('#camera-recognition').textContent(), 'Camera ready');
   // The draw cap follows quality, not camera state (unit-tested in render-budget.test.mjs).
   // Restore both quality changes against the real camera/worker. A weak GPU
   // may recover once on CPU; it must produce fresh results after each toggle.
@@ -70,19 +70,22 @@ try {
     assert.equal(await page.evaluate(() => window.cameraRenderBudget), !before);
   }
   await page.locator('#operator .panel-head button').click();
-  const geometry = await page.evaluate(() => {
-    const video = document.getElementById('camera-video'), overlay = document.getElementById('camera-overlay');
-    const v = video.getBoundingClientRect(), o = overlay.getBoundingClientRect();
-    return { ratio: v.width / v.height, cameraRatio: video.videoWidth / video.videoHeight,
-      aligned: v.x === o.x && v.y === o.y && v.width === o.width && v.height === o.height };
-  });
-  assert.ok(Math.abs(geometry.ratio - geometry.cameraRatio) < .01);
-  assert.equal(geometry.aligned, true);
-  for (const height of [480, 360]) {
-    await page.evaluate(height => document.getElementById('camera-video').srcObject.getVideoTracks()[0].applyConstraints({ width: 640, height }), height);
-    await page.waitForFunction(height => { const video = document.getElementById('camera-video'); return video.videoWidth === 640 && video.videoHeight === height; }, height);
-    await page.waitForFunction(() => { const video = document.getElementById('camera-video'), rect = video.getBoundingClientRect(); return Math.abs(rect.width / rect.height - video.videoWidth / video.videoHeight) < .01; });
-    assert.equal(await page.evaluate(() => getComputedStyle(document.getElementById('camera-video')).transform.startsWith('matrix(-1')), true);
+  // Capture must keep producing frames while its raw video cannot paint or
+  // intercept controls, regardless of the negotiated camera aspect ratio.
+  for (const dimensions of [{ width: 640, height: 480 }, { width: 480, height: 640 }]) {
+    await page.evaluate(dimensions => document.getElementById('camera-video').srcObject.getVideoTracks()[0].applyConstraints(dimensions), dimensions);
+    await page.waitForFunction(({ width, height }) => {
+      const video = document.getElementById('camera-video');
+      return video.videoWidth === width && video.videoHeight === height;
+    }, dimensions);
+    const capture = await page.evaluate(() => {
+      const image = document.querySelector('.camera-image');
+      const style = getComputedStyle(image), rect = image.getBoundingClientRect();
+      return { opacity: style.opacity, pointerEvents: style.pointerEvents, width: rect.width, height: rect.height };
+    });
+    assert.deepEqual(capture, { opacity: '0', pointerEvents: 'none', width: 1, height: 1 });
+    const time = await page.evaluate(() => document.getElementById('camera-video').currentTime);
+    await page.waitForFunction(time => document.getElementById('camera-video').currentTime > time, time);
   }
   await page.screenshot({ path: '.screenshots/camera-ready-wide.png' });
   await page.setViewportSize({ width: 820, height: 900 });

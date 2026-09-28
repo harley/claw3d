@@ -149,9 +149,9 @@ try {
     assert.ok(box&&box.x>=0&&box.y>=0&&box.x+box.width<=size.width&&box.y+box.height<=size.height);
     if(size.width===390){
       const camera=await page.locator('#camera-preview').boundingBox();
-      assert.ok(camera.y>=controls.bounds.bottom,'camera preview sits below the play area');
-      assert.ok(camera.width>=210,'two hand windows stay readable on phones');
-      assert.ok(camera.y+camera.height<Math.max(740,size.height)-40,'camera fits above the footer');
+      assert.ok(camera.y>=controls.bounds.bottom,'hand guidance stays below the play area');
+      assert.ok(camera.width>=210,'hand guidance stays readable on phones');
+      assert.ok(camera.y+camera.height<Math.max(740,size.height)-40,'hand guidance fits above the footer');
     }
     if(size.width===390&&size.height===844)await page.screenshot({path:'.screenshots/dual-mobile.png'});
   }

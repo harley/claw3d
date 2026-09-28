@@ -204,8 +204,8 @@ export function createHud({ audio, phaseSound }) {
   if ($('arcade').dataset.control !== control) $('arcade').dataset.control = control;
   const cameraGuide = feedback.profile === 'dual' && phase === 'aim' && cameraControls?.running && !recovering && !startingRun &&
     !['delayed', 'off', 'error', 'loading'].includes(feedback.kind);
-  const cameraLabels = { ready: 'Camera view', calibrating: 'Hand found', tracking: 'Hand found', accepted: 'Drop confirmed', lost: 'Hand out of view', delayed: 'Tracking delayed', clenching: 'Fist found', loading: 'Starting camera', off: 'Camera off', error: 'Check camera' };
-  setText('camera-recognition', cameraGuide ? 'LEFT · MOVE     RIGHT · DROP' : cameraLabels[feedback.kind] || 'Camera view');
+  const cameraLabels = { ready: 'Camera ready', calibrating: 'Hand found', tracking: 'Hand found', accepted: 'Drop confirmed', lost: 'Hand out of view', delayed: 'Tracking delayed', clenching: 'Fist found', loading: 'Starting camera', off: 'Camera off', error: 'Check camera' };
+  setText('camera-recognition', cameraGuide ? 'LEFT · MOVE     RIGHT · DROP' : cameraLabels[feedback.kind] || 'Camera ready');
   if ($('camera-preview').dataset.state !== feedback.kind) $('camera-preview').dataset.state = feedback.kind;
   $('reset').disabled = startingRun;
   setText('timer', String(Math.ceil(remaining)).padStart(2, '0'));
