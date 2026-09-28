@@ -244,3 +244,81 @@ against a disposable service. Unit fault injection covers quota refusal,
 abort after request success, stale acknowledgements and incompatible data.
 These tests do not establish physical camera/display or sudden-power-loss
 acceptance; the rendered public-ranked journey remains a required shared gate.
+
+### Staged public station permits
+
+The backend supports protocol 1 permits; no client preparation, offline starts
+or host UI is enabled by this slice. `createPilotServer` accepts an explicit
+server-only `publicPermitPolicy: { maxSlots, maxRetentionMs }`; its default is
+`null`, so new issuance is refused. There is no environment/image default or
+production configuration change. Operator capacity and reconciliation-window
+choices are required before later enablement. Hard validation ceilings are
+1,000 slots and seven days, not recommended booth settings or a capacity
+estimate. Capacity must include online starts, abandoned/interrupted attempts
+and reserve until replenishment; twenty completed test runs is not that choice.
+
+With host authentication, current station enrollment and an already valid
+public owner cookie, POST `/api/host/station/permits` accepts exactly
+`{ protocol: 1, requestKey, count, reconcileBy }`. The deadline is server epoch
+milliseconds. Repeating the same owner/key/input retrieves one pool; changed
+inputs conflict. Pools count against the generation's cap through their
+window, including consumed slots. Preparation reserves opaque slot IDs, run
+UUIDs and request identities without creating runs or event associations.
+Rules, board, supported modes and protocol are frozen with the pool.
+
+Issuance renews the *same* owner credential and HttpOnly/Secure/SameSite cookie
+through the declared deadline; it never creates replacement ownership. The
+response and owner-scoped GET `/api/play/permits/:poolId` report `ownerExpires`
+and `ready`. `unregisteredSlots` counts only server-unbound slots; the later
+client must also subtract all local consumed intents, including unsynced ones.
+A fully registered pool is not ready. Verify that read before local preparation
+is complete. A replaced
+or expired owner cannot recover old slots, even with host authentication or a
+copied slot ID. Keep the original browser data and owner cookie. Repeated old
+issuance only returns evidence when revoked/paused; `ready` stays false.
+
+POST `/api/play/permits/live` and `/api/play/permits/reconcile` accept exactly
+`{ protocol: 1, slotId, runId, requestKey, name, controlMode }`. One SQLite
+transaction binds the slot to canonical name/mode and creates its reserved
+run. Retries return the same run; changes conflict. Later display-name edits
+never change this binding. Only first registration through `live`, with the
+current generation and server Hanoi date, can create a Hanoi association.
+Reconciliation-first remains All plays even if a delayed live request arrives
+on event day. Live-first keeps its association across response loss/midnight.
+No browser date or event claims are accepted. Existing ordered-turn validation
+and shared score functions use the frozen rules.
+
+For a prepared owner with an unexpired pool, fresh ordinary `/api/play/runs`
+requests require the permit protocol, so online starts cannot bypass capacity.
+Other public owners retain normal online-only creation. Old ordinary receipts
+still reconcile. Every consumed slot stays consumed after abandonment or
+completion; no automatic recycle or pending-data deletion occurs.
+
+Re-enrollment and host POST `/api/host/station/revoke` retire current authority
+while retaining generation/grant history. They block new live registration and
+issuance, as does deliberate admission pause. Existing receipts and bounded
+**deferred** registration stay available through their declared window using
+the original owner, including after station-cookie expiry or re-enrollment.
+This intentionally permits draining previously issued offline slots; the
+server cannot prove when a disconnected browser consumed one. Such a new
+deferred registration never gains Hanoi status. After the deadline, unbound
+slots are refused and local evidence must be retained. Already registered
+results remain readable/drainable while their owner credential is valid.
+
+Machine-readable refusal codes distinguish `admission_paused`, `owner_expired`,
+`station_revoked`, `permit_expired`, `permit_conflict`, `unsupported_protocol`,
+`unsupported_rules`, `permit_required`, `permit_unavailable`, `invalid_permit`,
+`permits_disabled` and `capacity_exhausted` from transient failures. The later
+client must hold on known authority/payload refusals rather than treating a
+503 pause as an outage. New routes retain exact-origin JSON/body limits, host
+checks and public read/write budgets with Retry-After. Slot identifiers alone
+are not submission credentials and must not be put into public telemetry.
+
+Schema additions preserve the old active-enrollment table and backfill retained
+generations without replacing cookies. Old application versions can ignore
+the additive permit tables; doing so disables this protocol and does not make
+it safe to discard queued records. Deploy compatible drainage before enabling
+clients. No retention purge, export/import credential, adjudication or prize
+policy is added. Disposable HTTP/SQLite tests cover races, expiry, revocation,
+rollback, migration and score parity; full prepared-booth and physical outage
+acceptance remains separate.

@@ -21,7 +21,7 @@ const gate = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="v
 
 export async function createPilotServer(options) {
   const { filename, origin, staffCode, hostCode, dist = resolve('dist'), secure = true,
-    officialEventsEnabled = false, officialAdmissionsEnabled = false, publicDiagnosticsEnabled = false, publicTryEnabled = false, publicRankedEnabled = publicTryEnabled, now = Date.now, trustedProxyPeers = [] } = options;
+    officialEventsEnabled = false, officialAdmissionsEnabled = false, publicDiagnosticsEnabled = false, publicTryEnabled = false, publicRankedEnabled = publicTryEnabled, now = Date.now, publicPermitPolicy = null, trustedProxyPeers = [] } = options;
   if (typeof officialEventsEnabled !== 'boolean' || typeof officialAdmissionsEnabled !== 'boolean') throw new Error('Event feature options must be booleans.');
   if (typeof publicDiagnosticsEnabled !== 'boolean') throw new Error('Diagnostics option must be a boolean.');
   if (typeof publicRankedEnabled !== 'boolean') throw new Error('Public ranking option must be a boolean.');
@@ -77,7 +77,7 @@ export async function createPilotServer(options) {
   }
   function json(res, status, data) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); }
   const official = officialEventsEnabled ? createOfficialHttp({ db, body, json, cookies, cookie, limit, admissionsEnabled: officialAdmissionsEnabled, publicEnabled: publicTryEnabled, clientAddress }) : null;
-  const publicPlay = (publicTryEnabled && publicRankedEnabled || db.prepare("SELECT 1 FROM settings WHERE key='public-board-v1'").get()) ? createPublicPlay({ database, body, json, cookies, cookie, clientAddress, startsEnabled: publicTryEnabled && publicRankedEnabled, now }) : null;
+  const publicPlay = (publicTryEnabled && publicRankedEnabled || db.prepare("SELECT 1 FROM settings WHERE key='public-board-v1'").get()) ? createPublicPlay({ database, body, json, cookies, cookie, clientAddress, startsEnabled: publicTryEnabled && publicRankedEnabled, permitPolicy: publicPermitPolicy, now }) : null;
   const diagnostics = publicDiagnosticsEnabled ? createPublicDiagnostics({ db, body, json, cookies, cookie, clientAddress }) : null;
   const server = createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -130,6 +130,13 @@ export async function createPilotServer(options) {
         throw new ApiError(401, 'Sign in with the staff code to continue.');
       }
       if (path.startsWith('/api/')) {
+        if (path === '/api/host/station/permits' || path === '/api/host/station/revoke') {
+          if (!publicPlay) throw new ApiError(404, 'Public ranking is unavailable.');
+          if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');
+          if (req.method !== 'POST') throw new ApiError(405, 'Method not allowed.');
+          limit(req, auth); const input = await body(req);
+          return json(res, 200, path.endsWith('/permits') ? publicPlay.issuePermits(req, res, input) : publicPlay.revoke(req));
+        }
         if (path === '/api/host/station') {
           if (!publicPlay) throw new ApiError(404, 'Public ranking is unavailable.');
           if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');
@@ -200,7 +207,7 @@ export async function createPilotServer(options) {
       res.end(req.method === 'HEAD' ? undefined : content);
     } catch (error) {
       if (!res.headersSent && error.retryAfter) res.setHeader('Retry-After', String(error.retryAfter));
-      if (!res.headersSent) json(res, error.status || 500, { error: error.status ? error.message : 'The score service is unavailable. Please retry.' });
+      if (!res.headersSent) json(res, error.status || 500, { error: error.status ? error.message : 'The score service is unavailable. Please retry.', ...(error.status && error.code ? { code: error.code } : {}) });
       else res.end();
       if (!error.status) console.error('Pilot request failed:', error.code || error.name);
     }

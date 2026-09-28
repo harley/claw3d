@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { RULES, scoreTurn, turnContext } from '../src/event-session.js';
 
 export class ApiError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
+  constructor(status, message, code) { super(message); this.status = status; if (code) this.code = code; }
 }
 export function label(value, max = 24) {
   if (typeof value !== 'string' || !value.trim() || value.trim().length > max || /[\p{Cc}\p{Cf}]/u.test(value)) {
@@ -135,5 +135,5 @@ export function openDatabase(filename) {
   }
   if (!currentId()) rotate('Cloud Claw · Staff pilot');
   if (JSON.stringify(boardMetadata().rules) !== JSON.stringify(PILOT_RULES)) rotate('Cloud Claw · Updated rules');
-  return { db, board, createRun, getRun, record, rename, abandon, rotate, exportData, close: () => db.close() };
+  return { db, transaction, board, createRun, getRun, record, rename, abandon, rotate, exportData, close: () => db.close() };
 }
