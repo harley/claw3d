@@ -5,7 +5,7 @@ import { HAND_ACQUIRE_MS, RIGHT_SLAM_MS } from './dual-hand-controls.js';
 import { PRESS_MS } from './grab-release.js';
 import { cueLeadSeconds, dualStartReadiness } from './play-mode.js';
 import { ASSORTMENT, CAROUSEL, carouselCue, carouselRider } from './arcade-mechanics.js';
-import { RULES } from './event-session.js';
+import { RULES, handBonus } from './event-session.js';
 
 const elements = new Map();
 const $ = id => { if (!elements.has(id)) elements.set(id, document.getElementById(id)); return elements.get(id); };
@@ -147,7 +147,8 @@ export function createHud({ audio, phaseSound }) {
   $('action-copy').classList.toggle('attract', phase === 'idle' && !run && !paused && !recovering && (!cameraControls?.running || cameraControls.waiting));
   const cue = carouselCue(game.carouselTime, cueLeadSeconds({ dual: dualEnabled, grab: grabEnabled, holdMs }, feedback)), nearPickup = Math.hypot(game.position.x - CAROUSEL.x, game.position.z - (CAROUSEL.z + CAROUSEL.radius)) < .30;
   const gripStage = feedback.grab?.stage;
-  const rider = carouselRider(game), starAvailable = Boolean(rider), riderPoints = rider ? (run?.rules || RULES).points[rider.id] : 0;
+  const scoreRules = run?.rules || { ...RULES, controlMode: dualEnabled ? 'two-hand' : 'one-hand' };
+  const rider = carouselRider(game), starAvailable = Boolean(rider), riderPoints = rider ? scoreRules.points[rider.id] + handBonus(scoreRules) : 0;
   const cueVisible = starAvailable && (!grabEnabled || (feedback.profile === 'dual' ? feedback.dropEnabled : gripStage !== 'gripped')) && phase === 'aim' && nearPickup && !paused && !frozen && !document.hidden && !modal && cameraControls?.running && !cameraControls.waiting;
   setHidden($('jackpot-signal'), !cueVisible);
   const cueKey = `${phase}:${cue.lights}:${cue.now}`; if (cueKey !== lastCue) { if (cueVisible && cue.lights) audio.note(cue.now ? 880 : 440 + cue.lights * 110, .09); lastCue = cueKey; }

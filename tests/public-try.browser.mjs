@@ -60,6 +60,12 @@ try {
   await page.locator('#try-notice summary').click();
   await page.screenshot({ path: '.screenshots/public-try-notice.png' });
   const selectWithHand = async id => {
+    // The menu guide moves into a newly opened dialog on the next render frame.
+    // Measure its target only after that layout boundary.
+    await page.waitForFunction(() => {
+      const dialog = document.querySelector('dialog[open]');
+      return !dialog || document.getElementById('menu-guide')?.parentElement === dialog;
+    });
     const box = await page.locator(`#${id}`).boundingBox();
     await page.evaluate(({ x, y }) => window.testCamera.setFeedback({ kind: 'tracking', pointer: { x, y } }), {
       x: .18 + (box.x + box.width / 2) / 1440 * .64, y: .15 + (box.y + box.height / 2) / 900 * .70,
@@ -77,7 +83,9 @@ try {
   };
   await selectWithHand('play');
   for (const attempt of [1, 2]) {
-    assert.equal(await page.locator('#registration').isVisible(), false, 'Try never asks for a name');
+    await page.locator('#registration').waitFor();
+    assert.equal(await page.locator('#name').isVisible(), false, 'Try offers controls without asking for a name');
+    await selectWithHand('register-play');
     for (const turn of [1, 2, 3]) {
       await page.waitForFunction(turn => document.getElementById('turn').textContent === `${turn} / 3` && document.getElementById('arcade').dataset.phase === 'aim' && !document.getElementById('phase-label').textContent.includes('COMPLETE'), turn);
       assert.equal(await page.evaluate(() => { window.testCamera.tick(); return window.testCamera.clench(); }), true);
@@ -114,6 +122,7 @@ try {
   await page.locator('#play').click();
   await page.waitForFunction(() => window.testCamera?.running);
   await page.locator('#play').click();
+  await page.locator('#register-play').click();
   await page.waitForFunction(() => document.getElementById('turn').textContent === '1 / 3');
   assert.equal(await page.locator('#registration').isVisible(), false);
   console.log('Public Try: notice precedes camera/diagnostics, denial retry, 2 × 3 hand-controlled turns, offline replay, zero owners/scores, storage denied, unavailable diagnostics passed.');

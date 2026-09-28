@@ -3,7 +3,9 @@ const LEGACY_RULES = Object.freeze({ version: 'cloud-day-v1', turns: 3, seconds:
   // Tiers follow sampled catchable area: broader targets reward less.
   points: Object.freeze({ bonbon: 100, miso: 100, pip: 150, lilac: 150, 'blue-hour': 100, peach: 100, cocoa: 100, sprout: 200, butter: 150, cirrus: 200, otto: 200 }) });
 export const CAROUSEL_RULES = Object.freeze({ version: 'cloud-day-carousel-v2', turns: 3, seconds: 15, points: Object.freeze({ bonbon: 100, miso: 100, 'blue-hour': 100, peach: 100, butter: 100, sprout: 200 }) });
-export const RULES = Object.freeze({ ...CAROUSEL_RULES, version: 'cloud-day-speed-v3', speedBonus: 50 });
+export const SPEED_RULES = Object.freeze({ ...CAROUSEL_RULES, version: 'cloud-day-speed-v3', speedBonus: 50 });
+export const RULES = Object.freeze({ ...SPEED_RULES, version: 'cloud-day-hands-v4', twoHandBonus: 25 });
+export const handBonus = rules => rules.controlMode === 'two-hand' ? rules.twoHandBonus || 0 : 0;
 // Score one turn. Accepts the positional form (prizeId, remainingMs) or a context
 // { prizeId, remainingMs, turnIndex, previousTurns } so a future rules version can
 // reward streaks or tiers from the same call without touching every caller.
@@ -14,23 +16,26 @@ export function scoreTurn(rules, prizeId, remainingMs = 0) {
   if (!Number.isInteger(ms) || ms < 0 || ms > rules.seconds * 1000) throw new Error('Invalid aiming time.');
   if (context.prizeId == null) return 0;
   if (!Object.hasOwn(rules.points, context.prizeId)) throw new Error('Unknown prize.');
-  return rules.points[context.prizeId] + Math.floor((rules.speedBonus || 0) * ms / (rules.seconds * 1000));
+  return rules.points[context.prizeId] + handBonus(rules) + Math.floor((rules.speedBonus || 0) * ms / (rules.seconds * 1000));
 }
 // The scoring context for the next turn of a run in progress.
 export const turnContext = (turns, prizeId, remainingMs) => ({ prizeId, remainingMs, turnIndex: turns.length, previousTurns: turns });
-const supportedRules = rules => [LEGACY_RULES, CAROUSEL_RULES, RULES].some(known => JSON.stringify(known) === JSON.stringify(rules));
+const supportedRules = ({ controlMode, ...rules }) => (controlMode === undefined || ['one-hand', 'two-hand'].includes(controlMode)) &&
+  [LEGACY_RULES, CAROUSEL_RULES, SPEED_RULES, RULES].some(known => JSON.stringify(known) === JSON.stringify(rules));
 export const STORAGE_KEY = 'coderpush:event:v1';
 export function newBoard(name = 'AWS Cloud Day · Session 1') {
   return { id: crypto.randomUUID(), name, createdAt: new Date().toISOString(), rules: structuredClone(RULES), runs: [] };
 }
 export function newStore() { const board = newBoard(); return { version: 1, boards: [board], current: board.id, active: null }; }
 export function currentBoard(store) { return store.boards.find(board => board.id === store.current); }
-export function startRun(store, name, practice = false) {
+export function startRun(store, name, practice = false, controlMode = 'one-hand') {
+  if (!['one-hand', 'two-hand'].includes(controlMode)) throw new Error('Invalid control mode.');
   if (store.active) throw new Error('Finish or reset the current player first.');
   name = name.trim().slice(0, 24);
   if (!name) throw new Error('Enter a player name.');
+  if (currentBoard(store).rules.version === SPEED_RULES.version) rotateBoard(store, 'Cloud Claw · Hand bonus');
   const board = currentBoard(store);
-  store.active = { id: crypto.randomUUID(), playerId: crypto.randomUUID(), badgeId: null, name, practice, boardId: board.id, rules: structuredClone(board.rules), startedAt: new Date().toISOString(), turns: [] };
+  store.active = { id: crypto.randomUUID(), playerId: crypto.randomUUID(), badgeId: null, name, practice, boardId: board.id, rules: { ...structuredClone(board.rules), controlMode }, startedAt: new Date().toISOString(), turns: [] };
   return store.active;
 }
 export function recordTurn(store, turn, prizeId, remainingMs = 0) {
@@ -65,15 +70,15 @@ export function loadStore(storage) {
   if (store.active) for (const [i, turn] of store.active.turns.entries()) {
     if (turn.turn !== i + 1 || (turn.prizeId !== null && !(turn.prizeId in store.active.rules.points)) || turn.score !== scoreTurn(store.active.rules, turnContext(store.active.turns.slice(0, i), turn.prizeId, turn.remainingMs ?? 0))) throw new Error('Saved turn is invalid.');
   }
-  if (currentBoard(store).rules.version !== RULES.version) {
+  if (currentBoard(store).rules.version !== RULES.version && !(store.active && currentBoard(store).rules.version === SPEED_RULES.version)) {
     if (store.active) {
       const oldBoard = store.boards.find(b => b.id === store.active.boardId);
       oldBoard.interruptedRuns ??= [];
       oldBoard.interruptedRuns.push({ ...store.active, interruptedAt: new Date().toISOString(), reason: 'Prototype rules changed' });
       store.active = null;
     }
-    rotateBoard(store, 'Cloud Claw · Speed Score');
-    store.notice = 'New speed scoring: earlier scores and unfinished runs remain in the export.';
+    rotateBoard(store, 'Cloud Claw · Hand bonus');
+    store.notice = 'New scoring: earlier scores and interrupted runs remain in the export.';
   }
   return store;
 }

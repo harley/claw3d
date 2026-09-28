@@ -120,14 +120,14 @@ async function scoredAndFeedback() {
   assert.deepEqual(modelRequests, [], 'shared one-hand play does not request anatomical assets');
   assert.equal(await page.locator('#mode-one').getAttribute('aria-pressed'), 'true');
   assert.equal(await page.locator('#camera-help').textContent(), 'Move one open hand to steer. Clench and hold your fist to drop; open to cancel.', 'shared default gives one-hand gameplay help');
-  assert.equal(await page.locator('#scene').getAttribute('aria-label'), 'Steer with one open hand. Clench and hold your fist to drop.');
+  assert.equal(await page.locator('#scene').getAttribute('aria-label'), 'Open hand to aim. Hold a fist to drop.');
   await page.goto(`${origin}/?setup=manual&controls=dual`);
   await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
   assert.equal(await page.locator('#mode-two').getAttribute('aria-pressed'), 'true');
   await page.waitForFunction(() => document.getElementById('hand-art-status').hidden);
   assert.equal(modelRequests.length, 2, 'shared dual play requests both anatomical assets');
   assert.equal(await page.locator('#camera-help').textContent(), 'Show your left hand open to start. Clench to grip and steer; bring your open right palm into the highlighted DROP area. Open your left hand to release without dropping.', 'shared dual mode gives dual-hand gameplay help');
-  assert.equal(await page.locator('#scene').getAttribute('aria-label'), 'Clench your left hand to grip and steer. Bring your open right palm to DROP. Open your left hand to release.');
+  assert.equal(await page.locator('#scene').getAttribute('aria-label'), 'Move left fist to aim. Move right palm onto DROP.');
   await page.goto(`${origin}/?setup=manual&controls=grab&hold=300&steer=absolute`);
   await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
   assert.equal(await page.locator('#mode-one').getAttribute('aria-pressed'), 'true');

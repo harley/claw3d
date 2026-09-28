@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createPilotServer } from '../server/index.js';
+import { SPEED_RULES } from '../src/event-session.js';
 
 // Observable contract: public rank authority is isolated from staff and from
 // event enrollment. Existing ticket tests do not exercise ticket-free starts.
@@ -35,9 +36,9 @@ async function fixture(t, { secure = false } = {}) {
     return saved;
   }
   return { get app() { return app; }, request, player, enroll, start, complete,
-    async pause() {
+    async pause(publicRankedEnabled = false) {
       await new Promise(resolve => app.server.close(resolve)); app.database.close();
-      app = await createPilotServer({ ...options, publicRankedEnabled: false });
+      app = await createPilotServer({ ...options, publicRankedEnabled });
       await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
     },
     setTime: value => { time = Date.parse(value); } };
@@ -160,4 +161,35 @@ test('host setup stops offering enrollment after the Hanoi event ends', async t 
   assert.equal((await (await f.request('/api/host/station', { cookie })).json()).ended, true);
   assert.equal((await f.request('/api/host/station', { cookie, data: {} })).status, 409);
   assert.equal(f.app.database.db.prepare('SELECT COUNT(*) AS n FROM public_stations').get().n, 0);
+});
+
+// The public board persists across versions; update future snapshots without
+// replacing its identity or recalculating completed/pending run scores.
+test('public rule upgrade preserves old results and unfinished runs, bonuses apply only to new dual runs', async t => {
+  const f = await fixture(t), cookie = await f.player();
+  const initial = await (await f.start(cookie)).json();
+  const oldRules = { ...SPEED_RULES, controlVersion: 'camera-dual-raise-v1', controlMode: 'two-hand' };
+  f.app.database.db.prepare('UPDATE boards SET rules=? WHERE id=?').run(JSON.stringify({ ...SPEED_RULES, controlVersion: 'camera-fist-hold-550-v2' }), initial.boardId);
+  f.app.database.db.prepare('UPDATE runs SET rules=? WHERE id=?').run(JSON.stringify(oldRules), initial.id);
+  const pendingKey = randomUUID();
+  const pending = await (await f.start(cookie, pendingKey, { controlMode: 'two-hand' })).json();
+  const turn = (id, n, prizeId, remainingMs = 0) => f.request(`/api/play/runs/${id}/turns`, { cookie, data: { turn: n, prizeId, remainingMs } });
+  await turn(initial.id, 1, 'butter'); await turn(initial.id, 2, null);
+  assert.equal((await (await turn(initial.id, 3, null)).json()).total, 100);
+  await turn(pending.id, 1, 'sprout');
+  await f.pause(true);
+  const retry = await (await f.start(cookie, pendingKey, { controlMode: 'two-hand' })).json();
+  assert.equal(retry.rules.version, SPEED_RULES.version);
+  await turn(pending.id, 2, 'butter');
+  assert.equal((await (await turn(pending.id, 3, null)).json()).total, 300);
+  const next = await (await f.start(cookie, randomUUID(), { controlMode: 'two-hand' })).json();
+  assert.equal(next.boardId, initial.boardId);
+  assert.equal(next.rules.twoHandBonus, 25);
+  assert.equal((await (await turn(next.id, 1, 'butter', 7500)).json()).turns[0].score, 150);
+  assert.equal((await (await turn(next.id, 1, 'butter', 7500)).json()).turns.length, 1);
+  await turn(next.id, 2, 'sprout');
+  assert.equal((await (await turn(next.id, 3, null, 15000)).json()).total, 375);
+  const board = await (await f.request('/api/play/board')).json();
+  assert.equal(board.id, initial.boardId);
+  assert.deepEqual(board.runs.map(r => r.total), [375, 300, 100]);
 });

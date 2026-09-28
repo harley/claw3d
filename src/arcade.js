@@ -41,7 +41,7 @@ const mode = resolvePlayMode(official ? '' : location.search, shared || publicTr
 const { dual: dualEnabled, grab: grabEnabled, cabinet: cabinetEnabled, holdMs, steering, storageKey: scoreKey } = mode;
 import { ArcadeScene } from './arcade-scene.js';
 import { createGame, begin, drop, advance, move, moveToward, homeClaw, planGrab, clawPose, PHASES, MAX_FRAME_DELTA, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
-import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, scoreTurn, turnContext } from './event-session.js';
+import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, scoreTurn, turnContext, handBonus } from './event-session.js';
 
 if (publicSurface) {
   $('try-notice').hidden = false;
@@ -70,7 +70,7 @@ document.body.classList.toggle('dual-controls', cabinetEnabled);
 document.body.classList.toggle('two-hand-mode', dualEnabled);
 const controlInstructions = {
   'hold-drop': {
-    scene: 'Steer with one open hand. Clench and hold your fist to drop.',
+    scene: 'Open hand to aim. Hold a fist to drop.',
     camera: 'Move one open hand to steer. Clench and hold your fist to drop; open to cancel.',
   },
   'grab-release': {
@@ -78,7 +78,7 @@ const controlInstructions = {
     camera: 'Clench on MOVE to grip and steer. Open to release without dropping. Click, clench, or swipe down on DROP to drop.',
   },
   dual: {
-    scene: 'Clench your left hand to grip and steer. Bring your open right palm to DROP. Open your left hand to release.',
+    scene: 'Move left fist to aim. Move right palm onto DROP.',
     camera: 'Show your left hand open to start. Clench to grip and steer; bring your open right palm into the highlighted DROP area. Open your left hand to release without dropping.',
   },
 }[mode.profile];
@@ -95,6 +95,30 @@ function menuMode() {
   if ((recovering || paused) && cameraControls?.running) return 'resume';
   return !run && cameraControls?.running ? 'idle' : '';
 }
+const modeStartKey = 'claw:mode-start';
+let selectedStart = null;
+const modeStart = new URLSearchParams(location.search).get('start') === 'mode';
+if (modeStart) {
+  const url = new URL(location.href); url.searchParams.delete('start'); history.replaceState(null, '', url);
+}
+try {
+  if (modeStart) {
+    const saved = sessionStorage.getItem(modeStartKey);
+    sessionStorage.removeItem(modeStartKey);
+    const intent = saved && JSON.parse(saved);
+    if (!official && intent?.path === location.pathname && intent.controlMode === mode.controlMode &&
+        typeof intent.name === 'string' && intent.name.length <= 24 && Date.now() - intent.createdAt < 60000) selectedStart = intent;
+  }
+} catch { /* Ordinary play remains available when session storage is blocked. */ }
+for (const [id, dual] of [['register-play', dualEnabled], ['register-other', !dualEnabled]]) {
+  const button = $(id);
+  button.dataset.controlMode = dual ? 'two-hand' : 'one-hand';
+  button.style.order = dual ? '2' : '1';
+  button.innerHTML = dual
+    ? '<strong>🖐️🖐️ Play · 2 Hands</strong><span>+25 per catch</span><small>Move left fist to aim. Move right palm onto DROP.</small>'
+    : '<strong>🖐️ Play · 1 Hand</strong><small>Open hand to aim. Hold a fist to drop.</small>';
+}
+if (mode.profile === 'grab-release') $('register-play').querySelector('small').textContent = controlInstructions.scene;
 let pendingPlayer = null, startingRun = false;
 let scoreAnimation;
 let lastSoundPhase = '', lastMovementSound = -Infinity;
@@ -103,6 +127,7 @@ let store, storageError = '', storageBlocked = false;
 try { store = shared || publicTry ? newStore() : loadStore({ getItem: () => localStorage.getItem(scoreKey) }); } catch (error) { store = newStore(); storageError = error.message; storageBlocked = true; }
 let run = store.active, completedRun = null, turnNumber = run ? run.turns.length + 1 : 0;
 let recovering = Boolean(run);
+if (run) selectedStart = null;
 const frames = [], errors = [];
 let playtest = createPlaytestClient({ build: __BUILD_INFO__.commit, enabled: shared && !official && !publicPlay });
 const track = (type, data = {}, subject = run || pendingPlayer || completedRun) => playtest.track(type, data, { mode: 'event', ...(subject?.id ? { runId: subject.id } : {}) });
@@ -212,7 +237,8 @@ function openRegistration(name = $('name').value) {
     $('name').value = officialPlayer.state().intent.receipt.name;
     $('registration').showModal(); $('register-play').focus(); return;
   }
-  if (publicTry) { pendingPlayer = { name: 'Try' }; void startScoredRun(); return; }
+  if (publicTry) { name = 'Try'; $('name').value = name; $('name').closest('form').querySelector('h1').textContent = 'CHOOSE YOUR CONTROLS'; $('name').hidden = $('name-label').hidden = true; }
+  $('mode-start-message').textContent = '';
   $('name').setCustomValidity(''); $('name').value = name.trim() || generatedName();
   $('registration').showModal(); $('register-play').focus();
 }
@@ -240,7 +266,7 @@ function finishTurn() {
       const chip = document.createElement('span'); chip.className = `turn-chip scored catch-card${toy ? '' : ' miss'}`;
       if (toy) { chip.dataset.prize = toy.id; chip.style.setProperty('--toy', toy.color); }
       const parts = toy
-        ? [['catch-icon', TROPHY_ICONS[toy.family]], ['catch-name', toy.name.toUpperCase()], ['catch-points', `+${turn.score}`], ['catch-detail', `${completedRun.rules.points[toy.id]} + ${turn.score - completedRun.rules.points[toy.id]} SPEED`]]
+        ? [['catch-icon', TROPHY_ICONS[toy.family]], ['catch-name', toy.name.toUpperCase()], ['catch-points', `+${turn.score}`], ['catch-detail', `${completedRun.rules.points[toy.id]}${handBonus(completedRun.rules) ? ` + ${handBonus(completedRun.rules)} TWO HANDS` : ''} + ${turn.score - completedRun.rules.points[toy.id] - handBonus(completedRun.rules)} SPEED`]]
         : [['catch-icon', '—'], ['catch-name', 'MISS'], ['catch-points', '+0'], ['catch-detail', turnReasons[i] ? missCopy(turnReasons[i], game.toys) : `TURN ${i + 1}`]];
       for (const [className, text] of parts) { const part = document.createElement('span'); part.className = className; part.textContent = text; chip.append(part); }
       $('final-turns').append(chip);
@@ -280,7 +306,7 @@ async function startScoredRun() {
       run.boardName = store.boards[0].name;
     } else {
       if (publicTry) { store = newStore(); $('try-notice').open = false; }
-      run = startRun(store, pendingPlayer.name, publicTry);
+      run = startRun(store, pendingPlayer.name, publicTry, mode.controlMode);
     }
     turnReasons = [];
     track('run_start', { steering, ...(holdMs ? { holdMs } : {}) }, run);
@@ -309,6 +335,25 @@ $('player-form').addEventListener('submit', event => { event.preventDefault(); i
   if (startingRun || run) return;
   const name = $('name').value.trim() || generatedName();
   if (name.length > 24) { $('name').setCustomValidity('Use at most 24 characters.'); $('name').reportValidity(); return; }
+  const chosenMode = official ? 'one-hand' : event.submitter?.dataset.controlMode || mode.controlMode;
+  if (chosenMode !== mode.controlMode) {
+    const url = new URL(location.href);
+    url.searchParams.set('hands', 'manual');
+    if (chosenMode === 'two-hand') url.searchParams.set('controls', 'dual'); else url.searchParams.delete('controls');
+    url.searchParams.set('start', 'mode');
+    try {
+      sessionStorage.setItem(modeStartKey, JSON.stringify({ name, controlMode: chosenMode, path: location.pathname, createdAt: Date.now() }));
+    } catch {
+      $('mode-start-message').textContent = 'Go Back and choose 1 Hand or 2 Hands above the game. Browser storage is unavailable.';
+      return;
+    }
+    $('register-play').disabled = $('register-other').disabled = true;
+    cameraControls?.stop(); location.assign(url); return;
+  }
+  if (!official) {
+    const url = new URL(location.href); url.searchParams.set('hands', 'manual');
+    history.replaceState(null, '', url);
+  }
   pendingPlayer = { name };
   $('registration').close(); $('scene').focus();
   void startScoredRun();
@@ -480,6 +525,10 @@ async function startCamera() {
       // after every first start, restart, or device switch.
       cameraControls.setPerformanceMode(performanceGovernor.mode);
       track('camera_ready'); cameraReadyAt = performance.now(); $('camera-setup').close();
+      if (selectedStart && !run && !recovering && !pendingPlayer && !startingRun) {
+        pendingPlayer = { name: selectedStart.name }; selectedStart = null;
+        void startScoredRun();
+      }
       // Restart the rollup window so pre-camera time never dilutes vision rates.
       performanceFrames = []; performanceVisibleMs = 0;
       adaptationFrames = []; adaptationVisibleMs = 0;
@@ -523,7 +572,7 @@ function frame(time) {
       else if (effect.type === 'tick') audio.note(effect.remaining < 1 ? 220 : 440, .08);
       else if (effect.type === 'drop') track('drop', { trigger: effect.trigger, phase: game.phase, turn: turnNumber });
       else if (effect.type === 'nextTurn') beginTurn({ prepared: effect.initial === true });
-      else if (effect.type === 'scorePop') showScorePop(scoreTurn(run?.rules || RULES, turnContext(run?.turns || [], effect.prizeId, flow.dropRemainingMs)));
+      else if (effect.type === 'scorePop') showScorePop(scoreTurn(run?.rules || { ...RULES, controlMode: mode.controlMode }, turnContext(run?.turns || [], effect.prizeId, flow.dropRemainingMs)));
       else if (effect.type === 'finish') finishTurn();
     }
   } else input.x = input.z = 0;
@@ -586,7 +635,7 @@ function frame(time) {
       setHidden(element, !isTarget);
       element.classList.toggle('targeted', isTarget);
       if (!isTarget) continue;
-      element.textContent = scoreTurn(run?.rules || RULES, turnContext(run?.turns || [], toy.id, Math.floor(flow.remaining * 1000)));
+      element.textContent = scoreTurn(run?.rules || { ...RULES, controlMode: mode.controlMode }, turnContext(run?.turns || [], toy.id, Math.floor(flow.remaining * 1000)));
       const position = clampOverlayPoint(target, tagOrigin, element.getBoundingClientRect());
       element.style.transform = `translate(${Math.round(position.x - tagOrigin.left)}px, ${Math.round(position.y - tagOrigin.top)}px) translate(-50%, -50%)`;
     }
@@ -712,9 +761,10 @@ if (publicOfficial) {
 }
 if (official) {
   $('official-status-open').hidden = false;
-  for (const id of ['mode-one', 'mode-two', 'new-board', 'session-name', 'export', 'play-again', 'feedback-open', 'final-feedback', 'error-feedback']) $(id).hidden = true;
+  for (const id of ['mode-one', 'mode-two', 'register-other', 'new-board', 'session-name', 'export', 'play-again', 'feedback-open', 'final-feedback', 'error-feedback']) $(id).hidden = true;
   $('next-player').textContent = 'SIGN OUT · NEXT PLAYER';
   $('reset').textContent = 'END ATTEMPT · HOST RECOVERY';
+  $('register-play').textContent = 'START';
   $('name').readOnly = true;
   $('registration').querySelector('h1').textContent = 'OFFICIAL · THREE TURNS';
   $('registration').querySelector('.playtest-notice').textContent = 'START activates this ticket once. Reload cannot restart it. Scores are confirmed by the event server.';
@@ -800,7 +850,7 @@ try {
       }
     }
   }
-  if ((!manualSetup || autoPlay) && !frozen) {
+  if ((!manualSetup || autoPlay || selectedStart) && !frozen) {
     audio.unlock();
     void startCamera().then(() => { if (autoPlay && cameraControls?.running && !run && !document.querySelector('dialog[open]')) openRegistration(); });
   }

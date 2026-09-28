@@ -225,7 +225,8 @@ test('shared hand mode is validated, immutable on retry, and retained through co
     assert.equal(database.getRun(run.id, 'mode-owner').rules.controlMode, 'two-hand');
     database.record(run.id, 'mode-owner', { turn: 2, prizeId: 'peach' });
     const complete = database.record(run.id, 'mode-owner', { turn: 3, prizeId: null });
-    assert.equal(complete.total, 350);
+    assert.equal(complete.total, 400);
+    assert.deepEqual(complete.turns.map(t => t.score), [275, 125, 0]);
     assert.equal(complete.status, 'complete');
     assert.equal(database.board().runs.find(r => r.id === run.id).rules.controlMode, 'two-hand');
   } finally { database.close(); await rm(dir, { recursive: true, force: true }); }

@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { ApiError } from './database.js';
 import { createBudget } from './request-budget.js';
-import { RULES } from '../src/event-session.js';
+import { RULES, SPEED_RULES } from '../src/event-session.js';
 
 export const HANOI_EVENT = { id: 'hanoi-2026-09-29', name: 'Hanoi · 29 Sep 2026', date: '2026-09-29', timeZone: 'Asia/Ho_Chi_Minh' };
 const EVENT_END = Date.parse('2026-09-30T00:00:00+07:00');
@@ -28,6 +28,10 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
       db.prepare("INSERT INTO settings VALUES ('public-board-v1',?)").run(boardId);
       db.exec('COMMIT');
     } catch (error) { db.exec('ROLLBACK'); throw error; }
+  }
+  const boardRules = JSON.parse(db.prepare('SELECT rules FROM boards WHERE id=?').get(boardId).rules);
+  if (boardRules.version === SPEED_RULES.version) {
+    db.prepare('UPDATE boards SET rules=? WHERE id=?').run(JSON.stringify({ ...boardRules, ...RULES }), boardId);
   }
   const budget = createBudget({ now });
   function owner(req) {
