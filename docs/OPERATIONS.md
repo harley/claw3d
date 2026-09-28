@@ -322,3 +322,48 @@ clients. No retention purge, export/import credential, adjudication or prize
 policy is added. Disposable HTTP/SQLite tests cover races, expiry, revocation,
 rollback, migration and score parity; full prepared-booth and physical outage
 acceptance remains separate.
+
+### Prepared public asset pack (staged; offline admission is not enabled)
+
+Each production build emits `prepared/manifest.json`: exact SHA-256, MIME type
+and byte count for the neutral public shell, all emitted gameplay/camera chunks
+and workers, branding, both hand GLBs, the gesture model and all SIMD/non-SIMD
+WASM loaders/binaries. The current pack is approximately 46.3 MB uncompressed;
+the manifest's `bytes` is the actual required download size for that build.
+
+Host integration can explicitly call `prepareAssets()` from
+`/prepared/client.js`. Nothing registers automatically. A complete install is
+not game readiness: `/prepared/index.html` must be controlled and
+`assetStatus()` must report `complete: true` for the expected pack. Preparation
+rejects redirects, non-200 responses, wrong MIME types, lengths or digests.
+Partial/corrupt replacements leave the prior complete pack usable. An evicted
+or damaged cached file produces an explicit preparation error, never a mixture
+of old and new network assets. A fresh offline profile cannot load the app.
+
+The dedicated `/prepared/` scope does not take over the normal game, host,
+privacy or official routes. The build-generated shell carries public flags
+only, disables diagnostics and official UI, retains the camera privacy notice
+and the server CSP, and labels BUILD as LOCAL PREPARED BUILD. It does not cache
+server-injected index responses, sessions, APIs, exports or `build-info.json`.
+Its public ranked flow still requires online admission. Prepared assets alone
+do not grant offline starts or durable turn recording.
+
+Updates install separately and wait until **all** prepared-game tabs close.
+There is no force activation, client claiming, score replay or Background Sync.
+This conservative host boundary also prevents updates during an active game.
+The later journal/admission integration must check protocol compatibility
+before offering play; the asset worker cannot attest to journal compatibility.
+The prepared camera entry has its own worker URL within that scope; ordinary
+online camera workers remain outside it and keep network model loading.
+Old public caches are retained, including partial downloads, to avoid deleting
+assets needed by live clients. Host cleanup/retention UI is still pending;
+do not clear browser site data to recover preparation when it could contain
+pending scores. Durable score storage is separate from these caches.
+
+`tests/offline-station.browser.mjs` is part of the shared browser gate. It uses a
+disposable production bundle and service, denies the network, verifies cache
+boundaries and real bundled inference, and exercises failed replacement and
+waiting-worker activation. Set `CLAW_OFFLINE_RUNTIME_ONLY=1` only for local
+asset/runtime checks when the scene cannot render; this explicitly omits rendered-game acceptance. CI runs
+the full suite without that override. Hosted macOS results remain
+required; synthetic inference and asset availability do not replace physical outage rehearsal.

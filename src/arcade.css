@@ -552,6 +552,9 @@ dialog .menu-guide-hand { font-size: 52px; }
   #registration .start-modes strong { font-size: 18px; }
 }
 
+/* Keep the single live region available while its cue is drawn on the cabinet. */
+#arcade #action-copy.marquee-countdown { opacity: 0; pointer-events: none; animation: none; }
+
 /* The result name is the field itself; its controls appear only while editing. */
 #final-name-form { margin: 14px 0 8px; }
 #final #final-name-input { text-align: center; font-size: 26px; font-weight: 700; padding: 5px 8px; background: transparent; border-color: transparent; border-bottom-color: #426087; border-radius: 0; }

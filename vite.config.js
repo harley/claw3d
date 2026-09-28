@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { defineConfig } from 'vite';
+import { offlinePack } from './scripts/offline-pack.mjs';
 
 function git(...args) {
   return execFileSync('git', args, { encoding: 'utf8' }).trim();
@@ -19,9 +20,12 @@ export default defineConfig(() => {
     // Prebundle the lazy camera dependency before play; discovering it at
     // camera startup otherwise reloads the page and interrupts acquisition.
     build: { outDir: process.env.CLAW_BUILD_OUT_DIR || 'dist' },
+    // Dedicated camera workers need a URL inside the prepared scope so their
+    // own model/WASM requests stay controlled after an offline restart.
+    worker: { rolldownOptions: { output: { entryFileNames: chunk => `${chunk.name === 'prepared-vision-worker' ? 'prepared' : 'assets'}/[name]-[hash].js` } } },
     optimizeDeps: { include: ['@mediapipe/tasks-vision'] },
     define: { __BUILD_INFO__: JSON.stringify(build) },
-    plugins: [{
+    plugins: [offlinePack(), {
       name: 'build-identity',
       generateBundle() {
         this.emitFile({ type: 'asset', fileName: 'build-info.json', source: JSON.stringify(build, null, 2) });
