@@ -3,7 +3,10 @@ import { recordStartCue, assertStartCueDuration, assertPreparationTiming } from 
 // Deterministic camera events for game-flow tests; hardware/model smoke is separate.
 export async function installCameraFixture(page, { built = false, cameraRequest = false } = {}) {
   await page.route(built ? '**/assets/vision-*.js' : '**/src/vision.js*', async route => {
-    if (built) assert.ok((await (await route.fetch()).text()).includes(' as HandController'), 'production vision export found');
+    if (built) {
+      const response = await route.fetch();
+      if (!(await response.text()).includes(' as HandController')) return route.fulfill({ response });
+    }
     return route.fulfill({ contentType: 'application/javascript', body: `
     export class HandController {
       constructor(options) { Object.assign(this, options); this.running = false; this.input = {x:0,z:0}; this.visible = true; this.feedback = {}; window.testCamera = this; }

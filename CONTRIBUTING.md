@@ -37,3 +37,9 @@ Open PRs ready for review unless a draft is explicitly requested. Use the [PR te
 For work authorized for merge and delivery, enable squash auto-merge once the PR is complete (`gh pr merge --squash --auto`). Review readiness alone does not authorize merge. Do not bypass required checks. Main deploys after its release checks and publishes a GitHub Release; verify authenticated and rendered live BUILD before reporting deployment, following [OPERATIONS](docs/OPERATIONS.md#hosting-and-build-identity).
 
 Update the document that owns the changed fact, with summaries or links elsewhere only as needed. Keep implementation, deployment and physical acceptance distinct in the handoff.
+
+## Android changes
+
+For native camera, packaging or bridge changes, run `npm run android:build` (JVM queue regressions and Android lint included), `npm run check`, and `npm run test:offline` after the Android build. The offline browser check owns an isolated profile and synthetic scores; it covers packaged-asset loading and browser-process storage persistence, not Android hardware or lifecycle acceptance. Run affected existing camera/arcade browser suites sequentially as above.
+
+Test APK CI is separate from web deployment. Signed prerelease publication is a manual main-only workflow using the `android-release` environment; follow [Android distribution](docs/OPERATIONS.md#android-distribution). Keep long-lived signing keys outside the repository and do not call an APK physically verified based on automated checks.

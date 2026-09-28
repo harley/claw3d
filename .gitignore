@@ -11,3 +11,12 @@ __pycache__/
 .env
 .env.*
 *.sqlite*
+
+# Android generated assets, local SDK configuration and signing material
+android/.gradle/
+android/**/build/
+android/local.properties
+*.apk
+*.aab
+*.jks
+*.keystore

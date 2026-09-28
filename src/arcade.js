@@ -1,3 +1,5 @@
+import { nativeBridge } from './native-bridge.js';
+import { nativeAndroid, tomkoRendering } from './runtime-platform.js';
 import { RIGHT_SLAM_MS } from './dual-hand-controls.js';
 import { resolvePlayMode, phonePlaySearch, cueLeadSeconds, dualStartReadiness, firstTurnControlReady as isFirstTurnControlReady } from './play-mode.js';
 import { ABSOLUTE_SPEED } from './steering.js';
@@ -153,7 +155,7 @@ let cueLead = cueLeadSeconds(mode);
 const performanceGovernor = new PerformanceGovernor({ onChange: (mode, source) => {
   scene?.setQuality(mode === 'simple');
   cameraControls?.setPerformanceMode(mode);
-  if (scene) $('quality').textContent = `QUALITY: ${mode === 'simple' ? 'SIMPLE · 30 FPS CAP' : 'FULL'}${source === 'auto' ? ' · AUTO' : ''}`;
+  if (scene) $('quality').textContent = `QUALITY: ${mode === 'simple' ? (nativeAndroid ? `SIMPLE · ${tomkoRendering.drawHz} FPS CAP` : 'SIMPLE · 30 FPS CAP') : 'FULL'}${source === 'auto' ? ' · AUTO' : ''}`;
 } });
 const tags = game.toys.map(toy => {
   const element = document.createElement('span'); element.className = 'prize-tag'; element.dataset.points = RULES.points[toy.id]; element.textContent = RULES.points[toy.id]; $('prize-tags').append(element); return { toy, element };
@@ -503,7 +505,26 @@ $('new-board').addEventListener('click', async () => {
   try { rotateBoard(store, $('session-name').value); persist(); completedRun = null; renderBoard(); $('operator-message').textContent = 'New leaderboard started. Previous results are preserved.'; }
   catch (error) { $('operator-message').textContent = error.message; }
 });
-$('export').addEventListener('click', () => { if (shared) { window.location.assign('/api/host/export'); return; } let data = JSON.stringify(store, null, 2); if (storageBlocked) { try { data = localStorage.getItem(scoreKey) || data; } catch { /* In-memory export remains available. */ } } const url = URL.createObjectURL(new Blob([data], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = `cloud-claw-sessions-${new Date().toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
+if (nativeAndroid) $('export').textContent = 'EXPORT THIS MODE’S SESSIONS';
+$('export').addEventListener('click', async () => {
+  if (shared) { window.location.assign('/api/host/export'); return; }
+  let data = JSON.stringify(store, null, 2);
+  if (storageBlocked) { try { data = localStorage.getItem(scoreKey) || data; } catch { /* In-memory export remains available. */ } }
+  const filename = `cloud-claw-${nativeAndroid ? dualEnabled ? 'two-hand' : 'one-hand' : 'sessions'}-${new Date().toISOString().slice(0, 10)}.json`;
+  if (nativeAndroid) {
+    $('export').disabled = true;
+    setText('operator-message', 'Choose a file for this mode’s scores…');
+    try {
+      const outcome = await nativeBridge().exportScores(data, filename);
+      setText('operator-message', outcome === 'saved' ? 'This mode’s scores saved. Restart the camera when ready.' : 'Export cancelled. Scores remain on this device.');
+    } catch (error) { setText('operator-message', error.message); }
+    finally { $('export').disabled = false; }
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+  const link = document.createElement('a'); link.href = url; link.download = filename; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
 $('quality').addEventListener('click', () => { if (!scene) return; performanceGovernor.setMode(scene.lowQuality ? 'full' : 'simple', 'operator'); });
 $('sound').addEventListener('click', () => { if (audio.enabled && !audio.ready) audio.unlock(); else audio.toggle(); });
 document.addEventListener('pointerdown', event => { if (event.target.closest('#sound')) return; audio.unlock(); });
@@ -549,6 +570,11 @@ function showCameraView(open) {
   setText('camera-view-toggle', open ? 'Hide camera' : 'Show camera');
 }
 function updateCameraView(message = 'Camera is off') {
+  if (nativeAndroid) {
+    $('camera-view-toggle').hidden = true;
+    setText('camera-view-status', 'Set CAMERA VIEW on the Android panel, then stop/start camera between runs to apply.');
+    return;
+  }
   const track = $('camera-video').srcObject?.getVideoTracks()[0];
   const live = track?.readyState === 'live';
   $('camera-view').classList.toggle('live', live);
@@ -575,6 +601,7 @@ async function startCamera() {
       const { createCameraControls } = await import('./camera-controls.js');
       cameraControls = await createCameraControls({ video: $('camera-video'), overlay: $('camera-overlay'), select: $('camera-select'), maxHands: dualEnabled ? 2 : 1, holdMs, steering,
         getControlProfile: () => dualEnabled ? menuMode() ? 'menu-left' : 'dual' : grabEnabled && !menuMode() ? 'grab-release' : 'hold-drop',
+        canConfigureCamera: () => !run && !recovering && !pendingPlayer && !startingRun,
         getControlTarget: (pointer, role, origin) => glove.targetAt(pointer, role, origin),
         canControl: () => Boolean(menuMode() || (!flow.pendingSlam && !startingRun && run && game.phase === 'aim' && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]'))),
         canObserve: () => Boolean(dualEnabled && !menuMode() && !paused && !frozen && !stopped && !document.hidden && !document.querySelector('dialog[open]')),
@@ -632,7 +659,7 @@ $('scene').addEventListener('webglcontextlost', event => { event.preventDefault(
 function frame(time) {
   if (stopped) return;
   const raw = previous ? (time - previous) / 1000 : 1 / 60, dt = Math.min(raw, MAX_FRAME_DELTA); previous = time;
-  if (import.meta.env.DEV && !document.hidden) { frames.push(raw * 1000); if (frames.length > 1800) frames.shift(); }
+  if ((import.meta.env.DEV || nativeAndroid) && !document.hidden) { frames.push(raw * 1000); if (frames.length > 1800) frames.shift(); }
   // One dialog query per frame; every consumer below shares it.
   const nextMenuMode = menuMode();
   if (nextMenuMode !== previousMenuMode) { cameraControls?.reset(); handMenu.clear(); previousMenuMode = nextMenuMode; }
@@ -903,6 +930,10 @@ try {
       status.hidden = scene.cabinetHands.state === 'ready';
       if (!status.hidden) status.textContent = '3D hands are unavailable. Camera tracking and game controls remain available. Reload to retry the artwork.';
     });
+  }
+  if (nativeAndroid) {
+    performanceGovernor.setMode('simple', 'operator');
+    globalThis.tomkoStatus = () => ({ phase: game.phase, turn: turnNumber, rounds: game.rounds, completed: Boolean(completedRun), camera: cameraControls?.feedback.kind, lowQuality: scene.lowQuality, render: { calls: scene.renderer.info.render.calls, triangles: scene.renderer.info.render.triangles }, performance: snapshot().performance });
   }
   scene.groundToys(game);
   restoreTrophies();
