@@ -89,17 +89,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, #scene:focus-vi
 .camera-image { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); opacity: 0; pointer-events: none; }
 #camera-video, #camera-overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 #camera-video { transform: scaleX(-1); }
-#camera-view-toggle { position: absolute; z-index: 5; top: calc(var(--hud-height) + 8px); left: 12px; min-height: 44px; }
-#camera-view { position: absolute; z-index: 6; top: calc(var(--hud-height) + 56px); left: 12px; width: min(480px, calc(100% - 24px)); }
-#camera-view:not(.open) > :not(.camera-image) { display: none; }
-#camera-view.open { padding: 12px; border: 1px solid #35c9ff; border-radius: 8px; background: #091322; max-height: calc(100svh - var(--hud-height) - 68px); overflow: auto; }
-.camera-view-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
-.camera-view-heading button, #camera-view-settings { min-height: 44px; }
-#camera-view.open .camera-image { position: relative; width: 100%; height: min(32svh, 300px); margin-top: 8px; clip-path: none; opacity: 1; background: #000; }
+#camera-view-toggle { min-height: 44px; }
+#camera-view { margin-top: 12px; font-size: 13px; }
+#camera-view .camera-image { position: relative; width: 100%; height: min(32svh, 300px); margin-top: 8px; clip-path: none; opacity: 1; background: #000; }
 #camera-view #camera-overlay { display: none; }
 #camera-view:not(.live) #camera-video { visibility: hidden; }
-.camera-view-details p { margin: 10px 0; font-size: 13px; overflow-wrap: anywhere; }
-.camera-view-details small { display: block; margin-top: 8px; color: #a2b8d8; font-size: 11px; }
 
 .camera-feedback { padding: 8px 10px; background: #091322; border-radius: 6px; }
 #camera-recognition { display: block; font-size: 10px; line-height: 1.3; letter-spacing: .8px; color: #abd3ff; }

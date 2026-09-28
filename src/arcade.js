@@ -541,7 +541,10 @@ $('feedback-form').addEventListener('submit', async event => {
 $('fullscreen').addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { $('status').textContent = 'FULLSCREEN UNAVAILABLE'; } });
 $('camera-open').addEventListener('click', () => $('camera-setup').showModal());
 function showCameraView(open) {
-  $('camera-view').classList.toggle('open', open);
+  // A closed dialog must not hide the capture video on mobile browsers.
+  // Move the same element back to its clipped home; never replace its stream.
+  $(open ? 'camera-view-image' : 'camera-capture-home').append(document.querySelector('.camera-image'));
+  $('camera-view').hidden = !open;
   $('camera-view-toggle').setAttribute('aria-expanded', String(open));
   setText('camera-view-toggle', open ? 'Hide camera' : 'Show camera');
 }
@@ -551,13 +554,9 @@ function updateCameraView(message = 'Camera is off') {
   $('camera-view').classList.toggle('live', live);
   setText('camera-view-status', live ? `Active camera: ${track.label || 'Default camera'}` : message);
 }
-$('camera-view-toggle').addEventListener('click', () => showCameraView(!$('camera-view').classList.contains('open')));
-$('camera-view-close').addEventListener('click', () => { showCameraView(false); $('camera-view-toggle').focus(); });
-$('camera-view-settings').addEventListener('click', () => $('camera-setup').showModal());
+$('camera-view-toggle').addEventListener('click', () => showCameraView($('camera-view').hidden));
+$('camera-setup').addEventListener('close', () => showCameraView(false));
 $('camera-video').addEventListener('loadedmetadata', () => updateCameraView());
-$('camera-view').addEventListener('keydown', event => {
-  if (event.key === 'Escape') { showCameraView(false); $('camera-view-toggle').focus(); event.stopPropagation(); }
-});
 
 function reportCameraFailure(code) {
   if (cameraFailureReported) return;

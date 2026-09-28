@@ -25,10 +25,12 @@ try {
   assert.equal(await page.evaluate(() => window.mediaCalls), 0);
   // Observable contract: the framing view reveals the existing stream without
   // acquiring another camera; previous tests only covered a clipped video.
+  await page.locator('#camera-open').click();
   await page.locator('#camera-view-toggle').click();
   assert.equal(await page.locator('#camera-view-status').textContent(), 'Camera is off');
   assert.equal(await page.evaluate(() => window.mediaCalls), 0);
-  await page.locator('#camera-view-close').click();
+  await page.locator('#camera-view-toggle').click();
+  await page.locator('#camera-setup .panel-head button').click();
 
   await page.locator('#camera-open').click(); assert.equal(await page.evaluate(() => window.mediaCalls), 0);
   await page.locator('#camera-setup .panel-head button').click();
@@ -98,17 +100,22 @@ try {
   await page.evaluate(() => { window.previewStream = document.getElementById('camera-video').srcObject; window.previewCalls = window.mediaCalls; });
   for (const viewport of [{ width: 1440, height: 900 }, { width: 1080, height: 1920 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
     await page.setViewportSize(viewport);
+    await page.locator('#camera-open').click();
     await page.locator('#camera-view-toggle').click();
     assert.equal(await page.locator('#camera-view-toggle').getAttribute('aria-expanded'), 'true');
     assert.match(await page.locator('#camera-view-status').textContent(), /^Active camera: /);
-    const view = await page.locator('#camera-view').boundingBox();
+    const view = await page.locator('#camera-setup').boundingBox();
     assert.ok(view.x >= 0 && view.x + view.width <= viewport.width && view.y + view.height <= viewport.height, 'live view fits screen');
     const image = await page.locator('.camera-image').boundingBox();
     assert.ok(image.width > 200 && image.height > 100, 'camera image is useful for framing');
     assert.equal(await page.locator('#camera-video').evaluate(video => getComputedStyle(video).objectFit), 'contain');
     assert.equal(await page.evaluate(() => document.getElementById('camera-video').srcObject === window.previewStream && window.mediaCalls === window.previewCalls), true);
     await page.screenshot({ path: `.screenshots/camera-view-${viewport.width}.png` });
-    await page.locator('#camera-view-close').click();
+    await page.locator('#camera-setup .panel-head button').click();
+    await page.waitForFunction(() => document.getElementById('camera-capture-home').contains(document.getElementById('camera-video')));
+    const hiddenTime = await page.locator('#camera-video').evaluate(video => video.currentTime);
+    await page.waitForFunction(time => document.getElementById('camera-video').currentTime > time, hiddenTime);
+    assert.equal(await page.evaluate(() => document.getElementById('camera-video').srcObject === window.previewStream && window.mediaCalls === window.previewCalls), true, 'closing settings keeps the same camera capturing');
     assert.equal(await page.locator('#camera-view-toggle').getAttribute('aria-expanded'), 'false');
   }
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -147,10 +154,12 @@ try {
   assert.equal(await page.evaluate(() => document.getElementById('camera-video').srcObject), null);
   await page.locator('#camera-setup .panel-head button').click();
 
+  await page.locator('#camera-open').click();
   await page.locator('#camera-view-toggle').click();
   assert.match(await page.locator('#camera-view-status').textContent(), /Camera is off/);
   assert.equal(await page.locator('#camera-video').evaluate(video => getComputedStyle(video).visibility), 'hidden');
-  await page.locator('#camera-view-close').click();
+  await page.locator('#camera-view-toggle').click();
+  await page.locator('#camera-setup .panel-head button').click();
   await page.screenshot({ path: '.screenshots/camera-only.png' });
   assert.deepEqual(errors, []);
   console.log('PASS opt-in real worker/model with synthetic camera; camera-only input; hand-loss timer hold; blur does not latch pause; separate camera setup; shutdown');
@@ -203,7 +212,6 @@ try {
   await dp.addInitScript(() => { const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); let first = true; navigator.mediaDevices.getUserMedia = async options => { if (first) { first = false; await new Promise(resolve => { window.releaseCameraPermission = resolve; }); throw new DOMException('Denied', 'NotAllowedError'); } return original(options); }; });
   await dp.goto('http://127.0.0.1:4196/?setup=manual'); await dp.waitForFunction(() => window.__littleCloud); await dp.locator('#camera-open').click(); await dp.locator('#camera-toggle').click();
   await dp.waitForFunction(() => window.releaseCameraPermission);
-  await dp.locator('#camera-setup .panel-head button').click();
   await dp.locator('#camera-view-toggle').click();
   assert.match(await dp.locator('#camera-view-status').textContent(), /Starting/);
   assert.equal(await dp.locator('#camera-video').evaluate(video => getComputedStyle(video).visibility), 'hidden');
