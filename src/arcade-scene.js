@@ -1,3 +1,4 @@
+import { nativeAndroid, tomkoRendering } from './runtime-platform.js';
 import * as T from 'three';
 import { ToyContacts } from './arcade-contact.js';
 import { CabinetHands } from './cabinet-hands.js';
@@ -22,9 +23,9 @@ export class ArcadeScene {
     this.wideControls = wideControls;
     this.suspendedClaw = suspendedClaw;
     this.canvas = canvas;
-    this.renderer = new T.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+    this.renderer = new T.WebGLRenderer({ canvas, antialias: nativeAndroid ? tomkoRendering.antialias : true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
-    this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = T.PCFShadowMap;
+    this.renderer.shadowMap.enabled = nativeAndroid ? tomkoRendering.shadows : true; this.renderer.shadowMap.type = T.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = false;
     this.renderer.toneMapping = T.ACESFilmicToneMapping; this.renderer.toneMappingExposure = .96;
     this.scene = new T.Scene(); this.scene.background = new T.Color('#080e1c');
@@ -419,7 +420,7 @@ export class ArcadeScene {
   // starve the camera worker's own inference for seconds.
   setQuality(low) {
     this.lowQuality = low;
-    this.renderer.setPixelRatio(low ? 1 : Math.min(devicePixelRatio, 1.5));
+    this.renderer.setPixelRatio(nativeAndroid ? tomkoRendering.pixelRatio : low ? 1 : Math.min(devicePixelRatio, 1.5));
     const size = low ? 1024 : 2048;
     if (this.key && this.key.shadow.mapSize.x !== size) { this.key.shadow.mapSize.set(size, size); this.key.shadow.map?.dispose(); this.key.shadow.map = null; this.renderer.shadowMap.needsUpdate = true; }
     this.resize();
@@ -687,7 +688,7 @@ export class ArcadeScene {
     // The governor asks for the 30 Hz cap only when a machine is measured slow;
     // a healthy machine animates at display rate with the camera on. Only draw
     // submission is capped; transforms and contact response still update.
-    const frame = Math.floor((time + .000001) * 30);
+    const frame = Math.floor((time + .000001) * (nativeAndroid ? tomkoRendering.drawHz : 30));
     if (capped && frame === this.cameraRenderFrame) return;
     this.cameraRenderFrame = capped ? frame : undefined;
     if (this.bloom && !this.lowQuality) this.bloom.render(); else this.renderer.render(this.scene, this.camera);

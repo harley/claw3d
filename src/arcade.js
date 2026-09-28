@@ -1,3 +1,4 @@
+import { nativeAndroid, tomkoRendering } from './runtime-platform.js';
 import { RIGHT_SLAM_MS } from './dual-hand-controls.js';
 import { resolvePlayMode, phonePlaySearch, cueLeadSeconds, dualStartReadiness, firstTurnControlReady as isFirstTurnControlReady } from './play-mode.js';
 import { ABSOLUTE_SPEED } from './steering.js';
@@ -153,7 +154,7 @@ let cueLead = cueLeadSeconds(mode);
 const performanceGovernor = new PerformanceGovernor({ onChange: (mode, source) => {
   scene?.setQuality(mode === 'simple');
   cameraControls?.setPerformanceMode(mode);
-  if (scene) $('quality').textContent = `QUALITY: ${mode === 'simple' ? 'SIMPLE · 30 FPS CAP' : 'FULL'}${source === 'auto' ? ' · AUTO' : ''}`;
+  if (scene) $('quality').textContent = `QUALITY: ${mode === 'simple' ? (nativeAndroid ? `SIMPLE · ${tomkoRendering.drawHz} FPS CAP` : 'SIMPLE · 30 FPS CAP') : 'FULL'}${source === 'auto' ? ' · AUTO' : ''}`;
 } });
 const tags = game.toys.map(toy => {
   const element = document.createElement('span'); element.className = 'prize-tag'; element.dataset.points = RULES.points[toy.id]; element.textContent = RULES.points[toy.id]; $('prize-tags').append(element); return { toy, element };
@@ -549,6 +550,11 @@ function showCameraView(open) {
   setText('camera-view-toggle', open ? 'Hide camera' : 'Show camera');
 }
 function updateCameraView(message = 'Camera is off') {
+  if (nativeAndroid) {
+    $('camera-view-toggle').hidden = true;
+    setText('camera-view-status', 'Use CAMERA VIEW on the Android panel to show the built-in camera.');
+    return;
+  }
   const track = $('camera-video').srcObject?.getVideoTracks()[0];
   const live = track?.readyState === 'live';
   $('camera-view').classList.toggle('live', live);
@@ -632,7 +638,7 @@ $('scene').addEventListener('webglcontextlost', event => { event.preventDefault(
 function frame(time) {
   if (stopped) return;
   const raw = previous ? (time - previous) / 1000 : 1 / 60, dt = Math.min(raw, MAX_FRAME_DELTA); previous = time;
-  if (import.meta.env.DEV && !document.hidden) { frames.push(raw * 1000); if (frames.length > 1800) frames.shift(); }
+  if ((import.meta.env.DEV || nativeAndroid) && !document.hidden) { frames.push(raw * 1000); if (frames.length > 1800) frames.shift(); }
   // One dialog query per frame; every consumer below shares it.
   const nextMenuMode = menuMode();
   if (nextMenuMode !== previousMenuMode) { cameraControls?.reset(); handMenu.clear(); previousMenuMode = nextMenuMode; }
@@ -903,6 +909,10 @@ try {
       status.hidden = scene.cabinetHands.state === 'ready';
       if (!status.hidden) status.textContent = '3D hands are unavailable. Camera tracking and game controls remain available. Reload to retry the artwork.';
     });
+  }
+  if (nativeAndroid) {
+    performanceGovernor.setMode('simple', 'operator');
+    globalThis.tomkoStatus = () => ({ phase: game.phase, turn: turnNumber, rounds: game.rounds, completed: Boolean(completedRun), camera: cameraControls?.feedback.kind, lowQuality: scene.lowQuality, render: { calls: scene.renderer.info.render.calls, triangles: scene.renderer.info.render.triangles }, performance: snapshot().performance });
   }
   scene.groundToys(game);
   restoreTrophies();

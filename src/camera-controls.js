@@ -1,6 +1,7 @@
+import { nativeAndroid } from './runtime-platform.js';
 // Lazy camera adapter: the event state machine owns registration and turns.
 export async function createCameraControls({ video, overlay, select, onChange, canControl, canPrepare = () => false, canObserve = () => false, onDrop, onGesture, getControlProfile, getControlTarget, maxHands = 1, holdMs, steering = 'relative' }) {
-  const { HandController } = await import('./vision.js');
+  const { HandController } = await (nativeAndroid ? import('./native-vision.js') : import('./vision.js'));
   let input = { x: 0, z: 0 }, state = { kind: 'off', message: 'Start the camera to play' }, at = 0;
   let diagnostic = {};
   // Keep the accepted-only capture-to-handler metric separate from the new

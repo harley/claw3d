@@ -68,3 +68,9 @@ Third-party hand meshes retain their [MIT license and provenance](public/models/
 
 
 Public documentation retains dated technical evidence, public source links and upstream copyright credits. Staff identities, production test nicknames and internal document links are not needed to explain that evidence. Historical records are dated snapshots, not current deployment or acceptance claims.
+
+## Android offline app
+
+The Android app bundles this same game and uses native GPU hand tracking. On macOS or Linux, install Java 17 and Android SDK 35, run `npm ci`, then `npm run android:build`. Set `ANDROID_HOME` or an ignored `android/local.properties` SDK path. Output APKs, checksums and source metadata are under `android/build/distributions/`. See [Android distribution](docs/OPERATIONS.md#android-distribution) for signing, versions and updates.
+
+Test builds use `com.coderpush.cloudclaw.test`; signed releases use `com.coderpush.cloudclaw`. Both install separately from the experimental `com.coderpush.tomkogame` app. Scores stay in each app; there is no automatic migration. The game needs no internet while playing. Physical Tomko acceptance is still pending.
