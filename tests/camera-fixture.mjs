@@ -4,7 +4,9 @@ import { recordStartCue, assertStartCueDuration, assertPreparationTiming } from 
 export async function installCameraFixture(page, { built = false, cameraRequest = false } = {}) {
   await page.route(built ? '**/assets/vision-*.js' : '**/src/vision.js*', async route => {
     if (built) assert.ok((await (await route.fetch()).text()).includes(' as HandController'), 'production vision export found');
-    return route.fulfill({ contentType: 'application/javascript', body: `
+    return route.fulfill({ contentType: 'application/javascript', body: cameraFixtureModule({ cameraRequest }) }); });
+}
+export const cameraFixtureModule = ({ cameraRequest = false } = {}) => `
     export class HandController {
       constructor(options) { Object.assign(this, options); this.running = false; this.input = {x:0,z:0}; this.visible = true; this.feedback = {}; window.testCamera = this; }
       resetOwner() { this.input = {x:0,z:0}; this.onInput(this.input); }
@@ -30,8 +32,7 @@ export async function installCameraFixture(page, { built = false, cameraRequest 
       setPerformanceMode() { return false; }
       clench() { return this.onDrop(); }
     }
-  ` }); });
-}
+  `;
 export const cameraInput = (page, input) => page.evaluate(input => { window.testCamera.input = input; window.testCamera.tick(); }, input);
 export const cameraDrop = page => page.evaluate(() => window.testCamera.clench());
 

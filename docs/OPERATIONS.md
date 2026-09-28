@@ -367,3 +367,48 @@ waiting-worker activation. Set `CLAW_OFFLINE_RUNTIME_ONLY=1` only for local
 asset/runtime checks when the scene cannot render; this explicitly omits rendered-game acceptance. CI runs
 the full suite without that override. Hosted macOS results remain
 required; synthetic inference and asset availability do not replace physical outage rehearsal.
+
+### Prepared arcade admission and retained outcomes
+
+The prepared shell now uses the ordinary arcade with the verified asset pack and
+an explicitly installed permit pool. The backend policy remains disabled by
+default. Host preparation/readiness UI and recovery export are the next integration
+slice; loading `/prepared/` alone does not provision ownership, issue capacity, or
+make a station ready. No production enablement is implied by this implementation.
+
+The public IndexedDB journal upgrades non-destructively to schema 2 (the database
+name remains `cloud-claw:public-journal:v1`). Both permits and intents participate
+in one strict transaction: starting consumes one slot and records its reserved
+run UUID, request key, immutable name, control mode, pack identity and frozen rules
+before any request or physics. The origin-wide physical Web Lock still permits
+one game page. Consumed slots are never recycled by reloading or refreshing a
+pool. Old schema clients cannot reopen the upgraded journal; keep its data when
+rolling back and use host recovery instead of clearing storage.
+
+When online and outside the shared retry deadline, a new prepared attempt makes
+one live admission request with a **one-second network budget**. Offline, timeout,
+network failure, throttling or a transient server failure continues locally under
+the same reserved identity. Later work uses `/permits/reconcile`, never another
+live admission. Explicit authorization, pause, expiry, protocol or payload refusals
+hold preparation, including across reload; they are not permission to continue
+offline. A new pack, missing assets, exhausted capacity, expired window or observed
+clock rollback refuses a new start. These checks bound ordinary failures, not a
+malicious client or sudden disk/power failure.
+
+Each completed turn must commit before the physical turn advances. Turn three
+shows the numeric total and three turn scores immediately, separately from sync
+status. No overall/Hanoi rank is invented locally. The name can be edited before
+start; final renaming waits for a server-confirmed complete result. Next player
+does not wait for upload. Reload interrupts unfinished play and retains only
+completed outcomes. Reconciliation preserves those outcomes, checks server rules
+and totals, and cannot reopen an older result over the next player. A timely live
+receipt may retain server-established Hanoi association; deferred-first admission
+remains All plays.
+
+`tests/prepared-play.test.mjs` covers atomic rollback, schema migration, retained
+holds, the one-second budget and 20 players/60 turns against real HTTP/SQLite with
+reload and lost receipts. `tests/prepared-play.browser.mjs`, included sequentially
+in `test:shared`, exercises the production arcade, real service worker/cache,
+IndexedDB, both control modes and the same workload. Only its camera input module
+is replaced by the synthetic fixture in a temporary, rehashed test pack. Neither
+suite establishes physical camera accuracy or sudden-power-loss durability.

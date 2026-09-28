@@ -1,4 +1,4 @@
-import { openPublicRunJournal, PUBLIC_JOURNAL, PublicJournalReceiptConflict } from './public-run-journal.js';
+import { openPublicRunJournal, PUBLIC_JOURNAL, PublicJournalReceiptConflict, permitInput } from './public-run-journal.js';
 // Only names and completed turn results enter this client. Camera data never does.
 const PREFIX = 'cloud-claw:pending:v2:';
 const ACTIVE = 'cloud-claw:active:v2';
@@ -6,7 +6,7 @@ const browserStorage = name => ({
   get length() { return globalThis[name].length; }, key: i => globalThis[name].key(i),
   getItem: key => globalThis[name].getItem(key), setItem: (key, value) => globalThis[name].setItem(key, value), removeItem: key => globalThis[name].removeItem(key),
 });
-export function createSessionApi({ storage = browserStorage('localStorage'), tabStorage = browserStorage('sessionStorage'), fetcher = fetch, onChange = () => {}, onWork, publicPlay = false, now = Date.now, random = Math.random, journalFactory = openPublicRunJournal } = {}) {
+export function createSessionApi({ storage = browserStorage('localStorage'), tabStorage = browserStorage('sessionStorage'), fetcher = fetch, onChange = () => {}, onWork, publicPlay = false, now = Date.now, random = Math.random, journalFactory = openPublicRunJournal, prepared = false, verifyAssets = async () => { throw Error('Prepared assets must be verified.'); }, online = () => globalThis.navigator?.onLine !== false } = {}) {
   const prefix = publicPlay ? 'cloud-claw:public:pending:v1:' : PREFIX;
   const activeKey = publicPlay ? 'cloud-claw:public:active:v1' : ACTIVE;
   let journalOpening, journal, journalEntries = [], journalFailure = '', publicStarting = false, lastIntentKey = null, disposed = false;
@@ -74,21 +74,32 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
     retryAt = Math.max(retryAt, now() + Math.max(error.retryAfterMs || 0, Math.min(60000, backoff * (.8 + random() * .4))));
     retryError = error;
   }
-  async function request(path, data) {
+  async function request(path, data, { timeout = 8000 } = {}) {
     // Every caller, including START/manual/online signals, shares this deadline.
     if (now() < retryAt) throw retryError;
     if (accessError && !['/login', '/host/login', '/session'].includes(path)) throw accessError;
     const startedVersion = failureVersion;
     let response;
     try {
-      response = await fetcher(`/api${publicPlay ? '/play' : ''}${path}`, { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(8000),
-        ...(data === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }) });
-      const result = await response.json().catch(() => {
-        if (response.ok) throw new Error('Invalid score service response.');
-        return {};
-      });
+      const controller = new AbortController();
+      let timer;
+      const operation = (async () => {
+        const response = await fetcher(`/api${publicPlay ? '/play' : ''}${path}`, { credentials: 'same-origin', cache: 'no-store', signal: timeout === 1000 ? controller.signal : AbortSignal.timeout(timeout),
+          ...(data === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }) });
+        const result = await response.json().catch(() => {
+          if (response.ok) throw new Error('Invalid score service response.');
+          return {};
+        });
+        return { response, result };
+      })();
+      let result;
+      try {
+        ({ response, result } = await (timeout !== 1000 ? operation : Promise.race([operation, new Promise((_resolve, reject) => {
+          timer = setTimeout(() => { controller.abort(); reject(Error('Score service timed out.')); }, timeout);
+        })])));
+      } finally { clearTimeout(timer); }
       if (!response.ok) {
-        const error = new Error(result?.error || 'Score service unavailable.'); error.status = response.status;
+        const error = new Error(result?.error || 'Score service unavailable.'); error.status = response.status; error.code = result?.code;
         const header = response.headers?.get?.('Retry-After');
         const seconds = header?.trim() ? Number(header) : NaN;
         const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - now();
@@ -100,11 +111,14 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
       if (startedVersion === failureVersion && ['/login', '/host/login', '/session'].includes(path)) { accessError = null; needsLogin = false; lastError = ''; blocked.clear(); notify(); }
       return result;
     } catch (error) {
+      if (prepared && (error.status === 401 || error.code && ![429].includes(error.status))) {
+        await updateJournal(journal => journal.holdPreparation(`Preparation on hold: ${error.message}`));
+      }
       if (error.status === 401) {
         failureVersion++; accessError = error; needsLogin = !publicPlay;
         lastError = publicPlay ? 'Session expired. Keep pending score data and reload.' : 'Sign in again to continue and save pending scores.';
         notify();
-      } else if (!error.status || error.status === 429 || error.status >= 500) {
+      } else if (!error.status || error.status === 429 || error.status >= 500 && !error.code) {
         postpone(error);
       }
       throw error;
@@ -127,6 +141,7 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
             if (!journalPending(initial) || blocked.has(initial.requestKey)) continue;
             try {
               let entry = initial;
+              if (entry.grant && !entry.admitted) entry = await journal.admission(entry.requestKey, await request('/permits/reconcile', permitInput(entry)));
               if (!entry.run) entry = await journal.admission(entry.requestKey, await request(`/intents/${entry.requestKey}`));
               for (const turn of entry.turns.slice(entry.acknowledged)) {
                 const saved = await request(`/runs/${entry.run.id}/turns`, { turn: turn.turn, prizeId: turn.prizeId, remainingMs: turn.remainingMs });
@@ -176,8 +191,47 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
     }).finally(async () => { if (journal) { try { journalEntries = await journal.all(); } catch { journalFailure = 'Public score journal cannot be read. Keep browser data.'; } } flushing = null; notify(); });
     return flushing;
   }
+  async function checkedPack() {
+    const pack = await verifyAssets();
+    if (!pack.complete || !pack.controlling || typeof pack.id !== 'string') throw Error('Prepared assets are missing or damaged. Ask the host; keep browser data.');
+    return pack.id;
+  }
+  async function startPrepared(name, attemptKey, controlMode) {
+    if (accessError) throw accessError;
+    if (publicStarting || activeId) throw Error('Finish the current physical attempt before starting another.');
+    publicStarting = true;
+    try {
+      const packId = await checkedPack();
+      if (lastIntentKey) await updateJournal(journal => journal.interrupt(lastIntentKey));
+      const entry = await updateJournal(journal => journal.reservePrepared({ name, controlMode, attemptKey, packId, time: now() }));
+      lastIntentKey = entry.requestKey;
+      let admitted;
+      if (online() && now() >= retryAt) {
+        try { admitted = await request('/permits/live', permitInput(entry), { timeout: 1000 }); }
+        catch (error) {
+          if (error.status && error.status !== 429 && !(error.status >= 500 && !error.code)) {
+            await updateJournal(journal => journal.holdPreparation(`Preparation on hold: ${error.message}`));
+            await updateJournal(journal => journal.interrupt(entry.requestKey)); throw error;
+          }
+        }
+      }
+      if (admitted) {
+        await updateJournal(journal => journal.admission(entry.requestKey, admitted), entry.requestKey);
+        if (admitted.status !== 'active' || admitted.turns.length) throw Error('This physical attempt is already used. Keep pending data.');
+      }
+      if (disposed) throw Error('The game page closed before admission.');
+      activeId = entry.run.id;
+      return { ...entry.run, ...(admitted?.event ? { event: admitted.event } : {}) };
+    } finally { publicStarting = false; }
+  }
   return {
     request, flush, state,
+    async preparePermit(poolId) {
+      if (!prepared) throw Error('Open the prepared game before preparing permits.');
+      const packId = await checkedPack();
+      const pool = await request(`/permits/${poolId}`);
+      return updateJournal(journal => journal.installPool(pool, packId, now()));
+    },
     dispose() { disposed = true; journal?.close(); journalOpening?.then(value => value.close()).catch(() => {}); },
     async recover() {
       const databases = await globalThis.indexedDB?.databases?.();
@@ -185,6 +239,10 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
     },
     async initialize() {
       if (publicPlay) await journalReady();
+      if (prepared) {
+        await checkedPack();
+        return { role: 'public', station: null, board: { name: 'Prepared station · sync pending', runs: [] } };
+      }
       const interruptedId = tabStorage.getItem(activeKey);
       if (interruptedId) {
         if (read(interruptedId, 'run')) write(interruptedId, 'interrupted', true);
@@ -195,6 +253,7 @@ export function createSessionApi({ storage = browserStorage('localStorage'), tab
       return session;
     },
     async start(name, requestKey, controlMode = 'one-hand') {
+      if (prepared) return startPrepared(name, requestKey, controlMode);
       if (publicPlay) {
         if (now() < retryAt) throw retryError;
         if (accessError) throw accessError;

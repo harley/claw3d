@@ -4,13 +4,13 @@
 import { createSessionApi } from './session-api.js';
 import { createScoreSync } from './score-sync.js';
 
-export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, onSyncState, onConnectError, publicPlay = false, journalFactory, isPlaying = () => false }) {
+export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, onSyncState, onConnectError, publicPlay = false, prepared = false, verifyAssets, journalFactory, isPlaying = () => false }) {
   let event = false, station = null;
-  const readyStatus = () => publicPlay ? station?.active ? 'HANOI · 29 SEP · RANKED' : 'ALL PLAYS · RANKED' : 'SHARED STAFF LEADERBOARD';
+  const readyStatus = () => prepared ? 'PREPARED STATION · LOCAL SCORES' : publicPlay ? station?.active ? 'HANOI · 29 SEP · RANKED' : 'ALL PLAYS · RANKED' : 'SHARED STAFF LEADERBOARD';
   let board = null, role = 'staff', status = 'Connecting to shared leaderboard…';
   let sync;
   let refreshing = null, version = 0, rotating = false, renaming = false;
-  const api = enabled ? createSessionApi({ publicPlay, journalFactory, onWork: () => sync?.wake(), onChange: state => {
+  const api = enabled ? createSessionApi({ publicPlay, prepared, verifyAssets, journalFactory, onWork: () => sync?.wake(), onChange: state => {
     if (state.saved) { onSaved(state.saved); sync?.wake(true); return; }
     status = state.error || (state.pending ? 'Score waiting to sync' : readyStatus());
     if (state.needsLogin) role = 'staff';
@@ -79,6 +79,7 @@ export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, 
     get station() { return station; },
     start: async (name, key, controlMode) => { if (publicPlay) await initialize(); return api.start(name, key, controlMode); },
     queue: run => api.queue(run), abandon: run => api.abandon(run),
+    preparePermit: id => api.preparePermit(id),
     state: () => api.state(), flush: () => api.flush(),
     get board() { return board; }, get role() { return role; }, get status() { return status; }, get rotating() { return rotating; },
   };

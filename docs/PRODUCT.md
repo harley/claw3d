@@ -314,3 +314,21 @@ Closed, expired/unavailable events and lost host access disable mutations until 
 Hosts can inspect an exact server-issued attempt ID, its participant ID, server status and saved-turn count in the event console. A fixed camera, connection or browser failure reason and explicit void/replacement confirmation are required. Only unfinished attempts in open events can be replaced; the server atomically voids the old attempt, rejects its late writes/activation and issues one ticket for the same participant. Completed attempts and participant best scores remain unchanged.
 
 The original recovery key persists before sending. Lost responses/reloads expose an explicit same-key retry, never an automatic second replacement. The once-returned replacement code is memory-only. If its response is lost, retry recovers the ticket ID; a separate confirmed unused-ticket revoke/reissue uses the existing server contract. Used replacements cannot be reissued: inspect their own attempt ID. Closure/auth loss/expiry disable new actions; an original request may still reconcile a committed receipt after closure without a new grant. No player outbox is erased or restarted. Player cleanup follows the explicit terminal handoff above; multi-station operations and physical booth acceptance remain separate.
+
+### Prepared public station (implementation, not enabled)
+
+The dedicated prepared shell reuses the public arcade and its three-turn scoring.
+It requires an explicitly verified asset pack, durable journal ownership and
+bounded host-issued permits; downloading the game alone grants no starts. Each
+start consumes one reserved identity, makes at most one live admission attempt
+with a one-second network budget, and can then finish locally through an outage.
+Known authority refusals hold further admission. A reload interrupts unfinished
+physical play while preserving completed turns and consumed capacity.
+
+The final screen immediately shows the retained total and all three turn scores,
+with synchronization status separate and no invented rank. Next player remains
+available offline. Server confirmation enables final-name edits and server ranks;
+late receipts cannot reopen an older prepared result over the next player. Only
+live server admission can establish Hanoi association; deferred results remain
+All plays. Host readiness/recovery integration and physical outage acceptance are
+still required before enablement. See OPERATIONS for the retained-data contract.

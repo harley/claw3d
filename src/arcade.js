@@ -1,3 +1,4 @@
+import { assetStatus } from './offline-assets.js';
 import { RIGHT_SLAM_MS } from './dual-hand-controls.js';
 import { resolvePlayMode, phonePlaySearch, cueLeadSeconds, dualStartReadiness, firstTurnControlReady as isFirstTurnControlReady } from './play-mode.js';
 import { ABSOLUTE_SPEED } from './steering.js';
@@ -286,7 +287,7 @@ function presentTurn(outcome) {
     $('final-name').textContent = completedRun.name.toUpperCase(); $('final-score').textContent = official ? '—' : String(completedRun.total).padStart(3, '0');
     const rank = shared ? undefined : leaderboard(currentBoard(store)).find(r => r.id === completedRun.id)?.rank;
     $('final-kicker').textContent = official ? 'AWAITING SERVER RESULT' : finaleHeadline(completedRun.turns, rank, completedRun.rules.points);
-    $('final-rank').textContent = shared ? 'Score waiting to sync' : publicTry ? 'PRACTICE · NO EVENT RANKING' : `LOCAL PREVIEW · ${dualEnabled ? '2 HANDS' : '1 HAND'}${rank ? ` · RANK #${rank}` : ''}`;
+    $('final-rank').textContent = shared ? globalThis.__OFFLINE_SHELL__ ? 'Saved on this computer · sync pending' : 'Score waiting to sync' : publicTry ? 'PRACTICE · NO EVENT RANKING' : `LOCAL PREVIEW · ${dualEnabled ? '2 HANDS' : '1 HAND'}${rank ? ` · RANK #${rank}` : ''}`;
     setText('final-board', publicPlay ? 'All plays · every run counts' : publicTry ? 'Three turns · play again anytime' : `Board: ${completedRun.boardName || store.boards.find(board => board.id === completedRun.boardId)?.name || completedRun.boardId}`);
     $('final-turns').replaceChildren();
     if (!official) completedRun.turns.forEach((turn, i) => {
@@ -301,7 +302,7 @@ function presentTurn(outcome) {
     });
     setText('final-sync', shared ? pilot.state().error : storageError);
     $('final').showModal(); $(publicTry ? 'play-again' : 'next-player').focus();
-    if (!official && !scene.reducedMotion) { const total = completedRun.total, start = performance.now(); const count = time => { if (!$('final').open) return; const progress = Math.min(1, (time - start) / 850); $('final-score').textContent = String(Math.round(total * (1 - (1 - progress) ** 3))).padStart(3, '0'); if (progress < 1) scoreAnimation = requestAnimationFrame(count); }; scoreAnimation = requestAnimationFrame(count); }
+    if (!official && !publicPlay && !scene.reducedMotion) { const total = completedRun.total, start = performance.now(); const count = time => { if (!$('final').open) return; const progress = Math.min(1, (time - start) / 850); $('final-score').textContent = String(Math.round(total * (1 - (1 - progress) ** 3))).padStart(3, '0'); if (progress < 1) scoreAnimation = requestAnimationFrame(count); }; scoreAnimation = requestAnimationFrame(count); }
   }
 }
 async function play() {
@@ -395,6 +396,7 @@ function resetResultName() {
   $('final-name').hidden = !official && !publicTry && Boolean(completedRun);
   $('final-name-input').value = completedRun?.name || '';
   $('final-name-input').setCustomValidity('');
+  $('final-name-input').disabled = Boolean(publicPlay && completedRun && !Number.isInteger(completedRun.rank));
   $('final-name-actions').hidden = true;
   setText('final-name-status', '');
   for (const id of ['next-player', 'play-again', 'final-leaderboard', 'final-feedback']) $(id).disabled = false;
@@ -739,7 +741,7 @@ function snapshot(includeBounds = false) {
 }
 
 function updateSavedRank(saved) {
-  if (publicSurface && !run && !completedRun && !startingRun && !pendingPlayer && saved.status === 'complete' && Number.isInteger(saved.rank)) {
+  if (!globalThis.__OFFLINE_SHELL__ && publicSurface && !run && !completedRun && !startingRun && !pendingPlayer && saved.status === 'complete' && Number.isInteger(saved.rank)) {
     // An outbox can finish after reload, when no in-memory finale survives.
     // Restore its server-confirmed receipt without restarting the three turns.
     completedRun = saved;
@@ -755,10 +757,14 @@ function updateSavedRank(saved) {
     updateUI();
   }
   if (completedRun?.id !== saved.id || saved.status !== 'complete' || !Number.isInteger(saved.rank)) return;
+  if (globalThis.__OFFLINE_SHELL__ && (saved.total !== completedRun.total || saved.turns?.length !== 3 || saved.turns.some((turn, i) => turn.score !== completedRun.turns[i]?.score))) {
+    setText('final-sync', 'Server score differs. Keep this computer’s result and ask the host.'); return;
+  }
   completedRun.rank = saved.rank;
   completedRun.name = saved.name;
   setText('final-name', saved.name.toUpperCase());
   if (!editingResultName) $('final-name-input').value = saved.name;
+  $('final-name-input').disabled = false;
   setText('final-sync', '');
   $('final-kicker').textContent = finaleHeadline(completedRun.turns, saved.rank, completedRun.rules.points);
   $('final-rank').textContent = `SAVED · RANK #${saved.rank}${saved.eventRank ? ` · HANOI #${saved.eventRank}` : ''}`;
@@ -828,7 +834,7 @@ const pilot = official ? {
   get status() { return officialPlayer.state().error || 'OFFICIAL EVENT · SCORE PREVIEW'; },
   get board() { return { name: 'Official event leaderboard', runs: officialPlayer.state().board || [] }; },
 } : createSharedBoard({
-  enabled: shared, publicPlay, isPlaying: () => Boolean(run || startingRun),
+  enabled: shared, publicPlay, prepared: Boolean(globalThis.__OFFLINE_SHELL__), verifyAssets: assetStatus, isPlaying: () => Boolean(run || startingRun),
   getCompletedRun: () => completedRun,
   onSaved: updateSavedRank,
   onBoard: renderBoard,

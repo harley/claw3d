@@ -53,7 +53,7 @@ test('one origin owner; late acknowledgements never erase later turns; receipts 
 test('transaction abort after request success never reports a saved turn; original bytes remain', async () => {
   const f = journalFixture(), journal = await f.open(), input = intent(), issued = run(input);
   await journal.reserve(input); await journal.admission(input.requestKey, issued);
-  const opening = f.indexedDB.open(PUBLIC_JOURNAL, 1);
+  const opening = f.indexedDB.open(PUBLIC_JOURNAL, 2);
   const db = await new Promise(resolve => { opening.onsuccess = () => resolve(opening.result); });
   const proto = Object.getPrototypeOf(db.transaction('intents').objectStore('intents'));
   const original = proto.put;
@@ -69,25 +69,25 @@ test('missing storage/locks and unknown record versions refuse admission without
   await assert.rejects(openPublicRunJournal({ indexedDB: null, locks: null }), /required/);
   const f = journalFixture(), journal = await f.open(), input = intent();
   await journal.reserve(input); journal.close(); await Promise.resolve();
-  const opening = f.indexedDB.open(PUBLIC_JOURNAL, 1);
+  const opening = f.indexedDB.open(PUBLIC_JOURNAL, 2);
   const db = await new Promise(resolve => { opening.onsuccess = () => resolve(opening.result); });
   await new Promise(resolve => { const tx = db.transaction('intents', 'readwrite'); tx.objectStore('intents').put({ ...input, version: 999 }); tx.oncomplete = resolve; });
   db.close(); await assert.rejects(f.open(), /incompatible/);
-  const read = f.indexedDB.open(PUBLIC_JOURNAL, 1);
+  const read = f.indexedDB.open(PUBLIC_JOURNAL, 2);
   const preserved = await new Promise(resolve => { read.onsuccess = () => { const get = read.result.transaction('intents').objectStore('intents').get(input.requestKey); get.onsuccess = () => { resolve(get.result); read.result.close(); }; }; });
   assert.equal(preserved.version, 999);
 });
 
 test('quota failure rolls back an intent before any live request; unknown database version is preserved', async () => {
   const f = journalFixture(), journal = await f.open();
-  const opening = f.indexedDB.open(PUBLIC_JOURNAL, 1);
+  const opening = f.indexedDB.open(PUBLIC_JOURNAL, 2);
   const db = await new Promise(resolve => { opening.onsuccess = () => resolve(opening.result); });
   const proto = Object.getPrototypeOf(db.transaction('intents').objectStore('intents')), original = proto.add;
   proto.add = () => { throw new DOMException('Synthetic quota refusal', 'QuotaExceededError'); };
   try { await assert.rejects(journal.reserve(intent()), /quota/i); }
   finally { proto.add = original; db.close(); }
   assert.deepEqual(await journal.all(), []); journal.close(); await Promise.resolve();
-  const future = f.indexedDB.open(PUBLIC_JOURNAL, 2);
+  const future = f.indexedDB.open(PUBLIC_JOURNAL, 3);
   await new Promise(resolve => { future.onsuccess = () => { future.result.close(); resolve(); }; });
   await assert.rejects(f.open(), { name: 'VersionError' });
 });

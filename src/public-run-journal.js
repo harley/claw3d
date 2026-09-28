@@ -12,6 +12,7 @@ function validate(record) {
   if (record.version !== 1 || typeof record.liveAttempted !== 'boolean' || !record.liveAttempted || typeof record.settled !== 'boolean' || !uuid(record.requestKey) || !['reserved', 'playing', 'interrupted', 'complete'].includes(record.physical)
     || !Array.isArray(record.turns) || record.turns.length > 3 || !Number.isInteger(record.acknowledged) || record.acknowledged < 0 || record.acknowledged > record.turns.length
     || typeof record.name !== 'string' || !record.name.trim() || record.name.length > 24 || !['one-hand', 'two-hand'].includes(record.controlMode)) throw Error('Public journal is incompatible or damaged. Keep browser data and ask the host.');
+  if (record.grant && (!uuid(record.grant.poolId) || typeof record.grant.slotId !== 'string' || !uuid(record.attemptKey) || typeof record.admitted !== 'boolean' || !record.run)) throw Error('Prepared intent is damaged. Keep browser data.');
   if (record.run) {
     const rules = record.run.rules;
     const { controlMode, controlVersion, ...frozen } = rules || {};
@@ -24,6 +25,19 @@ function validate(record) {
   } else if (record.turns.length) throw Error('Saved turns have no admission receipt.');
   return record;
 }
+
+function validatePool(pool) {
+  if (!pool || pool.protocol !== 1 || !uuid(pool.id) || !uuid(pool.boardId) || typeof pool.packId !== 'string'
+    || !Number.isSafeInteger(pool.reconcileBy) || !Number.isSafeInteger(pool.ownerExpires) || pool.ownerExpires <= pool.reconcileBy
+    || !Number.isSafeInteger(pool.lastSeen) || !pool.packId || pool.hold !== undefined && typeof pool.hold !== 'string' || !Array.isArray(pool.slots)
+    || !pool.slots.length || pool.slots.length > 1000 || !same(pool.controlModes, ['one-hand', 'two-hand'])
+    || !same(pool.rules, { ...RULES, controlVersion: 'camera-fist-hold-550-v2' })
+    || ['id', 'runId', 'requestKey'].some(key => new Set(pool.slots.map(slot => slot[key])).size !== pool.slots.length)
+    || pool.slots.some(slot => typeof slot.id !== 'string' || !slot.id || !uuid(slot.runId) || !uuid(slot.requestKey) || slot.consumed !== undefined && typeof slot.consumed !== 'boolean')) throw Error('Prepared permits are incompatible. Keep browser data and ask the host.');
+  return pool;
+}
+export const permitInput = entry => ({ protocol: 1, slotId: entry.grant.slotId, runId: entry.run.id,
+  requestKey: entry.requestKey, name: entry.name, controlMode: entry.controlMode });
 
 // This lock covers the whole physical page lifetime, not just an individual
 // write. A second tab cannot call startup recovery on a still-playing owner.
@@ -40,11 +54,14 @@ export async function openPublicRunJournal({ indexedDB = globalThis.indexedDB, l
   const close = () => { closed = true; db?.close(); release?.(); };
   try {
     db = await new Promise((resolve, reject) => {
-      const opening = indexedDB.open(name, 1);
+      const opening = indexedDB.open(name, 2);
       let refused = false;
       opening.onblocked = () => { refused = true; reject(Error('Journal upgrade is blocked. Close other game tabs; keep browser data.')); };
       opening.onerror = () => reject(opening.error);
-      opening.onupgradeneeded = () => opening.result.createObjectStore('intents', { keyPath: 'requestKey' });
+      opening.onupgradeneeded = () => {
+        if (!opening.result.objectStoreNames.contains('intents')) opening.result.createObjectStore('intents', { keyPath: 'requestKey' });
+        if (!opening.result.objectStoreNames.contains('pools')) opening.result.createObjectStore('pools', { keyPath: 'id' });
+      };
       opening.onsuccess = () => { if (refused) opening.result.close(); else resolve(opening.result); };
     });
     db.onversionchange = close;
@@ -52,10 +69,10 @@ export async function openPublicRunJournal({ indexedDB = globalThis.indexedDB, l
       if (closed) return Promise.reject(Error('Public journal closed. Reload before scored play.'));
       return new Promise((resolve, reject) => {
         let value, failure;
-        const tx = db.transaction('intents', mode, { durability: 'strict' });
+        const tx = db.transaction(['intents', 'pools'], mode, { durability: 'strict' });
         tx.oncomplete = () => resolve(value); // Request success is not durable commit.
         tx.onabort = () => reject(failure || tx.error || Error('Public journal write aborted.'));
-        Promise.resolve().then(() => action(tx.objectStore('intents'))).then(result => { value = result; }).catch(error => { failure = error; try { tx.abort(); } catch { reject(error); } });
+        Promise.resolve().then(() => action(tx.objectStore('intents'), tx.objectStore('pools'))).then(result => { value = result; }).catch(error => { failure = error; try { tx.abort(); } catch { reject(error); } });
       });
     }
     const all = () => transaction(async store => (await request(store.getAll())).map(validate), 'readonly');
@@ -75,6 +92,39 @@ export async function openPublicRunJournal({ indexedDB = globalThis.indexedDB, l
     }
     return {
       close, all,
+      async installPool(input, packId, time = Date.now()) {
+        const pool = validatePool({ ...structuredClone(input), packId, lastSeen: time });
+        if (!input.ready || pool.reconcileBy <= time) throw Error('Host preparation is not ready. Keep pending data.');
+        return transaction(async (_store, pools) => {
+          const previous = await request(pools.get(pool.id));
+          if (previous) {
+            validatePool(previous);
+            if (!same(previous.slots.map(({ id, runId, requestKey }) => ({ id, runId, requestKey })), pool.slots.map(({ id, runId, requestKey }) => ({ id, runId, requestKey })))) throw Error('Prepared slot identity changed.');
+            for (const key of ['boardId', 'rules', 'generation', 'reconcileBy', 'controlModes']) if (!same(previous[key], pool[key])) throw Error('Prepared permit identity changed.');
+          }
+          pool.slots = pool.slots.map(slot => ({ ...slot, consumed: Boolean(slot.admissionSource || previous?.slots.find(old => old.id === slot.id)?.consumed) }));
+          pool.hold = ''; pools.put(pool); return pool;
+        });
+      },
+      holdPreparation: reason => transaction(async (_store, pools) => {
+        for (const pool of await request(pools.getAll())) { validatePool(pool); pool.hold = reason; pools.put(pool); }
+      }),
+      async reservePrepared({ name, controlMode, attemptKey, packId, time = Date.now() }) {
+        return transaction(async (store, pools) => {
+          const entries = (await request(store.getAll())).map(validate);
+          if (entries.some(entry => entry.attemptKey === attemptKey)) throw Error('This physical attempt was already reserved. Start a new player; keep pending data.');
+          const prepared = (await request(pools.getAll())).map(validatePool).reverse();
+          const pool = prepared.find(pool => pool.packId === packId && !pool.hold && pool.reconcileBy > time && pool.lastSeen <= time && pool.slots.some(slot => !slot.consumed));
+          if (!pool) throw Error(prepared.find(pool => pool.hold)?.hold || 'No usable prepared starts. Ask the host to check capacity, deadline, clock and build. Keep browser data.');
+          const slot = pool.slots.find(slot => !slot.consumed);
+          const rules = { ...pool.rules, controlMode, controlVersion: controlMode === 'two-hand' ? 'camera-dual-raise-v1' : pool.rules.controlVersion };
+          const run = { id: slot.runId, boardId: pool.boardId, name, rules, status: 'active', turns: [], prepared: true };
+          const record = validate({ name, controlMode, requestKey: slot.requestKey, attemptKey, version: 1, physical: 'playing', liveAttempted: true,
+            turns: [], acknowledged: 0, settled: false, admitted: false, grant: { slotId: slot.id, poolId: pool.id }, run });
+          slot.consumed = true; pool.lastSeen = time;
+          pools.put(pool); store.add(record); return structuredClone(record);
+        });
+      },
       async reserve(input) {
         const value = inputOf(input);
         return transaction(async store => {
@@ -98,6 +148,7 @@ export async function openPublicRunJournal({ indexedDB = globalThis.indexedDB, l
         try { validate({ ...record, run }); }
         catch (error) { throw new PublicJournalReceiptConflict(error.message); }
         record.run ||= structuredClone(run);
+        record.admitted = true; record.admissionReceipt = structuredClone(run);
         if (record.physical === 'reserved') record.physical = 'playing';
       }),
       async turns(run) {

@@ -326,7 +326,7 @@ test('journal acknowledgement storage failure stays transient and retries withou
 test('failed journal validation can be retried but never admits or erases incompatible data', async () => {
   const fixture = journalFixture(), seed = await fixture.open(); seed.close(); await Promise.resolve();
   const input = { requestKey: crypto.randomUUID(), version: 999 };
-  const opening = fixture.indexedDB.open('cloud-claw:public-journal:v1', 1);
+  const opening = fixture.indexedDB.open('cloud-claw:public-journal:v1', 2);
   const db = await new Promise(resolve => { opening.onsuccess = () => resolve(opening.result); });
   await new Promise(resolve => { const tx = db.transaction('intents', 'readwrite'); tx.objectStore('intents').put(input); tx.oncomplete = resolve; });
   let opens = 0, requests = 0;
