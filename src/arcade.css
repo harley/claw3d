@@ -308,9 +308,9 @@ dialog .menu-guide-hand { font-size: 52px; }
 #final:has(#menu-guide:not([hidden])) .text-button { margin-top: 6px; }
 
 /* Visible through loading; collapses when a public practice run begins. */
-#try-notice { position: absolute; z-index: 6; left: 20px; bottom: 46px; width: fit-content; max-width: calc(100% - 40px); box-sizing: border-box; padding: 5px 8px; border: 1px solid #354666; border-radius: 5px; background: #080e1ce6; color: #b6c5d8; font: 11px/1.5 Arial, sans-serif; }
+#try-notice { position: absolute; z-index: 6; left: 20px; bottom: 46px; width: fit-content; max-width: calc(100% - 40px); box-sizing: border-box; padding: 5px 0; border: 0; border-radius: 5px; background: #080e1ce6; color: #b6c5d8; font: 11px/1.5 Arial, sans-serif; }
 #try-notice summary { cursor: pointer; }
-#try-notice[open] { width: min(360px, calc(100% - 40px)); }
+#try-notice[open] { padding: 12px; border: 1px solid #354666; width: min(360px, calc(100% - 40px)); }
 #try-notice p { margin: 8px 0; }
 
 #staff-link { color: #9db3d0; font-size: 11px; }
@@ -358,16 +358,29 @@ dialog .menu-guide-hand { font-size: 52px; }
   #dual-hand-guide[data-stage="grip"] .demo-fist { left: calc(50% + 2px); opacity: .85; }
 }
 
+/* Scores use one live board: a desktop sidebar or an on-demand phone dialog. */
+#scores-open { display: none; }
+#scores-dialog { border-top-color: #35c9ff; padding: 20px; }
+#scores-close { display: block; margin: 0 0 20px auto; min-height: 44px; }
+#scores-dialog .leaderboard { position: static; display: block; width: 100%; padding: 0; border: 0; background: transparent; }
+#scores-dialog .leaderboard li { font-size: 15px; padding: 14px 0; }
+#scores-dialog .leaderboard li strong { white-space: normal; overflow-wrap: anywhere; }
+#scores-dialog #board-scope { width: 100%; min-height: 44px; }
+.leaderboard:has(#board-scope:not([hidden])) #board-name { display: none; }
+#scores-dialog #menu-guide { flex-direction: row; }
+#scores-dialog .menu-guide-hand { font-size: 32px; }
+#scores-dialog #menu-guide strong { font-size: 16px; }
+
 /* Game states share the same stage. Hand help has one compact home below the stage. */
 .run-active .leaderboard { display: none; }
 .leaderboard { background: #080e1ce8; padding: 16px; border-top-width: 2px; border-radius: 6px; }
-body.attract .player-hud { visibility: hidden; }
+#arcade:not(.run-active) .player-hud { visibility: hidden; }
 #arcade:has(#menu-guide:not([hidden])) #action-copy { opacity: 0; }
 #arcade:has(.camera-guidance) .controls { top: auto; bottom: calc(var(--camera-bottom) + 8px); left: 24px; width: var(--camera-width); transform: none; z-index: 5; }
 #action-copy.camera-guidance #status { font-size: 17px; text-transform: none; background: #091322f2; padding: 10px; border: 1px solid #45648b; border-radius: 6px; }
 #arcade:has(.camera-guidance) #play-options { position: fixed; top: auto; bottom: 28px; left: 50vw; transform: translateX(-50%); }
 #camera-preview.guided .camera-feedback { display: none; }
-#camera-preview.in-play .camera-feedback { display: none; }
+#camera-preview.in-play .camera-feedback, #arcade:has(> #menu-guide:not([hidden])) .camera-feedback { display: none; }
 #dual-hand-guide { position: absolute; left: 0 !important; top: 0 !important; transform: translateY(-100%); width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid #45648b; border-radius: 6px 6px 0 0; background: #091322f2; }
 #dual-hand-guide .dual-demo { position: relative; flex: 0 0 40px; height: 45px; width: 40px; margin: 0; }
 #dual-hand-guide .dual-demo svg { width: 40px; height: 45px; left: 0; }
@@ -405,7 +418,7 @@ body.attract .player-hud { visibility: hidden; }
   .leaderboard { top: 155px; right: 20px; width: 180px; }
 }
 @media (max-width: 700px) and (orientation: portrait) {
-  #arcade { --hud-height: 150px; --camera-bottom: 45px; --camera-width: 210px; min-height: 580px; }
+  #arcade { --hud-height: 150px; --camera-bottom: 45px; --camera-width: 210px; min-height: 480px; }
   .masthead { top: 16px; left: 16px; right: 16px; }
   .brand { --logo-width: 125px; --logo-clear: 15px; }
   .brand small { font-size: 7px; letter-spacing: .7px; }
@@ -421,21 +434,27 @@ body.attract .player-hud { visibility: hidden; }
   #score, #timer { font-size: 34px; }
   #player-name { display: none; }
   #turn-chips { display: flex; top: 52px; left: calc(50% - 115px); }
-  #scene { height: calc(100% - var(--hud-height) - 175px); }
+  #arcade:not(.run-active) { --hud-height: 122px; }
+  #scene { height: calc(100% - var(--hud-height) - 160px); }
+  #arcade:not(.run-active) #scene { height: calc(100% - var(--hud-height) - 215px); }
   #camera-preview { left: 50%; transform: translateX(-50%); }
   .controls { top: 155px; width: calc(100% - 24px); }
   #arcade:is([data-phase="idle"], [data-phase="aim"]) #action-copy:not(.camera-guidance) #status { font-size: 26px; }
   #arcade:has(.camera-guidance) .controls { left: 50%; transform: translateX(-50%); }
   #arcade:has(.camera-guidance) #action-copy #status { font-size: 15px; }
-  #play-options { top: auto; bottom: 205px; }
-  #arcade:has(.camera-guidance) #play-options { bottom: 205px; }
+  #arcade:has(.camera-guidance):has(#play:not([hidden])) .controls { bottom: 171px; }
+  #arcade:has(.camera-guidance):has(#play:not([hidden])) #scene { height: calc(100% - var(--hud-height) - 215px); }
+  #play-options, #arcade:has(.camera-guidance) #play-options { top: auto; bottom: 94px; gap: 16px; align-items: center; }
+  #play-options .play-button { min-width: 130px; min-height: 58px; }
   .footer { left: 12px; right: 12px; bottom: 5px; }
   #mode-label { font-size: 9px; }
   #feedback-open { font-size: 10px; }
-  .leaderboard { top: 160px; right: 12px; width: 150px; }
-  body.attract #scene { height: calc(100% - var(--hud-height)); }
-  body.attract .leaderboard { display: none; }
-  #arcade > #menu-guide { top: auto; bottom: 190px; transform: translateX(-50%); padding: 10px; }
+  #arcade > .leaderboard { display: none; }
+  #scores-open { display: block; min-height: 48px; padding: 12px 18px; }
+  .run-active #scores-open { display: none; }
+  #arcade > #menu-guide { top: auto; bottom: 171px; transform: translateX(-50%); padding: 0; border: 0; background: transparent; flex-direction: row; gap: 10px; }
+  #arcade > #menu-guide strong { font-size: 16px; }
+  #arcade > #menu-guide .menu-guide-hand { font-size: 32px; }
   #menu-guide strong { font-size: 20px; }
   .menu-guide-hand { font-size: 48px; }
   #jackpot-signal { bottom: 190px; right: 12px; padding: 8px; }
@@ -463,9 +482,11 @@ body.attract .player-hud { visibility: hidden; }
   #play-options { top: auto; bottom: 32px; }
   #shared-access { bottom: 130px; }
   .footer { left: 12px; right: 12px; bottom: 4px; }
-  .leaderboard { top: 90px; right: 12px; width: 150px; padding: 10px; }
-  .leaderboard li { padding: 5px 0; }
-  #arcade > #menu-guide { top: 50%; padding: 8px; }
+  #arcade > .leaderboard { display: none; }
+  #scores-open { display: block; min-height: 44px; }
+  .run-active #scores-open { display: none; }
+  #arcade > #menu-guide { top: 42%; left: 16px; transform: none; width: 190px; padding: 8px; border: 0; background: transparent; }
+  #try-notice { max-width: 250px; font-size: 10px; }
   .menu-guide-hand { font-size: 40px; }
   #menu-guide strong { font-size: 18px; }
 }

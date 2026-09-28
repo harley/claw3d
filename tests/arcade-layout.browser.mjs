@@ -77,6 +77,58 @@ try {
   }
   await desktop.close();
 
+  // Idle phones with populated scores used to pass gameplay-only layout checks
+  // while the sidebar, HUD and invitation obscured the machine and PLAY.
+  const menu = await browser.newPage({ viewport: { width: 390, height: 690 }, hasTouch: true, isMobile: true, reducedMotion: 'reduce' });
+  menu.on('pageerror', error => errors.push(error.message));
+  await installCameraFixture(menu);
+  await menu.goto(`${origin}/?hands=manual`);
+  await menu.waitForFunction(() => window.testCamera?.running && !document.getElementById('menu-guide').hidden);
+  await menu.evaluate(() => {
+    document.getElementById('try-notice').hidden = false;
+    document.getElementById('board-empty').hidden = true;
+    document.getElementById('leaders').innerHTML = '<li><span>01</span><strong>🐉 A longer player name</strong><b>450</b></li>'.repeat(5);
+  });
+  for (const viewport of [{ width: 390, height: 690 }, { width: 320, height: 568 }, { width: 844, height: 390 }]) {
+    await menu.setViewportSize(viewport);
+    await menu.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await menu.locator('.leaderboard').isVisible(), false, 'phone scores stay off the cabinet');
+    assert.equal(await menu.locator('.player-hud').isVisible(), false, 'idle HUD cannot show stale run values or overlap the mode selector');
+    const boxes = await menu.evaluate(() => {
+      const rect = selector => document.querySelector(selector).getBoundingClientRect().toJSON();
+      return { play: rect('#play'), guide: rect('#menu-guide'), notice: rect('#try-notice'), scores: rect('#scores-open'), width: innerWidth, scroll: document.documentElement.scrollWidth };
+    });
+    assert.equal(boxes.scroll, boxes.width);
+    assert.ok(boxes.guide.bottom <= boxes.play.top || boxes.guide.top >= boxes.play.bottom, 'hand invitation does not cover PLAY');
+    assert.ok(boxes.play.right <= boxes.scores.left && boxes.scores.right <= boxes.width, 'phone actions fit side by side');
+    if (viewport.width < viewport.height) assert.ok(boxes.play.bottom < boxes.notice.top, 'privacy notice stays below player actions');
+    assert.equal(await menu.locator('.camera-feedback').isVisible(), false, 'hand invitation replaces duplicate status');
+    await menu.screenshot({ path: `.screenshots/mobile-menu-${viewport.width}.png` });
+    // Exercise camera-menu wiring, including targeting after the modal opens.
+    const selectByHand = async id => {
+      await menu.evaluate(id => {
+        const r = document.getElementById(id).getBoundingClientRect();
+        testCamera.setFeedback({ kind: 'tracking', pointer: { x: .18 + (r.x + r.width / 2) / innerWidth * .64, y: .15 + (r.y + r.height / 2) / innerHeight * .70 } });
+      }, id);
+      await menu.waitForFunction(id => document.getElementById(id).classList.contains('hand-hover'), id);
+      await menu.evaluate(() => { testCamera.feedback.kind = 'clenching'; testCamera.feedback.progress = 1; testCamera.tick(); });
+      await menu.waitForFunction(() => document.getElementById('hand-cursor').classList.contains('clenching'));
+      assert.equal(await menu.evaluate(() => testCamera.clench()), true);
+      await menu.evaluate(() => testCamera.clearFeedback());
+    };
+    await selectByHand('scores-open');
+    await menu.locator('#scores-dialog[open] #leaders').waitFor();
+    await menu.waitForFunction(() => document.getElementById('menu-guide').parentElement.id === 'scores-dialog');
+    assert.equal(await menu.locator('#scores-dialog .leaderboard').isVisible(), true);
+    await menu.screenshot({ path: `.screenshots/mobile-scores-${viewport.width}.png` });
+    await selectByHand('scores-close');
+    await menu.waitForFunction(() => !document.getElementById('scores-dialog').open && document.activeElement.id === 'play');
+    await menu.locator('#scores-open').click();
+    await menu.keyboard.press('Escape');
+    await menu.waitForFunction(() => document.querySelector('#arcade > .leaderboard'));
+  }
+  await menu.close();
+
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1, reducedMotion: 'reduce' });
   phone.on('pageerror', error => errors.push(error.message));
   await installCameraFixture(phone);

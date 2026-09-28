@@ -91,7 +91,7 @@ function menuMode() {
   if (startingRun || frozen || stopped || document.hidden) return '';
   if ((recovering || paused) && shared) return '';
   const dialogs = [...document.querySelectorAll('dialog[open]')];
-  if (dialogs.length) return dialogs.length === 1 && ['registration', 'final'].includes(dialogs[0].id) ? dialogs[0].id : '';
+  if (dialogs.length) return dialogs.length === 1 && ['registration', 'final', 'scores-dialog'].includes(dialogs[0].id) ? dialogs[0].id : '';
   if ((recovering || paused) && cameraControls?.running) return 'resume';
   return !run && cameraControls?.running ? 'idle' : '';
 }
@@ -336,11 +336,27 @@ $('result-open').addEventListener('click', () => {
   if (!completedRun || startingRun || run || cameraLoading) return;
   cancelAnimationFrame(scoreAnimation);
   setText('final-score', official && !officialPlayer.state().result ? '—' : String(completedRun.total).padStart(3, '0'));
+  $('scores-dialog').close();
   $('final').showModal(); $(publicTry ? 'play-again' : 'next-player').focus();
 });
 $('board-scope').addEventListener('change', () => { void pilot.selectEvent($('board-scope').value === 'event'); });
-$('final-leaderboard').addEventListener('click', () => {
-  $('final').close(); document.querySelector('.leaderboard').focus();
+const scorePanel = document.querySelector('.leaderboard');
+const scoreHome = document.createComment('Leaderboard home');
+scorePanel.before(scoreHome);
+function openScores() {
+  if (run || startingRun || pendingPlayer) return;
+  $('final').close();
+  $('scores-dialog').append(scorePanel);
+  $('scores-dialog').showModal();
+  $('scores-close').focus();
+}
+$('scores-open').addEventListener('click', openScores);
+$('final-leaderboard').addEventListener('click', openScores);
+$('scores-close').addEventListener('click', () => $('scores-dialog').close());
+$('scores-dialog').addEventListener('close', () => {
+  scoreHome.after(scorePanel);
+  // A result opened from the board owns focus; otherwise return to PLAY.
+  if (!document.querySelector('dialog[open]')) $('play').focus();
 });
 $('final').addEventListener('cancel', event => event.preventDefault());
 $('play').addEventListener('click', () => { $('scene').focus(); play(); });
