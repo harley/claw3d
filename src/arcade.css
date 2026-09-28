@@ -215,7 +215,7 @@ dialog .play-button { width: 100%; margin-top: 24px; }
 button.hand-hover { outline:4px solid #ffca45; outline-offset:6px; box-shadow:0 0 28px #ffca4570; }
 #registration h1 { font-size:clamp(28px,5vw,44px); }
 #registration #name { text-align:center; font-weight:900; font-size:28px; letter-spacing:.08em; }
-#registration #register-play { display:block; width:100%; min-height:76px; margin-top:24px; }
+#registration .start-modes .play-button { justify-items: start; text-shadow: none; display:grid; width:100%; min-height:76px; margin-top:0; }
 #registration #register-cancel, #final .text-button { min-height:48px; }
 #registration .playtest-notice { font-size:11px; opacity:.6; }
 
@@ -530,4 +530,23 @@ dialog .menu-guide-hand { font-size: 52px; }
 }
 @media (max-height: 600px) and (orientation: landscape) {
   #action-copy.countdown { min-height: 150px; padding: 14px; }
+}
+
+/* Keep both start choices readable and reachable by the hand cursor. */
+.start-modes { display: grid; gap: 12px; margin-top: 18px; }
+#registration .start-modes .play-button { justify-items: start; text-shadow: none; display: grid; gap: 6px; width: 100%; margin: 0; padding: 14px 18px; text-align: left; white-space: normal; }
+.start-modes strong { font-size: 20px; }
+.start-modes span { font-size: 14px; }
+.start-modes small { font: 14px/1.4 Arial, sans-serif; letter-spacing: 0; text-transform: none; }
+@media (max-width: 480px), (max-height: 760px) {
+  #registration { padding: 16px; }
+  #registration #menu-guide { flex-direction: row; gap: 8px; margin-bottom: 8px; padding: 0; }
+  #registration .menu-guide-hand { font-size: 32px; }
+  #registration #menu-guide strong { font-size: 18px; }
+  #registration h1 { font-size: 26px; margin: 8px 0; }
+  #registration label { margin: 8px 0 4px; }
+  #registration #name { font-size: 22px; padding: 10px; }
+  #registration .start-modes { margin-top: 12px; gap: 12px; }
+  #registration .start-modes .play-button { padding: 10px 12px; }
+  #registration .start-modes strong { font-size: 18px; }
 }

@@ -17,11 +17,12 @@ async function assertInstructions({ profile, scene, camera }) {
  assert.equal(await page.locator('#scene').getAttribute('aria-label'), scene, `${profile} scene description`);
  assert.equal(await page.locator('#camera-menu-help').textContent(), profile === 'dual' ? 'Use your left hand and hold a fist to select menu buttons. Your right hand can stay visible.' : 'Use one open hand and hold a fist to select menu buttons.', `${profile} keeps menu help separate`);
  assert.equal(await page.locator('#camera-help').textContent(), camera, `${profile} camera gameplay help`);
+ if (profile === 'grab-release') assert.equal(await page.locator('#register-play small').textContent(), scene, 'local grab comparison retains its instructions');
 }
 const instructions = {
- holdDrop: { profile: 'one-hand', scene: 'Steer with one open hand. Clench and hold your fist to drop.', camera: 'Move one open hand to steer. Clench and hold your fist to drop; open to cancel.' },
+ holdDrop: { profile: 'one-hand', scene: 'Open hand to aim. Hold a fist to drop.', camera: 'Move one open hand to steer. Clench and hold your fist to drop; open to cancel.' },
  grab: { profile: 'grab-release', scene: 'Clench on MOVE to grip and steer. Open to release without dropping. Click or clench DROP to drop.', camera: 'Clench on MOVE to grip and steer. Open to release without dropping. Click, clench, or swipe down on DROP to drop.' },
- dual: { profile: 'dual', scene: 'Clench your left hand to grip and steer. Bring your open right palm to DROP. Open your left hand to release.', camera: 'Show your left hand open to start. Clench to grip and steer; bring your open right palm into the highlighted DROP area. Open your left hand to release without dropping.' },
+ dual: { profile: 'dual', scene: 'Move left fist to aim. Move right palm onto DROP.', camera: 'Show your left hand open to start. Clench to grip and steer; bring your open right palm into the highlighted DROP area. Open your left hand to release without dropping.' },
 };
 async function aimToy(id='butter'){
  for(const axis of ['x','z']) for(let i=0;i<6;i++){

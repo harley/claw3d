@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { ApiError, label } from './database.js';
-import { RULES, scoreTurn, turnContext } from '../src/event-session.js';
+import { SPEED_RULES as RULES, scoreTurn, turnContext } from '../src/event-session.js';
 
 export const EVENT_RETENTION_MS = 30 * 86400_000;
 export const TICKET_LIFETIME_MS = 86400_000;

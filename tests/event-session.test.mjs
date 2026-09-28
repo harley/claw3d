@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { turnContext, scoreTurn, RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard } from '../src/event-session.js';
+import { turnContext, scoreTurn, RULES, SPEED_RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard } from '../src/event-session.js';
 import { createGame, planGrab, FIELD } from '../src/arcade-mechanics.js';
 test('three drops produce exactly one total; duplicate and extra results are ignored', () => {
   const store = newStore(); startRun(store, ' Linh ');
@@ -80,4 +80,36 @@ test('the context form of scoreTurn is golden-equal to the positional form and c
   assert.deepEqual(Object.keys(context).sort(), ['previousTurns', 'prizeId', 'remainingMs', 'turnIndex']);
   assert.equal(context.turnIndex, 1);
   assert.throws(() => scoreTurn(RULES, turnContext([], 'butter', 15001)));
+});
+
+// Contract: bonus is per catch, never per turn/time; historical snapshots keep
+// their original totals. Previous tests covered speed, not hand-mode scoring.
+test('two-hand catches add 25 once, keep speed separate, and survive local reload', () => {
+  const rules = { ...RULES, controlMode: 'two-hand' };
+  assert.equal(scoreTurn(rules, 'butter', 0), 125);
+  assert.equal(scoreTurn(rules, 'sprout', 15000), 275);
+  assert.equal(scoreTurn(rules, null, 15000), 0);
+  assert.equal(scoreTurn({ ...SPEED_RULES, controlMode: 'two-hand' }, 'butter', 0), 100);
+  const store = newStore(); startRun(store, 'Two hands', false, 'two-hand');
+  recordTurn(store, 1, 'butter', 7500);
+  assert.equal(recordTurn(store, 1, 'butter', 7500), null);
+  const restored = loadStore({ getItem: () => JSON.stringify(store) });
+  assert.equal(restored.active.rules.controlMode, 'two-hand');
+  assert.equal(restored.active.turns[0].score, 150);
+  recordTurn(restored, 2, null, 15000);
+  assert.equal(recordTurn(restored, 3, 'sprout', 0).run.total, 375);
+});
+test('an unfinished speed-v3 run retains its rules until completion, then new runs upgrade', () => {
+  const store = newStore(); startRun(store, 'Earlier', false, 'two-hand');
+  currentBoard(store).rules = structuredClone(SPEED_RULES);
+  store.active.rules = { ...SPEED_RULES, controlMode: 'two-hand' };
+  recordTurn(store, 1, 'butter', 0);
+  const restored = loadStore({ getItem: () => JSON.stringify(store) });
+  assert.equal(restored.active.turns[0].score, 100);
+  recordTurn(restored, 2, 'sprout', 0);
+  assert.equal(recordTurn(restored, 3, null, 0).run.total, 300);
+  const next = startRun(restored, 'New', false, 'two-hand');
+  assert.equal(next.rules.version, RULES.version);
+  assert.equal(restored.boards[0].runs[0].total, 300);
+  assert.equal(recordTurn(restored, 1, 'butter', 0).run.turns[0].score, 125);
 });
