@@ -540,6 +540,25 @@ $('feedback-form').addEventListener('submit', async event => {
 });
 $('fullscreen').addEventListener('click', async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); } catch { $('status').textContent = 'FULLSCREEN UNAVAILABLE'; } });
 $('camera-open').addEventListener('click', () => $('camera-setup').showModal());
+function showCameraView(open) {
+  $('camera-view').classList.toggle('open', open);
+  $('camera-view-toggle').setAttribute('aria-expanded', String(open));
+  setText('camera-view-toggle', open ? 'Hide camera' : 'Show camera');
+}
+function updateCameraView(message = 'Camera is off') {
+  const track = $('camera-video').srcObject?.getVideoTracks()[0];
+  const live = track?.readyState === 'live';
+  $('camera-view').classList.toggle('live', live);
+  setText('camera-view-status', live ? `Active camera: ${track.label || 'Default camera'}` : message);
+}
+$('camera-view-toggle').addEventListener('click', () => showCameraView(!$('camera-view').classList.contains('open')));
+$('camera-view-close').addEventListener('click', () => { showCameraView(false); $('camera-view-toggle').focus(); });
+$('camera-view-settings').addEventListener('click', () => $('camera-setup').showModal());
+$('camera-video').addEventListener('loadedmetadata', () => updateCameraView());
+$('camera-view').addEventListener('keydown', event => {
+  if (event.key === 'Escape') { showCameraView(false); $('camera-view-toggle').focus(); event.stopPropagation(); }
+});
+
 function reportCameraFailure(code) {
   if (cameraFailureReported) return;
   cameraFailureReported = true;
@@ -549,6 +568,7 @@ async function startCamera() {
   if (cameraLoading || !noticeReady) return;
   cameraFailureReported = false;
   track('camera_start');
+  updateCameraView('Starting camera…');
   cameraLoading = true; $('camera-toggle').disabled = true; $('camera-status').textContent = 'Starting camera…';
   updateUI();
   try {
@@ -572,6 +592,7 @@ async function startCamera() {
           if (state.kind === 'loading') cameraFailureReported = false;
           if (state.kind === 'error') reportCameraFailure(state.code || 'unknown');
           $('camera-status').textContent = state.message;
+          updateCameraView(state.message);
           const active = cameraControls?.running || state.kind === 'tracking';
           $('camera-preview').hidden = !active;
           $('camera-open').setAttribute('aria-label', active ? 'Camera settings — camera on' : 'Camera settings');
@@ -597,7 +618,7 @@ async function startCamera() {
       adaptationFrames = []; adaptationVisibleMs = 0;
     }
     else { reportCameraFailure('camera_unavailable'); $('camera-setup').showModal(); }
-  } catch (error) { reportCameraFailure('camera_unavailable'); $('camera-status').textContent = `Camera unavailable: ${error.message}`; $('camera-setup').showModal(); }
+  } catch (error) { updateCameraView('Camera unavailable. Open Camera settings to retry.'); reportCameraFailure('camera_unavailable'); $('camera-status').textContent = `Camera unavailable: ${error.message}`; $('camera-setup').showModal(); }
   finally { cameraLoading = false; $('camera-toggle').disabled = false; updateUI(); }
 }
 $('camera-toggle').addEventListener('click', () => {
