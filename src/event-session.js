@@ -82,3 +82,12 @@ export function loadStore(storage) {
   }
   return store;
 }
+
+// Rename the existing receipt; identity, ordering and all scored turns stay intact.
+export function renameCompletedRun(store, id, name) {
+  if (typeof name !== 'string' || !name.trim() || name.trim().length > 24 || /[\p{Cc}\p{Cf}]/u.test(name)) throw new Error('Enter a name between 1 and 24 characters.');
+  const run = store.boards.flatMap(board => board.runs).find(run => run.id === id);
+  if (!run) throw new Error('Completed result not found.');
+  run.name = name.trim();
+  return run;
+}

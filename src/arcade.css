@@ -554,3 +554,12 @@ dialog .menu-guide-hand { font-size: 52px; }
 
 /* Keep the single live region available while its cue is drawn on the cabinet. */
 #arcade #action-copy.marquee-countdown { opacity: 0; pointer-events: none; animation: none; }
+
+/* The result name is the field itself; its controls appear only while editing. */
+#final-name-form { margin: 14px 0 8px; }
+#final #final-name-input { text-align: center; font-size: 26px; font-weight: 700; padding: 5px 8px; background: transparent; border-color: transparent; border-bottom-color: #426087; border-radius: 0; }
+#final #final-name-input:hover, #final #final-name-input:focus { border-bottom-color: #ffc14d; }
+#final-name-actions { display: flex; gap: 8px; justify-content: center; margin-top: 10px; }
+#final-name-actions button { min-height: 44px; padding: 8px 20px; }
+#final-name-status { font-size: 12px; color: #b5c9df; margin: 6px 0 0; }
+#final-name-status:empty { display: none; }

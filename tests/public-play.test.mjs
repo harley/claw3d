@@ -193,3 +193,16 @@ test('public rule upgrade preserves old results and unfinished runs, bonuses app
   assert.equal(board.id, initial.boardId);
   assert.deepEqual(board.runs.map(r => r.total), [375, 300, 100]);
 });
+
+test('public result rename is owner-only, repeatable and preserves the ranked receipt', async t => {
+  const f = await fixture(t), cookie = await f.player(), other = await f.player();
+  const run = await (await f.start(cookie)).json();
+  const rename = (name, owner = cookie) => f.request(`/api/play/runs/${run.id}/name`, { cookie: owner, data: { name } });
+  assert.equal((await rename('Linh')).status, 409);
+  const saved = await f.complete(cookie, run.id);
+  assert.equal((await rename('Other', other)).status, 404);
+  assert.equal((await rename('')).status, 400);
+  for (let retry = 0; retry < 2; retry++) assert.deepEqual(await (await rename(' Linh ')).json(), { ...saved, name: 'Linh' });
+  const board = await (await f.request('/api/play/board')).json();
+  assert.deepEqual(board.runs, [{ id: run.id, name: 'Linh', total: saved.total, rank: saved.rank }]);
+});

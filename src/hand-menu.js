@@ -6,7 +6,7 @@ const actions = {
   resume: ['play'],
   'scores-dialog': ['scores-close', 'result-open'],
   registration: ['register-play', 'register-other', 'register-cancel'],
-  final: ['play-again', 'next-player', 'final-leaderboard'],
+  final: ['play-again', 'next-player', 'final-leaderboard', 'final-name-input'],
 };
 export function createHandMenu({ leftHand = false } = {}) {
   const cursor = document.createElement('div');
@@ -65,7 +65,7 @@ export function createHandMenu({ leftHand = false } = {}) {
         cursor.style.left = `${x}px`; cursor.style.top = `${y}px`;
         cursor.style.setProperty('--label-offset', `${Math.max(83 - x, Math.min(0, innerWidth - 83 - x))}px`);
         cursor.classList.toggle('cue-above', y > innerHeight / 2);
-        const target = document.elementFromPoint(x, y)?.closest('button');
+        const target = document.elementFromPoint(x, y)?.closest('button, input');
         const next = actions[mode].map(eligible).find(button => button && button === target) || null;
         if (hovered !== next) { hovered?.classList.remove('hand-hover'); hovered = next; hovered?.classList.add('hand-hover'); }
       }
@@ -78,7 +78,9 @@ export function createHandMenu({ leftHand = false } = {}) {
     confirm(currentMode, feedback) {
       if (!feedback.controlEnabled || feedback.kind !== 'clenching' || !feedback.pointer) { clearCursor(); return false; }
       if (!holding || !locked || mode !== currentMode || !actions[mode]?.includes(locked.id) || eligible(locked.id) !== locked) return false;
-      const target = locked; clearCursor(); target.click(); return true;
+      const target = locked; clearCursor();
+      if (target.tagName === 'INPUT') target.focus(); else target.click();
+      return true;
     },
     clear,
   };

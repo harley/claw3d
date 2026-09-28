@@ -41,7 +41,7 @@ const mode = resolvePlayMode(official ? '' : location.search, shared || publicTr
 const { dual: dualEnabled, grab: grabEnabled, cabinet: cabinetEnabled, holdMs, steering, storageKey: scoreKey } = mode;
 import { ArcadeScene } from './arcade-scene.js';
 import { createGame, begin, drop, advance, move, moveToward, homeClaw, planGrab, clawPose, PHASES, MAX_FRAME_DELTA, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget } from './arcade-mechanics.js';
-import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, scoreTurn, turnContext, handBonus } from './event-session.js';
+import { RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, scoreTurn, turnContext, handBonus, renameCompletedRun } from './event-session.js';
 
 if (publicSurface) {
   $('try-notice').hidden = false;
@@ -86,9 +86,9 @@ $('scene').setAttribute('aria-label', controlInstructions.scene);
 $('camera-help').textContent = controlInstructions.camera;
 if (dualEnabled) $('camera-menu-help').textContent = 'Use your left hand and hold a fist to select menu buttons. Your right hand can stay visible.';
 const glove = createJoystickCursor(() => cabinetEnabled ? scene?.controlTargets() : null, () => { if (cabinetEnabled) gestureDrop(); });
-let previousMenuMode = '';
+let previousMenuMode = '', editingResultName = false, savingResultName = false;
 function menuMode() {
-  if (startingRun || frozen || stopped || document.hidden) return '';
+  if (startingRun || frozen || stopped || document.hidden || editingResultName) return '';
   if ((recovering || paused) && shared) return '';
   const dialogs = [...document.querySelectorAll('dialog[open]')];
   if (dialogs.length) return dialogs.length === 1 && ['registration', 'final', 'scores-dialog'].includes(dialogs[0].id) ? dialogs[0].id : '';
@@ -257,6 +257,7 @@ function finishTurn() {
   if (outcome.completed) {
     track('run_complete', { score: outcome.run.total }, outcome.run);
     completedRun = outcome.run; run = null; renderBoard();
+    resetResultName();
     $('final-name').textContent = completedRun.name.toUpperCase(); $('final-score').textContent = official ? '—' : String(completedRun.total).padStart(3, '0');
     const rank = shared ? undefined : leaderboard(currentBoard(store)).find(r => r.id === completedRun.id)?.rank;
     $('final-kicker').textContent = official ? 'AWAITING SERVER RESULT' : finaleHeadline(completedRun.turns, rank, completedRun.rules.points);
@@ -363,8 +364,68 @@ $('player-form').addEventListener('submit', event => { event.preventDefault(); i
 $('name').addEventListener('focus', () => $('name').select());
 $('name').addEventListener('input', () => $('name').setCustomValidity(''));
 $('register-cancel').addEventListener('click', () => $('registration').close());
+function resetResultName() {
+  editingResultName = false;
+  $('final-name-form').hidden = official || publicTry || !completedRun;
+  $('final-name').hidden = !official && !publicTry && Boolean(completedRun);
+  $('final-name-input').value = completedRun?.name || '';
+  $('final-name-input').setCustomValidity('');
+  $('final-name-actions').hidden = true;
+  setText('final-name-status', '');
+  for (const id of ['next-player', 'play-again', 'final-leaderboard', 'final-feedback']) $(id).disabled = false;
+}
+$('final-name-input').addEventListener('focus', () => {
+  if (!completedRun || savingResultName) return;
+  editingResultName = true;
+  $('final-name-actions').hidden = false;
+  for (const id of ['next-player', 'play-again', 'final-leaderboard', 'final-feedback']) $(id).disabled = true;
+  $('final-name-input').select();
+});
+$('final-name-input').addEventListener('input', () => {
+  $('final-name-input').setCustomValidity(''); setText('final-name-status', '');
+});
+function cancelResultName() {
+  if (savingResultName) return;
+  resetResultName(); $('next-player').focus();
+}
+$('final-name-cancel').addEventListener('click', cancelResultName);
+$('final').addEventListener('cancel', event => {
+  if (editingResultName) { event.preventDefault(); cancelResultName(); }
+});
+$('final-name-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!completedRun || official || publicTry || savingResultName) return;
+  const name = $('final-name-input').value.trim();
+  if (!name || name.length > 24 || /[\p{Cc}\p{Cf}]/u.test(name)) {
+    $('final-name-input').setCustomValidity('Enter a name between 1 and 24 characters.');
+    $('final-name-input').reportValidity(); return;
+  }
+  savingResultName = true;
+  for (const id of ['final-name-input', 'final-name-save', 'final-name-cancel']) $(id).disabled = true;
+  setText('final-name-status', 'Saving…');
+  try {
+    if (shared) await pilot.rename(completedRun.id, name);
+    else {
+      // Persist a copy first so a failed write leaves the saved result unchanged.
+      if (storageBlocked) throw new Error('Storage unavailable. Your name was not changed.');
+      const next = structuredClone(store);
+      const renamed = renameCompletedRun(next, completedRun.id, name);
+      localStorage.setItem(scoreKey, JSON.stringify(next));
+      store = next; completedRun = renamed;
+    }
+    resetResultName(); renderBoard();
+    $('final-name').textContent = completedRun.name.toUpperCase();
+    setText('final-name-status', 'Name saved'); $('next-player').focus();
+  } catch (error) {
+    setText('final-name-status', shared ? `${error.message} Retry Save to confirm your name.` : 'Name could not be saved. Please try again.');
+  } finally {
+    savingResultName = false;
+    for (const id of ['final-name-input', 'final-name-save', 'final-name-cancel']) $(id).disabled = false;
+  }
+});
+
 async function replay(samePlayer) {
-  if (startingRun || ((run || cameraLoading) && !(official && officialPlayer.state().canHandoff))) return;
+  if (editingResultName || startingRun || ((run || cameraLoading) && !(official && officialPlayer.state().canHandoff))) return;
   if (official) {
     try { await officialPlayer.handoff(); location.replace(publicOfficial ? '/official' : '/staff'); }
     catch (error) { setText('final-sync', error.message); }
@@ -656,6 +717,7 @@ function updateSavedRank(saved) {
     // An outbox can finish after reload, when no in-memory finale survives.
     // Restore its server-confirmed receipt without restarting the three turns.
     completedRun = saved;
+    resetResultName();
     setText('final-name', saved.name.toUpperCase());
     setText('final-score', String(saved.total).padStart(3, '0'));
     setText('final-board', 'Recovered result · all plays');
@@ -668,6 +730,9 @@ function updateSavedRank(saved) {
   }
   if (completedRun?.id !== saved.id || saved.status !== 'complete' || !Number.isInteger(saved.rank)) return;
   completedRun.rank = saved.rank;
+  completedRun.name = saved.name;
+  setText('final-name', saved.name.toUpperCase());
+  if (!editingResultName) $('final-name-input').value = saved.name;
   setText('final-sync', '');
   $('final-kicker').textContent = finaleHeadline(completedRun.turns, saved.rank, completedRun.rules.points);
   $('final-rank').textContent = `SAVED · RANK #${saved.rank}${saved.eventRank ? ` · HANOI #${saved.eventRank}` : ''}`;
