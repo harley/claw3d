@@ -141,6 +141,12 @@ export async function createPilotServer(options) {
         if (req.method === 'GET' && path === '/api/board') return json(res, 200, database.board());
         const runMatch = /^\/api\/runs\/([a-f0-9-]{36})(?:\/(turns|abandon|name))?$/.exec(path);
         if (req.method === 'GET' && runMatch && !runMatch[2]) return json(res, 200, database.getRun(runMatch[1], auth.owner_id));
+        if (req.method === 'GET' && path === '/api/host/contacts') {
+          if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');
+          if (!publicPlay) throw new ApiError(404, 'Public ranking is unavailable.');
+          res.setHeader('Content-Disposition', 'attachment; filename="cloud-claw-booth-contacts.json"');
+          return json(res, 200, publicPlay.exportContacts());
+        }
         if (req.method === 'GET' && path === '/api/host/export') {
           if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');
           res.setHeader('Content-Disposition', 'attachment; filename="cloud-claw-sessions.json"');

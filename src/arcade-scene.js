@@ -679,9 +679,9 @@ export class ArcadeScene {
     if (punch) { this.camera.position.y += punch; this.camera.position.x += punch * .4; }
   }
 
-  // Small displays retain the central cue instead of miniaturising the lettering.
+  // The cabinet is the announcement surface on phones and desktop alike.
   get marqueeAvailable() {
-    return this.canvas.clientWidth > 700 && this.canvas.clientHeight >= 480;
+    return this.canvas.clientWidth > 0 && this.canvas.clientHeight > 0;
   }
 
   draw(time, capped) {

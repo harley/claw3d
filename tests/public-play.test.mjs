@@ -207,6 +207,57 @@ test('public result rename is owner-only, repeatable and preserves the ranked re
   assert.deepEqual(board.runs, [{ id: run.id, name: 'Linh', total: saved.total, rank: saved.rank }]);
 });
 
+// Contact capture owns a new private-data boundary: prior rank tests cannot
+// catch leaked contacts, forged ownership, duplicate requests or retention.
+test('optional contact requests are owned, private, validated, idempotent and retained for 30 days', async t => {
+  const f = await fixture(t), cookie = await f.player(), other = await f.player();
+  const run = await (await f.start(cookie)).json();
+  const path = `/api/play/runs/${run.id}/contact`;
+  const data = { name: 'Private Visitor', contact: 'visitor@example.com', consent: true };
+  assert.equal((await f.request(path, { cookie, data })).status, 409);
+  await f.complete(cookie, run.id);
+  assert.equal((await f.request(path, { cookie: other, data })).status, 404);
+  assert.equal((await f.request(path, { data })).status, 401);
+  assert.equal((await f.request(path, { cookie, data, requestOrigin: 'https://other.invalid' })).status, 403);
+  for (const invalid of [{ consent: false }, { name: '' }, { contact: 'bad' }, { contact: 'x@x.com\nInjected' }, { contact: '1234' }, { name: 'x'.repeat(81) }]) {
+    assert.equal((await f.request(path, { cookie, data: { ...data, ...invalid } })).status, 400);
+  }
+  let saved = await f.request(path, { cookie, data });
+  assert.deepEqual(await saved.json(), { saved: true, eligible: false });
+  saved = await f.request(path, { cookie, data }); assert.equal(saved.status, 200);
+  const db = f.app.database.db;
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM public_contacts').get().n, 1);
+  const first = db.prepare('SELECT * FROM public_contacts').get();
+  assert.equal(first.purpose, 'result-and-booth-invitation-v1');
+  assert.equal((await f.request('/api/host/contacts', { cookie })).status, 401);
+  const cookieOf = response => response.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
+  const staff = cookieOf(await f.request('/api/login', { data: { code: 'public-test-staff-secret' } }));
+  assert.equal((await f.request('/api/host/contacts', { cookie: staff })).status, 403);
+  const host = cookieOf(await f.request('/api/host/sign-in', { data: { code: 'public-host-code' } }));
+  const exported = await (await f.request('/api/host/contacts', { cookie: host })).json();
+  assert.equal(exported.contacts[0].contact, data.contact);
+  assert.equal(exported.contacts[0].runId, run.id);
+  for (const endpoint of ['/api/play/board', `/api/play/runs/${run.id}`, '/api/play/session']) {
+    const response = await f.request(endpoint, { cookie, ...(endpoint.endsWith('session') ? { data: {} } : {}) });
+    const text = await response.text();
+    assert.ok(!text.includes(data.contact) && !text.includes(data.name), `${endpoint} does not disclose contacts`);
+  }
+  // Qualification comes from the saved score, never a submitted eligibility flag.
+  db.prepare('UPDATE runs SET total=300 WHERE id=?').run(run.id);
+  assert.equal((await (await f.request(path, { cookie, data: { ...data, eligible: true } })).json()).eligible, false);
+  db.prepare('UPDATE runs SET total=301 WHERE id=?').run(run.id);
+  const phone = { ...data, contact: '+84 (90) 123-4567' };
+  assert.equal((await (await f.request(path, { cookie, data: phone })).json()).eligible, true);
+  assert.equal(db.prepare('SELECT channel FROM public_contacts').get().channel, 'phone');
+  assert.equal(db.prepare('SELECT name FROM runs WHERE id=?').get(run.id).name, 'Mochi');
+  await f.pause(true);
+  assert.equal(f.app.database.db.prepare('SELECT COUNT(*) AS n FROM public_contacts').get().n, 1, 'survives restart');
+  f.setTime('2026-10-30T12:00:00+07:00');
+  await f.pause(true);
+  assert.equal(f.app.database.db.prepare('SELECT COUNT(*) AS n FROM public_contacts').get().n, 0, 'startup prunes expired contact details');
+  assert.equal(f.app.database.db.prepare('SELECT COUNT(*) AS n FROM runs').get().n, 1, 'contact retention preserves scores');
+});
+
 // Contract: instrumentation adds one bounded receipt at start, survives retries,
 // and is only visible in host exports. Existing rank tests have no device data.
 test('usage is captured once on the existing start request and remains private', async t => {

@@ -247,12 +247,16 @@ export function createHud({ audio, phaseSound }) {
   const countdown = Boolean(run && !paused && !modal && !document.hidden && !recovering && !startingRun &&
     ((phase === 'idle' && preparingFirstTurn && firstTurnControlReady) || phase === 'result') &&
     /^(ROUND [1-3]|[1-3]|START!)$/.test(title));
-  marqueeCue = countdown && marqueeAvailable ? title : null;
-  $('action-copy').classList.toggle('marquee-countdown', Boolean(marqueeCue));
   $('action-copy').classList.toggle('countdown', countdown);
   $('action-copy').dataset.countdown = countdown ? title === 'START!' ? 'play' : title.startsWith('ROUND') ? 'round' : 'digit' : '';
   // A miss keeps one message surface from the empty lift through the next-turn cue.
   presentMessage(title, hint, `${title === 'MISSED' ? 'missed' : ['anticipate', 'descend'].includes(phase) ? 'drop' : phase}:${turnNumber}:${title}:${hint}`, timed ? 1600 : 0);
+  const shortAnnouncement = /^(READY|CONNECTING|DROP!|GOT IT!|MISSED)$/.test(title);
+  const onSign = Boolean(marqueeAvailable && !paused && !modal && !document.hidden && !recovering &&
+    (countdown || shortAnnouncement) && !$('action-copy').classList.contains('expired'));
+  marqueeCue = onSign ? title : null;
+  $('action-copy').classList.toggle('marquee-countdown', onSign && !hint);
+  $('action-copy').classList.toggle('marquee-with-hint', onSign && Boolean(hint));
   if ($('arcade').dataset.phase !== phase) $('arcade').dataset.phase = phase;
   const signature = [title, hint, button, kicker, total, run?.name, pendingPlayer?.name, completedRun?.id, paused].join('');
   if (signature === lastStatus) return; lastStatus = signature;

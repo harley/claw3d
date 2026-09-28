@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { ApiError } from './database.js';
+import { ApiError, label } from './database.js';
 import { createBudget } from './request-budget.js';
 import { deviceClass } from './usage.js';
 import { RULES, SPEED_RULES } from '../src/event-session.js';
@@ -9,6 +9,8 @@ const EVENT_END = Date.parse('2026-09-30T00:00:00+07:00');
 const hash = value => createHash('sha256').update(value).digest('hex');
 const secret = () => randomBytes(32).toString('base64url');
 const age = 90 * 86400;
+const CONTACT_RETENTION_MS = 30 * 86400_000;
+const CONTACT_PURPOSE = 'result-and-booth-invitation-v1';
 const dateInHanoi = new Intl.DateTimeFormat('en-CA', { timeZone: HANOI_EVENT.timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
 
 // Public score authority never shares the staff cookie, owner, board or outbox.
@@ -16,6 +18,9 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
   const { db } = database;
   db.exec(`CREATE TABLE IF NOT EXISTS public_players (
     token TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES owners(id), expires INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS public_contacts (
+      run_id TEXT PRIMARY KEY REFERENCES runs(id) ON DELETE CASCADE, name TEXT NOT NULL, contact TEXT NOT NULL,
+      channel TEXT NOT NULL, purpose TEXT NOT NULL, created_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS public_stations (token TEXT PRIMARY KEY, expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS public_run_events (
       run_id TEXT PRIMARY KEY REFERENCES runs(id), event_id TEXT NOT NULL);
@@ -64,7 +69,20 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
     }
     return run;
   }
+  function pruneContacts() {
+    db.prepare('DELETE FROM public_contacts WHERE created_at<=?').run(now() - CONTACT_RETENTION_MS);
+  }
+  pruneContacts();
   return {
+    exportContacts() {
+      pruneContacts();
+      return { purpose: CONTACT_PURPOSE, exportedAt: new Date(now()).toISOString(), contacts: db.prepare(`
+        SELECT c.run_id AS runId,c.name,c.contact,c.channel,c.purpose,c.created_at AS submittedAt,
+          r.total AS score,r.name AS nickname,r.completed_at AS completedAt,
+          e.event_id AS eventId,(r.total>300) AS eligible
+        FROM public_contacts c JOIN runs r ON r.id=c.run_id
+        LEFT JOIN public_run_events e ON e.run_id=r.id ORDER BY c.created_at,c.run_id`).all() };
+    },
     stationStatus(req) { return { enrolled: station(req), active: eventToday(req), ended: now() >= EVENT_END, event: HANOI_EVENT }; },
     enroll(req, res) {
       if (now() >= EVENT_END) throw new ApiError(409, 'The Hanoi event has finished. Public play is still open.');
@@ -75,7 +93,7 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
       res.setHeader('Set-Cookie', cookie('cc_station', value, Math.max(0, Math.floor((EVENT_END - now()) / 1000))));
       return { enrolled: true, event: HANOI_EVENT };
     },
-    prune() { budget.prune(); db.prepare('DELETE FROM public_players WHERE expires<=?').run(now()); db.prepare('DELETE FROM public_stations WHERE expires<=?').run(now()); },
+    prune() { pruneContacts(); budget.prune(); db.prepare('DELETE FROM public_players WHERE expires<=?').run(now()); db.prepare('DELETE FROM public_stations WHERE expires<=?').run(now()); },
     async handle(req, res, path) {
       const ip = clientAddress(req);
       budget.take(`public-read:${ip}`, 600);
@@ -96,7 +114,7 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
         return json(res, 200, { role: 'public', board: board(), station: this.stationStatus(req) });
       }
       const player = owner(req);
-      const match = /^\/api\/play\/runs\/([a-f0-9-]{36})(?:\/(turns|abandon|name))?$/.exec(path);
+      const match = /^\/api\/play\/runs\/([a-f0-9-]{36})(?:\/(turns|abandon|name|contact))?$/.exec(path);
       if (match && !match[2] && req.method === 'GET') return json(res, 200, result(match[1], player));
       if (req.method !== 'POST') throw new ApiError(404, 'Route not found.');
       budget.take(`public-write:${player}`, 120);
@@ -115,7 +133,22 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
         return json(res, 201, result(run.id, player));
       }
       if (match?.[2]) {
-        result(match[1], player);
+        const saved = result(match[1], player);
+        if (match[2] === 'contact') {
+          budget.take(`public-contact:${player}`, 20);
+          if (saved.status !== 'complete') throw new ApiError(409, 'Wait for your completed score to save, then retry.');
+          if (input.consent !== true) throw new ApiError(400, 'Confirm that CoderPush may contact you about your result and a booth invitation.');
+          const name = label(input.name, 80);
+          const contact = typeof input.contact === 'string' ? input.contact.trim() : '';
+          const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact);
+          const phone = /^\+?[0-9][0-9 ()-]*$/.test(contact) && contact.replace(/\D/g, '').length >= 8 && contact.replace(/\D/g, '').length <= 15;
+          if (!contact || contact.length > 254 || /[\p{Cc}\p{Cf}]/u.test(contact) || !(email || phone)) throw new ApiError(400, 'Enter a valid email or phone number, including country code for phone.');
+          pruneContacts();
+          db.prepare(`INSERT INTO public_contacts VALUES (?,?,?,?,?,?) ON CONFLICT(run_id) DO UPDATE SET
+            name=excluded.name,contact=excluded.contact,channel=excluded.channel,purpose=excluded.purpose`)
+            .run(saved.id, name, contact, email ? 'email' : 'phone', CONTACT_PURPOSE, now());
+          return json(res, 200, { saved: true, eligible: saved.total > 300 });
+        }
         if (match[2] === 'turns') database.record(match[1], player, input);
         else if (match[2] === 'name') database.rename(match[1], player, input);
         else database.abandon(match[1], player);

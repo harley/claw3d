@@ -240,6 +240,12 @@ Use the 0.4.1 candidate’s exact commit/checksum from its distribution JSON. Th
 
 Stop and preserve the prototype if GPU/camera binding fails, orientation is unusable, most input is stale, scores do not survive, or a new player cannot complete the run. Record a pass/fail per check with the exact BUILD; code delivery, APK distribution and physical acceptance are separate decisions.
 
+### Optional booth contact requests
+
+Host setup (`/staff`) provides “Download contact requests (JSON)” after host sign-in. The host-only `GET /api/host/contacts` export contains private contact name, email/phone, channel, consent purpose, submission time, linked run, public nickname, saved score, event membership where available, and `eligible` (score strictly greater than 300). These requests authorize result and booth-invitation follow-up only. The service does not send messages or redeem attempts. Hosts reconcile repeated contact details and badge records before any invitation; a browser identity or nickname does not identify a visitor.
+
+Active `public_contacts` rows expire after 30 days through startup, hourly maintenance and export pruning. Exports and SQLite backups may retain contacts: restrict access and remove those copies when fulfilling a withdrawal/removal request. To remove an active request, first follow the existing backup/access procedure, then use a parameterized deletion against `public_contacts` by its exact `run_id`, preserving the score. Never commit exports or private contact details to GitHub.
+
 ## Booth-day usage counts
 
 Report visitor activity from **29 September 2026, 09:00 Asia/Ho_Chi_Minh** (02:00 UTC). Setup runs started before that time are excluded even if they finish later. Counts refer to plays, not unique people. Website phone classification is a browser-header estimate; it does not establish practice intent or location. A phone used at the booth still counts as a phone.
