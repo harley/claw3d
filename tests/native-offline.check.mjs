@@ -4,11 +4,12 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chromium } from 'playwright';
 import { browserOptions } from '../scripts/browser-options.mjs';
-import { readFile, mkdtemp } from 'node:fs/promises';
+import { readFile, mkdtemp, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve, extname } from 'node:path';
 
 const root=resolve(import.meta.dirname,'..');
+await mkdir(join(root,'.screenshots'),{recursive:true});
 const extracted=await mkdtemp(join(tmpdir(),'claw-apk-assets-'));
 execFileSync('unzip',['-q',join(root,'android/app/build/outputs/apk/debug/app-debug.apk'),'assets/*','-d',extracted]);
 const assets=join(extracted,'assets');
@@ -36,7 +37,16 @@ async function launch() {
   catch(error){failures.push(url.pathname);return route.abort();}
  });
  await context.setOffline(true);
- await context.addInitScript(()=>{globalThis.TomkoNative={postMessage(){}};});
+ await context.addInitScript(()=>{
+  globalThis.__nativeMessages=[];
+  globalThis.TomkoNative={postMessage(value){
+   const message=JSON.parse(value);globalThis.__nativeMessages.push(message);
+   if(message.type==='start')setTimeout(()=>{
+    TomkoNative.onmessage({data:JSON.stringify({type:'clock',generation:message.generation,jsTime:message.jsTime,nativeTime:message.jsTime})});
+    TomkoNative.onmessage({data:JSON.stringify({type:'ready',generation:message.generation})});
+   },150);
+  }};
+ });
  return context;
 }
 let context=await launch();
@@ -71,6 +81,24 @@ try {
   assert.ok(board.includes(mode==='one-hand'?'300':'375'),board);
   assert.ok(!board.includes('Offline '+(mode==='one-hand'?'two-hand':'one-hand')));
   assert.equal(await page.evaluate(()=>navigator.onLine),false);
+  assert.ok((await page.locator('#build-info').textContent()).includes(manifest.commit.slice(0,7)), 'packaged operator BUILD matches manifest');
+  if(mode==='two-hand'){
+   await page.locator('#camera-open').click();
+   await page.locator('#camera-toggle').click();
+   await page.waitForFunction(()=>!document.querySelector('#camera-setup').open && document.querySelector('#camera-toggle').textContent==='STOP CAMERA');
+  }
+  await page.locator('#operator-open').click();
+  await page.locator('#export').click();
+  const exported=await page.evaluate(()=>globalThis.__nativeMessages.find(message=>message.type==='export'));
+  assert.ok(exported,'packaged Export button reaches the native bridge with camera off or running');
+  assert.ok(exported.filename.includes(mode));
+  const store=JSON.parse(exported.data);
+  assert.ok(JSON.stringify(store).includes('Offline '+mode));
+  assert.ok(!JSON.stringify(store).includes('Offline '+(mode==='one-hand'?'two-hand':'one-hand')));
+  await page.evaluate(id=>TomkoNative.onmessage({data:JSON.stringify({type:'export-result',id,status:'saved'})}),exported.id);
+  await page.waitForFunction(()=>document.querySelector('#operator-message').textContent.includes('scores saved'));
+  assert.equal(await page.locator('#export').isDisabled(),false);
+  await page.screenshot({path:join(root,'.screenshots',`android-packaged-${mode}.png`)});
  }
  await page.goto(origin+'/privacy');
  assert.match(await page.locator('body').innerText(),/Names and scores stay on this device/);
@@ -78,5 +106,5 @@ try {
  await page.waitForFunction(()=>document.documentElement.dataset.arcadeReady==='true');
  assert.deepEqual(failures,[],'every requested packaged asset exists');
  assert.deepEqual(external,[],'local play does not request external resources');
- console.log('PASS: offline boot, both mode leaderboards, duplicate-turn rejection, and persistence across browser process restart. Synthetic scores; not physical gameplay or Android force-stop validation.');
+ console.log('PASS: packaged BUILD, delayed native readiness, camera-off/on export, offline boot, both mode leaderboards, duplicate-turn rejection, and persistence across browser process restart. Synthetic scores; not physical gameplay or Android force-stop validation.');
 } finally {await context.close();}

@@ -1,3 +1,4 @@
+import { nativeBridge } from './native-bridge.js';
 import { nativeAndroid, tomkoRendering } from './runtime-platform.js';
 import { RIGHT_SLAM_MS } from './dual-hand-controls.js';
 import { resolvePlayMode, phonePlaySearch, cueLeadSeconds, dualStartReadiness, firstTurnControlReady as isFirstTurnControlReady } from './play-mode.js';
@@ -504,7 +505,26 @@ $('new-board').addEventListener('click', async () => {
   try { rotateBoard(store, $('session-name').value); persist(); completedRun = null; renderBoard(); $('operator-message').textContent = 'New leaderboard started. Previous results are preserved.'; }
   catch (error) { $('operator-message').textContent = error.message; }
 });
-$('export').addEventListener('click', () => { if (shared) { window.location.assign('/api/host/export'); return; } let data = JSON.stringify(store, null, 2); if (storageBlocked) { try { data = localStorage.getItem(scoreKey) || data; } catch { /* In-memory export remains available. */ } } const url = URL.createObjectURL(new Blob([data], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = `cloud-claw-sessions-${new Date().toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
+if (nativeAndroid) $('export').textContent = 'EXPORT THIS MODE’S SESSIONS';
+$('export').addEventListener('click', async () => {
+  if (shared) { window.location.assign('/api/host/export'); return; }
+  let data = JSON.stringify(store, null, 2);
+  if (storageBlocked) { try { data = localStorage.getItem(scoreKey) || data; } catch { /* In-memory export remains available. */ } }
+  const filename = `cloud-claw-${nativeAndroid ? dualEnabled ? 'two-hand' : 'one-hand' : 'sessions'}-${new Date().toISOString().slice(0, 10)}.json`;
+  if (nativeAndroid) {
+    $('export').disabled = true;
+    setText('operator-message', 'Choose a file for this mode’s scores…');
+    try {
+      const outcome = await nativeBridge().exportScores(data, filename);
+      setText('operator-message', outcome === 'saved' ? 'This mode’s scores saved. Restart the camera when ready.' : 'Export cancelled. Scores remain on this device.');
+    } catch (error) { setText('operator-message', error.message); }
+    finally { $('export').disabled = false; }
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+  const link = document.createElement('a'); link.href = url; link.download = filename; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
 $('quality').addEventListener('click', () => { if (!scene) return; performanceGovernor.setMode(scene.lowQuality ? 'full' : 'simple', 'operator'); });
 $('sound').addEventListener('click', () => { if (audio.enabled && !audio.ready) audio.unlock(); else audio.toggle(); });
 document.addEventListener('pointerdown', event => { if (event.target.closest('#sound')) return; audio.unlock(); });
