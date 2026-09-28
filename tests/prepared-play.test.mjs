@@ -5,6 +5,9 @@ import { PUBLIC_JOURNAL } from '../src/public-run-journal.js';
 import { createSessionApi } from '../src/session-api.js';
 import { RULES, scoreTurn, turnContext } from '../src/event-session.js';
 import { createPilotServer } from '../server/index.js';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 const id = () => crypto.randomUUID();
 const storage = { length: 0, getItem: () => null, removeItem() {} };
 const pack = { complete: true, controlling: true, id: 'verified-pack' };
@@ -92,7 +95,9 @@ test('known live refusals hold future local admission across reload; throttling 
 
 test('20 offline players / 60 frozen scored turns survive reload and reconcile once through real HTTP and SQLite', async t => {
   const now = Date.parse('2026-09-29T10:00:00+07:00'), origin = 'http://127.0.0.1';
-  const app = await createPilotServer({ filename: ':memory:', origin, staffCode: 'prepared-test-staff-secret', hostCode: 'prepared-host-secret',
+  const dist = await mkdtemp(join(tmpdir(), 'prepared-http-'));
+  t.after(() => rm(dist, { recursive: true, force: true }));
+  const app = await createPilotServer({ filename: ':memory:', dist, origin, staffCode: 'prepared-test-staff-secret', hostCode: 'prepared-host-secret',
     secure: false, publicTryEnabled: true, publicPermitPolicy: { maxSlots: 20, maxRetentionMs: 86400000 }, now: () => now });
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { await new Promise(resolve => app.server.close(resolve)); app.database.close(); });
