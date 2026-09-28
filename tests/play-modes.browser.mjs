@@ -52,10 +52,12 @@ try {
  });
  await page.waitForFunction(()=>document.getElementById('register-other').classList.contains('hand-hover'));
  await page.evaluate(()=>window.testCamera.setFeedback({kind:'clenching',progress:.8,pointer:window.testCamera.feedback.pointer}));
- await page.waitForFunction(()=>{
-  if(Number(document.getElementById('hand-cursor').style.getPropertyValue('--hold'))<=0) return false;
-  window.testCamera.tick(); return window.testCamera.clench();
- });
+ await page.waitForFunction(()=>Number(document.getElementById('hand-cursor').style.getPropertyValue('--hold'))>0);
+ // Confirm once outside the polling predicate: confirmation reloads the page.
+ await Promise.all([
+  page.waitForURL(url=>url.searchParams.get('controls')==='dual', {waitUntil:'commit'}),
+  page.evaluate(()=>window.testCamera.clench()),
+ ]);
  await page.waitForFunction(()=>window.__littleCloud?.snapshot().event.run?.name==='Mode chooser');
  assert.equal(new URL(page.url()).searchParams.get('controls'),'dual');
  assert.equal(new URL(page.url()).searchParams.has('start'),false,'start marker is consumed once');
