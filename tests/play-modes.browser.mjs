@@ -44,7 +44,7 @@ try {
  }
  await page.setViewportSize({width:1440,height:900});
  assert.equal(await page.evaluate(()=>window.__littleCloud.snapshot().event.run),null);
- assert.match(await page.locator('#register-other').textContent(), /2 Hands.*\+25 per catch/);
+ assert.match(await page.locator('#register-other').textContent(), /✋🤚 Play.*\+25 pts\/catch/);
  // Select the alternate mode with the real menu adapter and synthetic hand data.
  const box = await page.locator('#register-other').boundingBox();
  await page.evaluate(({x,y})=>window.testCamera.setFeedback({kind:'tracking',pointer:{x,y}}), {

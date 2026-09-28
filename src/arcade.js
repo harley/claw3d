@@ -114,9 +114,11 @@ for (const [id, dual] of [['register-play', dualEnabled], ['register-other', !du
   const button = $(id);
   button.dataset.controlMode = dual ? 'two-hand' : 'one-hand';
   button.style.order = dual ? '2' : '1';
+  button.setAttribute('aria-label', dual ? 'Play with two hands. +25 points per catch.' : 'Play with one hand.');
+  button.setAttribute('aria-describedby', `${id}-help`);
   button.innerHTML = dual
-    ? '<strong>🖐️🖐️ Play · 2 Hands</strong><span>+25 per catch</span><small>Move left fist to aim. Move right palm onto DROP.</small>'
-    : '<strong>🖐️ Play · 1 Hand</strong><small>Open hand to aim. Hold a fist to drop.</small>';
+    ? `<strong><span aria-hidden="true">✋🤚</span> Play</strong><span class="start-bonus">+25 pts/catch</span><small id="${id}-help">Move left fist to aim. Right palm to DROP.</small>`
+    : `<strong><span aria-hidden="true">✋</span> Play</strong><small id="${id}-help">Move open hand to aim. Hold fist to drop.</small>`;
 }
 if (mode.profile === 'grab-release') $('register-play').querySelector('small').textContent = controlInstructions.scene;
 let pendingPlayer = null, startingRun = false;
@@ -765,6 +767,8 @@ if (official) {
   $('next-player').textContent = 'SIGN OUT · NEXT PLAYER';
   $('reset').textContent = 'END ATTEMPT · HOST RECOVERY';
   $('register-play').textContent = 'START';
+  $('register-play').removeAttribute('aria-label');
+  $('register-play').removeAttribute('aria-describedby');
   $('name').readOnly = true;
   $('registration').querySelector('h1').textContent = 'OFFICIAL · THREE TURNS';
   $('registration').querySelector('.playtest-notice').textContent = 'START activates this ticket once. Reload cannot restart it. Scores are confirmed by the event server.';

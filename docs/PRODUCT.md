@@ -66,7 +66,7 @@ Rules `cloud-day-hands-v4` score a catch as base + floor(50 × remaining aiming 
 
 ### Choose controls before starting
 
-The pre-game dialog offers two play buttons: “🖐️ Play · 1 Hand” with “Open hand to aim. Hold a fist to drop.” and “🖐️🖐️ Play · 2 Hands” with “Move left fist to aim. Move right palm onto DROP.” Two hands displays “+25 per catch”. Both buttons support the held-fist menu cursor. Practice shows the same choices without asking for a name; official tickets keep their single START action.
+The pre-game dialog offers equal-height play buttons: “✋ Play” with “Move open hand to aim. Hold fist to drop.” and “✋🤚 Play” with “Move left fist to aim. Right palm to DROP.” Two hands displays “+25 pts/catch” inline with its heading. Accessible names explicitly identify one-hand and two-hand play. Both buttons support the held-fist menu cursor. Practice shows the same choices without asking for a name; official tickets keep their single START action.
 
 Choosing another mode uses the existing page-reload boundary, carrying the submitted name and choice once in tab session storage (never the URL). Camera startup then creates the run; hand recognition and the countdown still precede the aiming timer. An existing local run in the chosen mode takes precedence and offers recovery. The selected mode remains fixed through all three turns. The +25 reward is an owner-approved starting value; comparative difficulty and first-time clarity still need physical testing.
 
