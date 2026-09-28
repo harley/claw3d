@@ -75,10 +75,10 @@ try {
  assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).animationName), 'none');
  await page.screenshot({ path: '.screenshots/arcade-reduced-narrow.png', fullPage: true });
  const preview = await page.locator('#camera-preview').boundingBox();
- assert.ok(preview && preview.height > 0, 'camera preview is visible before measuring');
- assert.ok(preview.y >= (await page.locator('#scene').boundingBox()).y + (await page.locator('#scene').boundingBox()).height, 'short-screen preview stays below the scene');
+ assert.ok(preview && preview.height > 0, 'hand guidance anchor is measurable');
+ assert.ok(preview.y >= (await page.locator('#scene').boundingBox()).y + (await page.locator('#scene').boundingBox()).height, 'short-screen guidance stays below the scene');
  assert.equal(await page.locator('#control-deck').isVisible(),false);
- assert.ok(preview.y + preview.height < 710, 'uncropped preview and recognition fit above the short-screen footer');
+ assert.ok(preview.y + preview.height < 710, 'recognition fits above the short-screen footer');
  await page.evaluate(() => window.testCamera.stop());
  await page.waitForFunction(() => document.getElementById('button-text').textContent === 'Restart camera');
  const bounds = await page.evaluate(() => { const r = id => { const b = document.getElementById(id).getBoundingClientRect(); return { top: b.top, bottom: b.bottom }; }; return { arcade: r('arcade'), button: r('play') }; });

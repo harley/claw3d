@@ -448,8 +448,6 @@ async function startCamera() {
           if (state.kind === 'loading') cameraFailureReported = false;
           if (state.kind === 'error') reportCameraFailure(state.code || 'unknown');
           $('camera-status').textContent = state.message;
-          const video = $('camera-video');
-          if (video.videoWidth && video.videoHeight) $('camera-preview').style.setProperty('--camera-aspect', `${video.videoWidth} / ${video.videoHeight}`);
           const active = cameraControls?.running || state.kind === 'tracking';
           $('camera-preview').hidden = !active;
           $('camera-open').setAttribute('aria-label', active ? 'Camera settings — camera on' : 'Camera settings');

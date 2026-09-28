@@ -1,6 +1,7 @@
 // Contract: desktop keeps one guidance surface and an unobstructed full-width
 // scene; phone rotation chooses a future run's mode without replacing a live run.
-// Existing suites exercise gameplay, but do not emulate a touch phone rotating.
+// Regression: a portrait camera used to grow over PLAY and the cabinet.
+// Existing suites exercise gameplay, but not phone rotation or portrait capture.
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { browserOptions } from '../scripts/browser-options.mjs';
@@ -11,11 +12,32 @@ const errors = [];
 async function waitingRun(page) {
   await page.locator('#play').click();
   await page.waitForFunction(() => window.testCamera?.running);
+  await assertHiddenCapture(page);
   await page.locator('#play').click();
   await page.locator('#name').fill('Pebble');
   await page.evaluate(() => { testCamera.visible = false; testCamera.tick(); });
   await page.locator('#name').press('Enter');
   await page.waitForFunction(() => window.__littleCloud.snapshot().event.run);
+}
+async function assertHiddenCapture(page) {
+  // Model the portrait dimensions from a phone camera, absent from the ordinary
+  // landmark fixture. This used to expand the visible video over the controls.
+  await page.evaluate(() => {
+    const video = document.getElementById('camera-video');
+    Object.defineProperty(video, 'videoWidth', { configurable: true, value: 480 });
+    Object.defineProperty(video, 'videoHeight', { configurable: true, value: 640 });
+    document.getElementById('camera-preview').style.setProperty('--camera-aspect', '480 / 640');
+    testCamera.tick();
+  });
+  const capture = await page.evaluate(() => {
+    const image = document.querySelector('.camera-image'), style = getComputedStyle(image);
+    const rect = image.getBoundingClientRect();
+    const play = document.getElementById('play'), box = play.getBoundingClientRect();
+    return { width: rect.width, height: rect.height, opacity: style.opacity,
+      pointerEvents: getComputedStyle(document.getElementById('camera-preview')).pointerEvents,
+      playReachable: play.hidden || box.width === 0 || play.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)) };
+  });
+  assert.deepEqual(capture, { width: 1, height: 1, opacity: '0', pointerEvents: 'none', playReachable: true }, 'capture cannot paint over or intercept player controls');
 }
 async function layout(page) {
   return page.evaluate(() => {
@@ -67,13 +89,23 @@ try {
   await phone.waitForURL(url => !url.searchParams.has('controls'));
   await phone.waitForFunction(() => window.__littleCloud?.snapshot().event.controlProfile === 'hold-drop');
   await waitingRun(phone);
+  await assertHiddenCapture(phone);
   state = await layout(phone);
   assert.equal(state.mode, 'hold-drop');
   const runId = state.id;
-  assert.ok(state.camera.top >= state.scene.bottom && state.camera.bottom <= state.height, 'portrait camera sits below the scene without scrolling');
+  assert.ok(state.camera.top >= state.scene.bottom && state.camera.bottom <= state.height, 'portrait guidance sits below the scene without scrolling');
   assert.equal(state.scroll, state.width);
   await phone.screenshot({ path: '.screenshots/centre-stage-phone-portrait.png' });
+  await phone.evaluate(() => { document.getElementById('try-notice').hidden = false; });
+  const noticeLayout = await phone.evaluate(() => ({
+    notice: document.getElementById('try-notice').getBoundingClientRect().toJSON(),
+    guidance: document.getElementById('action-copy').getBoundingClientRect().toJSON(),
+  }));
+  assert.ok(noticeLayout.guidance.bottom < noticeLayout.notice.top, 'public privacy notice cannot cover recovery guidance');
+  await phone.screenshot({ path: '.screenshots/camera-hidden-phone-public-notice.png' });
+
   await phone.setViewportSize({ width: 844, height: 390 });
+  await assertHiddenCapture(phone);
   state = await layout(phone);
   assert.equal(state.mode, 'hold-drop');
   assert.equal(state.id, runId, 'rotation preserves the active attempt');

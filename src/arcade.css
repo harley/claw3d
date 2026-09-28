@@ -25,7 +25,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, #scene:focus-vi
   outline-offset: 4px;
 }
 [hidden] { display: none !important; }
-#arcade { --hud-height: 112px; --camera-width: clamp(200px, 20vw, 290px); height: 100svh; min-height: 480px; position: relative; overflow: hidden; }
+#arcade { --hud-height: 112px; --camera-bottom: 50px; --camera-width: clamp(200px, 20vw, 290px); height: 100svh; min-height: 480px; position: relative; overflow: hidden; }
 #arcade::before { content: ""; position: absolute; inset: 0 0 auto; height: var(--hud-height); background: #0f0f0f; }
 #scene:focus-visible { outline: none; }
 #scene { position: absolute; left: 0; top: var(--hud-height); width: 100%; height: calc(100% - var(--hud-height)); display: block; outline: none; }
@@ -84,14 +84,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, #scene:focus-vi
 #jackpot-signal.go i.on { background: #66ffb3; border-color: #b8ffe1; box-shadow: 0 0 18px #66ffb388; }
 #jackpot-cue { display: block; font-size: 10px; letter-spacing: 1px; }
 
-/* Video and landmarks share one uncropped, camera-sized image. */
-#camera-preview { position: absolute; z-index: 4; left: 24px; bottom: 50px; display: flex; flex-direction: column-reverse; width: var(--camera-width); border: 1px solid #45648b; border-radius: 6px; overflow: hidden; background: #070d18; }
-.camera-image { position: relative; aspect-ratio: var(--camera-aspect, 16 / 9); }
+/* Keep capture mounted for mobile video playback; only hand feedback is visible. */
+#camera-preview { position: absolute; z-index: 4; left: 24px; bottom: var(--camera-bottom); display: flex; flex-direction: column-reverse; width: var(--camera-width); min-height: 1px; pointer-events: none; }
+.camera-image { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); opacity: 0; pointer-events: none; }
 #camera-video, #camera-overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 #camera-video { transform: scaleX(-1); }
-.camera-feedback { padding: 8px 10px; background: #091322; }
+.camera-feedback { padding: 8px 10px; background: #091322; border-radius: 6px; }
 #camera-recognition { display: block; font-size: 10px; line-height: 1.3; letter-spacing: .8px; color: #abd3ff; }
-#camera-preview[data-state="tracking"] { border-color: #66ffb3; }
 #camera-preview[data-state="tracking"] #camera-recognition { color: #66ffb3; }
 #camera-preview:is([data-state="lost"], [data-state="clenching"]) #camera-recognition { color: #ffc14d; }
 
@@ -359,12 +358,12 @@ dialog .menu-guide-hand { font-size: 52px; }
   #dual-hand-guide[data-stage="grip"] .demo-fist { left: calc(50% + 2px); opacity: .85; }
 }
 
-/* Game states share the same stage. Hand help has one home beside the camera. */
+/* Game states share the same stage. Hand help has one compact home below the stage. */
 .run-active .leaderboard { display: none; }
 .leaderboard { background: #080e1ce8; padding: 16px; border-top-width: 2px; border-radius: 6px; }
 body.attract .player-hud { visibility: hidden; }
 #arcade:has(#menu-guide:not([hidden])) #action-copy { opacity: 0; }
-#arcade:has(.camera-guidance) .controls { top: auto; bottom: calc(50px + var(--camera-width) * .5625 + 8px); left: 24px; width: var(--camera-width); transform: none; z-index: 5; }
+#arcade:has(.camera-guidance) .controls { top: auto; bottom: calc(var(--camera-bottom) + 8px); left: 24px; width: var(--camera-width); transform: none; z-index: 5; }
 #action-copy.camera-guidance #status { font-size: 17px; text-transform: none; background: #091322f2; padding: 10px; border: 1px solid #45648b; border-radius: 6px; }
 #arcade:has(.camera-guidance) #play-options { position: fixed; top: auto; bottom: 28px; left: 50vw; transform: translateX(-50%); }
 #camera-preview.guided .camera-feedback { display: none; }
@@ -406,7 +405,7 @@ body.attract .player-hud { visibility: hidden; }
   .leaderboard { top: 155px; right: 20px; width: 180px; }
 }
 @media (max-width: 700px) and (orientation: portrait) {
-  #arcade { --hud-height: 150px; --camera-width: 210px; min-height: 580px; }
+  #arcade { --hud-height: 150px; --camera-bottom: 45px; --camera-width: 210px; min-height: 580px; }
   .masthead { top: 16px; left: 16px; right: 16px; }
   .brand { --logo-width: 125px; --logo-clear: 15px; }
   .brand small { font-size: 7px; letter-spacing: .7px; }
@@ -423,10 +422,10 @@ body.attract .player-hud { visibility: hidden; }
   #player-name { display: none; }
   #turn-chips { display: flex; top: 52px; left: calc(50% - 115px); }
   #scene { height: calc(100% - var(--hud-height) - 175px); }
-  #camera-preview { bottom: 45px; left: 50%; transform: translateX(-50%); }
+  #camera-preview { left: 50%; transform: translateX(-50%); }
   .controls { top: 155px; width: calc(100% - 24px); }
   #arcade:is([data-phase="idle"], [data-phase="aim"]) #action-copy:not(.camera-guidance) #status { font-size: 26px; }
-  #arcade:has(.camera-guidance) .controls { bottom: 172px; left: 50%; transform: translateX(-50%); }
+  #arcade:has(.camera-guidance) .controls { left: 50%; transform: translateX(-50%); }
   #arcade:has(.camera-guidance) #action-copy #status { font-size: 15px; }
   #play-options { top: auto; bottom: 205px; }
   #arcade:has(.camera-guidance) #play-options { bottom: 205px; }
@@ -444,7 +443,7 @@ body.attract .player-hud { visibility: hidden; }
   #try-notice[open] { top: 60px; bottom: auto; }
 }
 @media (max-height: 600px) and (orientation: landscape) {
-  #arcade { --hud-height: 78px; --camera-width: 155px; min-height: 320px; }
+  #arcade { --hud-height: 78px; --camera-bottom: 28px; --camera-width: 155px; min-height: 320px; }
   .masthead { top: 12px; left: 16px; right: 16px; }
   .brand { --logo-width: 120px; --logo-clear: 15px; }
   .brand small { font-size: 7px; max-width: 170px; }
@@ -457,8 +456,8 @@ body.attract .player-hud { visibility: hidden; }
   .header-actions .icon-button { min-width: 30px; min-height: 32px; font-size: 15px; padding: 5px; }
   .header-actions > .hand-toggle { top: 40px; }
   .header-actions .hand-toggle button { padding: 5px 8px; font-size: 10px; }
-  #camera-preview { left: 12px; bottom: 28px; }
-  #arcade:has(.camera-guidance) .controls { left: 12px; bottom: 120px; }
+  #camera-preview { left: 12px; }
+  #arcade:has(.camera-guidance) .controls { left: 12px; }
   #action-copy.camera-guidance #status, #dual-hand-guide span { font-size: 12px; }
   .controls { top: 86px; }
   #play-options { top: auto; bottom: 32px; }
@@ -475,3 +474,6 @@ body.attract .player-hud { visibility: hidden; }
 .footer #mode-label { min-width:0; white-space:normal; }
 #privacy-link:focus-visible { outline:2px solid #32c6f4; outline-offset:2px; }
 #board-scope { max-width:100%; font:inherit; color:#dce8f8; background:#101e32; padding:6px; border:1px solid #4a6485; border-radius:6px; }
+
+/* Public privacy notice stays below compact camera guidance. */
+#arcade:has(#try-notice:not([hidden])) { --camera-bottom: 100px; }
