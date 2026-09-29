@@ -385,9 +385,28 @@ Android play is device-local with a one-hand leaderboard and preserved historica
 
 Physical evidence from the earlier 604145f prototype: one-hand play completed three turns, but the owner reported noticeable delay. Native inference later reached about 8 results/sec while delivered results remained about 4/sec. The revised bounded delivery pipeline has local regression checks only. Native diagnostics separately show processing and delivered/fresh rates with analyzer-entry-to-JS age percentiles. Sensor capture/queue age is not measured. The preview reduction is an implementation change, not a measured speedup. Current integrated-source two-hand, reboot/upgrade persistence and sustained responsiveness acceptance remain pending (`needs-physical-test`).
 
+Tomko keeps the camera mirror hidden and adds a compact bottom-right tracking status and Restart tracking control. The top-right details panel is optional and non-modal, showing accepted fresh results per second, analyzer-entry result-age p95, rejected-result percentage, last hold-reset cause and BUILD. Rates reuse the existing five-second adaptation window; details refresh at most twice per second. Slow means fewer than four fresh results per second or at least 15% rejected results; this is a warning, not proof of human recognition accuracy. Fresh empty detections are labelled Waiting for hand rather than a camera failure. Restart during aiming preserves the same run, remaining time and scores; ordinary camera waiting blocks the timer until control is reacquired. The restart button is unavailable during accepted claw movement and saving, so it cannot interrupt a drop or duplicate a score. Host pause stays independent. No automatic restart or camera-preview change is added. Acceptance: a host can inspect why confirmation reset and restart stalled tracking without losing the turn; physical Tomko readability and recovery remain needs-physical-test.
 
 ## Optional booth follow-up
 
 After a public run is server-confirmed, results offer a collapsed optional booth-invitation form with private Name and Email or phone. Submitting explicitly requests CoderPush follow-up about that result and a booth invitation. It is not a marketing subscription. Play and replay never require this form. A saved score strictly over 300 qualifies for the proposed extra booth try; server-side qualification is included with host exports. No automatic prize award, return-pass redemption, badge matching, email or SMS delivery is implemented.
 
 Contact details are separate from the public nickname and score, never placed in URLs, browser score storage, diagnostics or public API responses. One request is stored per completed run; retrying updates that request rather than duplicating it. Failed submissions retain the current form draft and give an explicit retry. The form does not prefill contacts across runs on a shared booth browser. Only hosts can download the private requests from Host setup, including the associated run and score. Active contact records expire after 30 days; exports and backups remain the host's responsibility. Synthetic API and browser checks do not establish phone camera usability or physical LED readability.
+
+
+## Phone web onboarding
+
+The public web entry shows a short phone-positioning cue on touch phones, with
+one- or two-hand wording matching the selected mode. The existing one-hand How
+to play guide repeats the phone setup cue. Camera recovery offers Try camera
+again and permission/framing guidance. Header actions have at least 44px touch
+targets. These are presentation changes; camera acquisition, scoring and the
+three-turn run are unchanged.
+
+On public phone results the primary Next Play action is labelled Play again.
+It keeps the existing fresh generated nickname and editable registration flow;
+it does not identify a returning person or reuse a previous player's identity.
+Desktop labels and native Tomko presentation are unchanged. Phone help adds no
+frame-loop, inference, analytics request or timer. Installed offline APKs are
+not updated by website deployment. Physical phone usability and recognition
+accuracy still require a device playtest.

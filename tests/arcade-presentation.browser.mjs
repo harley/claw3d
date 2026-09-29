@@ -31,8 +31,9 @@ try {
  await page.setViewportSize({ width: 1440, height: 900 });
  await page.waitForFunction(() => document.getElementById('status').textContent === 'START!');
  assert.equal(await page.evaluate(() => window.__littleCloud.snapshot().marquee.text), 'START!');
- await page.screenshot({ path: '.screenshots/marquee-start.png' });
+ // Capture can outlast the 300ms START cue on hosted runners. Assert first.
  assert.equal(await page.locator('#action-copy').getAttribute('data-countdown'), 'play');
+ await page.screenshot({ path: '.screenshots/marquee-start.png' });
  await page.waitForFunction(() => document.getElementById('status').textContent === 'Clench & hold to drop');
  assert.equal(await page.locator('#action-copy').evaluate(el => el.classList.contains('countdown')), false, 'countdown panel clears before control begins');
  assert.equal(await page.locator('#status').textContent(), 'Clench & hold to drop');

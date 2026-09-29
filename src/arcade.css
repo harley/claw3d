@@ -590,3 +590,35 @@ dialog #menu-guide .menu-guide-hand { font-size: 32px; }
 #invite-status { color: #b4ef52; font-size: 13px; line-height: 1.5; }
 #invite-status:empty { display: none; }
 #invite-status[data-state="error"] { color: #ffba60; }
+
+/* Phone web onboarding is static and absent from native/booth presentation. */
+.phone-web #phone-setup { position: absolute; top: 116px; left: 16px; right: 16px; margin: 0; color: #d5e4f6; font: 13px/1.5 Arial, sans-serif; text-align: center; }
+.phone-web #phone-setup strong { color: #fff; }
+.phone-web .run-active #phone-setup,
+.phone-web #arcade:has(#camera-preview:not([hidden])) #phone-setup { display: none; }
+.phone-web #phone-camera-help { color: #d5e4f6; font-size: 14px; line-height: 1.5; }
+.phone-web .phone-guide-setup { color: #d5e4f6; font: 13px/1.5 Arial, sans-serif; margin: 8px 0; }
+.phone-web .header-actions .icon-button,
+.phone-web #fullscreen,
+.phone-web #how-to-play { min-width: 44px; min-height: 44px; }
+@media (orientation: landscape) {
+  .phone-web #phone-setup { top: 120px; left: 16px; right: auto; width: 180px; text-align: left; }
+}
+
+/* Tomko operator controls stay outside the cabinet and never open a game-blocking modal. */
+#tracking-health { position: fixed; inset: 0; z-index: 12; pointer-events: none; }
+#tracking-health[hidden], #tracking-health [hidden] { display: none; }
+.tracking-health-corner { position: absolute; right: max(18px, env(safe-area-inset-right)); bottom: max(42px, env(safe-area-inset-bottom)); display: grid; gap: 6px; width: 210px; pointer-events: auto; }
+#tracking-health button { min-height: 44px; padding: 8px 12px; border: 1px solid #354158; border-radius: 8px; background: #101b2b; color: #c5d3e3; font: 500 12px/1.4 Arial, sans-serif; text-transform: none; letter-spacing: 0; box-shadow: none; }
+#tracking-health button:disabled { opacity: .65; cursor: default; }
+#tracking-health [data-health-toggle] { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+#tracking-health [data-health-rate] { white-space: nowrap; font-variant-numeric: tabular-nums; }
+#tracking-health[data-health="warning"] [data-health-status] { color: #f0c77f; }
+#tracking-health-panel { position: absolute; top: 100px; right: max(18px, env(safe-area-inset-right)); width: 230px; padding: 14px; background: #101b2b; border: 1px solid #354158; border-radius: 10px; pointer-events: auto; color: #d8e2ee; font: 12px/1.5 Arial, sans-serif; }
+.tracking-health-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#tracking-health dl { margin: 8px 0; }
+#tracking-health dl div { display: flex; justify-content: space-between; gap: 12px; margin: 10px 0; }
+#tracking-health dt { color: #a9b9ce; }
+#tracking-health dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; max-width: 118px; }
+#tracking-health p, #tracking-health small { color: #a9b9ce; font-size: 11px; }
+@media (max-width: 600px) { .tracking-health-corner { width: 178px; right: 10px; bottom: 42px; } #tracking-health-panel { right: 10px; top: 90px; width: 210px; } }
