@@ -72,6 +72,13 @@ if (publicSurface) {
   document.querySelector('#feedback-form .playtest-notice').textContent = 'Category and limited gameplay diagnostics only. No video or names.';
 }
 
+if (mode.collection) {
+  $('try-notice').hidden = false;
+  $('try-diagnostics-notice').textContent = 'Preview scores stay in this browser.';
+  $('try-notice').querySelector('p').textContent = 'Camera video stays on this device. Preview names and scores are saved only in this browser, separately from the public leaderboard.';
+  $('registration').querySelector('.playtest-notice').textContent = 'Collection preview · scores stay in this browser. Perfect catches earn full points; off-centre catches earn half.';
+}
+
 $('build-info').textContent = `${globalThis.__OFFLINE_SHELL__ ? 'LOCAL PREPARED BUILD' : 'BUILD'} ${__BUILD_INFO__.commit}${__BUILD_INFO__.dirty ? ' · uncommitted changes' : ''} · ${__BUILD_INFO__.branch}`;
 let savingTurn = false, pendingTurnOutcome = null, savingTurnPromise = null;
 let game = createGame({ carousel: true, suspendedClaw: mode.suspendedClaw, collection: mode.collection }), scene, previous = 0, stopped = false, frozen = false;

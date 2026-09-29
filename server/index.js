@@ -205,7 +205,9 @@ export async function createPilotServer(options) {
       catch { throw new ApiError(404, 'File not found.'); }
       if (!auth && !privacyPage && !publicPage && !publicOfficial && !publicAsset('/' + actual.slice(root.length + 1).split(sep).join('/'))) throw new ApiError(404, 'File not found.');
       let content = await readFile(actual);
-      if (actual === resolve(root, 'index.html')) content = Buffer.from(content.toString().replace('<head>', publicPage
+      if (actual === resolve(root, 'index.html')) content = Buffer.from(content.toString().replace('<head>', publicPage && url.searchParams.get('toys') === 'collection'
+        ? '<head><!-- Browser-local collection preview; no shared scoring or diagnostics. -->'
+        : publicPage
         ? `<head><script>window.__PUBLIC_TRY__=true;window.__PUBLIC_PLAY__=${publicRankedEnabled};window.__OFFICIAL_EVENTS__=${officialEventsEnabled};window.__PUBLIC_DIAGNOSTICS__=${publicDiagnosticsEnabled};</script>`
         : publicOfficial ? `<head><script>window.__PUBLIC_OFFICIAL__=true;window.__OFFICIAL_EVENTS__=true;</script>`
         : `<head><script>window.__SHARED_PILOT__=true;window.__OFFICIAL_EVENTS__=${officialEventsEnabled};</script>`));

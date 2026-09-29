@@ -18,9 +18,9 @@ The wow moment is direct control followed by a believable grab, a tense lift and
 - The leaderboard is for fun and comparison only; rank earns no additional prize. Physical giveaway rules are separate. The proposed ball artwork and 20/30/50-point proposal still need alignment with the game before adoption or printing.
 
 
-## Local collection and precision preview
+## Web collection and precision preview
 
-`?toys=collection` enables the owner-approved six-toy direction for local review in the existing arcade. Hosted public, staff, official and practice entries ignore the flag. The preview always uses the suspended steel claw and disables the separate pushing experiment. It keeps three turns and 15 seconds of aiming, with its own `collection-v1` browser namespace and immutable `cloud-claw-collection-v2` rules; ordinary boards and older receipts are unchanged.
+`?toys=collection` enables the owner-approved six-toy direction in the existing arcade, including the hosted home and `/try` entries. Open `https://claw.coderpush.com/?toys=collection` for the full preview. It uses browser-local scores and sends no shared scores or diagnostics. The normal web entry, staff and official entries keep their existing rules; staff and official entries ignore the flag. The owner requested this web preview on September 29, 2026; Tomko installation is unchanged. The preview always uses the suspended steel claw and disables the separate pushing experiment. It keeps three turns and 15 seconds of aiming, with its own `collection-v1` browser namespace and immutable `cloud-claw-collection-v2` rules; ordinary boards and older receipts are unchanged.
 
 The observed problem was that five equal-value stationary prizes gave visitors few meaningful choices. Acceptance: a first-time player can identify a forgiving target, see why an off-centre catch loses points, and predict the correction after a miss; 300 is a difficult precision milestone, with higher scores possible. Physical feel remains **needs-physical-test** on the Tomko and intended camera.
 
