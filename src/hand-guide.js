@@ -1,7 +1,7 @@
 import './hand-guide.css';
 
-// Illustrations are decoded only when a visitor opens the guide. No camera,
-// second scene, animation loop, or saved game state belongs to this component.
+// The dialog and static in-play reference share artwork and instructions.
+// No camera, second scene, animation loop, or saved game state belongs here.
 const artwork = new URL('./assets/hand-guide.png', import.meta.url).href;
 const overheadClaw = new URL('./assets/hand-guide-overhead.png', import.meta.url).href;
 const steps = [
@@ -9,6 +9,18 @@ const steps = [
   { title: 'MOVE <em>LEFT</em> & <mark>RIGHT</mark>', caption: '<em>LEFT</em> = LEFT &nbsp; <mark>RIGHT</mark> = RIGHT', hint: 'Move your open hand sideways.', first: 'HAND LEFT', second: 'HAND RIGHT', axis: 'sideways' },
   { title: 'CLENCH & <em>HOLD</em>', caption: 'HOLD YOUR FIST TO <em>DROP</em>', hint: 'Keep your fist closed until the claw drops. Open early to cancel.', first: 'OPEN TO AIM', second: 'HOLD TO DROP', axis: 'drop' },
 ];
+
+export function createHandGuideReference() {
+  const reference = document.createElement('aside');
+  reference.id = 'hand-guide-reference';
+  reference.hidden = true;
+  reference.setAttribute('aria-labelledby', 'hand-reference-title');
+  reference.innerHTML = `<h2 id="hand-reference-title">HOW TO PLAY</h2><ol>${steps.map((content, index) => `
+    <li><div class="reference-art" aria-hidden="true" style="--guide-art: url('${artwork}')"><i class="guide-sprite ${index === 2 ? 'fist' : 'palm'}"></i><span>${['↕', '↔', ''][index]}</span></div>
+    <div><h3>${content.title}</h3><p>${content.caption}</p>${index === 2 ? '<small>Keep closed until the claw drops.</small>' : ''}</div></li>`).join('')}</ol>`;
+  document.getElementById('arcade').append(reference);
+  return reference;
+}
 
 export function createHandGuide({ phone = false, canOpen, onTransition = () => {} }) {
   const dialog = document.createElement('dialog');
