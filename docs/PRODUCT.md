@@ -18,6 +18,16 @@ The wow moment is direct control followed by a believable grab, a tense lift and
 - The leaderboard is for fun and comparison only; rank earns no additional prize. Physical giveaway rules are separate. The proposed ball artwork and 20/30/50-point proposal still need alignment with the game before adoption or printing.
 
 
+## Tomko toy refresh candidate
+
+The booth candidate replaces Blue Hour's cloud with Bramble the bear and Peach's stationary star with Mochi the panda. They retain the `blue-hour` and `peach` score IDs, positions and trophy slots. Bonbon, Miso, Butter and moving jackpot Sprout retain their current sizes and positions. Bear scale 0.89 and panda scale 0.90 approximate the replaced toys' supporting areas; the visible family meshes still drive contacts, so identical catch difficulty is not claimed.
+
+This native-only refresh keeps `cloud-claw-tomko-touch-v1` unchanged: five stationary prizes at 100, moving star at 200, 0–50 speed bonus, 10 for a touched miss, zero for an empty miss, three turns and one-hand controls. It uses the existing board and storage keys; receipts, scores, stats collection and exports require no migration. It does not enable collection-preview accuracy deductions or its separate leaderboard.
+
+Mochi also retains Peach's existing succession: after Sprout is caught, the panda rides the carousel and remains worth 100 base points.
+
+Observed problem: the refreshed animals were only available with different scoring. Acceptance: all six booth toys can be caught and delivered with matching visible contact, while score IDs, point calculations and existing saved boards remain intact. Candidate builds on 0.4.7's guide, bottom-screen menu hint and native labels. Physical Tomko feel remains **needs-physical-test**. The owner requires confirmation before APK transfer; preparation does not authorize transfer or installation.
+
 ## Local collection and precision preview
 
 `?toys=collection` enables the owner-approved six-toy direction for local review in the existing arcade. Hosted public, staff, official and practice entries ignore the flag. The preview always uses the suspended steel claw and disables the separate pushing experiment. It keeps three turns and 15 seconds of aiming, with its own `collection-v1` browser namespace and immutable `cloud-claw-collection-v2` rules; ordinary boards and older receipts are unchanged.

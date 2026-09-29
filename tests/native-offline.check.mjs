@@ -70,6 +70,7 @@ try {
  await page.goto(origin+'/?setup=manual&hands=manual');
  await page.waitForFunction(()=>document.documentElement.dataset.arcadeReady==='true');
  assert.doesNotMatch(await page.locator('#mode-label').textContent(), /LOCAL PREVIEW/);
+ await page.screenshot({path:join(root,'.screenshots','android-packaged-toy-refresh.png')});
  assert.match(await page.locator('#operator-help').textContent(), /Scores saved on this device/);
  await page.locator('#how-to-play').click();
  await page.locator('#hand-guide-next').click();

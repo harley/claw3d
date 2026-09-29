@@ -80,7 +80,7 @@ if (publicSurface) {
 
 $('build-info').textContent = `${globalThis.__OFFLINE_SHELL__ ? 'LOCAL PREPARED BUILD' : 'BUILD'} ${__BUILD_INFO__.commit}${__BUILD_INFO__.dirty ? ' · uncommitted changes' : ''} · ${__BUILD_INFO__.branch}`;
 let savingTurn = false, pendingTurnOutcome = null, savingTurnPromise = null;
-let game = createGame({ carousel: true, suspendedClaw: mode.suspendedClaw, collection: mode.collection }), scene, previous = 0, stopped = false, frozen = false;
+let game = createGame({ carousel: true, suspendedClaw: mode.suspendedClaw, collection: mode.collection, boothToys: nativeAndroid }), scene, previous = 0, stopped = false, frozen = false;
 let cameraControls, cameraLoading = false;
 const handMenu = createHandMenu({ leftHand: dualEnabled });
 document.body.classList.toggle('machine-controls', cabinetEnabled);
@@ -233,7 +233,7 @@ function phaseSound(phase, modal) {
   } else if (phase === 'deliver' && game.plan?.prize) audio.fanfare('shelf');
   else if (phase === 'release' && game.plan?.prize) { audio.note(740, .1, 0, 'sine'); audio.note(980, .14, .1, 'sine'); }
 }
-function freshGame() { flow.pendingSlam = flow.contactFeedback = null; flow.firstTurnPreparationElapsed = null; turnNumber = 0; cameraControls?.reset(); game = createGame({ carousel: true, pushContact: mode.pushContact, suspendedClaw: mode.suspendedClaw, collection: mode.collection }); scene?.groundToys(game); aligned = null; hud.invalidate(); }
+function freshGame() { flow.pendingSlam = flow.contactFeedback = null; flow.firstTurnPreparationElapsed = null; turnNumber = 0; cameraControls?.reset(); game = createGame({ carousel: true, pushContact: mode.pushContact, suspendedClaw: mode.suspendedClaw, collection: mode.collection, boothToys: nativeAndroid }); scene?.groundToys(game); aligned = null; hud.invalidate(); }
 function restoreTrophies() {
   for (const turn of run?.turns || []) {
     const toy = game.toys.find(toy => toy.id === turn.prizeId);
@@ -984,7 +984,7 @@ $('shared-start').addEventListener('cancel', event => event.preventDefault());
 const loadingTimeout = setTimeout(() => fail('The arcade took too long to open. Reload the page to try again.'), 15000);
 try {
   await new Promise(resolve => requestAnimationFrame(resolve));
-  scene = new ArcadeScene($('scene'), { wideControls: cabinetEnabled && new URLSearchParams(location.search).get('controls') !== 'grab', anatomicalHands: !grabEnabled || dualEnabled, singleHand: !dualEnabled, suspendedClaw: mode.suspendedClaw, ...(mode.collection ? { assortment: game.toys } : {}) });
+  scene = new ArcadeScene($('scene'), { wideControls: cabinetEnabled && new URLSearchParams(location.search).get('controls') !== 'grab', anatomicalHands: !grabEnabled || dualEnabled, singleHand: !dualEnabled, suspendedClaw: mode.suspendedClaw, ...((mode.collection || nativeAndroid) ? { assortment: game.toys } : {}) });
   if (scene.cabinetHands) {
     const status = $('hand-art-status');
     status.textContent = '3D hands are loading. Camera tracking and game controls remain available.';

@@ -4,7 +4,7 @@ import { RULES, TOMKO_RULES, newStore, currentBoard, startRun, recordTurn, score
 import { resolvePlayMode, tomkoPlaySearch } from '../src/play-mode.js';
 import { playCollectionCue } from '../src/arcade-audio.js';
 import { ToyContacts } from '../src/arcade-contact.js';
-import { createGame, begin, drop, HIGH, OPEN_RADIUS } from '../src/arcade-mechanics.js';
+import { createGame, begin, drop, HIGH, OPEN_RADIUS, BODY } from '../src/arcade-mechanics.js';
 
 // The mesh replay covers contact geometry; this boundary test covers competing
 // sweep candidates, where a floor stop must discard a more distant toy hit.
@@ -68,4 +68,25 @@ test('touch acknowledgement is finite and distinct from a caught-toy celebration
   const touch=capture('touch'),caught=capture('ordinary');
   assert.equal(touch.length,2);assert.ok(caught.length>touch.length);
   assert.ok(touch.every(n=>n[1]+n[2]<.5));
+});
+
+// Contract: changing art must not create new scoring IDs, precision rules or a
+// new board. Existing receipt tests do not cover replacement toy definitions.
+test('refreshed booth toys retain score identities, rewards, slots and familiar catch area', () => {
+  const old = createGame({ carousel: true, suspendedClaw: true });
+  const fresh = createGame({ carousel: true, suspendedClaw: true, boothToys: true });
+  assert.deepEqual(fresh.toys.map(t => t.id), old.toys.map(t => t.id));
+  assert.equal(fresh.collectionPreview, false);
+  for (const toy of fresh.toys) {
+    const prior = old.toys.find(t => t.id === toy.id);
+    assert.deepEqual([toy.x, toy.z, toy.elevation], [prior.x, prior.z, prior.elevation]);
+    if (!['blue-hour', 'peach'].includes(toy.id)) assert.deepEqual(toy, prior);
+    const area = t => BODY[t.family].rx * BODY[t.family].rz * t.scale ** 2;
+    assert.ok(Math.abs(area(toy) / area(prior) - 1) < .02, `${toy.id}: support area stays within 2%`);
+    for (const remainingMs of [0, 7500, 15000]) {
+      assert.equal(scoreTurn(TOMKO_RULES, { prizeId: toy.id, remainingMs }), (toy.id === 'sprout' ? 200 : 100) + Math.floor(50 * remainingMs / 15000));
+    }
+  }
+  assert.equal(fresh.toys.find(t => t.id === 'blue-hour').family, 'bear');
+  assert.equal(fresh.toys.find(t => t.id === 'peach').family, 'panda');
 });

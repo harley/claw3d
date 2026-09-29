@@ -101,6 +101,15 @@ export const COLLECTION_TOYS = Object.freeze([
   { id: 'mochi', family: 'panda', name: 'Mochi', color: '#eee8d9', tone: 'Cream · panda plush', x: .20, z: .72, yaw: -.12, scale: .82 },
   { ...ASSORTMENT.find(t => t.id === 'sprout') },
 ]);
+// Booth art uses the existing score IDs and slots. Rabbit sizes stay familiar;
+// replacement scales approximate the old cloud/star support areas.
+export const BOOTH_TOYS = Object.freeze(ASSORTMENT.filter(toy => EVENT_TOYS.includes(toy.id)).map(toy => {
+  const { id } = toy;
+  if (id === 'blue-hour') return { ...toy, family: 'bear', name: 'Bramble', color: '#c79b71', tone: 'Honey · soft plush', scale: .89 };
+  if (id === 'peach') return { ...toy, family: 'panda', name: 'Mochi', color: '#eee8d9', tone: 'Cream · panda plush', x: .20, z: .72, scale: .90 };
+  return { ...toy };
+}));
+
 export const BODY = {
   bear: { rx: .30, rz: .235, cy: .30, ry: .27, grip: .24, height: .80 },
   panda: { rx: .23, rz: .19, cy: .30, ry: .27, grip: .24, height: .80 },
@@ -206,7 +215,7 @@ export function planGrab(position, toys) {
 export const catchQuality = plan => !plan?.prize ? 'miss' : Number.isFinite(plan.precision) && plan.precision <= .28 ? 'perfect' : 'ordinary';
 export const MISS_REASONS = Object.freeze(['near', 'slipped', 'crowded', 'blocked', 'bumped', 'platform', 'empty']);
 
-export function createGame({ carousel = false, pushContact = false, suspendedClaw = false, collection = false } = {}) { const game = { carousel, collectionPreview: collection, pushContact: pushContact && !suspendedClaw, suspendedClaw, suspension: suspendedClaw ? createSuspension() : null, carouselTime: 0, phase: 'idle', elapsed: 0, position: { ...START }, plan: null, rounds: 0, collection: [], toys: (collection ? COLLECTION_TOYS : ASSORTMENT).filter(t => collection || !carousel || EVENT_TOYS.includes(t.id)).map(t => ({ ...t, ...(carousel && t.id === 'peach' ? { x: .20, z: .72, scale: .82 } : {}), elevation: carousel && t.id === CAROUSEL.id ? CAROUSEL.height : 0, claimed: false })), rider: carousel ? CAROUSEL.id : null }; moveCarousel(game, 0); return game; }
+export function createGame({ carousel = false, pushContact = false, suspendedClaw = false, collection = false, boothToys = false } = {}) { const game = { carousel, collectionPreview: collection, pushContact: pushContact && !suspendedClaw, suspendedClaw, suspension: suspendedClaw ? createSuspension() : null, carouselTime: 0, phase: 'idle', elapsed: 0, position: { ...START }, plan: null, rounds: 0, collection: [], toys: (collection ? COLLECTION_TOYS : boothToys ? BOOTH_TOYS : ASSORTMENT).filter(t => collection || !carousel || EVENT_TOYS.includes(t.id)).map(t => ({ ...t, ...(carousel && !boothToys && t.id === 'peach' ? { x: .20, z: .72, scale: .82 } : {}), elevation: carousel && t.id === CAROUSEL.id ? CAROUSEL.height : 0, claimed: false })), rider: carousel ? CAROUSEL.id : null }; moveCarousel(game, 0); return game; }
 // A miss continues over its drop; a catch or a fresh run starts at the bed centre.
 export function begin(game) { if (!['idle', 'result'].includes(game.phase)) return false; if (game.collection.length === game.toys.length) return false; const pose = carriagePose(game); game.position = game.plan && !game.plan.prize ? { x: pose.x, z: pose.z } : { ...START }; game.phase = 'aim'; game.elapsed = 0; game.plan = null; return true; }
 // After a delivery the empty claw drives from the chute to the start while the next round is announced.
