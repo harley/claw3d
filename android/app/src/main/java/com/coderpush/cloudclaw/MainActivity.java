@@ -43,7 +43,7 @@ public class MainActivity extends ComponentActivity {
  GestureRecognizer recognizer; JavaScriptReplyProxy client;
  final LatestResultQueue<JSONObject> deliveries=new LatestResultQueue<>();
  volatile long epoch=0; volatile boolean active=false;
- long frameId=0,lastTimestamp=0; int clientGeneration, cameraFps; boolean foreground=true, destroyed=false;
+ long frameId=0,lastTimestamp=0; int clientGeneration; boolean foreground=true, destroyed=false;
  PreviewConfiguration previewConfiguration;
  String selectedCamera="", nativeStats="", deliveryStats="", inferenceDelegate="GPU";
  long pageEpoch=0;
@@ -119,7 +119,7 @@ public class MainActivity extends ComponentActivity {
      boolean sessionPreview=previewConfiguration.beginSession(o.optBoolean("applyPreview",false));
      preview.setVisibility(sessionPreview?View.VISIBLE:View.GONE);updatePreviewStatus();
      String backend=InferenceConfiguration.select(getPreferences(MODE_PRIVATE).getString("inferenceDelegate","GPU"),o.optString("delegate",""),o.optBoolean("applyPreview",false));
-     cameraFps=CameraRateConfiguration.select(cameraFps,Uri.parse(web.getUrl()).getQueryParameter("cameraFps"),o.optBoolean("applyPreview",false));
+     int cameraFps=CameraRateConfiguration.select(getPreferences(MODE_PRIVATE).getInt("cameraFps",15),Uri.parse(web.getUrl()).getQueryParameter("cameraFps"),o.optBoolean("applyPreview",false));
      startTracking(hands,epoch,o.optString("cameraId",""),sessionPreview,backend,cameraFps);
     }else if(type.equals("sync")&&o.optInt("generation",-1)==clientGeneration){
      double jsTime=o.getDouble("jsTime");if(Double.isFinite(jsTime))send(json("type","clock","generation",clientGeneration,"jsTime",jsTime,"nativeTime",now()));
@@ -222,7 +222,7 @@ public class MainActivity extends ComponentActivity {
    a.setAnalyzer(executor,frame->analyze(frame,token));if(sessionPreview){Preview p=new Preview.Builder().build();p.setSurfaceProvider(preview.getSurfaceProvider());provider.bindToLifecycle(this,selector,p,a);}
    else provider.bindToLifecycle(this,selector,a);
    send(json("type","cameras","generation",clientGeneration,"cameras",cameraInventory(),"selected",selectedCamera));
-   getPreferences(MODE_PRIVATE).edit().putString("inferenceDelegate",backend).apply();
+   getPreferences(MODE_PRIVATE).edit().putString("inferenceDelegate",backend).putInt("cameraFps",requestedFps).apply();
    send(json("type","ready","generation",clientGeneration,"delegate",backend));nativeStats=backend+" · "+hands+" hand mode · camera "+selectedCamera+" · preview "+(sessionPreview?"on":"off");deliveryStats="Analysis age excludes sensor queue time";updateStatus();
   }catch(Exception e){fail(token,e);}},ContextCompat.getMainExecutor(this));});
  }catch(Exception e){fail(token,e);}});}

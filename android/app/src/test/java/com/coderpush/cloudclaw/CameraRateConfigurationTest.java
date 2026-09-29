@@ -7,6 +7,7 @@ public class CameraRateConfigurationTest {
   assertEquals(15,CameraRateConfiguration.select(0,"15",true));
   assertEquals(0,CameraRateConfiguration.select(0,"15",false));
   assertEquals(15,CameraRateConfiguration.select(15,"",false));
+  assertEquals(15,CameraRateConfiguration.select(15,null,false));
   assertEquals(0,CameraRateConfiguration.select(15,"",true));
   assertEquals(0,CameraRateConfiguration.select(0,"120",true));
  }

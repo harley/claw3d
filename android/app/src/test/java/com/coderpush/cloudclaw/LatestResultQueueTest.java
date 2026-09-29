@@ -13,7 +13,9 @@ public class LatestResultQueueTest {
  }
 
  @Test public void fourFramesCanFlowBeforeSlowAcknowledgementsReturn() {
-  var queue = new LatestResultQueue<String>(); queue.reset(1,4);
+  var queue = new LatestResultQueue<String>();
+  // Camera start resets on stop, then configures the window at the same epoch.
+  queue.reset(1); queue.reset(1,4);
   assertTrue(queue.offer(1,1,"first")); assertEquals("first",queue.take(1));
   assertTrue(queue.offer(1,2,"second")); assertEquals("second",queue.take(1));
   assertTrue(queue.offer(1,3,"third")); assertEquals("third",queue.take(1));
