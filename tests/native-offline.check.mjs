@@ -69,6 +69,13 @@ try {
  let page=context.pages()[0]||await context.newPage();
  await page.goto(origin+'/?setup=manual&hands=manual');
  await page.waitForFunction(()=>document.documentElement.dataset.arcadeReady==='true');
+ assert.doesNotMatch(await page.locator('#mode-label').textContent(), /LOCAL PREVIEW/);
+ assert.match(await page.locator('#operator-help').textContent(), /Scores saved on this device/);
+ await page.locator('#how-to-play').click();
+ await page.locator('#hand-guide-next').click();
+ await page.locator('#hand-guide-next').click();
+ await page.locator('#hand-guide-next').click();
+ await page.locator('#hand-guide').waitFor({state:'hidden'});
  const seeded=await page.evaluate(async()=>{
   const e=await import('/__testsrc/event-session.js');
   const output=[];

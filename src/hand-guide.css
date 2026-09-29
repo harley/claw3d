@@ -1,0 +1,102 @@
+#how-to-play { border-color: #35c9ff; color: #7fddff; padding: 12px 16px; letter-spacing: .6px; }
+#hand-guide { width: min(1100px, calc(100vw - 32px)); max-height: 94svh; padding: 20px 30px 0; border: 2px solid #35d5ff; border-radius: 24px; background: #081526; text-align: center; }
+#hand-guide::backdrop { background: #020715bb; backdrop-filter: none; }
+#hand-guide .guide-close { position: absolute; right: 16px; top: 12px; border: 0; background: transparent; font-size: 36px; font-weight: 300; padding: 0 10px; min-height: 44px; }
+.guide-count { width: 108px; border: 2px solid #35d5ff; border-radius: 30px; margin: 0 auto; padding: 4px; font-size: 19px; font-weight: 700; }
+#hand-guide h1 { margin: 10px 0 12px; font-size: clamp(25px, 3.3vw, 46px); font-weight: 800; letter-spacing: -1px; }
+#hand-guide em { color: #35c9ff; font-style: normal; }
+#hand-guide mark { color: #ffc14d; background: none; }
+.guide-demo { display: grid; grid-template-columns: 1fr 1fr; width: min(830px, 100%); margin: auto; height: clamp(220px, 36vh, 355px); }
+.guide-hand-panel { position: relative; border-right: 1px solid #29425c; margin: 18px 0; }
+.guide-hand { position: absolute; width: auto; height: 62%; aspect-ratio: 1; top: 17%; left: 8%; }
+.guide-sprite { display: block; width: 100%; height: 100%; background-image: var(--guide-art); background-size: 200% 200%; background-repeat: no-repeat; }
+.guide-sprite.palm { background-position: left top; }
+.guide-sprite.fist { background-position: right top; position: absolute; inset: 0; opacity: 0; }
+.guide-sprite.bed { background-position: left bottom; }
+.guide-sprite.claw { background-image: var(--guide-overhead); background-size: contain; background-position: center; }
+#hand-guide[data-step="drop"] .guide-sprite.claw { background-image: var(--guide-art); background-size: 200% 200%; background-position: right bottom; }
+.guide-hand.ghost { opacity: .16; transform: translateY(35%); }
+.guide-hand.moving { animation: guide-hand-depth 4s ease-in-out infinite; }
+.guide-direction { position: absolute; left: 57%; display: flex; align-items: center; gap: 8px; font-size: 52px; font-weight: 700; color: #35c9ff; }
+.guide-direction span { font-size: clamp(12px, 1.5vw, 21px); text-align: left; }
+.guide-direction.first { top: 6%; }
+.guide-direction.second { bottom: 7%; color: #ffc14d; }
+.guide-bed-panel { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; }
+.guide-bed-label { color: #9cafcb; font-size: 16px; font-weight: 700; }
+.guide-bed { height: calc(100% - 40px); aspect-ratio: 1; position: relative; }
+.guide-claw { position: absolute; width: 26%; aspect-ratio: 1; left: 37%; top: 28%; }
+.guide-claw.ghost { top: 60%; opacity: .23; }
+.guide-claw.moving { animation: guide-claw-depth 4s ease-in-out infinite; }
+.guide-bed-track { position: absolute; left: 50%; top: 23%; height: 54%; border-left: 2px dashed #79cfe77d; }
+.guide-claw { z-index: 1; }
+#hand-guide .guide-caption { font-size: clamp(19px, 2.7vw, 35px); margin: 15px 0 0; font-weight: 800; }
+#hand-guide #hand-guide-hint { font-size: 14px; margin: 8px 0 15px; }
+.guide-footer { border-top: 1px solid #29425c; display: flex; gap: 25px; align-items: center; padding: 16px 0; }
+.guide-footer nav { display: flex; flex: 1; justify-content: space-around; }
+.guide-footer nav button { border: 0; background: none; color: #92a8c6; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0 6px; }
+.guide-footer nav b { width: 36px; height: 36px; border: 2px solid currentColor; border-radius: 50%; font-size: 22px; line-height: 32px; }
+.guide-footer [aria-current] { color: #35c9ff; }
+.guide-footer [aria-current] b { background: #27c6ed; color: #061525; border-color: #d8f7ff; }
+#hand-guide-next { background: #27c6ed; color: #061525; border: 0; border-radius: 12px; font-size: 24px; min-width: 210px; padding: 18px 25px; }
+#hand-guide-next span { padding-left: 20px; }
+#hand-guide[data-step="sideways"] .guide-hand { left: 21%; top: 18%; }
+#hand-guide[data-step="sideways"] .guide-hand.ghost { transform: translateX(32%); }
+#hand-guide[data-step="sideways"] .guide-hand.moving { animation-name: guide-hand-sideways; }
+#hand-guide[data-step="sideways"] .guide-direction { left: 8%; font-size: 30px; }
+#hand-guide[data-step="sideways"] .guide-direction.first { top: -5%; }
+#hand-guide[data-step="sideways"] .guide-direction.second { bottom: -5%; left: 46%; }
+#hand-guide[data-step="sideways"] .guide-claw.moving { animation-name: guide-claw-sideways; top: 40%; }
+#hand-guide[data-step="sideways"] .guide-claw.ghost { top: 40%; left: 62%; }
+#hand-guide[data-step="sideways"] .guide-bed-track { left: 22%; top: 52%; width: 56%; height: 0; border-left: 0; border-top: 2px dashed #79cfe77d; }
+#hand-guide[data-step="drop"] .guide-hand.moving { animation: none; }
+#hand-guide[data-step="drop"] .guide-hand.ghost, #hand-guide[data-step="drop"] .guide-claw.ghost { display: none; }
+#hand-guide[data-step="drop"] .moving .palm { animation: guide-open 4s infinite; }
+#hand-guide[data-step="drop"] .moving .fist { animation: guide-fist 4s infinite; }
+#hand-guide[data-step="drop"] .guide-claw.moving { animation: guide-drop 4s infinite; width: 40%; left: 30%; top: 5%; }
+#hand-guide[data-step="drop"] .guide-sprite.bed, #hand-guide[data-step="drop"] .guide-bed-track { display: none; }
+#hand-guide[data-step="drop"] .guide-direction { left: 58%; }
+#hand-guide.guide-suspended * { animation-play-state: paused !important; }
+@keyframes guide-hand-depth { 0%, 15%, 100% { transform: translateY(35%); } 45%, 65% { transform: translateY(-23%); } }
+@keyframes guide-claw-depth { 0%, 15%, 100% { transform: translateY(120%); } 45%, 65% { transform: translateY(-40%); } }
+@keyframes guide-hand-sideways { 0%, 15%, 100% { transform: translateX(32%); } 45%, 65% { transform: translateX(-32%); } }
+@keyframes guide-claw-sideways { 0%, 15%, 100% { transform: translateX(90%); } 45%, 65% { transform: translateX(-90%); } }
+@keyframes guide-open { 0%, 20%, 95%, 100% { opacity: 1; } 25%, 90% { opacity: 0; } }
+@keyframes guide-fist { 0%, 20%, 95%, 100% { opacity: 0; } 25%, 90% { opacity: 1; } }
+@keyframes guide-drop { 0%, 40%, 100% { transform: translateY(0) scale(1); } 65%, 90% { transform: translateY(110%) scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  #hand-guide * { animation: none !important; }
+  #hand-guide[data-step="drop"] .moving .palm { opacity: 0; }
+  #hand-guide[data-step="drop"] .moving .fist { opacity: 1; }
+}
+@media (max-width: 650px) {
+  #how-to-play { font-size: 10px; padding: 10px 8px; }
+  #hand-guide { padding: 16px 12px 0; border-radius: 16px; }
+  .guide-demo { height: 250px; }
+  .guide-hand { width: auto; height: 50%; left: 8%; top: 20%; }
+  .guide-direction { left: 4%; font-size: 28px; }
+  .guide-direction.first { top: 0; }
+  .guide-direction.second { bottom: 0; }
+  .guide-bed { width: min(100%, 210px); height: auto; flex-shrink: 0; }
+  .guide-bed-label { font-size: 12px; }
+  .guide-footer { gap: 8px; flex-wrap: wrap; }
+  .guide-footer nav { min-width: 100%; }
+  .guide-footer nav button { font-size: 10px; }
+  #hand-guide-next { width: 100%; min-width: 0; font-size: 18px; padding: 12px; }
+  #hand-guide[data-step="drop"] .guide-direction { left: 4%; }
+  #hand-guide[data-step="sideways"] .guide-hand { height: 42%; left: 16%; top: 29%; }
+  #hand-guide[data-step="sideways"] .guide-direction.second { left: 20%; }
+}
+@media (max-height: 620px) and (min-width: 651px) {
+  #hand-guide { padding-top: 10px; }
+  .guide-demo { height: 195px; }
+  #hand-guide h1 { margin: 5px 0; font-size: 28px; }
+  .guide-footer { padding: 10px 0; }
+  #hand-guide .guide-caption { margin-top: 5px; font-size: 24px; }
+}
+@media (max-width: 700px) and (orientation: portrait) {
+  #how-to-play { position: absolute; left: 0; top: 48px; }
+}
+
+#hand-guide[data-step="depth"] .guide-caption { font-size: clamp(19px, 2.4vw, 30px); line-height: 1.3; }
+#hand-guide:not([data-step="drop"]) .guide-claw { border: 2px solid #35c9ff; border-radius: 50%; background: #081526d9; padding: 3px; }
+#hand-guide:not([data-step="drop"]) .guide-claw .claw { transform: rotate(90deg); }

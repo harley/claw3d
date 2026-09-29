@@ -25,14 +25,17 @@ const instructions = {
  dual: { profile: 'dual', scene: 'Move left fist to aim. Move right palm onto DROP.', camera: 'Show your left hand open to start. Clench to grip and steer; bring your open right palm into the highlighted DROP area. Open your left hand to release without dropping.' },
 };
 async function aimToy(id='butter'){
- for(const axis of ['x','z']) for(let i=0;i<6;i++){
+ for(const axis of ['x','z']) for(let i=0;i<12;i++){
   const delta=({butter:{x:-.38,z:.72},peach:{x:.20,z:.72}}[id])[axis]-(await snap()).position[axis];
-  if(Math.abs(delta)<.025)break;
-  const speed=Math.abs(delta)<.14?.25:1;
+  if(Math.abs(delta)<.0025)break;
+  const speed=Math.abs(delta)<.04?.08:Math.abs(delta)<.14?.25:1;
   await cameraInput(page,{x:0,z:0,[axis]:Math.sign(delta)*speed});
   await page.waitForTimeout(Math.abs(delta)/(.85*speed)*1000);
   await cameraInput(page,{x:0,z:0});
  }
+ const target = {butter:{x:-.38,z:.72},peach:{x:.20,z:.72}}[id];
+ const aimed = (await snap()).position;
+ assert.ok(Math.hypot(aimed.x-target.x, aimed.z-target.z)<.005, 'delivery fixture reaches the target centre, not just the broad alignment cue');
  // This journey tests delivery and scoring from a settled pickup. Alignment
  // during a swing is only momentary; suspended-claw.browser.mjs covers that miss.
  await page.waitForTimeout(2000);
@@ -93,11 +96,44 @@ async function catchTurn({ timeout = false } = {}){
 try {
  await open();
  await assertInstructions(instructions.holdDrop);
+ // Contract: on-demand guide never starts play, and owns animations only while
+ // open. This lifecycle wiring is not covered by mechanics/camera unit tests.
+ const guideStorage = await page.evaluate(() => JSON.stringify(localStorage));
+ assert.equal(await page.locator('#hand-guide .guide-demo').count(), 0);
+ assert.equal(await page.evaluate(() => performance.getEntriesByType('resource').some(r => r.name.includes('hand-guide.png'))), false, 'art is not requested while closed');
+ await page.locator('#how-to-play').click();
+ assert.equal(await page.locator('#hand-guide').getAttribute('data-step'), 'depth');
+ assert.ok(await page.locator('#hand-guide').evaluate(el => el.getAnimations({subtree:true}).length) > 0);
+ await page.setViewportSize({width:1672,height:941});
+ await page.screenshot({path:'.screenshots/hand-guide-desktop-final.png'});
+ await page.setViewportSize({width:390,height:844});
+ await page.screenshot({path:'.screenshots/hand-guide-mobile-final.png'});
+ assert.equal(await page.locator('#hand-guide').evaluate(el => el.scrollWidth > el.clientWidth), false, 'guide fits a narrow screen');
+ await page.setViewportSize({width:1440,height:900});
+ await page.locator('#hand-guide-next').click();
+ assert.equal(await page.locator('#hand-guide').getAttribute('data-step'), 'sideways');
+ await page.locator('#hand-guide-next').click();
+ assert.match(await page.locator('#hand-guide-hint').textContent(), /Open early to cancel/);
+ await page.locator('#hand-guide-next').click();
+ await page.waitForFunction(() => !document.getElementById('hand-guide').children.length);
+ assert.equal(await page.locator('#hand-guide').evaluate(el => el.getAnimations({subtree:true}).length), 0);
+ assert.equal(await page.evaluate(() => document.activeElement.id), 'how-to-play');
+ assert.equal(await page.evaluate(() => JSON.stringify(localStorage)), guideStorage);
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await page.locator('#how-to-play').click();
+ assert.equal(await page.locator('#hand-guide').getAttribute('data-step'), 'depth');
+ assert.equal(await page.locator('#hand-guide').evaluate(el => el.getAnimations({subtree:true}).length), 0);
+ await page.keyboard.press('Escape');
+ await page.locator('#hand-guide').waitFor({state:'hidden'});
+ await page.emulateMedia({reducedMotion:'no-preference'});
+ console.log('PASS guide navigation, lazy art, reduced motion, cleanup and unchanged storage');
+
  await page.waitForFunction(() => document.body.classList.contains('attract'));
  await page.screenshot({path:'.screenshots/control-help-one-hand.png'});
  await page.locator('#mode-two').click();
  await page.waitForFunction(() => location.search.includes('controls=dual') && document.documentElement.dataset.arcadeReady === 'true');
  await assertInstructions(instructions.dual);
+ assert.equal(await page.locator('#how-to-play').isVisible(), false);
  await page.waitForFunction(() => document.body.classList.contains('attract'));
  await page.screenshot({path:'.screenshots/control-help-dual.png'});
  await page.locator('#mode-one').click();
@@ -140,6 +176,7 @@ try {
  await page.locator('#name').fill('Linh r h');await page.locator('#name').press('Enter');
  await assertScoredStart(page,{captureScreenshots:true});
  assert.equal((await snap()).event.run.name,'Linh r h');
+ assert.equal(await page.locator('#how-to-play').isVisible(), false, 'active play cannot open the tutorial');
  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
  const camera=(await snap()).camera; await page.waitForTimeout(100); assert.deepEqual((await snap()).camera,camera);
  await aimToy();await catchTurn();assert.equal((await snap()).event.run.turns.length,1);assert.ok((await snap()).event.run.turns[0].score>100);
@@ -193,6 +230,12 @@ try {
  await phase('aim');assert.equal((await snap()).event.turn,3);
  assert.deepEqual((await snap()).collection,['butter']);
  await aimToy('peach');await page.screenshot({path:'.screenshots/event-last-claw.png'});await catchTurn({timeout:true});await page.locator('#final').waitFor();
+ const beforeGuide = (await snap()).event.complete;
+ await page.locator('#final-how-to-play').click();
+ await page.locator('#hand-guide-close').click();
+ await page.locator('#final').waitFor();
+ assert.deepEqual((await snap()).event.complete, beforeGuide, 'returning from guide preserves the result');
+ assert.equal(await page.evaluate(() => document.activeElement.id), 'final-how-to-play');
  assert.ok((await snap()).event.complete.total>200 && (await snap()).event.complete.total<=300);assert.equal((await snap()).event.board.runs.length,1);
  await page.locator('#final-leaderboard').click(); await page.locator('#result-open').click();
  assert.equal(await page.locator('#final-score').textContent(),String((await snap()).event.complete.total),'reopening restores the full score after interrupted count-up');

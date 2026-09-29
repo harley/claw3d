@@ -25,6 +25,12 @@ try {
   };
   const hold = async () => { await page.evaluate(() => { window.testCamera.feedback.kind = 'clenching'; window.testCamera.feedback.progress = .7; window.testCamera.tick(); }); await page.waitForFunction(() => Number(document.getElementById('hand-cursor').style.getPropertyValue('--hold')) > 0); };
   const fire = () => page.evaluate(() => window.testCamera.clench());
+  await point('how-to-play'); await hold(); assert.equal(await fire(), true);
+  await page.locator('#hand-guide').waitFor();
+  await point('hand-guide-next'); await hold(); assert.equal(await fire(), true);
+  assert.equal(await page.locator('#hand-guide').getAttribute('data-step'), 'sideways');
+  await point('hand-guide-close'); await hold(); assert.equal(await fire(), true);
+  await page.locator('#hand-guide').waitFor({state:'hidden'});
   await point('play');
   assert.equal(await fire(), false, 'pointing without a hold cannot select');
   await point('play'); await hold(); assert.equal(await fire(), true);

@@ -6,6 +6,7 @@ import { RIGHT_SLAM_MS } from './dual-hand-controls.js';
 import { resolvePlayMode, phonePlaySearch, tomkoPlaySearch, cueLeadSeconds, dualStartReadiness, firstTurnControlReady as isFirstTurnControlReady } from './play-mode.js';
 import { ABSOLUTE_SPEED } from './steering.js';
 import './arcade.css';
+import { createHandGuide } from './hand-guide.js';
 import { createJoystickCursor } from './joystick-cursor.js';
 import { createHandMenu, generatedName } from './hand-menu.js';
 const manualSetup = new URLSearchParams(location.search).get('setup') === 'manual';
@@ -101,6 +102,7 @@ const controlInstructions = {
 }[mode.profile];
 $('scene').setAttribute('aria-label', controlInstructions.scene);
 $('camera-help').textContent = controlInstructions.camera;
+if (nativeAndroid) $('operator-help').textContent = 'Scores saved on this device. Previous sessions stay saved. Generated player names can be edited.';
 if (dualEnabled) $('camera-menu-help').textContent = 'Use your left hand and hold a fist to select menu buttons. Your right hand can stay visible.';
 const glove = createJoystickCursor(() => cabinetEnabled ? scene?.controlTargets() : null, () => { if (cabinetEnabled) gestureDrop(); });
 let previousMenuMode = '', editingResultName = false, savingResultName = false;
@@ -108,7 +110,7 @@ function menuMode() {
   if (savingTurn || startingRun || frozen || stopped || document.hidden || editingResultName || boothInvite?.editing || boothInvite?.busy) return '';
   if ((recovering || paused) && shared) return '';
   const dialogs = [...document.querySelectorAll('dialog[open]')];
-  if (dialogs.length) return dialogs.length === 1 && ['registration', 'final', 'scores-dialog'].includes(dialogs[0].id) ? dialogs[0].id : '';
+  if (dialogs.length) return dialogs.length === 1 && ['registration', 'final', 'scores-dialog', 'hand-guide'].includes(dialogs[0].id) ? dialogs[0].id : '';
   if ((recovering || paused) && cameraControls?.running) return 'resume';
   return !run && cameraControls?.running ? 'idle' : '';
 }
@@ -147,6 +149,8 @@ let store, storageError = '', storageBlocked = false;
 try { store = shared || publicTry ? newStore() : loadStore({ getItem: () => localStorage.getItem(scoreKey) }, localRules); } catch (error) { store = newStore(localRules); storageError = error.message; storageBlocked = true; }
 let run = store.active, completedRun = null, turnNumber = run ? run.turns.length + 1 : 0;
 let recovering = Boolean(run);
+const canShowHandGuide = () => mode.profile === 'hold-drop' && !run && !pendingPlayer && !startingRun && !recovering && !frozen && !stopped;
+createHandGuide({ canOpen: canShowHandGuide, onTransition: () => { cameraControls?.reset(); handMenu.clear(); } });
 if (run) selectedStart = null;
 const frames = [], errors = [];
 let playtest = createPlaytestClient({ build: __BUILD_INFO__.commit, enabled: shared && !official && !publicPlay });
@@ -201,6 +205,8 @@ const audio = createArcadeAudio({ onChange: syncSoundUI, enabledByDefault: !manu
 const movementMusic = createMovementMusic(audio);
 const hud = createHud({ audio, phaseSound });
 function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ? 'loading' : 'off' }, modal = Boolean(document.querySelector('dialog[open]'))) {
+  setHidden($('how-to-play'), !canShowHandGuide());
+  setHidden($('final-how-to-play'), !canShowHandGuide());
   hud.update({ game, run, completedRun, pendingPlayer, turnNumber, remaining: flow.remaining, nextTurnElapsed: flow.nextTurnElapsed, firstTurnPreparationElapsed: flow.firstTurnPreparationElapsed, firstTurnControlReady: flow.firstTurnControlReady, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, publicTry, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus: pilot.status, storageError, aligned, marqueeAvailable: scene?.marqueeAvailable }, feedback, modal);
 }
 function syncSoundUI() {
@@ -307,7 +313,7 @@ function presentTurn(outcome) {
     $('final-name').textContent = completedRun.name.toUpperCase(); $('final-score').textContent = official ? '—' : String(completedRun.total).padStart(nativeAndroid ? 1 : 3, '0');
     const rank = shared ? undefined : leaderboard(currentBoard(store)).find(r => r.id === completedRun.id)?.rank;
     $('final-kicker').textContent = official ? 'AWAITING SERVER RESULT' : finaleHeadline(completedRun.turns, rank, completedRun.rules.points);
-    $('final-rank').textContent = shared ? globalThis.__OFFLINE_SHELL__ ? 'Saved on this computer · sync pending' : 'Score waiting to sync' : publicTry ? 'PRACTICE · NO EVENT RANKING' : `LOCAL PREVIEW · ${dualEnabled ? '2 HANDS' : '1 HAND'}${rank ? ` · RANK #${rank}` : ''}`;
+    $('final-rank').textContent = shared ? globalThis.__OFFLINE_SHELL__ ? 'Saved on this computer · sync pending' : 'Score waiting to sync' : publicTry ? 'PRACTICE · NO EVENT RANKING' : `${nativeAndroid ? '' : 'LOCAL PREVIEW · '}${dualEnabled ? '2 HANDS' : '1 HAND'}${rank ? ` · RANK #${rank}` : ''}`;
     setText('final-board', publicPlay ? 'All plays · every run counts' : publicTry ? 'Three turns · play again anytime' : `Board: ${completedRun.boardName || store.boards.find(board => board.id === completedRun.boardId)?.name || completedRun.boardId}`);
     if (nativeAndroid) {
       const prior = currentBoard(store).runs.filter(row => row.id !== completedRun.id && row.rules.version === completedRun.rules.version).at(-1);
@@ -713,7 +719,7 @@ function frame(time) {
   // One dialog query per frame; every consumer below shares it.
   const nextMenuMode = menuMode();
   if (nextMenuMode !== previousMenuMode) { cameraControls?.reset(); handMenu.clear(); previousMenuMode = nextMenuMode; }
-  handMenu.update(nextMenuMode, cameraControls?.feedback || {}, { showGuide: Boolean(cameraControls?.running) && !paused });
+  handMenu.update(nextMenuMode, cameraControls?.feedback || {}, { showGuide: Boolean(cameraControls?.running) && !paused && nextMenuMode !== 'hand-guide' });
   const openDialogs = document.querySelectorAll('dialog[open]');
   const aiming = game.phase === 'aim', modal = openDialogs.length > 0;
   const modalBeyondFinal = modal && [...openDialogs].some(dialog => dialog.id !== 'final');
