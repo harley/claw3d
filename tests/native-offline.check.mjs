@@ -141,9 +141,31 @@ try {
  await page.waitForFunction(()=>tomkoStatus().phase==='aim',{},{timeout:15000});
  assert.equal((await startCamera(true)).applyPreview,false,'active aiming cannot apply a preview change');
  await page.waitForFunction(()=>tomkoStatus().camera==='tracking');
+ // Contract: the new non-modal restart freezes aiming until fresh control returns;
+ // existing setup restart coverage does not exercise this corner control or its UI.
+ await page.locator('[data-health-toggle]').click();
+ assert.equal(await page.locator('#tracking-health-panel').isVisible(),true);
+ assert.equal(await page.locator('dialog[open]').count(),0,'details do not pause gameplay');
+ await page.locator('[data-health-close]').click();
+ await page.evaluate(()=>globalThis.__pose=null);
+ await page.waitForTimeout(800);
+ const remainingBefore=await page.locator('#timer').textContent();
+ const startsBefore=await page.evaluate(()=>__nativeMessages.filter(m=>m.type==='start').length);
+ await page.locator('[data-health-restart]').click();
+ await page.waitForFunction(n=>__nativeMessages.filter(m=>m.type==='start').length===n+1,startsBefore);
+ await page.waitForTimeout(1000);
+ assert.equal(await page.locator('#timer').textContent(),remainingBefore,'restart and missing hand preserve aiming time');
+ assert.equal(await page.evaluate(()=>__nativeMessages.filter(m=>m.type==='start').at(-1).applyPreview),false);
+ await page.waitForFunction(()=>document.querySelector('[data-health-status]').textContent==='Waiting for hand',{},{timeout:12000});
+ assert.equal(await page.locator('.camera-image').evaluate(node=>getComputedStyle(node).opacity),'0','restart never reveals camera mirror');
+ await page.screenshot({path:'.screenshots/tracking-health-205.png'});
+ await page.evaluate(()=>globalThis.__pose='Open_Palm');
+ await page.waitForFunction(()=>tomkoStatus().camera==='tracking');
  // Allow fresh open-hand arming after the explicit camera restart.
  await page.waitForTimeout(500);await page.evaluate(()=>globalThis.__pose='Closed_Fist');
  await page.waitForFunction(()=>['anticipate','descend'].includes(tomkoStatus().phase));
+ await page.waitForFunction(()=>document.querySelector('[data-health-restart]').disabled);
+ assert.equal(await page.locator('[data-health-restart]').textContent(),'Wait for claw to finish');
  await page.evaluate(()=>globalThis.__pose=null);
  assert.equal((await startCamera(true)).applyPreview,false,'accepted drop cannot apply a preview change');
  const storageKey=await page.evaluate(async()=>(await import('/__testsrc/event-session.js')).STORAGE_KEY);

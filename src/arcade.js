@@ -20,6 +20,7 @@ import { createArcadeAudio, playCollectionCue } from './arcade-audio.js';
 import { createHud, $, setText, setHidden, finaleHeadline, missCopy, TROPHY_ICONS, clampOverlayPoint } from './arcade-hud.js';
 import { createTurnState, beginTurnState, beginFirstTurnPreparation, requestDrop, stepTurn } from './turn-controller.js';
 import { createMovementMusic } from './movement-music.js';
+import { createTrackingHealth, trackingSample } from './tracking-health.js';
 import { PerformanceGovernor, PERFORMANCE_WINDOW_MS } from './performance-governor.js';
 const publicPlay = globalThis.__PUBLIC_PLAY__ === true;
 const publicTry = globalThis.__PUBLIC_TRY__ === true && !publicPlay;
@@ -88,6 +89,11 @@ $('build-info').textContent = `${globalThis.__OFFLINE_SHELL__ ? 'LOCAL PREPARED 
 let savingTurn = false, pendingTurnOutcome = null, savingTurnPromise = null;
 let game = createGame({ carousel: true, suspendedClaw: mode.suspendedClaw, collection: mode.collection }), scene, previous = 0, stopped = false, frozen = false;
 let cameraControls, cameraLoading = false;
+let healthSample = null, lastHoldCause = '';
+const trackingHealthUI = nativeAndroid ? createTrackingHealth({ root: $('tracking-health'), restart: () => {
+  if (cameraLoading || savingTurn || startingRun || stopped || document.hidden || document.querySelector('dialog[open]') || flow.pendingSlam || (run && game.phase !== 'aim' && game.phase !== 'idle')) return;
+  void startCamera();
+}, build: $('build-info').textContent }) : null;
 const handMenu = createHandMenu({ leftHand: dualEnabled });
 document.body.classList.toggle('machine-controls', cabinetEnabled);
 document.body.classList.toggle('dual-controls', cabinetEnabled);
@@ -648,6 +654,7 @@ function reportCameraFailure(code) {
 async function startCamera() {
   if (cameraLoading || !noticeReady) return;
   cameraFailureReported = false;
+  healthSample = null; lastHoldCause = '';
   track('camera_start');
   updateCameraView('Starting camera…');
   cameraLoading = true; $('camera-toggle').disabled = true; $('camera-status').textContent = 'Starting camera…';
@@ -666,6 +673,7 @@ async function startCamera() {
         // Bounded so a boundary-trembling hand cannot evict funnel-critical
         // events (drop, turn_complete) from the retry queue.
         onGesture: (name, cause) => {
+          if (name === 'hold_cancelled') lastHoldCause = ({ frame_gap: 'Detection gap > 300 ms', stale: 'Stale detection', hand_lost: 'Hand lost', opened: 'Hand opened', uncertain_reset: 'Uncertain gesture', blocked: 'Controls paused' })[cause] || 'Confirmation reset';
           if (holdSignalTurn !== turnNumber) { holdSignalTurn = turnNumber; holdSignalCount = 0; }
           if (++holdSignalCount > 20) return;
           track(name, { phase: game.phase, ...(name === 'hold_cancelled' ? { cause } : {}) });
@@ -750,6 +758,7 @@ function frame(time) {
     const feedback = flow.pendingSlam ? { ...flow.pendingSlam.feedback, profile: 'dual', kind: 'slamming', slamProgress: flow.pendingSlam.elapsed / (RIGHT_SLAM_MS / 1000), progress: 1, controlEnabled: false } : dualEnabled && flow.contactFeedback && game.phase === 'anticipate' ? { ...flow.contactFeedback, profile: 'dual', kind: 'slamming', slamProgress: 1, progress: 1, controlEnabled: false } : cameraControls?.feedback || { kind: 'off', progress: 0, controlEnabled: false };
     cueLead = cueLeadSeconds(mode, feedback);
     updateUI(feedback, modal);
+    trackingHealthUI?.update({ time, sample: cameraControls?.running ? healthSample : null, feedback, busy: cameraLoading || savingTurn || startingRun || stopped || modal || document.hidden, inFlight: Boolean(flow.pendingSlam || (run && game.phase !== 'aim' && game.phase !== 'idle')), holdCause: lastHoldCause });
     const controlEvent = { state: feedback.kind, phase: game.phase, controlMode: mode.controlMode,
       ...(dualEnabled && run && flow.firstTurnPreparationElapsed !== null ? { startGate: dualStartReadiness(feedback) } : {}) };
     const controlKey = JSON.stringify(controlEvent);
@@ -769,6 +778,7 @@ function frame(time) {
         const drained = cameraControls?.adaptationStats(), vision = cameraControls?.running ? drained : null;
         const rejected = vision ? Object.values(vision.rejected).reduce((sum, count) => sum + count, 0) : 0;
         const averageFps = 1000 / (sorted.reduce((a, b) => a + b, 0) / sorted.length);
+        healthSample = trackingSample(vision, adaptationVisibleMs);
         // The governor sees every visible window, camera or not, so attract mode adapts too.
         performanceGovernor.observe({ averageFps, resultHz: vision ? vision.results / (adaptationVisibleMs / 1000) : 0, results: vision?.results || 0, rejected });
         adaptationFrames = []; adaptationVisibleMs = 0;
