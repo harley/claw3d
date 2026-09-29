@@ -100,8 +100,7 @@ export class ArcadeScene {
     arch.lineTo(-.62, 0); arch.closePath();
     mesh(booth, new T.ExtrudeGeometry(arch, { depth: .14, bevelEnabled: false, curveSegments: 24 }), navy);
     box(booth, boothBlue, [0, 1.60, .06], [1.24, 3.20, .12], .025);
-    // A capsule display echoes the cyan inset on the physical stand. Keep it
-    // graphic-only so the cabinet and existing brand header retain the hierarchy.
+    // The capsule carries a quiet maker credit beneath the cloud.
     for (const [width, height, depth, z, mat] of [
       [1.13, 2.40, .16, .06, cyan], [.94, 2.18, .08, .22, material('#0f1726', .86)],
     ]) {
@@ -115,6 +114,8 @@ export class ArcadeScene {
       ball(booth, white, [x, y, .31], [r, r, .035]);
     }
     box(booth, white, [-.015, 2.57, .31], [.52, .11, .06], .045);
+    label(booth, 'BUILT WITH', .72, .10, [0, 2.35, .307], { color: '#a7adbc', font: 'Arial', size: 38, tracking: 5 });
+    label(booth, 'Kiro', .66, .23, [0, 2.17, .307], { color: '#d9ceff', font: 'Arial', size: 120, weight: '600' });
     box(booth, lime, [0, 1.93, .30], [.57, .07, .035], .016);
     // Concealed fixture: a small luminous face, without a hard-edged fake beam.
     box(booth, white, [0, 3.915, .18], [.38, .055, .24], .025);
