@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { browserOptions } from '../scripts/browser-options.mjs';
+import { waitForAsync } from './browser-poll.mjs';
 import { createPilotServer } from '../server/index.js';
 import { offlinePack } from '../scripts/offline-pack.mjs';
 
@@ -183,7 +184,7 @@ try {
   await page.close();
   // A disappearing waiting worker is only a transition, not proof that the
   // replacement has activated. Observe its identity before opening a new client.
-  await host.waitForFunction(async expected => {
+  await waitForAsync(host, async expected => {
     const registration = await navigator.serviceWorker.getRegistration('/prepared/');
     if (registration?.installing || registration?.waiting || registration?.active?.state !== 'activated') return false;
     const { assetStatus } = await import('/prepared/client.js');

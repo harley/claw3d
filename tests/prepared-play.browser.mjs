@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { browserOptions } from '../scripts/browser-options.mjs';
+import { waitForAsync } from './browser-poll.mjs';
 import { cameraFixtureModule } from './camera-fixture.mjs';
 import { offlinePack } from '../scripts/offline-pack.mjs';
 import { createPilotServer } from '../server/index.js';
@@ -115,7 +116,7 @@ try {
   dropReceipt = true;
   await context.setOffline(false);
   await page.waitForFunction(() => !document.getElementById('sync-message').textContent, null, { timeout: 90000 });
-  await page.waitForFunction(async () => {
+  await waitForAsync(page, async () => {
     const journal = await new Promise((resolve, reject) => { const r = indexedDB.open('cloud-claw:public-journal:v1', 2); r.onerror = () => reject(r.error); r.onsuccess = () => resolve(r.result); });
     try { return await new Promise(resolve => { const r = journal.transaction('intents').objectStore('intents').getAll(); r.onsuccess = () => resolve(r.result.length === 20 && r.result.every(entry => entry.settled)); }); }
     finally { journal.close(); }
