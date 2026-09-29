@@ -67,7 +67,7 @@ async function launch() {
 let context=await launch();
 try {
  let page=context.pages()[0]||await context.newPage();
- await page.goto(origin+'/?setup=manual&hands=manual');
+ await page.goto(origin+'/?setup=manual&hands=manual&geometry=indexed');
  await page.waitForFunction(()=>document.documentElement.dataset.arcadeReady==='true');
  assert.doesNotMatch(await page.locator('#mode-label').textContent(), /LOCAL PREVIEW/);
  await page.screenshot({path:join(root,'.screenshots','android-packaged-toy-refresh.png')});
@@ -101,7 +101,7 @@ try {
  await context.close();
  context=await launch();page=context.pages()[0]||await context.newPage();
  for(const mode of ['one-hand','two-hand']){
-  await page.goto(origin+'/?setup=manual&hands=manual'+(mode==='two-hand'?'&controls=dual':''));
+  await page.goto(origin+'/?setup=manual&hands=manual&geometry=indexed'+(mode==='two-hand'?'&controls=dual':''));
   await page.waitForFunction(()=>document.documentElement.dataset.arcadeReady==='true');
   const board=await page.locator('#leaders').innerText();
   assert.ok(board.includes('Offline one-hand'),board);
@@ -138,7 +138,7 @@ try {
  // Contract: the packaged game's real caller grants preview changes only between
  // runs, including explicit camera restarts during accepted-drop delivery/recovery.
  // Unit/JVM tests cannot catch a missing or permanently-true caller callback.
- await page.goto(origin+'/?setup=manual&hands=manual');
+ await page.goto(origin+'/?setup=manual&hands=manual&geometry=indexed');
  await page.waitForFunction(()=>document.documentElement.dataset.arcadeReady==='true');
  const startCamera=async(restart=false)=>{
   await page.locator('#camera-open').click();

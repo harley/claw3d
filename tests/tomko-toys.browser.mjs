@@ -12,7 +12,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.addInitScript(() => { window.TomkoNative = { postMessage() {} }; });
-  await page.goto(`${origin}/?setup=manual`);
+  await page.goto(`${origin}/?setup=manual&geometry=indexed`);
   await page.waitForFunction(() => window.__littleCloud);
   const toys = await page.evaluate(() => window.__littleCloud.snapshot().toys);
   assert.equal(toys.find(t => t.id === 'blue-hour').family, 'bear');
@@ -26,6 +26,9 @@ try {
     const { clawWorldPoint } = await import('/src/claw-suspension.js');
     const canvas = document.createElement('canvas'); document.body.append(canvas);
     const scene = new ArcadeScene(canvas, { suspendedClaw: true, assortment: M.BOOTH_TOYS });
+    let vertices = 0, indices = 0;
+    for (const toy of scene.toys.values()) toy.traverse(mesh => { if (mesh.isMesh) { vertices += mesh.geometry.attributes.position.count; indices += mesh.geometry.index?.count || mesh.geometry.attributes.position.count; } });
+    if (vertices >= indices / 2) throw new Error(`Native indexed profile did not reduce toy vertices: ${vertices}/${indices}`);
     scene.renderer.render = () => {};
     const rows = [];
     for (const fps of [60, 30, 15, 10]) for (const toy of M.BOOTH_TOYS) {

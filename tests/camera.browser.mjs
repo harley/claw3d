@@ -1,3 +1,4 @@
+const origin = process.env.CLAW_TEST_ORIGIN || 'http://127.0.0.1:4196';
 // Uses Chromium's synthetic video device, never a physical webcam.
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
@@ -11,7 +12,7 @@ try {
   reportDiagnostics = await cameraDiagnostics(page);
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(() => { window.mediaCalls = 0; const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); navigator.mediaDevices.getUserMedia = options => { window.mediaCalls++; return original(options); }; });
-  await page.goto('http://127.0.0.1:4196/?setup=manual'); await page.waitForFunction(() => window.__littleCloud);
+  await page.goto(`${origin}/?setup=manual`); await page.waitForFunction(() => window.__littleCloud);
   await traceController(page);
   await page.evaluate(async () => {
     const { ArcadeScene } = await import('/src/arcade-scene.js');
@@ -170,7 +171,7 @@ try {
   for (const fault of [true, 'after-quality']) {
   const stalled = await browser.newContext({ permissions: ['camera'] }); const sp = await stalled.newPage();
   reportDiagnostics = await cameraDiagnostics(sp, { stallGPU: fault });
-  await sp.goto('http://127.0.0.1:4196/?setup=manual'); await sp.waitForFunction(() => window.__littleCloud);
+  await sp.goto(`${origin}/?setup=manual`); await sp.waitForFunction(() => window.__littleCloud);
   await traceController(sp);
   await sp.locator('#play').click();
   await sp.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running, {}, { timeout: 35000 });
@@ -210,7 +211,7 @@ try {
   }
   const denied = await browser.newContext(); const dp = await denied.newPage();
   await dp.addInitScript(() => { const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); let first = true; navigator.mediaDevices.getUserMedia = async options => { if (first) { first = false; await new Promise(resolve => { window.releaseCameraPermission = resolve; }); throw new DOMException('Denied', 'NotAllowedError'); } return original(options); }; });
-  await dp.goto('http://127.0.0.1:4196/?setup=manual'); await dp.waitForFunction(() => window.__littleCloud); await dp.locator('#camera-open').click(); await dp.locator('#camera-toggle').click();
+  await dp.goto(`${origin}/?setup=manual`); await dp.waitForFunction(() => window.__littleCloud); await dp.locator('#camera-open').click(); await dp.locator('#camera-toggle').click();
   await dp.waitForFunction(() => window.releaseCameraPermission);
   await dp.locator('#camera-view-toggle').click();
   assert.match(await dp.locator('#camera-view-status').textContent(), /Starting/);
@@ -237,7 +238,7 @@ try {
       terminate() {}
     };
   });
-  await fp.goto('http://127.0.0.1:4196/?setup=manual'); await fp.waitForFunction(() => window.__littleCloud);
+  await fp.goto(`${origin}/?setup=manual`); await fp.waitForFunction(() => window.__littleCloud);
   await fp.locator('#play').click();
   await fp.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running, {}, { timeout: 35000 });
   const fallbackCamera = (await fp.evaluate(() => window.__littleCloud.snapshot())).event.handCamera;

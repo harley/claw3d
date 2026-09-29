@@ -1,4 +1,5 @@
 import * as T from 'three';
+import { nativeAndroid } from './runtime-platform.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -14,10 +15,20 @@ export function line(parent, mat, points, radius = .012) { return mesh(parent, n
 export function rod(parent, mat, a, b, radius = .025) { const start = new T.Vector3(...a), end = new T.Vector3(...b), delta = end.clone().sub(start); const m = cylinder(parent, mat, start.add(end).multiplyScalar(.5).toArray(), radius, delta.length(), 12); m.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), delta.normalize()); return m; }
 
 // Merge only static parts. Keep articulated faces/ears/limbs as separate groups.
-export function batch(root) {
+export function batch(root, { indexed = nativeAndroid && new URLSearchParams(globalThis.location?.search).get('geometry') === 'indexed' } = {}) {
   root.updateWorldMatrix(true, true);
   const inverse = root.matrixWorld.clone().invert(), buckets = new Map(), old = [];
-  root.traverse(m => { if (!m.isMesh) return; const key = `${m.material.uuid}:${m.castShadow}`; if (!buckets.has(key)) buckets.set(key, { mat: m.material, castShadow: m.castShadow, parts: [] }); const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone(); g.applyMatrix4(inverse.clone().multiply(m.matrixWorld)); buckets.get(key).parts.push(g); old.push(m); });
+  root.traverse(m => {
+    if (!m.isMesh) return;
+    const key = `${m.material.uuid}:${m.castShadow}`;
+    if (!buckets.has(key)) buckets.set(key, { mat: m.material, castShadow: m.castShadow, parts: [] });
+    // Retain shared vertices without welding, simplifying or moving the surface.
+    // All parts must agree on indexing for mergeGeometries.
+    const g = !indexed && m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+    if (indexed && !g.index) g.setIndex(Array.from({ length: g.attributes.position.count }, (_, i) => i));
+    g.applyMatrix4(inverse.clone().multiply(m.matrixWorld));
+    buckets.get(key).parts.push(g); old.push(m);
+  });
   for (const m of old) m.removeFromParent();
   for (const { mat, castShadow, parts } of buckets.values()) { mesh(root, mergeGeometries(parts, false), mat).castShadow = castShadow; parts.forEach(g => g.dispose()); }
 }

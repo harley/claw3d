@@ -1,3 +1,4 @@
+const origin = process.env.CLAW_TEST_ORIGIN || 'http://127.0.0.1:4196';
 // Camera-event acceptance. Synthetic input, real game and scoring; no injected catches.
 import { installCameraFixture, cameraInput, cameraDrop, assertScoredStart } from './camera-fixture.mjs';
 import assert from 'node:assert/strict';
@@ -11,7 +12,7 @@ const page = await context.newPage(), errors=[]; page.on('pageerror', e=>errors.
 await installCameraFixture(page);
 const snap=()=>page.evaluate(()=>window.__littleCloud.snapshot());
 const phase=state=>page.waitForFunction(state=>window.__littleCloud.snapshot().phase===state,state,{timeout:30000});
-const open=async()=>{await page.goto('http://127.0.0.1:4196/?setup=manual');await page.waitForFunction(()=>window.__littleCloud);};
+const open=async()=>{await page.goto(`${origin}/?setup=manual`);await page.waitForFunction(()=>window.__littleCloud);};
 async function assertInstructions({ profile, scene, camera }) {
  assert.equal(await page.locator('#menu-guide').isVisible(), false, 'camera-off menu keeps camera setup help');
  assert.equal(await page.locator('#scene').getAttribute('aria-label'), scene, `${profile} scene description`);
@@ -139,13 +140,13 @@ try {
  await page.locator('#mode-one').click();
  await page.waitForFunction(() => !location.search.includes('controls=') && document.documentElement.dataset.arcadeReady === 'true');
  await assertInstructions(instructions.holdDrop);
- await page.goto('http://127.0.0.1:4196/?setup=manual&controls=grab');
+ await page.goto(`${origin}/?setup=manual&controls=grab`);
  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
  await assertInstructions(instructions.grab);
  await page.waitForFunction(() => document.body.classList.contains('attract'));
  await page.screenshot({path:'.screenshots/control-help-grab-release.png'});
  await page.route('**/models/hands/*.glb', route => route.abort());
- await page.goto('http://127.0.0.1:4196/?setup=manual&controls=dual');
+ await page.goto(`${origin}/?setup=manual&controls=dual`);
  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
  await page.waitForFunction(() => document.getElementById('hand-art-status').textContent.includes('Reload to retry'));
  assert.equal(await page.locator('#hand-art-status').textContent(), '3D hands are unavailable. Camera tracking and game controls remain available. Reload to retry the artwork.');
@@ -157,7 +158,7 @@ try {
  await page.waitForFunction(() => window.testCamera?.running);
  assert.equal(await page.evaluate(() => window.testCamera.maxHands), 2, 'camera recognition remains available after model failure');
  await page.unroute('**/models/hands/*.glb');
- await page.goto('http://127.0.0.1:4196/?setup=manual');
+ await page.goto(`${origin}/?setup=manual`);
  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
  await assertInstructions(instructions.holdDrop);
  await page.screenshot({path:'.screenshots/event-hero.png'});

@@ -126,7 +126,7 @@ public class MainActivity extends ComponentActivity {
     }
    }catch(Exception e){Log.w("TomkoGame","Rejected bridge message");}
   });
-  web.loadUrl(ORIGIN+"/?hands=manual");
+  web.loadUrl(ORIGIN+"/?hands=manual&geometry=indexed");
  }
  void send(JSONObject value){if(client!=null&&!destroyed)client.postMessage(value.toString());}
  void updatePreviewStatus(){

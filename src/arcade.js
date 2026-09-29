@@ -996,7 +996,7 @@ try {
   }
   if (nativeAndroid) {
     performanceGovernor.setMode('simple', 'operator');
-    globalThis.tomkoStatus = () => ({ phase: game.phase, turn: turnNumber, rounds: game.rounds, completed: Boolean(completedRun), camera: cameraControls?.feedback.kind, lowQuality: scene.lowQuality, render: { calls: scene.renderer.info.render.calls, triangles: scene.renderer.info.render.triangles }, performance: snapshot().performance });
+    globalThis.tomkoStatus = () => ({ phase: game.phase, turn: turnNumber, rounds: game.rounds, completed: Boolean(completedRun), camera: cameraControls?.feedback.kind, lowQuality: scene.lowQuality, render: { calls: scene.renderer.info.render.calls, triangles: scene.renderer.info.render.triangles, draws: scene.drawStats?.draws || 0, cpuSubmissionMs: scene.drawStats?.submissionMs || 0 }, performance: snapshot().performance });
   }
   scene.groundToys(game);
   restoreTrophies();
