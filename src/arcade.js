@@ -464,22 +464,22 @@ $('final-name-form').addEventListener('submit', async event => {
   }
 });
 
-async function replay(samePlayer) {
+async function replay() {
   if (editingResultName || boothInvite?.busy || startingRun || ((run || cameraLoading) && !(official && officialPlayer.state().canHandoff))) return;
   if (official) {
     try { await officialPlayer.handoff(); location.replace(publicOfficial ? '/official' : '/staff'); }
     catch (error) { setText('final-sync', error.message); }
     return;
   }
-  const name = samePlayer ? completedRun?.name || '' : '';
+  const name = generatedName(completedRun?.name);
   $('name').value = name;
   track('replay'); $('final').close(); freshGame(); updateUI();
   if (syncPhoneMode(true)) return;
   if (!cameraControls?.running) await startCamera();
   if (cameraControls?.running) openRegistration(name);
 }
-$('play-again').addEventListener('click', () => { void replay(true); });
-$('next-player').addEventListener('click', () => { void replay(publicPlay || !shared); });
+$('play-again').addEventListener('click', () => { void replay(); });
+$('next-player').addEventListener('click', () => { void replay(); });
 $('result-open').addEventListener('click', () => {
   if (!completedRun || startingRun || run || cameraLoading) return;
   cancelAnimationFrame(scoreAnimation);

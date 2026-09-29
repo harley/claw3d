@@ -64,7 +64,7 @@ public class MainActivity extends ComponentActivity {
   getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
   FrameLayout root=new FrameLayout(this);root.setBackgroundColor(Color.BLACK);
   web=new WebView(this);root.addView(web,new FrameLayout.LayoutParams(-1,-1));
-  LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);panel.setBackgroundColor(0xdd10151f);
+  LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);panel.setBackgroundColor(0xdd10151f);panel.setVisibility(View.GONE);
   previewToggle=new Button(this);panel.addView(previewToggle);
   previewStatus=new TextView(this);previewStatus.setTextColor(Color.WHITE);previewStatus.setTextSize(12);panel.addView(previewStatus);
   updatePreviewStatus();
@@ -92,11 +92,11 @@ public class MainActivity extends ComponentActivity {
    @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest r){return !trusted(r.getUrl())||!("/".equals(r.getUrl().getPath())||"/index.html".equals(r.getUrl().getPath())||"/privacy".equals(r.getUrl().getPath())||"/privacy.html".equals(r.getUrl().getPath()));}
    @Override public void onPageStarted(WebView v,String url,Bitmap icon){stopTracking();client=null;pageEpoch++;pendingExport=null;}
    @Override public boolean onRenderProcessGone(WebView v,RenderProcessGoneDetail d){stopTracking();client=null;pageEpoch++;pendingExport=null;
-    root.removeView(v);v.destroy();web=null;reload.setVisibility(View.VISIBLE);
+    root.removeView(v);v.destroy();web=null;panel.setVisibility(View.VISIBLE);reload.setVisibility(View.VISIBLE);
     status.setText(buildLabel()+"\nGame renderer stopped. Reload game; saved scores remain.");return true;}
   });
   web.setWebChromeClient(new WebChromeClient(){@Override public boolean onConsoleMessage(ConsoleMessage m){Log.i("TomkoGameWeb",m.message());return true;}});
-  if(!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)){status.setText("This WebView needs updating before native tracking can run.");return;}
+  if(!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)){panel.setVisibility(View.VISIBLE);status.setText("This WebView needs updating before native tracking can run.");return;}
   WebViewCompat.addWebMessageListener(web,"TomkoNative",Set.of(ORIGIN),(view,message,origin,isMainFrame,reply)->{
    if(!isMainFrame||!trusted(origin)||message.getType()!=WebMessageCompat.TYPE_STRING)return;
    try{String data=message.getData();if(data==null||data.length()>6*MAX_EXPORT_BYTES+4096)return;JSONObject o=new JSONObject(data);String type=o.optString("type");

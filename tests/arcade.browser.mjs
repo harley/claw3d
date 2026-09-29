@@ -226,7 +226,10 @@ try {
 
  console.log('PASS distinct catches, persistent trophies, exactly three turns and natural timeout');
  // Blank-name admission and persistence use the next-player recovery journey.
- await page.locator('#next-player').click();await page.locator('#name').fill('');await page.locator('#name').press('Enter');await assertScoredStart(page);
+ await page.locator('#next-player').click();
+ assert.notEqual(await page.locator('#name').inputValue(),completed.name,'next play must not inherit the edited result name');
+ assert.match(await page.locator('#name').inputValue(),/^(?:🦀|🦊|🐻|🐱|🐰|🦦|🐧|🐉) [A-Z][a-z]+$/u);
+ await page.locator('#name').fill('');await page.locator('#name').press('Enter');await assertScoredStart(page);
  const generated=(await snap()).event.run.name;
  assert.match(generated,/^(?:🦀|🦊|🐻|🐱|🐰|🦦|🐧|🐉) [A-Z][a-z]+$/u);
  assert.equal((await snap()).event.run.practice,false,'a blank nickname starts an official scored run');
