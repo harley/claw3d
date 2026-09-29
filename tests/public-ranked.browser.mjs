@@ -99,14 +99,33 @@ try {
   await page.locator('#registration').waitFor();
   assert.ok((await page.locator('#name').inputValue()).trim());
   await page.screenshot({ path: '.screenshots/public-ranked-name.png' });
+  let boardReads = 0;
+  page.on('request', request => { if (new URL(request.url()).pathname === '/api/play/board') boardReads++; });
   const name = 'Min <3';
   for (const attempt of [1, 2]) {
     if (attempt === 2) await page.route('**/api/play/runs/*/turns', route => route.fulfill({ status: 503, json: { error: 'Synthetic score outage' } }));
     await page.locator('#name').fill(name);
     await page.locator('#register-play').click();
+    let readsAtAim;
     for (const turn of [1, 2, 3]) {
       await page.waitForFunction(turn => document.getElementById('turn').textContent === `${turn} / 3` && document.getElementById('arcade').dataset.phase === 'aim' && !document.getElementById('phase-label').textContent.includes('COMPLETE'), turn);
+      if (turn === 1) readsAtAim = boardReads;
+      else assert.equal(boardReads, readsAtAim, 'the real arcade suppresses board polling throughout active play');
+      if (attempt === 1 && turn === 1) await page.evaluate(() => {
+        const original = IDBObjectStore.prototype.put;
+        IDBObjectStore.prototype.put = function(value, ...args) {
+          if (this.name === 'intents' && value.turns?.length && !window.allowScoreWrite) throw new DOMException('Synthetic quota refusal', 'QuotaExceededError');
+          return original.call(this, value, ...args);
+        };
+      });
       assert.equal(await page.evaluate(() => { window.testCamera.tick(); return window.testCamera.clench(); }), true);
+      if (attempt === 1 && turn === 1) {
+        await page.locator('#score-storage').waitFor();
+        assert.equal(await page.locator('#turn').textContent(), '1 / 3', 'storage refusal holds the physical turn boundary');
+        await page.evaluate(() => { window.allowScoreWrite = true; });
+        await page.locator('#score-storage-retry').click();
+        await page.locator('#score-storage').waitFor({ state: 'hidden' });
+      }
       if (turn < 3) await page.waitForFunction(turn => document.getElementById('turn').textContent === `${turn + 1} / 3`, turn);
     }
     await page.locator('#final').waitFor();
@@ -132,6 +151,7 @@ try {
       assert.equal(await page.locator('#final-name-input').inputValue(), 'Winner Linh', 'failed save retains draft');
       assert.equal(app.database.db.prepare('SELECT name FROM runs WHERE id=?').get(receipt.id).name, name);
       await page.unroute('**/api/play/runs/*/name');
+      await page.waitForTimeout(2500); // Explicit retries also respect the jittered two-second cooldown.
       await page.locator('#final-name-save').click();
       await page.waitForFunction(() => document.getElementById('final-name-status').textContent === 'Name saved');
       assert.deepEqual({ ...app.database.db.prepare('SELECT * FROM runs WHERE id=?').get(receipt.id) }, { ...receipt, name: 'Winner Linh' });
@@ -193,6 +213,12 @@ try {
   const queuedResponse = await context.request.post(`${origin}/api/play/runs`, { headers: { origin }, data: { name: 'Recovered after pause', requestKey: randomUUID() } });
   assert.equal(queuedResponse.status(), 201);
   const queued = await queuedResponse.json();
+  const blockedId = randomUUID();
+  await page.evaluate(blockedId => {
+    const prefix = `cloud-claw:public:pending:v1:${blockedId}:`;
+    localStorage.setItem(`${prefix}run`, JSON.stringify({ id: blockedId }));
+    localStorage.setItem(`${prefix}turn:1`, JSON.stringify({ turn: 1, prizeId: null }));
+  }, blockedId);
   await page.evaluate(queued => {
     const prefix = `cloud-claw:public:pending:v1:${queued.id}:`;
     localStorage.setItem(`${prefix}run`, JSON.stringify(queued));
@@ -203,13 +229,23 @@ try {
   app.server.closeAllConnections(); await closed; app.database.close();
   app = await createPilotServer({ ...options, publicRankedEnabled: false });
   await new Promise(resolve => app.server.listen(4293, '127.0.0.1', resolve));
+  let rejectedAttempts = 0, recoveryThrottle = true;
+  const recoveryCalls = [];
+  await page.route('**/api/play/**', async route => {
+    const request = route.request(); recoveryCalls.push(new URL(request.url()).pathname);
+    if (recoveryThrottle) { recoveryThrottle = false; return route.fulfill({ status: 429, headers: { 'Retry-After': '2' }, json: { error: 'Synthetic recovery throttle' } }); }
+    if (request.url().includes(blockedId)) rejectedAttempts++;
+    return route.continue();
+  });
   await page.goto(`${origin}/?setup=manual`);
   await page.locator('#final').waitFor();
   assert.equal(await page.locator('#final-name').textContent(), queued.name.toUpperCase());
   assert.match(await page.locator('#final-rank').textContent(), /SAVED · RANK #/);
   assert.equal(app.database.db.prepare("SELECT COUNT(*) AS n FROM runs WHERE status='complete'").get().n, 3);
   assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM turns').get().n, 9);
-  assert.equal(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('cloud-claw:public:pending:v1:')).length), 0);
+  assert.equal(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('cloud-claw:public:pending:v1:')).length), 2, 'inaccessible record is retained while valid scores drain');
+  assert.equal(rejectedAttempts, 1);
+  assert.ok(recoveryCalls.every(path => path.endsWith('/turns')), 'paused recovery never bootstraps ownership, starts a run or reads the board');
   const pausedStart = await context.request.post(`${origin}/api/play/runs`, { headers: { origin }, data: { name: 'Must not start', requestKey: randomUUID() } });
   assert.equal(pausedStart.status(), 503);
   assert.deepEqual(errors, []);

@@ -7,7 +7,10 @@ export async function installCameraFixture(page, { built = false, cameraRequest 
       const response = await route.fetch();
       if (!(await response.text()).includes(' as HandController')) return route.fulfill({ response });
     }
-    return route.fulfill({ contentType: 'application/javascript', body: `
+    return route.fulfill({ contentType: 'application/javascript', body: cameraFixtureModule({ cameraRequest }) });
+  });
+}
+export const cameraFixtureModule = ({ cameraRequest = false } = {}) => `
     export class HandController {
       constructor(options) { Object.assign(this, options); this.running = false; this.input = {x:0,z:0}; this.visible = true; this.feedback = {}; window.testCamera = this; }
       resetOwner() { this.input = {x:0,z:0}; this.onInput(this.input); }
@@ -33,8 +36,7 @@ export async function installCameraFixture(page, { built = false, cameraRequest 
       setPerformanceMode() { return false; }
       clench() { return this.onDrop(); }
     }
-  ` }); });
-}
+  `;
 export const cameraInput = (page, input) => page.evaluate(input => { window.testCamera.input = input; window.testCamera.tick(); }, input);
 export const cameraDrop = page => page.evaluate(() => window.testCamera.clench());
 

@@ -1,3 +1,4 @@
+import { waitForAsync } from './browser-poll.mjs';
 // Production wiring contract: ticket -> explicit activation -> existing camera
 // loop -> pending versus server result -> reload -> public capability handoff.
 import assert from 'node:assert/strict';
@@ -149,9 +150,9 @@ try {
     await ready;
   }, lockName);
   await a.locator('#official-redeem').click();
-  await a.waitForFunction(async name => (await navigator.locks.query()).pending.filter(lock => lock.name === name).length === 1, lockName, { timeout: 10000 });
+  await waitForAsync(a, async name => (await navigator.locks.query()).pending.filter(lock => lock.name === name).length === 1, lockName, { timeout: 10000 });
   await b.locator('#official-redeem').click();
-  await a.waitForFunction(async name => (await navigator.locks.query()).pending.filter(lock => lock.name === name).length === 2, lockName, { timeout: 10000 });
+  await waitForAsync(a, async name => (await navigator.locks.query()).pending.filter(lock => lock.name === name).length === 2, lockName, { timeout: 10000 });
   assert.equal(admissions, 0, 'neither application transition bypasses the held native lock');
   await a.evaluate(async () => { window.releaseAdmissionGate(); await window.admissionGate; });
   await a.waitForFunction(() => !document.getElementById('official-ticket').open);

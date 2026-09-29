@@ -200,6 +200,219 @@ Session storage `cloud-claw:host-recovery:v1:<eventId>` retains selected attempt
 
 Replacement secrets appear only in the response and open panel memory/field. Copy is explicit; close, refresh, selection and errors clear the code. A lost response returns no secret on replay; explicitly revoke/reissue the retained unused replacement. If that replacement was redeemed, inspect its own attempt rather than treating reissue as run recovery. Host voiding does not clear the player's retained admission/outbox. The player must explicitly acknowledge the server-confirmed terminal attempt using the handoff above before a replacement can be admitted; multi-station procedures remain separate. Do not delete browser data to bypass that hold. No server policy, admission flags, production configuration or retention maintenance changes are included.
 
+### Public scored-play journal
+
+Public ranked pages use `cloud-claw:public-journal:v1` in IndexedDB. A page
+holds an origin Web Lock for physical play; another tab must wait until the
+owner closes. Missing locking/storage, incompatible database/record versions
+and failed writes refuse unsafe admission without deleting evidence. Opening
+can be retried after a temporary refusal (for example, after the other
+tab closes); a retry still validates retained records before allowing play. Writes
+request strict durability and resolve only after transaction completion, not
+individual request success. Browser persistence cannot guarantee survival of
+power loss, disk failure or manual site-data clearing.
+
+A canonical name/mode/request identity and live-attempt marker are committed
+before the one original online start. Uncertain attempts use the owner-scoped
+GET `/api/play/intents/:requestKey`; it cannot create a run or add an event
+association. Reload/browser restart discovers all journal entries without a
+sessionStorage pointer, interrupts old physics, drains only committed turns
+and abandons unfinished runs. It never invents missing turns or replays live
+creation. A completed three-turn result remains completable after restart.
+Unknown/inaccessible receipts stay retained for host recovery; independent
+new results can still drain. Offline admission remains unavailable until the
+separate grant/reconciliation integration is complete.
+
+Every public turn commits before the next turn or result handoff. A mid-run
+write failure holds at that safe boundary, retains the outcome in page memory
+and offers Retry saving, explicitly warning against closing the page. Server
+receipts must match the retained turn payloads, scores and frozen rules.
+Conflicting receipts are held for host recovery with a visible mismatch message;
+later valid journal and legacy outbox records still drain. Transport and storage
+failures remain retriable rather than being classified as receipt conflicts.
+Acknowledgements advance monotonically without deleting other turns. Payloads
+and terminal receipts are retained; host export/retention remains later work.
+
+The public v1 localStorage outbox keeps its existing read/drain adapter.
+Staff, official and standalone-preview namespaces are not migrated. The new
+read-only receipt route uses the original public owner cookie and normal
+request budgets; it grants no recovery access to a replacement owner.
+
+`tests/public-journal.browser.mjs` verifies real IndexedDB, exclusive Web Locks,
+response-loss lookup, interrupted turns and a persistent browser restart
+against a disposable service. Unit fault injection covers quota refusal,
+abort after request success, stale acknowledgements and incompatible data.
+These tests do not establish physical camera/display or sudden-power-loss
+acceptance; the rendered public-ranked journey remains a required shared gate.
+
+### Staged public station permits
+
+The backend supports protocol 1 permits; no client preparation, offline starts
+or host UI is enabled by this slice. `createPilotServer` accepts an explicit
+server-only `publicPermitPolicy: { maxSlots, maxRetentionMs }`; its default is
+`null`, so new issuance is refused. There is no environment/image default or
+production configuration change. Operator capacity and reconciliation-window
+choices are required before later enablement. Hard validation ceilings are
+1,000 slots and seven days, not recommended booth settings or a capacity
+estimate. Capacity must include online starts, abandoned/interrupted attempts
+and reserve until replenishment; twenty completed test runs is not that choice.
+
+With host authentication, current station enrollment and an already valid
+public owner cookie, POST `/api/host/station/permits` accepts exactly
+`{ protocol: 1, requestKey, count, reconcileBy }`. The deadline is server epoch
+milliseconds. Repeating the same owner/key/input retrieves one pool; changed
+inputs conflict. Pools count against the generation's cap through their
+window, including consumed slots. Preparation reserves opaque slot IDs, run
+UUIDs and request identities without creating runs or event associations.
+Rules, board, supported modes and protocol are frozen with the pool.
+
+Issuance renews the *same* owner credential and HttpOnly/Secure/SameSite cookie
+through the declared deadline; it never creates replacement ownership. The
+response and owner-scoped GET `/api/play/permits/:poolId` report `ownerExpires`
+and `ready`. `unregisteredSlots` counts only server-unbound slots; the later
+client must also subtract all local consumed intents, including unsynced ones.
+A fully registered pool is not ready. Verify that read before local preparation
+is complete. A replaced
+or expired owner cannot recover old slots, even with host authentication or a
+copied slot ID. Keep the original browser data and owner cookie. Repeated old
+issuance only returns evidence when revoked/paused; `ready` stays false.
+
+POST `/api/play/permits/live` and `/api/play/permits/reconcile` accept exactly
+`{ protocol: 1, slotId, runId, requestKey, name, controlMode }`. One SQLite
+transaction binds the slot to canonical name/mode and creates its reserved
+run. Retries return the same run; changes conflict. Later display-name edits
+never change this binding. Only first registration through `live`, with the
+current generation and server Hanoi date, can create a Hanoi association.
+Reconciliation-first remains All plays even if a delayed live request arrives
+on event day. Live-first keeps its association across response loss/midnight.
+No browser date or event claims are accepted. Existing ordered-turn validation
+and shared score functions use the frozen rules.
+
+For a prepared owner with an unexpired pool, fresh ordinary `/api/play/runs`
+requests require the permit protocol, so online starts cannot bypass capacity.
+Other public owners retain normal online-only creation. Old ordinary receipts
+still reconcile. Every consumed slot stays consumed after abandonment or
+completion; no automatic recycle or pending-data deletion occurs.
+
+Re-enrollment and host POST `/api/host/station/revoke` retire current authority
+while retaining generation/grant history. They block new live registration and
+issuance, as does deliberate admission pause. Existing receipts and bounded
+**deferred** registration stay available through their declared window using
+the original owner, including after station-cookie expiry or re-enrollment.
+This intentionally permits draining previously issued offline slots; the
+server cannot prove when a disconnected browser consumed one. Such a new
+deferred registration never gains Hanoi status. After the deadline, unbound
+slots are refused and local evidence must be retained. Already registered
+results remain readable/drainable while their owner credential is valid.
+
+Machine-readable refusal codes distinguish `admission_paused`, `owner_expired`,
+`station_revoked`, `permit_expired`, `permit_conflict`, `unsupported_protocol`,
+`unsupported_rules`, `permit_required`, `permit_unavailable`, `invalid_permit`,
+`permits_disabled` and `capacity_exhausted` from transient failures. The later
+client must hold on known authority/payload refusals rather than treating a
+503 pause as an outage. New routes retain exact-origin JSON/body limits, host
+checks and public read/write budgets with Retry-After. Slot identifiers alone
+are not submission credentials and must not be put into public telemetry.
+
+Schema additions preserve the old active-enrollment table and backfill retained
+generations without replacing cookies. Old application versions can ignore
+the additive permit tables; doing so disables this protocol and does not make
+it safe to discard queued records. Deploy compatible drainage before enabling
+clients. No retention purge, export/import credential, adjudication or prize
+policy is added. Disposable HTTP/SQLite tests cover races, expiry, revocation,
+rollback, migration and score parity; full prepared-booth and physical outage
+acceptance remains separate.
+
+### Prepared public asset pack (staged; offline admission is not enabled)
+
+Each production build emits `prepared/manifest.json`: exact SHA-256, MIME type
+and byte count for the neutral public shell, all emitted gameplay/camera chunks
+and workers, branding, both hand GLBs, the gesture model and all SIMD/non-SIMD
+WASM loaders/binaries. The current pack is approximately 46.3 MB uncompressed;
+the manifest's `bytes` is the actual required download size for that build.
+
+Host integration can explicitly call `prepareAssets()` from
+`/prepared/client.js`. Nothing registers automatically. A complete install is
+not game readiness: `/prepared/index.html` must be controlled and
+`assetStatus()` must report `complete: true` for the expected pack. Preparation
+rejects redirects, non-200 responses, wrong MIME types, lengths or digests.
+Partial/corrupt replacements leave the prior complete pack usable. An evicted
+or damaged cached file produces an explicit preparation error, never a mixture
+of old and new network assets. A fresh offline profile cannot load the app.
+
+The dedicated `/prepared/` scope does not take over the normal game, host,
+privacy or official routes. The build-generated shell carries public flags
+only, disables diagnostics and official UI, retains the camera privacy notice
+and the server CSP, and labels BUILD as LOCAL PREPARED BUILD. It does not cache
+server-injected index responses, sessions, APIs, exports or `build-info.json`.
+Its public ranked flow still requires online admission. Prepared assets alone
+do not grant offline starts or durable turn recording.
+
+Updates install separately and wait until **all** prepared-game tabs close.
+There is no force activation, client claiming, score replay or Background Sync.
+This conservative host boundary also prevents updates during an active game.
+The later journal/admission integration must check protocol compatibility
+before offering play; the asset worker cannot attest to journal compatibility.
+The prepared camera entry has its own worker URL within that scope; ordinary
+online camera workers remain outside it and keep network model loading.
+Old public caches are retained, including partial downloads, to avoid deleting
+assets needed by live clients. Host cleanup/retention UI is still pending;
+do not clear browser site data to recover preparation when it could contain
+pending scores. Durable score storage is separate from these caches.
+
+`tests/offline-station.browser.mjs` is part of the shared browser gate. It uses a
+disposable production bundle and service, denies the network, verifies cache
+boundaries and real bundled inference, and exercises failed replacement and
+waiting-worker activation. Set `CLAW_OFFLINE_RUNTIME_ONLY=1` only for local
+asset/runtime checks when the scene cannot render; this explicitly omits rendered-game acceptance. CI runs
+the full suite without that override. Hosted macOS results remain
+required; synthetic inference and asset availability do not replace physical outage rehearsal.
+
+### Prepared arcade admission and retained outcomes
+
+The prepared shell now uses the ordinary arcade with the verified asset pack and
+an explicitly installed permit pool. The backend policy remains disabled by
+default. Host preparation/readiness UI and recovery export are the next integration
+slice; loading `/prepared/` alone does not provision ownership, issue capacity, or
+make a station ready. No production enablement is implied by this implementation.
+
+The public IndexedDB journal upgrades non-destructively to schema 2 (the database
+name remains `cloud-claw:public-journal:v1`). Both permits and intents participate
+in one strict transaction: starting consumes one slot and records its reserved
+run UUID, request key, immutable name, control mode, pack identity and frozen rules
+before any request or physics. The origin-wide physical Web Lock still permits
+one game page. Consumed slots are never recycled by reloading or refreshing a
+pool. Old schema clients cannot reopen the upgraded journal; keep its data when
+rolling back and use host recovery instead of clearing storage.
+
+When online and outside the shared retry deadline, a new prepared attempt makes
+one live admission request with a **one-second network budget**. Offline, timeout,
+network failure, throttling or a transient server failure continues locally under
+the same reserved identity. Later work uses `/permits/reconcile`, never another
+live admission. Explicit authorization, pause, expiry, protocol or payload refusals
+hold preparation, including across reload; they are not permission to continue
+offline. A new pack, missing assets, exhausted capacity, expired window or observed
+clock rollback refuses a new start. These checks bound ordinary failures, not a
+malicious client or sudden disk/power failure.
+
+Each completed turn must commit before the physical turn advances. Turn three
+shows the numeric total and three turn scores immediately, separately from sync
+status. No overall/Hanoi rank is invented locally. The name can be edited before
+start; final renaming waits for a server-confirmed complete result. Next player
+does not wait for upload. Reload interrupts unfinished play and retains only
+completed outcomes. Reconciliation preserves those outcomes, checks server rules
+and totals, and cannot reopen an older result over the next player. A timely live
+receipt may retain server-established Hanoi association; deferred-first admission
+remains All plays.
+
+`tests/prepared-play.test.mjs` covers atomic rollback, schema migration, retained
+holds, the one-second budget and 20 players/60 turns against real HTTP/SQLite with
+reload and lost receipts. `tests/prepared-play.browser.mjs`, included sequentially
+in `test:shared`, exercises the production arcade, real service worker/cache,
+IndexedDB, both control modes and the same workload. Only its camera input module
+is replaced by the synthetic fixture in a temporary, rehashed test pack. Neither
+suite establishes physical camera accuracy or sudden-power-loss durability.
+
 ## Android distribution
 
 ### Source and build identity
@@ -265,3 +478,5 @@ node scripts/usage-report.mjs --web host-export.json \
 Either source can be omitted when unavailable; the report states which inputs were supplied. Repeat `--android` for additional snapshots; run IDs prevent double-counting and completed receipts supersede earlier unfinished snapshots. Supply one latest website export. Defaults cover 09:00 through midnight on 29 September; `--since` and `--until` accept ISO timestamps with explicit offsets and select runs by start time (inclusive/exclusive). Completion is as of each supplied export, not a reconstructed historical cutoff. Output groups by source, coarse device, mode and Hanoi hour, with completed plays, recorded starts and unfinished records. It contains no names or ownership identifiers. Keep the original score exports private and outside Git.
 
 `firstClassifiedWebStart` and `startsWithoutDeviceInstrumentation` expose partial collection when instrumentation is installed during the day; the first observed classified run is not a deployment timestamp. Android scores can be reported retrospectively from existing exports. Additional future metrics need their own explicit coverage/version; never treat missing historical instrumentation as zero. Unique people and phone-to-TV conversion remain unavailable without a separate participant process. Do not infer either from nicknames or Android's per-run player IDs.
+
+Prepared live starts use the same coarse device classification as ordinary web starts. Deferred prepared runs have no device-at-start evidence; they remain unknown. Their server `startedAt` records reconciliation time, so the usage report cannot establish their actual offline start hour or inclusion in the 09:00 booth window. Keep deferred prepared totals separate from booth-day start-time claims until a reviewed offline timestamp/reporting contract exists. This does not affect native Android exports, which retain local run timestamps.

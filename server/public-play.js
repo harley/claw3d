@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { ApiError, label } from './database.js';
+import { createPublicPermits } from './public-permits.js';
 import { createBudget } from './request-budget.js';
 import { deviceClass } from './usage.js';
 import { RULES, SPEED_RULES } from '../src/event-session.js';
@@ -14,7 +15,7 @@ const CONTACT_PURPOSE = 'result-and-booth-invitation-v1';
 const dateInHanoi = new Intl.DateTimeFormat('en-CA', { timeZone: HANOI_EVENT.timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
 
 // Public score authority never shares the staff cookie, owner, board or outbox.
-export function createPublicPlay({ database, body, json, cookies, cookie, clientAddress, startsEnabled, now = Date.now }) {
+export function createPublicPlay({ database, body, json, cookies, cookie, clientAddress, startsEnabled, permitPolicy = null, now = Date.now }) {
   const { db } = database;
   db.exec(`CREATE TABLE IF NOT EXISTS public_players (
     token TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES owners(id), expires INTEGER NOT NULL);
@@ -24,7 +25,13 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
     CREATE TABLE IF NOT EXISTS public_stations (token TEXT PRIMARY KEY, expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS public_run_events (
       run_id TEXT PRIMARY KEY REFERENCES runs(id), event_id TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS public_station_generations (
+      generation TEXT PRIMARY KEY, token TEXT NOT NULL UNIQUE, expires INTEGER NOT NULL, revoked_at INTEGER);
     CREATE INDEX IF NOT EXISTS public_event_runs ON public_run_events(event_id,run_id);`);
+  // Add history without replacing existing enrollment or touching old results.
+  for (const row of db.prepare('SELECT * FROM public_stations').all()) {
+    db.prepare('INSERT OR IGNORE INTO public_station_generations VALUES (?,?,?,NULL)').run(randomUUID(), row.token, row.expires);
+  }
   let boardId = db.prepare("SELECT value FROM settings WHERE key='public-board-v1'").get()?.value;
   if (!boardId) {
     boardId = randomUUID();
@@ -43,12 +50,21 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
   function owner(req) {
     const value = cookies(req).cc_player;
     const row = typeof value === 'string' && value.length <= 128 && db.prepare('SELECT owner_id FROM public_players WHERE token=? AND expires>?').get(hash(value), now());
-    if (!row) throw new ApiError(401, 'Public session expired. Reload to start a new session; keep pending score data.');
+    if (!row) throw new ApiError(401, 'Public session expired. Keep pending data; old ownership cannot be replaced for recovery.', 'owner_expired');
     return row.owner_id;
   }
-  function station(req) {
+  function generation(req) {
     const value = cookies(req).cc_station;
-    return Boolean(typeof value === 'string' && value.length <= 128 && db.prepare('SELECT 1 FROM public_stations WHERE token=? AND expires>?').get(hash(value), now()));
+    return typeof value === 'string' && value.length <= 128 ? db.prepare('SELECT g.* FROM public_station_generations g JOIN public_stations s ON s.token=g.token WHERE g.token=? AND g.expires>? AND g.revoked_at IS NULL').get(hash(value), now()) : null;
+  }
+  function station(req) { return Boolean(generation(req)); }
+  function renewOwner(req, res, deadline) {
+    owner(req); // Never renew an expired/replaced token or allocate a new owner.
+    const value = cookies(req).cc_player, token = hash(value);
+    const expires = Math.max(db.prepare('SELECT expires FROM public_players WHERE token=?').get(token).expires, deadline + 1000);
+    db.prepare('UPDATE public_players SET expires=? WHERE token=?').run(expires, token);
+    res.setHeader('Set-Cookie', cookie('cc_player', value, Math.ceil((expires - now()) / 1000)));
+    return expires;
   }
   function eventToday(req) { return station(req) && dateInHanoi.format(new Date(now())) === HANOI_EVENT.date; }
   function board(event = false) {
@@ -73,7 +89,19 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
     db.prepare('DELETE FROM public_contacts WHERE created_at<=?').run(now() - CONTACT_RETENTION_MS);
   }
   pruneContacts();
+  const permits = createPublicPermits({ database, boardId, policy: permitPolicy, now, owner, generation, renewOwner,
+    ownerExpires: req => db.prepare('SELECT expires FROM public_players WHERE token=?').get(hash(cookies(req).cc_player)).expires,
+    eventToday, eventId: HANOI_EVENT.id, startsEnabled });
   return {
+    issuePermits: permits.issue,
+    revoke(req) {
+      const current = generation(req);
+      if (current) database.transaction(() => {
+        db.prepare('UPDATE public_station_generations SET revoked_at=? WHERE generation=?').run(now(), current.generation);
+        db.prepare('DELETE FROM public_stations WHERE token=?').run(current.token);
+      });
+      return { enrolled: false };
+    },
     exportContacts() {
       pruneContacts();
       return { purpose: CONTACT_PURPOSE, exportedAt: new Date(now()).toISOString(), contacts: db.prepare(`
@@ -88,8 +116,12 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
       if (now() >= EVENT_END) throw new ApiError(409, 'The Hanoi event has finished. Public play is still open.');
       const value = secret();
       // One booth browser. Re-enrollment replaces the prior capability.
-      db.exec('DELETE FROM public_stations');
-      db.prepare('INSERT INTO public_stations VALUES (?,?)').run(hash(value), EVENT_END);
+      database.transaction(() => {
+        db.prepare('UPDATE public_station_generations SET revoked_at=? WHERE revoked_at IS NULL').run(now());
+        db.exec('DELETE FROM public_stations');
+        db.prepare('INSERT INTO public_stations VALUES (?,?)').run(hash(value), EVENT_END);
+        db.prepare('INSERT INTO public_station_generations VALUES (?,?,?,NULL)').run(randomUUID(), hash(value), EVENT_END);
+      });
       res.setHeader('Set-Cookie', cookie('cc_station', value, Math.max(0, Math.floor((EVENT_END - now()) / 1000))));
       return { enrolled: true, event: HANOI_EVENT };
     },
@@ -105,7 +137,7 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
       if (path === '/api/play/session' && req.method === 'POST') {
         await body(req); budget.take(`public-session:${ip}`, 30);
         try { owner(req); } catch {
-          if (!startsEnabled) throw new ApiError(503, 'New public plays are paused.');
+          if (!startsEnabled) throw new ApiError(503, 'New public plays are paused.', 'admission_paused');
           const value = secret(), player = randomUUID();
           db.prepare('INSERT INTO owners VALUES (?)').run(player);
           db.prepare('INSERT INTO public_players VALUES (?,?,?)').run(hash(value), player, now() + age * 1000);
@@ -114,14 +146,28 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
         return json(res, 200, { role: 'public', board: board(), station: this.stationStatus(req) });
       }
       const player = owner(req);
+      const poolPath = /^\/api\/play\/permits\/([a-f0-9-]{36})$/.exec(path);
+      if (poolPath && req.method === 'GET') return json(res, 200, permits.get(req, poolPath[1]));
+      const intent = /^\/api\/play\/intents\/([a-f0-9-]{36})$/.exec(path);
+      if (intent && req.method === 'GET') {
+        const row = db.prepare('SELECT id FROM runs WHERE owner_id=? AND request_key=? AND board_id=?').get(player, intent[1], boardId);
+        if (!row) throw new ApiError(404, 'No admission receipt for this owner and request. Keep the saved intent.');
+        return json(res, 200, result(row.id, player));
+      }
       const match = /^\/api\/play\/runs\/([a-f0-9-]{36})(?:\/(turns|abandon|name|contact))?$/.exec(path);
       if (match && !match[2] && req.method === 'GET') return json(res, 200, result(match[1], player));
       if (req.method !== 'POST') throw new ApiError(404, 'Route not found.');
       budget.take(`public-write:${player}`, 120);
       const input = await body(req);
+      if (path === '/api/play/permits/live' || path === '/api/play/permits/reconcile') {
+        const run = permits.register(req, input, path.endsWith('/live') ? 'live' : 'deferred');
+        return json(res, 200, result(run.id, player));
+      }
       if (path === '/api/play/runs') {
+        if (permits.reserved(player, input.requestKey)) throw new ApiError(409, 'Use the reserved admission protocol for this identity.', 'permit_conflict');
         const previous = db.prepare('SELECT id FROM runs WHERE owner_id=? AND request_key=?').get(player, typeof input.requestKey === 'string' ? input.requestKey : '');
-        if (!previous && !startsEnabled) throw new ApiError(503, 'New public plays are paused.');
+        if (!previous && permits.preparedOwner(player)) throw new ApiError(409, 'Use a prepared slot for every station start.', 'permit_required');
+        if (!previous && !startsEnabled) throw new ApiError(503, 'New public plays are paused.', 'admission_paused');
         if (!previous) budget.take(`public-start:${ip}`, 60);
         // Event classification shares the run transaction; crash/retry cannot
         // leave an event run unclassified or relabel a pre-midnight start.

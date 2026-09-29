@@ -21,12 +21,12 @@ const gate = `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="v
 
 export async function createPilotServer(options) {
   const { filename, origin, staffCode, hostCode, dist = resolve('dist'), secure = true,
-    officialEventsEnabled = false, officialAdmissionsEnabled = false, publicDiagnosticsEnabled = false, publicTryEnabled = false, publicRankedEnabled = publicTryEnabled, now = Date.now, trustedProxyPeers = [] } = options;
+    officialEventsEnabled = false, officialAdmissionsEnabled = false, publicDiagnosticsEnabled = false, publicTryEnabled = false, publicRankedEnabled = publicTryEnabled, now = Date.now, publicPermitPolicy = null, trustedProxyPeers = [] } = options;
   if (typeof officialEventsEnabled !== 'boolean' || typeof officialAdmissionsEnabled !== 'boolean') throw new Error('Event feature options must be booleans.');
   if (typeof publicDiagnosticsEnabled !== 'boolean') throw new Error('Diagnostics option must be a boolean.');
   if (typeof publicRankedEnabled !== 'boolean') throw new Error('Public ranking option must be a boolean.');
   if (typeof publicTryEnabled !== 'boolean') throw new Error('Public Try option must be a boolean.');
-  const publicAsset = path => /^\/(?:assets\/[a-zA-Z0-9_-]+\.(?:js|css)|assets\/coderpush-wordmark-white-[a-zA-Z0-9_-]+\.svg|models\/hands\/(?:left|right)\.glb|vision\/(?:gesture_recognizer\.task|wasm\/[a-zA-Z0-9_-]+\.(?:js|wasm)))$/.test(path);
+  const publicAsset = path => /^\/(?:prepared\/(?:index\.html|worker\.js|client\.js|manifest\.json|prepared-vision-worker-[a-zA-Z0-9_-]+\.js)|assets\/[a-zA-Z0-9_-]+\.(?:js|css)|assets\/coderpush-wordmark-white-[a-zA-Z0-9_-]+\.svg|models\/hands\/(?:left|right)\.glb|vision\/(?:gesture_recognizer\.task|wasm\/[a-zA-Z0-9_-]+\.(?:js|wasm)))$/.test(path);
   const clientAddress = clientAddressResolver(trustedProxyPeers);
   if (!origin || !staffCode || !hostCode || staffCode.length < 16 || hostCode.length < 8 || staffCode === hostCode) throw new Error('A fixed origin, a staff secret of at least 16 characters and a distinct host code of at least 8 characters are required.');
   const database = openDatabase(filename), { db } = database;
@@ -77,7 +77,7 @@ export async function createPilotServer(options) {
   }
   function json(res, status, data) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); }
   const official = officialEventsEnabled ? createOfficialHttp({ db, body, json, cookies, cookie, limit, admissionsEnabled: officialAdmissionsEnabled, publicEnabled: publicTryEnabled, clientAddress }) : null;
-  const publicPlay = (publicTryEnabled && publicRankedEnabled || db.prepare("SELECT 1 FROM settings WHERE key='public-board-v1'").get()) ? createPublicPlay({ database, body, json, cookies, cookie, clientAddress, startsEnabled: publicTryEnabled && publicRankedEnabled, now }) : null;
+  const publicPlay = (publicTryEnabled && publicRankedEnabled || db.prepare("SELECT 1 FROM settings WHERE key='public-board-v1'").get()) ? createPublicPlay({ database, body, json, cookies, cookie, clientAddress, startsEnabled: publicTryEnabled && publicRankedEnabled, permitPolicy: publicPermitPolicy, now }) : null;
   const diagnostics = publicDiagnosticsEnabled ? createPublicDiagnostics({ db, body, json, cookies, cookie, clientAddress }) : null;
   const server = createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -124,12 +124,19 @@ export async function createPilotServer(options) {
       const publicOfficial = publicTryEnabled && officialEventsEnabled && path === '/official';
       const publicPage = publicTryEnabled && ['/', '/try'].includes(path);
       const privacyPage = path === '/privacy' || path === '/privacy.html';
-      const publicRead = ['GET', 'HEAD'].includes(req.method) && (privacyPage || publicTryEnabled && (publicPage || publicOfficial || publicAsset(path)));
+      const publicRead = ['GET', 'HEAD'].includes(req.method) && (privacyPage || publicTryEnabled && (publicPage || publicOfficial || path === '/prepared/' || publicAsset(path)));
       if (!auth && !publicRead) {
         if (['/', '/staff'].includes(path) && req.method === 'GET') { res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(hostSetupEnabled && legacyStaff ? gate.replace("location.replace('/staff')", "location.replace('/staff?legacy=1')") : gate); }
         throw new ApiError(401, 'Sign in with the staff code to continue.');
       }
       if (path.startsWith('/api/')) {
+        if (path === '/api/host/station/permits' || path === '/api/host/station/revoke') {
+          if (!publicPlay) throw new ApiError(404, 'Public ranking is unavailable.');
+          if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');
+          if (req.method !== 'POST') throw new ApiError(405, 'Method not allowed.');
+          limit(req, auth); const input = await body(req);
+          return json(res, 200, path.endsWith('/permits') ? publicPlay.issuePermits(req, res, input) : publicPlay.revoke(req));
+        }
         if (path === '/api/host/station') {
           if (!publicPlay) throw new ApiError(404, 'Public ranking is unavailable.');
           if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');
@@ -191,7 +198,7 @@ export async function createPilotServer(options) {
       if (!['GET', 'HEAD'].includes(req.method)) throw new ApiError(405, 'Method not allowed.');
       let relative;
       try { relative = decodeURIComponent(path); } catch { throw new ApiError(400, 'Invalid path.'); }
-      const file = resolve(root, `.${privacyPage ? '/privacy.html' : ['/', '/staff'].includes(relative) || publicPage || publicOfficial ? '/index.html' : relative}`);
+      const file = resolve(root, `.${relative === '/prepared/' ? '/prepared/index.html' : privacyPage ? '/privacy.html' : ['/', '/staff'].includes(relative) || publicPage || publicOfficial ? '/index.html' : relative}`);
       if (!file.startsWith(root + sep)) throw new ApiError(404, 'File not found.');
       let actual;
       try { actual = await realpath(file); if (!actual.startsWith(root + sep) || !(await stat(actual)).isFile()) throw Error(); }
@@ -206,7 +213,7 @@ export async function createPilotServer(options) {
       res.end(req.method === 'HEAD' ? undefined : content);
     } catch (error) {
       if (!res.headersSent && error.retryAfter) res.setHeader('Retry-After', String(error.retryAfter));
-      if (!res.headersSent) json(res, error.status || 500, { error: error.status ? error.message : 'The score service is unavailable. Please retry.' });
+      if (!res.headersSent) json(res, error.status || 500, { error: error.status ? error.message : 'The score service is unavailable. Please retry.', ...(error.status && error.code ? { code: error.code } : {}) });
       else res.end();
       if (!error.status) console.error('Pilot request failed:', error.code || error.name);
     }

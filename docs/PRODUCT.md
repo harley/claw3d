@@ -244,6 +244,8 @@ Password-free entry at `/` and `/try` uses the existing camera and three-turn ga
 
 All public plays share one board, separate from historical staff boards and ticket events. Public ownership uses a dedicated cookie and browser outbox; it grants no staff or host access. Completed turns retry without duplicate scoring. Reload drains saved turn submissions, restores a completed run’s server-confirmed score and rank, and abandons an unfinished physical run. Pausing new ranked starts still lets retained completed results sync on the practice page. New starts need a connection and browser storage; pending results never become a fabricated rank. Historical practice was not saved and cannot be ranked retroactively.
 
+Public and shared staff score recovery uses one page-owned scheduler: completed turns drain before board reads, transient failures back off from about two seconds to at most one minute, and server Retry-After deadlines remain a minimum even when longer. Reconnect and START cannot bypass that wait. Conflicting or inaccessible results stay in browser storage for host recovery while later valid results can save. Expired access stops background requests until access recovery. Leaderboards refresh every 15 seconds while visible and idle, and on explicit selection or returning to the page; active play and hidden pages suppress board reads. Paused public ranking retains the same paced score drain without creating a new session. These changes do not provide offline admission or asset preparation.
+
 The event is Tuesday, **29 September 2026**, in **Asia/Ho_Chi_Minh**. A host enrolls the intended browser once. A run started on that browser on the event date also enters the Hanoi event board; it remains in All plays. The server checks its own date and the enrollment cookie at creation. A run crossing midnight keeps its original classification, including retries. Other computers and other dates still rank publicly. Enrollment is a browser capability, not geolocation; the host supplies physical supervision. Re-enrollment replaces the prior station. No ticket, verified identity or prize adjudication is required for this journey.
 
 `/staff` opens a dedicated Host setup page with one `HOST_CODE` sign-in, the confirmed date, this browser's enrollment status, **Use this computer**, and **Open game**. It loads no game, camera or telemetry. Opening the game signs the host out while retaining the station cookie. The public footer calls it **Host setup**. Staff test boards and legacy ticket tools remain at explicit recovery URLs; they are not part of public play or normal event setup.
@@ -328,6 +330,24 @@ Closed, expired/unavailable events and lost host access disable mutations until 
 Hosts can inspect an exact server-issued attempt ID, its participant ID, server status and saved-turn count in the event console. A fixed camera, connection or browser failure reason and explicit void/replacement confirmation are required. Only unfinished attempts in open events can be replaced; the server atomically voids the old attempt, rejects its late writes/activation and issues one ticket for the same participant. Completed attempts and participant best scores remain unchanged.
 
 The original recovery key persists before sending. Lost responses/reloads expose an explicit same-key retry, never an automatic second replacement. The once-returned replacement code is memory-only. If its response is lost, retry recovers the ticket ID; a separate confirmed unused-ticket revoke/reissue uses the existing server contract. Used replacements cannot be reissued: inspect their own attempt ID. Closure/auth loss/expiry disable new actions; an original request may still reconcile a committed receipt after closure without a new grant. No player outbox is erased or restarted. Player cleanup follows the explicit terminal handoff above; multi-station operations and physical booth acceptance remain separate.
+
+### Prepared public station (implementation, not enabled)
+
+The dedicated prepared shell reuses the public arcade and its three-turn scoring.
+It requires an explicitly verified asset pack, durable journal ownership and
+bounded host-issued permits; downloading the game alone grants no starts. Each
+start consumes one reserved identity, makes at most one live admission attempt
+with a one-second network budget, and can then finish locally through an outage.
+Known authority refusals hold further admission. A reload interrupts unfinished
+physical play while preserving completed turns and consumed capacity.
+
+The final screen immediately shows the retained total and all three turn scores,
+with synchronization status separate and no invented rank. Next player remains
+available offline. Server confirmation enables final-name edits and server ranks;
+late receipts cannot reopen an older prepared result over the next player. Only
+live server admission can establish Hanoi association; deferred results remain
+All plays. Host readiness/recovery integration and physical outage acceptance are
+still required before enablement. See OPERATIONS for the retained-data contract.
 
 ## Android offline target
 
