@@ -116,7 +116,7 @@ async function scoredAndFeedback() {
   const modelRequests = [];
   context.on('request', request => { if (/\/models\/hands\/.*\.glb/.test(request.url())) modelRequests.push(request.url()); });
   app.database.db.prepare('INSERT INTO owners VALUES (?)').run('rank-owner');
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 12; i++) {
     const run = app.database.createRun('rank-owner', { requestKey: crypto.randomUUID(), name: 'Same nickname' });
     for (let turn = 1; turn <= 3; turn++) app.database.record(run.id, 'rank-owner', { turn, prizeId: 'butter' });
   }
@@ -238,8 +238,8 @@ async function scoredAndFeedback() {
   await page.waitForFunction(() => document.getElementById('final-rank').textContent.includes('SAVED'));
   await page.screenshot({ path: '.screenshots/scored-result.png' });
   assert.equal(await page.locator('#final-turns .turn-chip').count(), 3);
-  assert.match(await page.locator('#final-rank').textContent(), /RANK #7/);
-  assert.equal(await page.locator('#leaders li').count(), 5);
+  assert.match(await page.locator('#final-rank').textContent(), /RANK #13/);
+  assert.equal(await page.locator('#leaders li').count(), 10);
   assert.equal(starts, 1, 'blank nickname creates exactly one server run');
   assert.equal(app.database.board().runs.length, boardBefore.runs.length + 1);
   assert.equal(app.database.board().runs[0].turns.length, 3);
@@ -261,8 +261,10 @@ async function scoredAndFeedback() {
   await page.locator('#feedback-dialog [aria-label="Close feedback"]').click();
   await page.locator('#feedback-dialog').waitFor({ state: 'hidden' });
   await page.locator('#final-leaderboard').click();
+  assert.equal(await page.locator('#leaders li').count(), 13);
+  assert.equal(await page.locator('#leaders li.current').count(), 1, 'expanded board highlights the player outside the top ten');
   await page.locator('#result-open').click();
-  assert.match(await page.locator('#final-rank').textContent(), /RANK #7/);
+  assert.match(await page.locator('#final-rank').textContent(), /RANK #13/);
   assert.equal(await page.evaluate(() => window.testCamera.running), false);
   await page.locator('#play-again').click();
   await page.locator('#registration').waitFor();

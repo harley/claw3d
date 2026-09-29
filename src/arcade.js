@@ -87,7 +87,7 @@ if (publicSurface) {
 
 $('build-info').textContent = `${globalThis.__OFFLINE_SHELL__ ? 'LOCAL PREPARED BUILD' : 'BUILD'} ${__BUILD_INFO__.commit}${__BUILD_INFO__.dirty ? ' · uncommitted changes' : ''} · ${__BUILD_INFO__.branch}`;
 let savingTurn = false, pendingTurnOutcome = null, savingTurnPromise = null;
-let game = createGame({ carousel: true, suspendedClaw: mode.suspendedClaw, collection: mode.collection }), scene, previous = 0, stopped = false, frozen = false;
+let game = createGame({ carousel: true, suspendedClaw: mode.suspendedClaw, collection: mode.collection, boothToys: true }), scene, previous = 0, stopped = false, frozen = false;
 let cameraControls, cameraLoading = false;
 let healthSample = null, lastHoldCause = '';
 const trackingHealthUI = nativeAndroid ? createTrackingHealth({ root: $('tracking-health'), restart: () => {
@@ -204,7 +204,10 @@ function renderBoard() {
   if (publicTry) $('board-empty').textContent = 'Play again as often as you like.';
   if (official) $('board-empty').textContent = officialPlayer.state().board ? 'No completed event scores yet.' : 'Event board unavailable until admission is confirmed.';
   const leaders = shared ? board.runs : leaderboard(board); $('board-empty').hidden = leaders.length > 0;
-  for (const row of leaders.slice(0, 5)) {
+  const expanded = $('scores-dialog').open;
+  $('scores-more').hidden = expanded || leaders.length <= 10;
+  $('board-range').textContent = expanded && publicPlay ? 'Top 100 plays' : expanded ? 'All available scores' : 'Top 10';
+  for (const row of expanded ? leaders : leaders.slice(0, 10)) {
     const li = document.createElement('li'); li.classList.toggle('current', Boolean(row.id && row.id === completedRun?.id));
     for (const [tag, value] of [['span', String(row.rank).padStart(2, '0')], ['strong', row.name], ['b', row.total]]) { const el = document.createElement(tag); el.textContent = value; li.append(el); }
     $('leaders').append(li);
@@ -246,7 +249,7 @@ function phaseSound(phase, modal) {
   } else if (phase === 'deliver' && game.plan?.prize) audio.fanfare('shelf');
   else if (phase === 'release' && game.plan?.prize) { audio.note(740, .1, 0, 'sine'); audio.note(980, .14, .1, 'sine'); }
 }
-function freshGame() { flow.pendingSlam = flow.contactFeedback = null; flow.firstTurnPreparationElapsed = null; turnNumber = 0; cameraControls?.reset(); game = createGame({ carousel: true, pushContact: mode.pushContact, suspendedClaw: mode.suspendedClaw, collection: mode.collection }); scene?.groundToys(game); aligned = null; hud.invalidate(); }
+function freshGame() { flow.pendingSlam = flow.contactFeedback = null; flow.firstTurnPreparationElapsed = null; turnNumber = 0; cameraControls?.reset(); game = createGame({ carousel: true, pushContact: mode.pushContact, suspendedClaw: mode.suspendedClaw, collection: mode.collection, boothToys: true }); scene?.groundToys(game); aligned = null; hud.invalidate(); }
 function restoreTrophies() {
   for (const turn of run?.turns || []) {
     const toy = game.toys.find(toy => toy.id === turn.prizeId);
@@ -521,14 +524,17 @@ function openScores() {
   $('final').close();
   $('scores-dialog').append(scorePanel);
   $('scores-dialog').showModal();
+  renderBoard();
   if (shared) void pilot.refresh();
   $('scores-close').focus();
 }
 $('scores-open').addEventListener('click', openScores);
+$('scores-more').addEventListener('click', openScores);
 $('final-leaderboard').addEventListener('click', openScores);
 $('scores-close').addEventListener('click', () => $('scores-dialog').close());
 $('scores-dialog').addEventListener('close', () => {
   scoreHome.after(scorePanel);
+  renderBoard();
   // A result opened from the board owns focus; otherwise return to PLAY.
   if (!document.querySelector('dialog[open]')) $('play').focus();
 });
@@ -1000,7 +1006,7 @@ $('shared-start').addEventListener('cancel', event => event.preventDefault());
 const loadingTimeout = setTimeout(() => fail('The arcade took too long to open. Reload the page to try again.'), 15000);
 try {
   await new Promise(resolve => requestAnimationFrame(resolve));
-  scene = new ArcadeScene($('scene'), { wideControls: cabinetEnabled && new URLSearchParams(location.search).get('controls') !== 'grab', anatomicalHands: !grabEnabled || dualEnabled, singleHand: !dualEnabled, suspendedClaw: mode.suspendedClaw, ...(mode.collection ? { assortment: game.toys } : {}) });
+  scene = new ArcadeScene($('scene'), { wideControls: cabinetEnabled && new URLSearchParams(location.search).get('controls') !== 'grab', anatomicalHands: !grabEnabled || dualEnabled, singleHand: !dualEnabled, suspendedClaw: mode.suspendedClaw, assortment: game.toys });
   if (scene.cabinetHands) {
     const status = $('hand-art-status');
     status.textContent = '3D hands are loading. Camera tracking and game controls remain available.';
