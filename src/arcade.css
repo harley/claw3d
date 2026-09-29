@@ -170,6 +170,9 @@ dialog .play-button { width: 100%; margin-top: 24px; }
 .camera-settings button { margin: 10px 5px 0 0; }
 .camera-settings select { width: 100%; padding: 10px; background: #081426; color: #e5efff; border: 1px solid #426087; border-radius: 4px; font-size: 12px; }
 #final { text-align: center; border-top-color: #ffc14d; }
+#final .build-credit { margin-top: 20px; padding-top: 16px; border-top: 1px solid #34435b; }
+#final .build-credit p { margin: 0; color: #d9ceff; font-size: 14px; line-height: 1.5; }
+#final .build-credit small { display: block; margin-top: 6px; color: #a6b1c7; font-size: 11px; line-height: 1.5; text-wrap: balance; }
 #final h1 { font-size: 26px; margin-bottom: 10px; }
 #final-score { font: 900 88px/1.1 ui-monospace, monospace; color: #ffc14d; text-shadow: 0 0 40px #ffb52b44; }
 #final-rank { font-size: 20px; font-weight: 700; color: #fff; }
