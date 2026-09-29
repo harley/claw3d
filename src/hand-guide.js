@@ -10,7 +10,7 @@ const steps = [
   { title: 'CLENCH & <em>HOLD</em>', caption: 'HOLD YOUR FIST TO <em>DROP</em>', hint: 'Keep your fist closed until the claw drops. Open early to cancel.', first: 'OPEN TO AIM', second: 'HOLD TO DROP', axis: 'drop' },
 ];
 
-export function createHandGuide({ canOpen, onTransition = () => {} }) {
+export function createHandGuide({ phone = false, canOpen, onTransition = () => {} }) {
   const dialog = document.createElement('dialog');
   dialog.id = 'hand-guide';
   dialog.setAttribute('aria-labelledby', 'hand-guide-title');
@@ -24,6 +24,7 @@ export function createHandGuide({ canOpen, onTransition = () => {} }) {
       <button id="hand-guide-close" class="guide-close" aria-label="Close how to play">×</button>
       <div class="guide-count" aria-live="polite">${step + 1} / 3</div>
       <h1 id="hand-guide-title">${content.title}</h1>
+      ${phone ? '<p class="phone-guide-setup">Prop up your phone and face the camera. Keep one open hand in view.</p>' : ''}
       <div class="guide-demo" aria-hidden="true" style="--guide-art: url('${artwork}'); --guide-overhead: url('${overheadClaw}')">
         <div class="guide-hand-panel">
           <div class="guide-hand ghost"><i class="guide-sprite palm"></i></div>

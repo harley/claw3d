@@ -20,6 +20,56 @@ const browser = await chromium.launch(browserOptions);
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
 let page;
 try {
+  // Contract: public touch-phone guidance and retry are reachable without a
+  // scored start; native/desktop entries never adopt the phone presentation.
+  // Existing desktop/replay journeys do not exercise coarse-pointer layouts.
+  for (const native of [false, true]) {
+    const phoneContext = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
+    try {
+      if (native) await phoneContext.addInitScript(() => { window.TomkoNative = { postMessage() {} }; });
+      const phone = await phoneContext.newPage();
+      await installCameraFixture(phone, { built: true, cameraRequest: true });
+      await phone.addInitScript(() => {
+        navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('Denied for retry test', 'NotAllowedError'); };
+      });
+      await phone.goto(`${origin}/?setup=manual&hands=manual`);
+      await phone.waitForFunction(() => !document.getElementById('play').disabled);
+      assert.equal(await phone.locator('#phone-setup').isVisible(), !native);
+      assert.equal(await phone.locator('#next-player').textContent(), native ? 'Next Play' : 'Play again');
+      if (!native) {
+        for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }]) {
+          await phone.setViewportSize(viewport);
+          const hint = await phone.locator('#phone-setup').boundingBox();
+          assert.ok(hint.x >= 0 && hint.y >= 0 && hint.x + hint.width <= viewport.width && hint.y + hint.height <= viewport.height);
+          for (const id of ['camera-open', 'sound', 'fullscreen', 'how-to-play']) {
+            const box = await phone.locator(`#${id}`).boundingBox();
+            assert.ok(box.width >= 44 && box.height >= 44, `${id} remains finger-sized`);
+          }
+          await phone.screenshot({ path: `.screenshots/mobile-202-${viewport.width}.png` });
+        }
+        await phone.setViewportSize({ width: 390, height: 844 });
+        await phone.locator('#how-to-play').click();
+        await phone.locator('#hand-guide[open]').waitFor();
+        assert.match(await phone.locator('.phone-guide-setup').textContent(), /Prop up your phone/);
+        await phone.evaluate(async () => {
+          const demo = document.querySelector('.guide-demo');
+          await Promise.all(['--guide-art', '--guide-overhead'].map(async property => {
+            const image = new Image(); image.src = getComputedStyle(demo).getPropertyValue(property).match(/url\(['"]?(.*?)['"]?\)/)[1];
+            await image.decode();
+          }));
+        });
+        await phone.screenshot({ path: '.screenshots/mobile-202-guide.png' });
+        await phone.locator('#hand-guide-close').click();
+        await phone.locator('#play').click();
+        await phone.locator('#camera-setup[open]').waitFor();
+        assert.equal(await phone.locator('#camera-toggle').textContent(), 'TRY CAMERA AGAIN');
+        assert.equal(await phone.locator('#camera-toggle').isEnabled(), true);
+        assert.equal(await phone.locator('#phone-camera-help').isVisible(), true);
+        await phone.screenshot({ path: '.screenshots/mobile-202-retry.png' });
+        assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM runs').get().n, 0, 'help and camera failure do not start a scored game');
+      }
+    } finally { await phoneContext.close(); }
+  }
   // Enroll through the actual operator UI, then use the same browser publicly.
   page = await context.newPage();
   await installCameraFixture(page, { built: true });

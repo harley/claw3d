@@ -590,3 +590,17 @@ dialog .menu-guide-hand { font-size: 52px; }
 #invite-status { color: #b4ef52; font-size: 13px; line-height: 1.5; }
 #invite-status:empty { display: none; }
 #invite-status[data-state="error"] { color: #ffba60; }
+
+/* Phone web onboarding is static and absent from native/booth presentation. */
+.phone-web #phone-setup { position: absolute; top: 116px; left: 16px; right: 16px; margin: 0; color: #d5e4f6; font: 13px/1.5 Arial, sans-serif; text-align: center; }
+.phone-web #phone-setup strong { color: #fff; }
+.phone-web .run-active #phone-setup,
+.phone-web #arcade:has(#camera-preview:not([hidden])) #phone-setup { display: none; }
+.phone-web #phone-camera-help { color: #d5e4f6; font-size: 14px; line-height: 1.5; }
+.phone-web .phone-guide-setup { color: #d5e4f6; font: 13px/1.5 Arial, sans-serif; margin: 8px 0; }
+.phone-web .header-actions .icon-button,
+.phone-web #fullscreen,
+.phone-web #how-to-play { min-width: 44px; min-height: 44px; }
+@media (orientation: landscape) {
+  .phone-web #phone-setup { top: 120px; left: 16px; right: auto; width: 180px; text-align: left; }
+}

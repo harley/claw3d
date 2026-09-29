@@ -367,3 +367,21 @@ Physical evidence from the earlier 604145f prototype: one-hand play completed th
 After a public run is server-confirmed, results offer a collapsed optional booth-invitation form with private Name and Email or phone. Submitting explicitly requests CoderPush follow-up about that result and a booth invitation. It is not a marketing subscription. Play and replay never require this form. A saved score strictly over 300 qualifies for the proposed extra booth try; server-side qualification is included with host exports. No automatic prize award, return-pass redemption, badge matching, email or SMS delivery is implemented.
 
 Contact details are separate from the public nickname and score, never placed in URLs, browser score storage, diagnostics or public API responses. One request is stored per completed run; retrying updates that request rather than duplicating it. Failed submissions retain the current form draft and give an explicit retry. The form does not prefill contacts across runs on a shared booth browser. Only hosts can download the private requests from Host setup, including the associated run and score. Active contact records expire after 30 days; exports and backups remain the host's responsibility. Synthetic API and browser checks do not establish phone camera usability or physical LED readability.
+
+
+## Phone web onboarding
+
+The public web entry shows a short phone-positioning cue on touch phones, with
+one- or two-hand wording matching the selected mode. The existing one-hand How
+to play guide repeats the phone setup cue. Camera recovery offers Try camera
+again and permission/framing guidance. Header actions have at least 44px touch
+targets. These are presentation changes; camera acquisition, scoring and the
+three-turn run are unchanged.
+
+On public phone results the primary Next Play action is labelled Play again.
+It keeps the existing fresh generated nickname and editable registration flow;
+it does not identify a returning person or reuse a previous player's identity.
+Desktop labels and native Tomko presentation are unchanged. Phone help adds no
+frame-loop, inference, analytics request or timer. Installed offline APKs are
+not updated by website deployment. Physical phone usability and recognition
+accuracy still require a device playtest.
