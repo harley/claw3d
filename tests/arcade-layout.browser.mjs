@@ -84,11 +84,19 @@ try {
   await installCameraFixture(menu);
   await menu.goto(`${origin}/?hands=manual`);
   await menu.waitForFunction(() => window.testCamera?.running && !document.getElementById('menu-guide').hidden);
-  await menu.evaluate(() => {
-    document.getElementById('try-notice').hidden = false;
-    document.getElementById('board-empty').hidden = true;
-    document.getElementById('leaders').innerHTML = '<li><span>01</span><strong>🐉 A longer player name</strong><b>450</b></li>'.repeat(5);
+  await menu.evaluate(async () => {
+    const E = await import('/src/event-session.js');
+    const { resolvePlayMode } = await import('/src/play-mode.js');
+    const store = E.newStore();
+    for (let i = 0; i < 5; i++) {
+      E.startRun(store, '🐉 A longer player name');
+      for (let turn = 1; turn <= 3; turn++) E.recordTurn(store, turn, 'butter', 15000);
+    }
+    localStorage.setItem(resolvePlayMode(location.search).storageKey, JSON.stringify(store));
   });
+  await menu.reload();
+  await menu.waitForFunction(() => window.testCamera?.running && !document.getElementById('menu-guide').hidden);
+  await menu.evaluate(() => { document.getElementById('try-notice').hidden = false; });
   for (const viewport of [{ width: 390, height: 690 }, { width: 320, height: 568 }, { width: 844, height: 390 }]) {
     await menu.setViewportSize(viewport);
     await menu.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));

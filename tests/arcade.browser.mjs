@@ -243,7 +243,7 @@ try {
  assert.equal(await page.locator('#final-rank').textContent(),'LOCAL PREVIEW · 1 HAND · RANK #1');
  assert.equal(await page.locator('#mode-label').textContent(),'LOCAL PREVIEW · 1 HAND');
  assert.equal(await page.locator('#final-turns .catch-card').count(),3);
- assert.deepEqual(await page.locator('#final-turns .catch-name').allTextContents(),['BUTTER','MISS','PEACH']);
+ assert.deepEqual(await page.locator('#final-turns .catch-name').allTextContents(),['BUTTER','MISS','MOCHI']);
  // UI contract: direct editing, cancellation and persistence must touch one receipt only.
  const beforeRename=(await snap()).event.complete;
  await page.locator('#final-name-input').fill('Cancelled');

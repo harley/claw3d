@@ -2,7 +2,7 @@ import { setHidden } from './arcade-hud.js';
 import { menuScreenPoint } from './steering.js';
 // Only player-facing actions participate. Operator controls never accept gestures.
 const actions = {
-  idle: ['how-to-play', 'play', 'mode-one', 'mode-two', 'result-open', 'scores-open'],
+  idle: ['how-to-play', 'play', 'mode-one', 'mode-two', 'result-open', 'scores-open', 'scores-more'],
   resume: ['play'],
   'scores-dialog': ['scores-close', 'result-open'],
   registration: ['register-play', 'register-other', 'register-cancel'],

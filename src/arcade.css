@@ -366,6 +366,10 @@ dialog .menu-guide-hand { font-size: 52px; }
 
 /* Scores use one live board: a desktop sidebar or an on-demand phone dialog. */
 #scores-open { display: none; }
+#arcade > .leaderboard #leaders { max-height: calc(100dvh - 370px); overflow-y: auto; }
+#arcade > .leaderboard li { padding: 7px 0; }
+#scores-dialog #leaders { max-height: 55dvh; overflow-y: auto; overscroll-behavior: contain; }
+#scores-more { min-height: 44px; }
 #scores-dialog { border-top-color: #35c9ff; padding: 20px; }
 #scores-close { display: block; margin: 0 0 20px auto; min-height: 44px; }
 #scores-dialog .leaderboard { position: static; display: block; width: 100%; padding: 0; border: 0; background: transparent; }
