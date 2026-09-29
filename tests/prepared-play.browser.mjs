@@ -28,6 +28,17 @@ try {
   const origin = 'http://127.0.0.1:4299';
   app = await createPilotServer({ filename: ':memory:', dist: directory, origin, staffCode: 'prepared-browser-staff', hostCode: 'prepared-browser-host', secure: false,
     publicTryEnabled: true, publicPermitPolicy: { maxSlots: 20, maxRetentionMs: 86400000 } });
+  let lost = false, liveCalls = 0, dropReceipt = false;
+  app.server.prependListener('request', (request, response) => {
+    if (request.url === '/api/play/permits/live') liveCalls++;
+    if (!dropReceipt || lost || request.url !== '/api/play/permits/reconcile') return;
+    const end = response.end;
+    response.end = function(...args) {
+      // The real handler has committed before ending its successful response.
+      if (!lost && this.statusCode === 200) { lost = true; this.destroy(); return this; }
+      return end.apply(this, args);
+    };
+  });
   await new Promise(resolve => app.server.listen(4299, '127.0.0.1', resolve));
   const url = origin;
   browser = await chromium.launch(browserOptions);
@@ -45,12 +56,8 @@ try {
   // No host credentials accompany play or reconciliation.
   await context.request.post(url + '/api/logout', { headers: { origin: url }, data: {} });
   assert.equal((await context.request.get(url + '/api/host/station')).status(), 401);
-  const page = await context.newPage(); let lost = false, liveCalls = 0;
-  page.on('request', r => { if (r.url().endsWith('/api/play/permits/live')) liveCalls++; });
-  await page.route('**/api/play/permits/reconcile', async route => {
-    if (!lost) { lost = true; const r = await route.fetch(); assert.equal(r.status(), 200); await route.abort(); }
-    else await route.continue();
-  });
+  const page = await context.newPage(); let liveRequests = 0;
+  page.on('request', request => { if (request.url().endsWith('/api/play/permits/live')) liveRequests++; });
   await context.setOffline(true);
   const local = [];
   for (let player = 0; player < 20; player++) {
@@ -97,12 +104,16 @@ try {
     await page.locator('#next-player').click(); await page.locator('#registration').waitFor();
     console.log(`Prepared offline player ${player + 1}/20 completed three turns`);
   }
-  assert.equal(liveCalls, 0); assert.equal(app.database.db.prepare('SELECT COUNT(*) n FROM runs').get().n, 0);
+  assert.equal(liveRequests, 0); assert.equal(liveCalls, 0); assert.equal(app.database.db.prepare('SELECT COUNT(*) n FROM runs').get().n, 0);
   await page.reload(); await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
   await page.locator('#play').click(); await page.locator('#register-play').click();
   await page.locator('#shared-start').waitFor(); assert.match(await page.locator('#shared-start-message').textContent(), /No usable prepared starts/);
   // Close the error through reload; reconciliation must never reopen an old result.
-  await page.reload(); await context.setOffline(false);
+  await page.reload();
+  // Drop a real server response after reconnect. Browser route interception can
+  // bypass offline mode or miss requests passing through a service worker.
+  dropReceipt = true;
+  await context.setOffline(false);
   await page.waitForFunction(() => !document.getElementById('sync-message').textContent, null, { timeout: 90000 });
   await page.waitForFunction(async () => {
     const journal = await new Promise((resolve, reject) => { const r = indexedDB.open('cloud-claw:public-journal:v1', 2); r.onerror = () => reject(r.error); r.onsuccess = () => resolve(r.result); });
@@ -116,7 +127,7 @@ try {
     const response = await context.request.get(url + `/api/play/runs/${run.id}`); assert.equal(response.status(), 200);
     const receipt = await response.json(); assert.equal(receipt.total, run.total); assert.deepEqual(receipt.turns, run.turns); assert.deepEqual(receipt.rules, run.rules); assert.equal(receipt.event, undefined);
   }
-  assert.equal(liveCalls, 0);
+  assert.equal(liveRequests, 0); assert.equal(liveCalls, 0);
   console.log('Prepared rendered 20-run/60-turn workload, exhaustion, reload, response loss and score parity pass');
 } finally {
   clearTimeout(deadline); await browser?.close();
