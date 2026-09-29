@@ -85,7 +85,7 @@ export function createHandMenu({ leftHand = false } = {}) {
     clear,
   };
 }
-export function generatedName() {
+export function generatedName(previousName) {
   const animals = [
     ['🦀', ['Coral', 'Pebble', 'Cove']],
     ['🦊', ['Ember', 'Rusty', 'Maple']],
@@ -96,7 +96,7 @@ export function generatedName() {
     ['🐧', ['Pip', 'Waddle', 'Pogo']],
     ['🐉', ['Jade', 'Flint', 'Ash']],
   ];
-  const values = crypto.getRandomValues(new Uint32Array(2));
-  const [emoji, names] = animals[values[0] % animals.length];
-  return `${emoji} ${names[values[1] % names.length]}`;
+  const names = animals.flatMap(([emoji, names]) => names.map(name => `${emoji} ${name}`)).filter(name => name !== previousName);
+  const [value] = crypto.getRandomValues(new Uint32Array(1));
+  return names[value % names.length];
 }

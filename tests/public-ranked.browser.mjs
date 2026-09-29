@@ -191,7 +191,8 @@ try {
       await page.setViewportSize({ width: 1440, height: 900 });
       await page.locator('#next-player').click();
       await page.locator('#registration').waitFor();
-      assert.equal(await page.locator('#name').inputValue(), 'Winner Linh', 'Next Play retains nickname while creating a separate run');
+      assert.notEqual(await page.locator('#name').inputValue(), 'Winner Linh', 'Next Play generates a fresh nickname');
+      await page.locator('#name').fill('Winner Linh'); // Names remain explicitly editable.
     }
   }
   await page.locator('#final-leaderboard').click();

@@ -267,7 +267,9 @@ async function scoredAndFeedback() {
   await page.locator('#play-again').click();
   await page.locator('#registration').waitFor();
   assert.equal(await page.evaluate(() => window.testCamera.running), true);
-  assert.equal(await page.locator('#name').inputValue(), 'Player');
+  const replayName = await page.locator('#name').inputValue();
+  assert.notEqual(replayName, 'Player', 'Play again generates a new editable name');
+  assert.match(replayName, /^(?:🦀|🦊|🐻|🐱|🐰|🦦|🐧|🐉) [A-Z][a-z]+$/u);
   assert.equal(await page.locator('#register-play').evaluate(el => el === document.activeElement), true, 'replay is ready to start without name editing');
   assert.equal(starts, 1, 'opening replay does not create a run');
   let releaseReplay, replayRequest;
@@ -284,9 +286,9 @@ async function scoredAndFeedback() {
   await page.waitForFunction(() => document.getElementById('status').textContent === 'ROUND 1');
   assert.equal(await page.locator('#arcade').getAttribute('data-phase'), 'idle', 'replay also counts in before aiming');
   await page.waitForFunction(() => document.getElementById('turn').textContent === '1 / 3');
-  assert.equal(activeTurnCount('Player'), 0, 'replay has no scored turn during preparation');
+  assert.equal(activeTurnCount(replayName), 0, 'replay has no scored turn during preparation');
   assert.equal(starts, 2, 'submitted replay creates a new attempt');
-  const replays = app.database.db.prepare("SELECT request_key FROM runs WHERE name='Player'").all();
+  const replays = app.database.db.prepare("SELECT request_key FROM runs WHERE name IN (?,?)").all('Player', replayName);
   assert.equal(replays.length, 2); assert.notEqual(replays[0].request_key, replays[1].request_key);
   await page.evaluate(() => document.getElementById('scene').dispatchEvent(new Event('webglcontextlost', { cancelable: true })));
   await page.locator('#error').waitFor();
@@ -298,7 +300,7 @@ async function scoredAndFeedback() {
   await page.waitForFunction(() => document.getElementById('feedback-status').textContent === 'Thanks. Your feedback is saved.');
   assert.equal(feedbackRows().length, 3, 'renderer error surface can report before reload');
   await context.close();
-  console.log('PASS blank nickname creates three scored turns; feedback retry retains draft; replay prefills selected nickname');
+  console.log('PASS blank nickname creates three scored turns; feedback retry retains draft; replay generates a fresh nickname');
   app.database.rotate('Shared recovery tests');
 }
 try {
@@ -349,7 +351,7 @@ try {
   await page.locator('#result-open').click();
   assert.equal(await page.locator('#final-rank').textContent(), 'Score waiting to sync');
   await page.locator('#play-again').click();
-  assert.equal(await page.locator('#name').inputValue(), 'Browser A');
+  assert.notEqual(await page.locator('#name').inputValue(), 'Browser A', 'pending-score replay also generates a fresh name');
   assert.equal(startKeys.length, 2, 'pending replay form does not issue a new start');
   assert.ok(await page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith('cloud-claw:pending:v2:'))));
   await page.locator('#register-cancel').click();
