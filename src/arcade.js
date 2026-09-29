@@ -6,7 +6,7 @@ import { RIGHT_SLAM_MS } from './dual-hand-controls.js';
 import { resolvePlayMode, phonePlaySearch, cueLeadSeconds, dualStartReadiness, firstTurnControlReady as isFirstTurnControlReady } from './play-mode.js';
 import { ABSOLUTE_SPEED } from './steering.js';
 import './arcade.css';
-import { createHandGuide } from './hand-guide.js';
+import { createHandGuide, createHandGuideReference } from './hand-guide.js';
 import { createJoystickCursor } from './joystick-cursor.js';
 import { createHandMenu, generatedName } from './hand-menu.js';
 const manualSetup = new URLSearchParams(location.search).get('setup') === 'manual';
@@ -161,6 +161,7 @@ try { store = shared || publicTry ? newStore() : loadStore({ getItem: () => loca
 let run = store.active, completedRun = null, turnNumber = run ? run.turns.length + 1 : 0;
 let recovering = Boolean(run);
 const canShowHandGuide = () => mode.profile === 'hold-drop' && !run && !pendingPlayer && !startingRun && !recovering && !frozen && !stopped;
+const handGuideReference = createHandGuideReference();
 createHandGuide({ phone: phoneWeb, canOpen: canShowHandGuide, onTransition: () => { cameraControls?.reset(); handMenu.clear(); } });
 if (run) selectedStart = null;
 const frames = [], errors = [];
@@ -216,6 +217,7 @@ const audio = createArcadeAudio({ onChange: syncSoundUI, enabledByDefault: !manu
 const movementMusic = createMovementMusic(audio);
 const hud = createHud({ audio, phaseSound });
 function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ? 'loading' : 'off' }, modal = Boolean(document.querySelector('dialog[open]'))) {
+  setHidden(handGuideReference, mode.profile !== 'hold-drop' || !run || modal || paused);
   setHidden($('how-to-play'), !canShowHandGuide());
   setHidden($('final-how-to-play'), !canShowHandGuide());
   hud.update({ game, run, completedRun, pendingPlayer, turnNumber, remaining: flow.remaining, nextTurnElapsed: flow.nextTurnElapsed, firstTurnPreparationElapsed: flow.firstTurnPreparationElapsed, firstTurnControlReady: flow.firstTurnControlReady, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, publicTry, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus: pilot.status, storageError, aligned, marqueeAvailable: scene?.marqueeAvailable }, feedback, modal);

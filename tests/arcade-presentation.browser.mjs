@@ -26,6 +26,14 @@ try {
   assert.equal(panel.active, true, 'count-in remains available to the live region');
   assert.equal(panel.marquee.text, panel.text, 'scene and live region use the same cue on every viewport');
   assert.equal(panel.opacity, '0', 'no duplicate central countdown over the claw on phones or desktop');
+  // The in-play reference must occupy only the wide left rail, without animation.
+  assert.equal(await page.locator('#hand-guide-reference').isVisible(), viewport.width === 1440);
+  if (viewport.width === 1440) {
+   const reference = await page.locator('#hand-guide-reference').evaluate(el => ({ right: el.getBoundingClientRect().right, animations: el.getAnimations({ subtree: true }).length }));
+   assert.ok(reference.right < viewport.width / 3, 'reference stays outside the central cabinet');
+   assert.equal(reference.animations, 0, 'in-play guide adds no animation load');
+   assert.equal(await page.locator('#hand-guide-reference li').count(), 3);
+  }
   await page.screenshot({ path: `.screenshots/countdown-${viewport.width}.png` });
  }
  await page.setViewportSize({ width: 1440, height: 900 });
