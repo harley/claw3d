@@ -80,6 +80,10 @@ try {
     if(e.recordTurn(store,turn,'butter',0)!==null)throw Error('Duplicate turn accepted');
    }
    if(e.recordTurn(store,4,'butter',0)!==null)throw Error('Fourth turn accepted');
+   if(mode==='one-hand'){
+    e.startRun(store,'Previous touch play',false,'one-hand',e.TOMKO_RULES);
+    for(let turn=1;turn<=3;turn++) e.recordTurn(store,turn,null,0,undefined,true);
+   }
    localStorage.setItem(key,JSON.stringify(store));
    output.push({mode,total:e.currentBoard(store).runs[0].total});
   }
@@ -92,9 +96,15 @@ try {
   await page.goto(origin+'/?setup=manual&hands=manual'+(mode==='two-hand'?'&controls=dual':''));
   await page.waitForFunction(()=>document.documentElement.dataset.arcadeReady==='true');
   const board=await page.locator('#leaders').innerText();
-  assert.ok(board.includes('Offline '+mode),board);
-  assert.ok(board.includes(mode==='one-hand'?'300':'375'),board);
-  assert.ok(!board.includes('Offline '+(mode==='one-hand'?'two-hand':'one-hand')));
+  assert.ok(board.includes('Offline one-hand'),board);
+  assert.equal(new URL(page.url()).searchParams.has('controls'),false);
+  assert.equal(await page.locator('#register-other').isVisible(),false);
+  assert.equal(await page.locator('.hand-toggle').isVisible(),false);
+  const keptTwoHand=await page.evaluate(()=>localStorage.getItem('coderpush:event:v1:dual-controls'));
+  assert.ok(keptTwoHand.includes('Offline two-hand'));
+  assert.ok(keptTwoHand.includes('375'));
+  assert.ok(board.includes('300'),board);
+  assert.ok(!board.includes('Offline two-hand'));
   assert.equal(await page.evaluate(()=>navigator.onLine),false);
   assert.ok((await page.locator('#build-info').textContent()).includes(manifest.commit.slice(0,7)), 'packaged operator BUILD matches manifest');
   if(mode==='two-hand'){
@@ -103,13 +113,15 @@ try {
    await page.waitForFunction(()=>!document.querySelector('#camera-setup').open && document.querySelector('#camera-toggle').textContent==='STOP CAMERA');
   }
   await page.locator('#operator-open').click();
+  assert.match(await page.locator('#operator-stats').textContent(), /50% catch rate/, 'sympathy points do not count as caught toys');
   await page.locator('#export').click();
   const exported=await page.evaluate(()=>globalThis.__nativeMessages.find(message=>message.type==='export'));
   assert.ok(exported,'packaged Export button reaches the native bridge with camera off or running');
-  assert.ok(exported.filename.includes(mode));
+  assert.ok(exported.filename.includes('one-hand'));
   const store=JSON.parse(exported.data);
-  assert.ok(JSON.stringify(store).includes('Offline '+mode));
-  assert.ok(!JSON.stringify(store).includes('Offline '+(mode==='one-hand'?'two-hand':'one-hand')));
+  assert.ok(JSON.stringify(store).includes('Offline one-hand'));
+  assert.ok(!JSON.stringify(store).includes('Offline two-hand'));
+  assert.equal(await page.locator('#score').textContent(),'0','native score has no zero padding');
   await page.evaluate(id=>TomkoNative.onmessage({data:JSON.stringify({type:'export-result',id,status:'saved'})}),exported.id);
   await page.waitForFunction(()=>document.querySelector('#operator-message').textContent.includes('scores saved'));
   assert.equal(await page.locator('#export').isDisabled(),false);
@@ -128,10 +140,12 @@ try {
   return page.evaluate(()=>__nativeMessages.filter(m=>m.type==='start').at(-1));
  };
  assert.equal((await startCamera()).applyPreview,true,'between-run start can apply a pending preview');
+ assert.equal(await page.evaluate(()=>__nativeMessages.filter(m=>m.type==='start').at(-1).hands),1);
  // Synthetic poses pass through the packaged native adapter, not a stub controller.
  await page.evaluate(()=>globalThis.__pose='Open_Palm');
  await page.locator('#play').click();await page.locator('#name').fill('Preview timing');await page.locator('#register-play').click();
  await page.waitForFunction(()=>tomkoStatus().phase==='aim',{},{timeout:15000});
+ assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('coderpush:event:v1')).active.rules.touchPoints),10);
  assert.equal((await startCamera(true)).applyPreview,false,'active aiming cannot apply a preview change');
  await page.waitForFunction(()=>tomkoStatus().camera==='tracking');
  // Allow fresh open-hand arming after the explicit camera restart.
@@ -148,6 +162,33 @@ try {
  assert.equal((await startCamera()).applyPreview,false,'recovered run keeps the preview configuration locked');
  await page.waitForTimeout(7200);
  assert.equal(await page.locator('#camera-toggle').textContent(),'STOP CAMERA','empty frames keep acquisition alive beyond the seven-second watchdog after reload');
+ // Finish the recovered run through the packaged native adapter. No app-state
+ // injection: open/fist poses are the same synthetic camera input as above.
+ await page.evaluate(()=>globalThis.__pose='Open_Palm');
+ await page.locator('#play').click();
+ for(let turn=2;turn<=3;turn++){
+  await page.waitForFunction(()=>tomkoStatus().phase==='aim',{}, {timeout:15000});
+  await page.evaluate(()=>globalThis.__pose='Open_Palm');await page.waitForTimeout(700);
+  await page.evaluate(()=>globalThis.__pose='Closed_Fist');
+  await page.waitForFunction(()=>['anticipate','descend','grip','lift'].includes(tomkoStatus().phase));
+  await page.evaluate(()=>globalThis.__pose=null);
+  await page.waitForFunction(({key,turn})=>{
+   const store=JSON.parse(localStorage.getItem(key));
+   return turn===3 ? !store.active : store.active?.turns.length===turn;
+  },{key:storageKey,turn},{timeout:30000});
+ }
+ const receipt=await page.evaluate(key=>{const s=JSON.parse(localStorage.getItem(key));return s.boards.find(b=>b.id===s.current).runs.at(-1);},storageKey);
+ assert.equal(receipt.turns.length,3);
+ assert.equal(receipt.rules.touchPoints,10);
+ for(const turn of receipt.turns) if(!turn.prizeId)assert.equal(turn.score,turn.touched?10:0);
+ await page.waitForTimeout(1000);
+ assert.equal(await page.locator('#final-score').innerText(),String(receipt.total));
+ assert.equal(await page.locator('#final-board').innerText(),`Previous play: 30 · This play: ${receipt.total}`);
+ await page.screenshot({path:join(root,'.screenshots','tomko-feedback-result.png')});
+ await page.locator('#next-player').click();
+ assert.notEqual(await page.locator('#name').inputValue(),receipt.name,'fresh replay nickname is retained');
+ assert.equal(await page.locator('#register-other').isVisible(),false);
+ await page.locator('#register-cancel').click();
  await page.locator('#operator-open').click();await page.locator('#reset').click();
  assert.equal((await startCamera(true)).applyPreview,true,'ending the run permits the next camera start to apply preview');
  await page.goto(origin+'/privacy');
@@ -156,5 +197,5 @@ try {
  await page.waitForFunction(()=>document.documentElement.dataset.arcadeReady==='true');
  assert.deepEqual(failures,[],'every requested packaged asset exists');
  assert.deepEqual(external,[],'local play does not request external resources');
- console.log('PASS: packaged BUILD, between-run preview eligibility, accepted-drop completion through restart, recovery lock, delayed native readiness, camera-off/on export, offline boot, both mode leaderboards, duplicate-turn rejection, and persistence across browser process restart. Synthetic scores; not physical gameplay or Android force-stop validation.');
+ console.log('PASS: packaged BUILD, between-run preview eligibility, accepted-drop completion through restart, recovery lock, delayed native readiness, camera-off/on export, offline boot, one-hand-only play, historical two-hand storage, three-turn contact scoring, plain scores, previous-play comparison, fresh nickname, duplicate-turn rejection, and persistence across browser process restart. Synthetic scores; not physical gameplay or Android force-stop validation.');
 } finally {await context.close();}

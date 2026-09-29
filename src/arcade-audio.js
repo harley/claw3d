@@ -88,6 +88,10 @@ export function playCollectionCue(audio, kind) {
       n(165, .40, .42, 'triangle', 165, .024);
       chord([523, 659, 784], .72, .48, .020);
     }
+  } else if (kind === 'touch') {
+    // A gentle acknowledgement for real contact, distinct from a caught toy.
+    n(262, .16, 0, 'triangle', 262, .022);
+    n(330, .24, .15, 'triangle', 330, .018);
   } else if (kind === 'miss') {
     n(90, .20, 0, 'sine', 38, .09);
     [330, 247, 165].forEach((f, i) => n(f, .24, i * .18, 'sawtooth', f * .78, .021));

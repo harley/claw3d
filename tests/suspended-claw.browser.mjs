@@ -53,7 +53,7 @@ try {
         }
       }
       rows.push({ fps, id, caught: game.plan.prize?.id || null, reason: game.plan.reason, collection: [...game.collection], rounds: game.rounds, phase: game.phase,
-        contacts: game.plan.gripContacts, peakSwing, maxHeldError, maxReleaseDrift, releaseAnchor,
+        toyContact: game.plan.toyContact === true, contacts: game.plan.gripContacts, peakSwing, maxHeldError, maxReleaseDrift, releaseAnchor,
         snap: lastGrip && firstLift ? Math.max(...lastGrip.map((r, i) => Math.abs(r - firstLift[i]))) : null });
     }
     // Show a real held prize, not the empty comparison model, for visual review.
@@ -69,7 +69,10 @@ try {
     assert.equal(row.caught, expected, `${row.fps} FPS ${row.id}: ${row.reason}`);
     assert.equal(row.phase, 'result'); assert.equal(row.rounds, 1);
     assert.deepEqual(row.collection, expected ? [expected] : [], 'one delivery or no prize');
+    if (row.id === 'empty') assert.equal(row.toyContact, false, 'empty drops never earn sympathy points');
+    if (row.id === 'side') assert.equal(row.toyContact, true, 'real side contact is recorded even when the grab misses');
     if (expected) {
+      assert.equal(row.toyContact, true);
       assert.ok(row.contacts.every(id => id === expected), 'all three visible fingers contacted the caught toy');
       assert.ok(row.snap < 1e-8, 'resolved finger contacts carry into lift');
       assert.ok(row.maxHeldError < 1e-8, 'the toy follows the displaced/tilted claw');

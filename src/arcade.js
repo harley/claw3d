@@ -3,7 +3,7 @@ import { createBoothInvite } from './booth-invite.js';
 import { nativeBridge } from './native-bridge.js';
 import { nativeAndroid, tomkoRendering } from './runtime-platform.js';
 import { RIGHT_SLAM_MS } from './dual-hand-controls.js';
-import { resolvePlayMode, phonePlaySearch, cueLeadSeconds, dualStartReadiness, firstTurnControlReady as isFirstTurnControlReady } from './play-mode.js';
+import { resolvePlayMode, phonePlaySearch, tomkoPlaySearch, cueLeadSeconds, dualStartReadiness, firstTurnControlReady as isFirstTurnControlReady } from './play-mode.js';
 import { ABSOLUTE_SPEED } from './steering.js';
 import './arcade.css';
 import { createJoystickCursor } from './joystick-cursor.js';
@@ -34,11 +34,16 @@ if (publicPlay || !shared && !publicTry) {
 let officialBlocked = false;
 let noticeReady = !publicSurface;
 const phoneViewport = () => ({
-  phone: matchMedia('(any-pointer: coarse)').matches && Math.min(innerWidth, innerHeight) <= 600,
+  phone: !nativeAndroid && matchMedia('(any-pointer: coarse)').matches && Math.min(innerWidth, innerHeight) <= 600,
   landscape: innerWidth > innerHeight,
 });
 // Resolve before creating input, hand artwork or a storage namespace. A saved
 // local attempt must remain reachable in the profile in which it was started.
+if (nativeAndroid) {
+  history.replaceState(null, '', `${location.pathname}${tomkoPlaySearch(location.search)}${location.hash}`);
+  document.querySelector('.hand-toggle').hidden = true;
+  $('register-other').hidden = true;
+}
 let savedModeLocked = false;
 if (!shared && !publicTry) {
   try { savedModeLocked = Boolean(loadStore({ getItem: () => localStorage.getItem(resolvePlayMode(location.search).storageKey) }, resolvePlayMode(location.search).collection ? COLLECTION_RULES : RULES).active); }
@@ -52,7 +57,7 @@ const localRules = mode.collection ? COLLECTION_RULES : RULES;
 const { dual: dualEnabled, grab: grabEnabled, cabinet: cabinetEnabled, holdMs, steering, storageKey: scoreKey } = mode;
 import { ArcadeScene } from './arcade-scene.js';
 import { createGame, begin, drop, advance, move, moveToward, homeClaw, planGrab, clawPose, PHASES, MAX_FRAME_DELTA, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget, catchQuality } from './arcade-mechanics.js';
-import { RULES, COLLECTION_RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, scoreTurn, turnContext, handBonus, renameCompletedRun } from './event-session.js';
+import { RULES, TOMKO_RULES, COLLECTION_RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, scoreTurn, turnContext, handBonus, renameCompletedRun } from './event-session.js';
 
 if (publicSurface) {
   $('try-notice').hidden = false;
@@ -132,6 +137,7 @@ for (const [id, dual] of [['register-play', dualEnabled], ['register-other', !du
     ? `<strong><span aria-hidden="true">✋🤚</span> Play</strong><span class="start-bonus">+25 pts/catch</span><small id="${id}-help">Move left fist to aim. Right palm to DROP.</small>`
     : `<strong><span aria-hidden="true">✋</span> Play</strong><small id="${id}-help">Move open hand to aim. Hold fist to drop.</small>`;
 }
+if (nativeAndroid) $('register-play').querySelector('small').textContent = 'Either hand. Show one open hand to aim; hold a fist to drop.';
 if (mode.profile === 'grab-release') $('register-play').querySelector('small').textContent = controlInstructions.scene;
 let pendingPlayer = null, startingRun = false;
 let scoreAnimation;
@@ -188,7 +194,7 @@ function renderBoard() {
     $('leaders').append(li);
   }
   const scoredRuns = board.runs.filter(r => !r.practice), turns = scoredRuns.flatMap(r => r.turns || []);
-  $('operator-stats').textContent = official ? `${scoredRuns.length} ranked participants · server confirmed` : `${scoredRuns.length} completed · ${turns.length ? Math.round(turns.filter(t => t.score).length / turns.length * 100) : 0}% catch rate${shared ? '' : ` · ${store.boards.length} sessions stored`}`;
+  $('operator-stats').textContent = official ? `${scoredRuns.length} ranked participants · server confirmed` : `${scoredRuns.length} completed · ${turns.length ? Math.round(turns.filter(t => t.prizeId).length / turns.length * 100) : 0}% catch rate${shared ? '' : ` · ${store.boards.length} sessions stored`}`;
   $('storage-status').textContent = shared ? pilot.status : storageError || store.notice || 'Scores saved on this browser.';
 }
 const audio = createArcadeAudio({ onChange: syncSoundUI, enabledByDefault: !manualSetup });
@@ -208,8 +214,8 @@ function phaseSound(phase, modal) {
   if (phase === lastSoundPhase) return;
   lastSoundPhase = phase;
   if (paused || document.hidden || modal) return;
-  if (mode.collection && ['anticipate', 'descend', 'grip', 'lift', 'deliver', 'release'].includes(phase)) {
-    playCollectionCue(audio, phase === 'lift' ? catchQuality(game.plan) : phase);
+  if ((mode.collection || nativeAndroid) && ['anticipate', 'descend', 'grip', 'lift', 'deliver', 'release'].includes(phase)) {
+    playCollectionCue(audio, phase === 'lift' ? (nativeAndroid ? game.plan?.prize ? 'ordinary' : game.plan?.toyContact ? 'touch' : 'miss' : catchQuality(game.plan)) : phase);
     return;
   }
   if (phase === 'anticipate') { audio.note(95, .2, 0, 'sine', 38, .06); audio.note(880, .22, 0, 'square', 110); audio.fanfare('drop'); }
@@ -262,7 +268,7 @@ function openRegistration(name = $('name').value) {
 }
 function finishTurn() {
   if (!run) return;
-  const outcome = recordTurn(store, turnNumber, game.plan?.prize?.id || null, flow.dropRemainingMs, mode.collection ? catchQuality(game.plan) : undefined); if (!outcome) return;
+  const outcome = recordTurn(store, turnNumber, game.plan?.prize?.id || null, flow.dropRemainingMs, mode.collection ? catchQuality(game.plan) : undefined, nativeAndroid && game.plan?.toyContact === true); if (!outcome) return;
   turnReasons[turnNumber - 1] = game.plan ? { reason: game.plan.reason, touched: game.plan.touched, blocker: game.plan.blocker } : null;
   persist();
   track('turn_complete', { turn: turnNumber, score: outcome.run.turns.at(-1).score, prizeId: outcome.run.turns.at(-1).prizeId, outcome: game.plan?.reason }, outcome.run);
@@ -291,17 +297,22 @@ $('score-storage').addEventListener('cancel', event => event.preventDefault());
 $('score-storage-retry').addEventListener('click', () => { void savePublicTurn(); });
 function presentTurn(outcome) {
   const points = outcome.run.turns.at(-1).score;
+  if (nativeAndroid && !outcome.run.turns.at(-1).prizeId && points) showScorePop(points);
   if (outcome.completed) audio.fanfare('complete');
-  else if (!mode.collection && points) { [523, 659, 784, 1047].forEach((f, i) => audio.note(f, .18, i * .11)); } else if (!mode.collection) audio.note(165, .25, 0, 'triangle');
+  else if (!mode.collection && !nativeAndroid && points) { [523, 659, 784, 1047].forEach((f, i) => audio.note(f, .18, i * .11)); } else if (!mode.collection && !nativeAndroid) audio.note(165, .25, 0, 'triangle');
   if (outcome.completed) {
     track('run_complete', { score: outcome.run.total }, outcome.run);
     completedRun = outcome.run; run = null; renderBoard();
     resetResultName();
-    $('final-name').textContent = completedRun.name.toUpperCase(); $('final-score').textContent = official ? '—' : String(completedRun.total).padStart(3, '0');
+    $('final-name').textContent = completedRun.name.toUpperCase(); $('final-score').textContent = official ? '—' : String(completedRun.total).padStart(nativeAndroid ? 1 : 3, '0');
     const rank = shared ? undefined : leaderboard(currentBoard(store)).find(r => r.id === completedRun.id)?.rank;
     $('final-kicker').textContent = official ? 'AWAITING SERVER RESULT' : finaleHeadline(completedRun.turns, rank, completedRun.rules.points);
     $('final-rank').textContent = shared ? globalThis.__OFFLINE_SHELL__ ? 'Saved on this computer · sync pending' : 'Score waiting to sync' : publicTry ? 'PRACTICE · NO EVENT RANKING' : `LOCAL PREVIEW · ${dualEnabled ? '2 HANDS' : '1 HAND'}${rank ? ` · RANK #${rank}` : ''}`;
     setText('final-board', publicPlay ? 'All plays · every run counts' : publicTry ? 'Three turns · play again anytime' : `Board: ${completedRun.boardName || store.boards.find(board => board.id === completedRun.boardId)?.name || completedRun.boardId}`);
+    if (nativeAndroid) {
+      const prior = currentBoard(store).runs.filter(row => row.id !== completedRun.id && row.rules.version === completedRun.rules.version).at(-1);
+      if (prior) setText('final-board', `Previous play: ${prior.total} · This play: ${completedRun.total}`);
+    }
     $('final-turns').replaceChildren();
     if (!official) completedRun.turns.forEach((turn, i) => {
       const toy = turn.prizeId ? game.toys.find(t => t.id === turn.prizeId) : null;
@@ -309,13 +320,13 @@ function presentTurn(outcome) {
       if (toy) { chip.dataset.prize = toy.id; chip.style.setProperty('--toy', toy.color); }
       const parts = toy
         ? [['catch-icon', TROPHY_ICONS[toy.family]], ['catch-name', toy.name.toUpperCase()], ['catch-points', `+${turn.score}`], ['catch-detail', `${completedRun.rules.points[toy.id]}${handBonus(completedRun.rules) ? ` + ${handBonus(completedRun.rules)} TWO HANDS` : ''}${completedRun.rules.imperfectDeduction ? (turn.quality === 'perfect' ? ' · PERFECT' : ` − ${completedRun.rules.points[toy.id] - turn.score} OFF-CENTRE`) : ` + ${turn.score - completedRun.rules.points[toy.id] - handBonus(completedRun.rules)} ${completedRun.rules.precisionBonus ? 'PRECISION' : 'SPEED'}`}`]]
-        : [['catch-icon', '—'], ['catch-name', 'MISS'], ['catch-points', '+0'], ['catch-detail', turnReasons[i] ? missCopy(turnReasons[i], game.toys) : `TURN ${i + 1}`]];
+        : [['catch-icon', '—'], ['catch-name', turn.score ? 'TOUCHED' : 'MISS'], ['catch-points', `+${turn.score}`], ['catch-detail', turnReasons[i] ? missCopy(turnReasons[i], game.toys) : `TURN ${i + 1}`]];
       for (const [className, text] of parts) { const part = document.createElement('span'); part.className = className; part.textContent = text; chip.append(part); }
       $('final-turns').append(chip);
     });
     setText('final-sync', shared ? pilot.state().error : storageError);
     $('final').showModal(); $(publicTry ? 'play-again' : 'next-player').focus();
-    if (!official && !publicPlay && !scene.reducedMotion) { const total = completedRun.total, start = performance.now(); const count = time => { if (!$('final').open) return; const progress = Math.min(1, (time - start) / 850); $('final-score').textContent = String(Math.round(total * (1 - (1 - progress) ** 3))).padStart(3, '0'); if (progress < 1) scoreAnimation = requestAnimationFrame(count); }; scoreAnimation = requestAnimationFrame(count); }
+    if (!official && !publicPlay && !scene.reducedMotion) { const total = completedRun.total, start = performance.now(); const count = time => { if (!$('final').open) return; const progress = Math.min(1, (time - start) / 850); $('final-score').textContent = String(Math.round(total * (1 - (1 - progress) ** 3))).padStart(nativeAndroid ? 1 : 3, '0'); if (progress < 1) scoreAnimation = requestAnimationFrame(count); }; scoreAnimation = requestAnimationFrame(count); }
   }
 }
 async function play() {
@@ -348,7 +359,7 @@ async function startScoredRun() {
       run.boardName = store.boards[0].name;
     } else {
       if (publicTry) { store = newStore(); $('try-notice').open = false; }
-      run = startRun(store, pendingPlayer.name, publicTry, mode.controlMode);
+      run = startRun(store, pendingPlayer.name, publicTry, mode.controlMode, nativeAndroid ? TOMKO_RULES : undefined);
     }
     turnReasons = [];
     track('run_start', { steering, ...(holdMs ? { holdMs } : {}) }, run);
@@ -377,7 +388,7 @@ $('player-form').addEventListener('submit', event => { event.preventDefault(); i
   if (startingRun || run) return;
   const name = $('name').value.trim() || generatedName();
   if (name.length > 24) { $('name').setCustomValidity('Use at most 24 characters.'); $('name').reportValidity(); return; }
-  const chosenMode = official ? 'one-hand' : event.submitter?.dataset.controlMode || mode.controlMode;
+  const chosenMode = official || nativeAndroid ? 'one-hand' : event.submitter?.dataset.controlMode || mode.controlMode;
   if (chosenMode !== mode.controlMode) {
     const url = new URL(location.href);
     url.searchParams.set('hands', 'manual');
@@ -483,7 +494,7 @@ $('next-player').addEventListener('click', () => { void replay(); });
 $('result-open').addEventListener('click', () => {
   if (!completedRun || startingRun || run || cameraLoading) return;
   cancelAnimationFrame(scoreAnimation);
-  setText('final-score', official && !officialPlayer.state().result ? '—' : String(completedRun.total).padStart(3, '0'));
+  setText('final-score', official && !officialPlayer.state().result ? '—' : String(completedRun.total).padStart(nativeAndroid ? 1 : 3, '0'));
   $('scores-dialog').close();
   $('final').showModal(); $(publicTry ? 'play-again' : 'next-player').focus();
 });
@@ -510,7 +521,7 @@ $('scores-dialog').addEventListener('close', () => {
 $('final').addEventListener('cancel', event => event.preventDefault());
 $('play').addEventListener('click', () => { $('scene').focus(); play(); });
 for (const [id, dual] of [['mode-one', false], ['mode-two', true]]) $(id).addEventListener('click', () => {
-  if (official || dual === dualEnabled || run || pendingPlayer || startingRun || cameraLoading || paused || recovering || document.querySelector('dialog[open]')) return;
+  if (nativeAndroid || official || dual === dualEnabled || run || pendingPlayer || startingRun || cameraLoading || paused || recovering || document.querySelector('dialog[open]')) return;
   const url = new URL(location.href);
   url.searchParams.set('hands', 'manual');
   if (dual) url.searchParams.set('controls', 'dual'); else url.searchParams.delete('controls');
@@ -805,7 +816,7 @@ function updateSavedRank(saved) {
     completedRun = saved;
     resetResultName();
     setText('final-name', saved.name.toUpperCase());
-    setText('final-score', String(saved.total).padStart(3, '0'));
+    setText('final-score', String(saved.total).padStart(nativeAndroid ? 1 : 3, '0'));
     setText('final-board', 'Recovered result · all plays');
     $('final-turns').replaceChildren(...saved.turns.map(turn => {
       const card = document.createElement('span'); card.className = 'turn-chip scored catch-card';
@@ -843,7 +854,7 @@ function renderOfficialResult(saved) {
   const recovered = !completedRun;
   completedRun = { ...saved.attempt, boardId: saved.attempt.eventId };
   setText('final-name', saved.attempt.name.toUpperCase());
-  setText('final-score', String(saved.attempt.total).padStart(3, '0'));
+  setText('final-score', String(saved.attempt.total).padStart(nativeAndroid ? 1 : 3, '0'));
   setText('final-kicker', 'SERVER-CONFIRMED RESULT');
   setText('final-rank', saved.best ? `YOUR EVENT BEST ${saved.best.total} · RANK #${saved.best.rank}` : 'No ranked best available');
   setText('final-board', 'Official event · this attempt is complete');

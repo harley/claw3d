@@ -278,7 +278,10 @@ export class ToyContacts {
         const start = point(previous, angle, sample), end = point(pose, angle, sample);
         const hit = this.hit(start, end, available, steelFingerWidth(index / (samples.length - 1)));
         if (hit && hit.fraction < fraction) { fraction = hit.fraction; contact = hit; }
-        if (end.y < BED + .012 && start.y > end.y) fraction = Math.min(fraction, Math.max(0, (start.y - BED - .012) / (start.y - end.y)));
+        if (end.y < BED + .012 && start.y > end.y) {
+          const floorFraction = Math.max(0, (start.y - BED - .012) / (start.y - end.y));
+          if (floorFraction < fraction) { fraction = floorFraction; contact = null; }
+        }
       }
       if (fraction < 1) {
         const previousY = previous.carriage?.y ?? HIGH;
@@ -286,7 +289,7 @@ export class ToyContacts {
         plan.blockedDescent = plan.low;
         plan.prize = null; plan.offset = null;
         plan.reason = contact ? 'bumped' : 'empty'; plan.stop = contact ? 'mesh-contact' : 'bed';
-        if (contact) { plan.touched = contact.toy; this.impact(contact.toy, contact.point, 'descend'); }
+        if (contact) { plan.toyContact = true; plan.touched = contact.toy; this.impact(contact.toy, contact.point, 'descend'); }
         Object.assign(pose, clawPose(game));
       }
     }
@@ -302,6 +305,7 @@ export class ToyContacts {
         }
         if (contact) {
           pose.radii[i] = mix(OPEN_RADIUS, goal, fraction);
+          plan.toyContact = true;
           plan.gripContacts[i] = contact.toy.id;
           if (!plan.prize) this.impact(contact.toy, contact.point, 'grip');
         }

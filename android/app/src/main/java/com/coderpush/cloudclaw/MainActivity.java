@@ -108,7 +108,7 @@ public class MainActivity extends ComponentActivity {
     }
     if(type.equals("start")){
      int hands=o.getInt("hands");double jsTime=o.getDouble("jsTime");int gen=o.getInt("generation");
-     if((hands!=1&&hands!=2)||!Double.isFinite(jsTime)||gen<0||!foreground)return;
+     if(hands!=1||!Double.isFinite(jsTime)||gen<0||!foreground)return;
      stopTracking();client=reply;clientGeneration=gen;double receipt=now();
      send(json("type","clock","generation",gen,"jsTime",jsTime,"nativeTime",receipt));
      if(checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.CAMERA},1);send(json("type","error","generation",gen,"message","Allow camera permission, then start the camera again."));return;}

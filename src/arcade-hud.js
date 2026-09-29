@@ -1,3 +1,4 @@
+import { nativeAndroid } from './runtime-platform.js';
 import { HAND_ACQUIRE_MS, RIGHT_SLAM_MS } from './dual-hand-controls.js';
 // Presentation-only HUD: message surface, jackpot cue, meters, chips and
 // labels. It reads a per-call view of game state and never mutates it; audio
@@ -227,6 +228,7 @@ export function createHud({ audio, phaseSound }) {
     button = cameraLoading ? 'Starting…' : 'Restart camera';
   }
   if (paused) { title = 'PAUSED'; hint = ''; button = shared ? 'HOST CONTROLS' : cameraLoading ? 'Starting…' : 'RESUME'; }
+  if (nativeAndroid && title === 'MISSED' && run?.rules.touchPoints && game.plan?.toyContact) hint = `TOUCHED +${run.rules.touchPoints} · ${hint}`;
   const timed = !paused && deliveryPhases.has(phase);
   // Teach once per run. Keep the live-region text, but let the machine lead
   // after the first drop; recovery and deliberate hold feedback always return.
@@ -261,7 +263,7 @@ export function createHud({ audio, phaseSound }) {
   if ($('arcade').dataset.phase !== phase) $('arcade').dataset.phase = phase;
   const signature = [title, hint, button, kicker, total, run?.name, pendingPlayer?.name, completedRun?.id, paused].join('');
   if (signature === lastStatus) return; lastStatus = signature;
-  $('player-name').textContent = run?.name || pendingPlayer?.name || completedRun?.name || 'PLAYER'; $('score').textContent = String(total).padStart(3, '0'); $('turn').textContent = run ? `${preparingFirstTurn ? 1 : turnNumber} / ${turns}` : `— / ${turns}`;
+  $('player-name').textContent = run?.name || pendingPlayer?.name || completedRun?.name || 'PLAYER'; $('score').textContent = String(total).padStart(nativeAndroid ? 1 : 3, '0'); $('turn').textContent = run ? `${preparingFirstTurn ? 1 : turnNumber} / ${turns}` : `— / ${turns}`;
   $('phase-label').textContent = kicker; $('button-text').textContent = button;
   $('play').hidden = Boolean(startingRun || (run && !recovering && !cameraRecovery && !paused));
   $('play').disabled = cameraLoading;

@@ -73,3 +73,12 @@ export function dualStartReadiness(feedback = {}) {
   if (left.closed === true && left.open !== true && ['grabbing', 'gripped'].includes(left.grab?.stage)) return 'ready';
   return 'open_left';
 }
+
+// The native booth has one approved control/rules profile. Old deep links must
+// not resurrect two-hand mode or experimental scoring after an app upgrade.
+export function tomkoPlaySearch(search = '') {
+  const params = new URLSearchParams(search);
+  for (const key of ['controls', 'toys', 'hold', 'steer', 'contact', 'claw', 'start']) params.delete(key);
+  params.set('hands', 'manual');
+  return `?${params}`;
+}
