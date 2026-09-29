@@ -3,6 +3,8 @@ package com.coderpush.cloudclaw;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.graphics.*;
+import android.hardware.camera2.CameraCharacteristics;
+import android.hardware.camera2.CaptureRequest;
 import android.net.Uri;
 import android.os.*;
 import android.util.*;
@@ -13,6 +15,7 @@ import androidx.activity.ComponentActivity;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.camera.camera2.interop.Camera2CameraInfo;
+import androidx.camera.camera2.interop.Camera2Interop;
 import androidx.camera.core.*;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
@@ -110,12 +113,14 @@ public class MainActivity extends ComponentActivity {
      int hands=o.getInt("hands");double jsTime=o.getDouble("jsTime");int gen=o.getInt("generation");
      if(hands!=1||!Double.isFinite(jsTime)||gen<0||!foreground)return;
      stopTracking();client=reply;clientGeneration=gen;double receipt=now();
+     deliveries.reset(epoch,"4".equals(Uri.parse(web.getUrl()).getQueryParameter("delivery"))?4:2);
      send(json("type","clock","generation",gen,"jsTime",jsTime,"nativeTime",receipt));
      if(checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.CAMERA},1);send(json("type","error","generation",gen,"message","Allow camera permission, then start the camera again."));return;}
      boolean sessionPreview=previewConfiguration.beginSession(o.optBoolean("applyPreview",false));
      preview.setVisibility(sessionPreview?View.VISIBLE:View.GONE);updatePreviewStatus();
      String backend=InferenceConfiguration.select(getPreferences(MODE_PRIVATE).getString("inferenceDelegate","GPU"),o.optString("delegate",""),o.optBoolean("applyPreview",false));
-     startTracking(hands,epoch,o.optString("cameraId",""),sessionPreview,backend);
+     int cameraFps=CameraRateConfiguration.select(getPreferences(MODE_PRIVATE).getInt("cameraFps",15),Uri.parse(web.getUrl()).getQueryParameter("cameraFps"),o.optBoolean("applyPreview",false));
+     startTracking(hands,epoch,o.optString("cameraId",""),sessionPreview,backend,cameraFps);
     }else if(type.equals("sync")&&o.optInt("generation",-1)==clientGeneration){
      double jsTime=o.getDouble("jsTime");if(Double.isFinite(jsTime))send(json("type","clock","generation",clientGeneration,"jsTime",jsTime,"nativeTime",now()));
     }else if(type.equals("stop")&&o.optInt("generation",-1)==clientGeneration){stopTracking();}
@@ -127,7 +132,7 @@ public class MainActivity extends ComponentActivity {
     }
    }catch(Exception e){Log.w("TomkoGame","Rejected bridge message");}
   });
-  web.loadUrl(ORIGIN+"/?hands=manual&geometry=indexed");
+  web.loadUrl(ORIGIN+"/?hands=manual&geometry=indexed&delivery=4&cameraFps=15");
  }
  void send(JSONObject value){if(client!=null&&!destroyed)client.postMessage(value.toString());}
  void updatePreviewStatus(){
@@ -187,7 +192,7 @@ public class MainActivity extends ComponentActivity {
  synchronized void stopTracking(){active=false;epoch++;deliveries.reset(epoch);if(provider!=null)provider.unbindAll();if(!executor.isShutdown())executor.execute(()->{if(recognizer!=null){recognizer.close();recognizer=null;}});}
  void deliver(long token){if(token!=epoch||!active)return;JSONObject payload=deliveries.take(token);if(payload!=null)send(payload);}
  void fail(long token,Exception e){Log.e("TomkoGame","Tracking error",e);main.post(()->{if(token!=epoch)return;send(json("type","error","generation",clientGeneration,"message","Native tracking failed. Restart the camera."));stopTracking();status.setText("Tracking error · restart camera");});}
- void startTracking(int hands,long token,String requestedCamera,boolean sessionPreview,String backend){executor.execute(()->{try{
+ void startTracking(int hands,long token,String requestedCamera,boolean sessionPreview,String backend,int requestedFps){executor.execute(()->{try{
   if(token!=epoch)return;
   inferenceDelegate=backend;
   recognizer=GestureRecognizer.createFromOptions(this,GestureRecognizer.GestureRecognizerOptions.builder().setBaseOptions(BaseOptions.builder().setModelAssetPath("gesture_recognizer.task").setDelegate(Delegate.valueOf(backend)).build()).setNumHands(hands).setMinHandDetectionConfidence(.65f).setMinHandPresenceConfidence(.5f).setMinTrackingConfidence(.5f).setRunningMode(RunningMode.VIDEO).build());
@@ -206,12 +211,18 @@ public class MainActivity extends ComponentActivity {
    CameraSelector selector=new CameraSelector.Builder().addCameraFilter(available->{
     ArrayList<CameraInfo> matches=new ArrayList<>();for(CameraInfo info:available)if(cameraId(info).equals(chosenId))matches.add(info);return matches;
    }).build();
-   ImageAnalysis a=new ImageAnalysis.Builder().setTargetResolution(new Size(640,480)).setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888).build();
+   ImageAnalysis.Builder analysis=new ImageAnalysis.Builder().setTargetResolution(new Size(640,480)).setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888);
+   Range<Integer>[] ranges=Camera2CameraInfo.from(selected).getCameraCharacteristic(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);
+   Range<Integer> rate=new Range<>(15,15);
+   boolean limited=requestedFps==15&&ranges!=null&&Arrays.asList(ranges).contains(rate);
+   if(limited)new Camera2Interop.Extender<>(analysis).setCaptureRequestOption(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,rate);
+   Log.i("TomkoGame","Camera target FPS: "+(limited?"15":"device default")+" · delivery window "+Uri.parse(web.getUrl()).getQueryParameter("delivery"));
+   ImageAnalysis a=analysis.build();
    samples=seen=two=0;copyMs=rotationMs=inferenceMs=resultMs=0;durations.clear();reportStart=SystemClock.elapsedRealtime();active=true;
    a.setAnalyzer(executor,frame->analyze(frame,token));if(sessionPreview){Preview p=new Preview.Builder().build();p.setSurfaceProvider(preview.getSurfaceProvider());provider.bindToLifecycle(this,selector,p,a);}
    else provider.bindToLifecycle(this,selector,a);
    send(json("type","cameras","generation",clientGeneration,"cameras",cameraInventory(),"selected",selectedCamera));
-   getPreferences(MODE_PRIVATE).edit().putString("inferenceDelegate",backend).apply();
+   getPreferences(MODE_PRIVATE).edit().putString("inferenceDelegate",backend).putInt("cameraFps",requestedFps).apply();
    send(json("type","ready","generation",clientGeneration,"delegate",backend));nativeStats=backend+" · "+hands+" hand mode · camera "+selectedCamera+" · preview "+(sessionPreview?"on":"off");deliveryStats="Analysis age excludes sensor queue time";updateStatus();
   }catch(Exception e){fail(token,e);}},ContextCompat.getMainExecutor(this));});
  }catch(Exception e){fail(token,e);}});}

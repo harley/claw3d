@@ -3,15 +3,19 @@ package com.coderpush.cloudclaw;
 import java.util.HashSet;
 import java.util.Set;
 
-/** Two messages in transit, plus one replaceable newest result. */
+/** Bounded messages in transit, plus one replaceable newest result. */
 final class LatestResultQueue<T> {
- private static final int MAX_IN_FLIGHT = 2;
+ private int maxInFlight = 2;
  private final Set<Long> inFlight = new HashSet<>();
  private long generation, latestId, lastOfferedId;
  private T latest;
  private boolean scheduled;
 
- synchronized void reset(long nextGeneration) {
+ synchronized void reset(long nextGeneration) { reset(nextGeneration, 2); }
+
+ synchronized void reset(long nextGeneration, int window) {
+  if (window != 2 && window != 4) throw new IllegalArgumentException("Delivery window must be 2 or 4");
+  maxInFlight = window;
   generation = nextGeneration;
   inFlight.clear();
   latest = null;
@@ -30,7 +34,7 @@ final class LatestResultQueue<T> {
  synchronized T take(long gen) {
   if (gen != generation) return null;
   scheduled = false;
-  if (inFlight.size() >= MAX_IN_FLIGHT || latest == null) return null;
+  if (inFlight.size() >= maxInFlight || latest == null) return null;
   T value = latest;
   latest = null;
   inFlight.add(latestId);
@@ -43,7 +47,7 @@ final class LatestResultQueue<T> {
  }
 
  private boolean scheduleIfReady() {
-  if (latest == null || inFlight.size() >= MAX_IN_FLIGHT || scheduled) return false;
+  if (latest == null || inFlight.size() >= maxInFlight || scheduled) return false;
   scheduled = true;
   return true;
  }
