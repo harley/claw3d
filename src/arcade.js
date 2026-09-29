@@ -51,6 +51,17 @@ if (initialSearch !== location.search) history.replaceState(null, '', `${locatio
 const mode = resolvePlayMode(official ? '' : location.search, shared || publicTry);
 const localRules = mode.collection ? COLLECTION_RULES : RULES;
 const { dual: dualEnabled, grab: grabEnabled, cabinet: cabinetEnabled, holdMs, steering, storageKey: scoreKey } = mode;
+// Presentation only: no camera, physics, storage or per-frame work. Native APKs
+// keep their booth UI even when a touchscreen reports a phone-sized viewport.
+const phoneWeb = !nativeAndroid && publicSurface && phoneViewport().phone;
+if (phoneWeb) {
+  document.body.classList.add('phone-web');
+  $('phone-setup').hidden = false;
+  $('phone-camera-help').hidden = false;
+  if (dualEnabled) $('phone-setup').innerHTML = 'Prop up your phone, face the camera and free both hands.<br><strong>Left fist aims · right palm drops.</strong>';
+  if (publicPlay) $('next-player').textContent = 'Play again';
+}
+
 import { ArcadeScene } from './arcade-scene.js';
 import { createGame, begin, drop, advance, move, moveToward, homeClaw, planGrab, clawPose, PHASES, MAX_FRAME_DELTA, BED, CAROUSEL, carouselCue, moveCarousel, aimTarget, catchQuality } from './arcade-mechanics.js';
 import { RULES, COLLECTION_RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, scoreTurn, turnContext, handBonus, renameCompletedRun } from './event-session.js';
@@ -144,7 +155,7 @@ try { store = shared || publicTry ? newStore() : loadStore({ getItem: () => loca
 let run = store.active, completedRun = null, turnNumber = run ? run.turns.length + 1 : 0;
 let recovering = Boolean(run);
 const canShowHandGuide = () => mode.profile === 'hold-drop' && !run && !pendingPlayer && !startingRun && !recovering && !frozen && !stopped;
-createHandGuide({ canOpen: canShowHandGuide, onTransition: () => { cameraControls?.reset(); handMenu.clear(); } });
+createHandGuide({ phone: phoneWeb, canOpen: canShowHandGuide, onTransition: () => { cameraControls?.reset(); handMenu.clear(); } });
 if (run) selectedStart = null;
 const frames = [], errors = [];
 let playtest = createPlaytestClient({ build: __BUILD_INFO__.commit, enabled: shared && !official && !publicPlay });
@@ -690,7 +701,11 @@ async function startCamera() {
     }
     else { reportCameraFailure('camera_unavailable'); $('camera-setup').showModal(); }
   } catch (error) { updateCameraView('Camera unavailable. Open Camera settings to retry.'); reportCameraFailure('camera_unavailable'); $('camera-status').textContent = `Camera unavailable: ${error.message}`; $('camera-setup').showModal(); }
-  finally { cameraLoading = false; $('camera-toggle').disabled = false; updateUI(); }
+  finally {
+    cameraLoading = false; $('camera-toggle').disabled = false;
+    if (phoneWeb && !cameraControls?.running) $('camera-toggle').textContent = 'TRY CAMERA AGAIN';
+    updateUI();
+  }
 }
 $('camera-toggle').addEventListener('click', () => {
   if (cameraControls?.running || cameraControls?.starting) cameraControls.stop();
