@@ -20,7 +20,7 @@ function shapeFinger(finger, radius) {
     const t = i / steps, p = steelFingerPoint(radius, t);
     const a = steelFingerPoint(radius, Math.max(0, t - .001)), b = steelFingerPoint(radius, Math.min(1, t + .001));
     const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy);
-    const taper = (1 - t) ** .6, width = steelFingerWidth(t), thickness = .013 * taper + .0003;
+    const taper = (1 - t) ** .6, width = steelFingerWidth(t), thickness = .018 * taper + .0003;
     for (let j = 0; j < sides; j++) {
       const angle = j / sides * Math.PI * 2;
       position.setXYZ(i * sides + j, p.x - dy / length * Math.cos(angle) * thickness, p.y + dx / length * Math.cos(angle) * thickness, Math.sin(angle) * width);
@@ -42,9 +42,9 @@ export function buildSteelClaw(parent, materials) {
   const fingers = FINGER_ANGLES.map(angle => {
     const root = new T.Group(); root.rotation.y = -angle; claw.add(root);
     const blade = new T.Mesh(stripGeometry(), polished); blade.castShadow = true; root.add(blade);
-    const pin = new T.Mesh(new T.CylinderGeometry(.026, .026, .064, 16), steel);
+    const pin = new T.Mesh(new T.CylinderGeometry(.030, .030, .088, 16), steel);
     pin.position.set(.11, -.34, 0); pin.rotation.x = Math.PI / 2; root.add(pin);
-    const bracket = new T.Mesh(new T.BoxGeometry(.022, .18, .032), polished);
+    const bracket = new T.Mesh(new T.BoxGeometry(.028, .18, .044), polished);
     bracket.position.set(.09, -.24, 0); bracket.rotation.z = -.17; root.add(bracket);
     const finger = { root, blade, radius: null }; shapeFinger(finger, .41); return finger;
   });
