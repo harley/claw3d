@@ -386,3 +386,12 @@ Desktop labels and native Tomko presentation are unchanged. Phone help adds no
 frame-loop, inference, analytics request or timer. Installed offline APKs are
 not updated by website deployment. Physical phone usability and recognition
 accuracy still require a device playtest.
+
+## Wide-screen play reference
+
+During one-hand hold-to-drop runs, wide landscape displays show a static How to
+play reference in the spare left margin. It reuses the tutorial artwork and
+instructions for depth, sideways movement and holding a fist. It hides on narrow
+or short screens, during dialogs and host pause, and in other control modes.
+The reference adds no animation or camera processing. Cabinet framing and the
+three-turn rules stay unchanged; physical Tomko readability remains unverified.
