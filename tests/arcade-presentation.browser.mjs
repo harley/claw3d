@@ -12,7 +12,7 @@ try {
  await page.locator('#play').click(); await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running && !document.getElementById('camera-setup').open);
  await page.locator('#play').click(); await page.locator('#name').press('Enter');
  await page.waitForFunction(() => document.getElementById('status').textContent === '3');
- for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
+ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
   await page.setViewportSize(viewport);
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const panel = await page.evaluate(() => {
@@ -26,6 +26,14 @@ try {
   assert.equal(panel.active, true, 'count-in remains available to the live region');
   assert.equal(panel.marquee.text, panel.text, 'scene and live region use the same cue on every viewport');
   assert.equal(panel.opacity, '0', 'no duplicate central countdown over the claw on phones or desktop');
+  const wide = viewport.width >= 1280;
+  assert.equal(await page.locator('#hand-guide-reference').isVisible(), wide);
+  if (wide) {
+   const reference = await page.locator('#hand-guide-reference').evaluate(el => ({ right: el.getBoundingClientRect().right, animations: el.getAnimations({ subtree: true }).length }));
+   assert.ok(reference.right < viewport.width / 3, 'reference stays outside the cabinet');
+   assert.equal(reference.animations, 0, 'static reference adds no animation load');
+   assert.equal(await page.locator('#hand-guide-reference li').count(), 3);
+  }
   await page.screenshot({ path: `.screenshots/countdown-${viewport.width}.png` });
  }
  await page.setViewportSize({ width: 1440, height: 900 });
@@ -77,12 +85,20 @@ try {
  await page.evaluate(() => { window.testCamera.visible = false; window.testCamera.tick(); });
  await page.waitForFunction(() => document.getElementById('status').textContent === 'SHOW ONE HAND');
  assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).opacity), '1', 'quiet aiming never hides recovery');
- for (const viewport of [{ width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 1366, height: 768 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
+ for (const viewport of [{ width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 1366, height: 768 }, { width: 1280, height: 720 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
   await page.setViewportSize(viewport);
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const framing = await page.evaluate(() => ({ sign: window.__littleCloud.snapshot().marquee, scene: document.getElementById('scene').getBoundingClientRect().toJSON() }));
   assert.ok(framing.sign.cloudTop.y >= framing.scene.top + Math.max(12, framing.scene.height * .02), `cloud has headroom at ${viewport.width}: ${JSON.stringify(framing)}`);
   assert.ok(framing.sign.top.y >= framing.scene.top && framing.sign.bottom.y <= framing.scene.bottom, 'whole LED panel stays within the scene');
+  const wide = viewport.width >= 1280;
+  assert.equal(await page.locator('#hand-guide-reference').isVisible(), wide);
+  if (wide) {
+   const reference = await page.locator('#hand-guide-reference').evaluate(el => ({ right: el.getBoundingClientRect().right, animations: el.getAnimations({ subtree: true }).length }));
+   assert.ok(reference.right < viewport.width / 3, 'reference stays outside the cabinet');
+   assert.equal(reference.animations, 0, 'static reference adds no animation load');
+   assert.equal(await page.locator('#hand-guide-reference li').count(), 3);
+  }
   await page.screenshot({ path: `.screenshots/marquee-layout-${viewport.width}.png` });
  }
  await page.setViewportSize({ width: 1440, height: 900 });
