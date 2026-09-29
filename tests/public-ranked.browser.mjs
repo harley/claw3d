@@ -20,6 +20,41 @@ const browser = await chromium.launch(browserOptions);
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
 let page;
 try {
+  // Hosted collection must select local precision rules even when public ranking
+  // and diagnostics are enabled. Dev-only collection tests cannot catch this gate.
+  const preview = await context.newPage();
+  const previewRequests = [], previewErrors = [];
+  preview.on('request', r => { if (new URL(r.url()).pathname.startsWith('/api/')) previewRequests.push(r.url()); });
+  preview.on('pageerror', e => previewErrors.push(e.message));
+  await installCameraFixture(preview, { built: true });
+  await preview.goto(`${origin}/?toys=collection&hands=manual`);
+  await preview.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true' && window.testCamera?.running);
+  assert.match(await preview.locator('#mode-label').textContent(), /LOCAL PREVIEW.*COLLECTION/);
+  assert.match(await preview.locator('#try-notice').textContent(), /scores stay in this browser/);
+  assert.match(await preview.locator('#score-cue').textContent(), /Off-centre catches earn half/);
+  await preview.screenshot({ path: '.screenshots/hosted-collection.png' });
+  await preview.locator('#play').click();
+  await preview.locator('#name').fill('Collection web test');
+  await preview.locator('#register-play').click();
+  for (const turn of [1, 2, 3]) {
+    await preview.waitForFunction(turn => document.getElementById('turn').textContent === `${turn} / 3` && document.getElementById('arcade').dataset.phase === 'aim', turn);
+    assert.equal(await preview.evaluate(() => { window.testCamera.tick(); return window.testCamera.clench(); }), true);
+    if (turn < 3) await preview.waitForFunction(turn => document.getElementById('turn').textContent === `${turn + 1} / 3`, turn);
+  }
+  await preview.locator('#final').waitFor();
+  assert.equal(await preview.locator('#final-turns .catch-card').count(), 3);
+  const savedPreview = await preview.evaluate(() => Object.entries(localStorage).filter(([key]) => key.endsWith(':collection-v1')));
+  assert.equal(savedPreview.length, 1);
+  const previewStore = JSON.parse(savedPreview[0][1]);
+  const previewRun = previewStore.boards.flatMap(board => board.runs)[0];
+  assert.equal(previewRun.rules.version, 'cloud-claw-collection-v2');
+  assert.equal(previewRun.turns.length, 3);
+  await preview.reload();
+  await preview.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+  assert.deepEqual(await preview.evaluate(key => JSON.parse(localStorage.getItem(key)).boards, savedPreview[0][0]), previewStore.boards);
+  assert.deepEqual(previewRequests, [], 'preview must not initialize or submit to shared APIs');
+  assert.deepEqual(previewErrors, []);
+  await preview.close();
   // Enroll through the actual operator UI, then use the same browser publicly.
   page = await context.newPage();
   await installCameraFixture(page, { built: true });

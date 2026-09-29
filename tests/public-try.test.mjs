@@ -88,3 +88,26 @@ test('same-origin connection policy covers public entry, worker assets and staff
     assert.equal(response.headers.get('content-security-policy'), "connect-src 'self'", path);
   }
 });
+
+// Contract: opting into hosted collection changes only the public document's
+// mode. A missing/misordered branch would silently select shared scoring.
+test('collection preview is public only when enabled and never replaces protected entries', async t => {
+  for (const enabled of [false, true]) {
+    const { request } = await fixture(t, enabled);
+    for (const path of ['/?toys=collection', '/try?toys=collection']) {
+      const response = await request(path);
+      const html = await response.text();
+      if (enabled) {
+        assert.equal(response.status, 200);
+        assert.match(html, /Browser-local collection preview/);
+        assert.doesNotMatch(html, /__PUBLIC_TRY__|__PUBLIC_PLAY__|__SHARED_PILOT__|__PUBLIC_OFFICIAL__/);
+        assert.equal(response.headers.get('set-cookie'), null);
+      } else assert.doesNotMatch(html, /Browser-local collection preview/);
+    }
+    assert.equal((await request('/api/host/export?toys=collection')).status, 401);
+    const login = await request('/api/login', { data: { code: 'public-try-staff-secret' } });
+    const cookie = login.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
+    assert.match(await (await request('/staff?toys=collection', { cookie })).text(), /__SHARED_PILOT__=true/);
+    if (enabled) assert.match(await (await request('/official?toys=collection')).text(), /__PUBLIC_OFFICIAL__=true/);
+  }
+});
