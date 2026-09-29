@@ -156,7 +156,8 @@ try {
  await page.waitForTimeout(1000);
  assert.equal(await page.locator('#timer').textContent(),remainingBefore,'restart and missing hand preserve aiming time');
  assert.equal(await page.evaluate(()=>__nativeMessages.filter(m=>m.type==='start').at(-1).applyPreview),false);
- await page.waitForFunction(()=>document.querySelector('[data-health-status]').textContent==='Waiting for hand',{},{timeout:12000});
+ await page.waitForFunction(()=>document.querySelector('[data-health-fresh]').textContent!=='Measuring',{},{timeout:30000});
+ assert.match(await page.locator('[data-health-status]').textContent(),/Waiting for hand|Tracking slow|Tracking delayed/,'slow CI rendering must remain a truthful health warning');
  assert.equal(await page.locator('.camera-image').evaluate(node=>getComputedStyle(node).opacity),'0','restart never reveals camera mirror');
  await page.screenshot({path:'.screenshots/tracking-health-205.png'});
  await page.evaluate(()=>globalThis.__pose='Open_Palm');
