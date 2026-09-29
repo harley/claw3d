@@ -199,7 +199,10 @@ try {
  await page.locator('#play').click();
  for(let turn=2;turn<=3;turn++){
   await page.waitForFunction(()=>tomkoStatus().phase==='aim',{}, {timeout:15000});
-  await page.evaluate(()=>globalThis.__pose='Open_Palm');await page.waitForTimeout(700);
+  await page.evaluate(()=>globalThis.__pose='Open_Palm');
+  // Recovery/turn transitions reacquire ownership before the open hand can arm.
+  await page.waitForFunction(()=>tomkoStatus().camera==='tracking',{}, {timeout:15000});
+  await page.waitForTimeout(700);
   await page.evaluate(()=>globalThis.__pose='Closed_Fist');
   await page.waitForFunction(()=>['anticipate','descend','grip','lift'].includes(tomkoStatus().phase));
   await page.evaluate(()=>globalThis.__pose=null);
