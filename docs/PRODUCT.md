@@ -410,3 +410,5 @@ Desktop labels and native Tomko presentation are unchanged. Phone help adds no
 frame-loop, inference, analytics request or timer. Installed offline APKs are
 not updated by website deployment. Physical phone usability and recognition
 accuracy still require a device playtest.
+
+The 0.4.12 native delivery experiment opens `?delivery=4`, allowing four bridge results in transit while keeping only the newest unsent result. Without the flag the limit remains two. The physical HSD01 showed roughly six native results/sec but three delivered/sec and slow bridge acknowledgement round trips. Acceptance requires sustained fresh delivery and deliberate fist drops without timeout; a higher delivery rate alone is not gesture acceptance. The 300 ms freshness cutoff, gesture rules and three-turn scoring are unchanged. Saved boards remain device-local and updates are installed in place.

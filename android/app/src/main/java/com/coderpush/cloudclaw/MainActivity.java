@@ -110,6 +110,7 @@ public class MainActivity extends ComponentActivity {
      int hands=o.getInt("hands");double jsTime=o.getDouble("jsTime");int gen=o.getInt("generation");
      if(hands!=1||!Double.isFinite(jsTime)||gen<0||!foreground)return;
      stopTracking();client=reply;clientGeneration=gen;double receipt=now();
+     deliveries.reset(epoch,"4".equals(Uri.parse(web.getUrl()).getQueryParameter("delivery"))?4:2);
      send(json("type","clock","generation",gen,"jsTime",jsTime,"nativeTime",receipt));
      if(checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.CAMERA},1);send(json("type","error","generation",gen,"message","Allow camera permission, then start the camera again."));return;}
      boolean sessionPreview=previewConfiguration.beginSession(o.optBoolean("applyPreview",false));
@@ -127,7 +128,7 @@ public class MainActivity extends ComponentActivity {
     }
    }catch(Exception e){Log.w("TomkoGame","Rejected bridge message");}
   });
-  web.loadUrl(ORIGIN+"/?hands=manual&geometry=indexed");
+  web.loadUrl(ORIGIN+"/?hands=manual&geometry=indexed&delivery=4");
  }
  void send(JSONObject value){if(client!=null&&!destroyed)client.postMessage(value.toString());}
  void updatePreviewStatus(){
