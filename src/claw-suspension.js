@@ -30,7 +30,7 @@ export function steelFingerPoint(radius, t) {
     z: 0,
   };
 }
-export const steelFingerWidth = t => .027 * (1 - t) ** .6 + .0005;
+export const steelFingerWidth = t => .040 * (1 - t) ** .6 + .0005;
 export function steelFingerSamples(radius) {
   return Array.from({ length: 17 }, (_, i) => steelFingerPoint(radius, i / 16));
 }
