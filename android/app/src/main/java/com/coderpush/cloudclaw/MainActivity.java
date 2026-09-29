@@ -42,7 +42,7 @@ public class MainActivity extends ComponentActivity {
  volatile long epoch=0; volatile boolean active=false;
  long frameId=0,lastTimestamp=0; int clientGeneration; boolean foreground=true, destroyed=false;
  PreviewConfiguration previewConfiguration;
- String selectedCamera="", nativeStats="", deliveryStats="";
+ String selectedCamera="", nativeStats="", deliveryStats="", inferenceDelegate="GPU";
  long pageEpoch=0;
  ExportRequest pendingExport;
  boolean pickerOutstanding=false;
@@ -114,7 +114,8 @@ public class MainActivity extends ComponentActivity {
      if(checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.CAMERA},1);send(json("type","error","generation",gen,"message","Allow camera permission, then start the camera again."));return;}
      boolean sessionPreview=previewConfiguration.beginSession(o.optBoolean("applyPreview",false));
      preview.setVisibility(sessionPreview?View.VISIBLE:View.GONE);updatePreviewStatus();
-     startTracking(hands,epoch,o.optString("cameraId",""),sessionPreview);
+     String backend=InferenceConfiguration.select(getPreferences(MODE_PRIVATE).getString("inferenceDelegate","GPU"),o.optString("delegate",""),o.optBoolean("applyPreview",false));
+     startTracking(hands,epoch,o.optString("cameraId",""),sessionPreview,backend);
     }else if(type.equals("sync")&&o.optInt("generation",-1)==clientGeneration){
      double jsTime=o.getDouble("jsTime");if(Double.isFinite(jsTime))send(json("type","clock","generation",clientGeneration,"jsTime",jsTime,"nativeTime",now()));
     }else if(type.equals("stop")&&o.optInt("generation",-1)==clientGeneration){stopTracking();}
@@ -186,9 +187,10 @@ public class MainActivity extends ComponentActivity {
  synchronized void stopTracking(){active=false;epoch++;deliveries.reset(epoch);if(provider!=null)provider.unbindAll();if(!executor.isShutdown())executor.execute(()->{if(recognizer!=null){recognizer.close();recognizer=null;}});}
  void deliver(long token){if(token!=epoch||!active)return;JSONObject payload=deliveries.take(token);if(payload!=null)send(payload);}
  void fail(long token,Exception e){Log.e("TomkoGame","Tracking error",e);main.post(()->{if(token!=epoch)return;send(json("type","error","generation",clientGeneration,"message","Native tracking failed. Restart the camera."));stopTracking();status.setText("Tracking error · restart camera");});}
- void startTracking(int hands,long token,String requestedCamera,boolean sessionPreview){executor.execute(()->{try{
+ void startTracking(int hands,long token,String requestedCamera,boolean sessionPreview,String backend){executor.execute(()->{try{
   if(token!=epoch)return;
-  recognizer=GestureRecognizer.createFromOptions(this,GestureRecognizer.GestureRecognizerOptions.builder().setBaseOptions(BaseOptions.builder().setModelAssetPath("gesture_recognizer.task").setDelegate(Delegate.GPU).build()).setNumHands(hands).setMinHandDetectionConfidence(.65f).setMinHandPresenceConfidence(.5f).setMinTrackingConfidence(.5f).setRunningMode(RunningMode.VIDEO).build());
+  inferenceDelegate=backend;
+  recognizer=GestureRecognizer.createFromOptions(this,GestureRecognizer.GestureRecognizerOptions.builder().setBaseOptions(BaseOptions.builder().setModelAssetPath("gesture_recognizer.task").setDelegate(Delegate.valueOf(backend)).build()).setNumHands(hands).setMinHandDetectionConfidence(.65f).setMinHandPresenceConfidence(.5f).setMinTrackingConfidence(.5f).setRunningMode(RunningMode.VIDEO).build());
   main.post(()->{if(token!=epoch||!foreground||destroyed)return;var future=ProcessCameraProvider.getInstance(this);future.addListener(()->{try{
    if(token!=epoch||!foreground||destroyed)return;provider=future.get();provider.unbindAll();
    var cameras=provider.getAvailableCameraInfos();
@@ -209,7 +211,8 @@ public class MainActivity extends ComponentActivity {
    a.setAnalyzer(executor,frame->analyze(frame,token));if(sessionPreview){Preview p=new Preview.Builder().build();p.setSurfaceProvider(preview.getSurfaceProvider());provider.bindToLifecycle(this,selector,p,a);}
    else provider.bindToLifecycle(this,selector,a);
    send(json("type","cameras","generation",clientGeneration,"cameras",cameraInventory(),"selected",selectedCamera));
-   send(json("type","ready","generation",clientGeneration));nativeStats="GPU · "+hands+" hand mode · camera "+selectedCamera+" · preview "+(sessionPreview?"on":"off");deliveryStats="Analysis age excludes sensor queue time";updateStatus();
+   getPreferences(MODE_PRIVATE).edit().putString("inferenceDelegate",backend).apply();
+   send(json("type","ready","generation",clientGeneration,"delegate",backend));nativeStats=backend+" · "+hands+" hand mode · camera "+selectedCamera+" · preview "+(sessionPreview?"on":"off");deliveryStats="Analysis age excludes sensor queue time";updateStatus();
   }catch(Exception e){fail(token,e);}},ContextCompat.getMainExecutor(this));});
  }catch(Exception e){fail(token,e);}});}
  void analyze(ImageProxy frame,long token){Bitmap raw=null,rotated=null;MPImage image=null;try{
@@ -231,7 +234,7 @@ public class MainActivity extends ComponentActivity {
   if(deliveries.offer(token,id,payload))main.post(()->deliver(token));
   if(SystemClock.elapsedRealtime()-reportStart>=5000){
    ArrayList<Double> sorted=new ArrayList<>(durations);Collections.sort(sorted);
-   String line=String.format(Locale.US,"GPU %.1f/s · analyzer processing p50 %.0f p95 %.0f ms · %dx%d",samples*1000.0/(SystemClock.elapsedRealtime()-reportStart),sorted.get(sorted.size()/2),sorted.get((int)((sorted.size()-1)*.95)),w,h);
+   String line=String.format(Locale.US,"%s %.1f/s · analyzer processing p50 %.0f p95 %.0f ms · %dx%d · hand present %d/%d",inferenceDelegate,samples*1000.0/(SystemClock.elapsedRealtime()-reportStart),sorted.get(sorted.size()/2),sorted.get((int)((sorted.size()-1)*.95)),w,h,seen,samples);
    // Means cover analyzer copy, rotation/wrapping, synchronous inference and JSON construction.
    // Sensor/CameraX queue, main-thread stringify and bridge delivery are excluded.
    Log.i("TomkoGame",String.format(Locale.US,"Analyzer stages mean ms: copy %.2f · rotate/wrap %.2f · inference %.2f · result JSON %.2f",copyMs/samples,rotationMs/samples,inferenceMs/samples,resultMs/samples));

@@ -206,3 +206,19 @@ test('preview eligibility is sampled from game state at each start and defaults 
     pending = c.start(); assert.equal(messages.at(-1).applyPreview, false); ready(c); await pending;
   } finally { c.stop(); }
 });
+
+// Contract: requested trial backend travels only on camera start; reported
+// delegate comes from native readiness, not an unconfirmed URL preference.
+test('native CPU trial requests selection and reports the applied backend', async () => {
+  const previousLocation = globalThis.location;
+  globalThis.location = { search: '?inference=cpu' };
+  const { c, messages } = startupFixture();
+  try {
+    const started = c.start();
+    assert.equal(messages.find(m => m.type === 'start').delegate, 'CPU');
+    c.receive({ type: 'clock', generation: c.generation, jsTime: performance.now(), nativeTime: performance.now() });
+    c.receive({ type: 'ready', generation: c.generation, delegate: 'CPU' });
+    await started;
+    assert.equal(c.delegate, 'CPU');
+  } finally { c.stop(); globalThis.location = previousLocation; }
+});

@@ -38,7 +38,7 @@ export class HandController extends BrowserHandController {
     this.lastCapture = this.lastResponseCapture = undefined;
     this.onState({ kind: 'loading', message: 'Starting native camera…' });
     this.startTimeout = setTimeout(() => { if (this.starting) this.fail(new Error('Native camera timed out. Start it again.')); }, 25000);
-    try { this.send({ type: 'start', generation: this.generation, hands: this.maxHands, cameraId: this.select.value, applyPreview: this.canConfigureCamera?.() === true, jsTime: performance.now() }); }
+    try { this.send({ type: 'start', generation: this.generation, hands: this.maxHands, delegate: new URLSearchParams(globalThis.location?.search).get('inference')?.toUpperCase(), cameraId: this.select.value, applyPreview: this.canConfigureCamera?.() === true, jsTime: performance.now() }); }
     catch (error) { this.fail(error); }
     return pending.promise;
   }
@@ -64,10 +64,10 @@ export class HandController extends BrowserHandController {
       if (Number.isFinite(candidate)) this.offset = this.offset === null ? candidate : Math.max(this.offset, candidate);
     } else if (message.type === 'ready' && this.starting && Number.isFinite(this.offset)) {
       clearTimeout(this.startTimeout);
-      this.running = true; this.starting = false; this.delegate = 'GPU';
+      this.running = true; this.starting = false; this.delegate = message.delegate === 'CPU' ? 'CPU' : 'GPU';
       this.lastReport = performance.now();
       this.lastResult = this.lastFreshReceipt = this.lastActivity = performance.now();
-      this.onDiagnostic({ delegate: 'GPU', driver: 'native', width: 640, height: 480 });
+      this.onDiagnostic({ delegate: this.delegate, driver: 'native', width: 640, height: 480 });
       this.onState({ kind: 'ready', message: 'Hold your open hand in view.' });
       this.clockTimer = setInterval(() => this.send({ type: 'sync', generation: this.generation, jsTime: performance.now() }), 1000);
       this.timer = setInterval(() => {
@@ -92,7 +92,7 @@ export class HandController extends BrowserHandController {
             deliveredHz: (this.summary.results - (this.lastReportResults ?? 0)) / elapsedSeconds,
             freshHz: (this.summary.accepted - (this.lastReportAccepted ?? 0)) / elapsedSeconds,
             p50: ages[Math.floor(ages.length * .5)], p95: ages[Math.ceil(ages.length * .95)-1],
-            generation: this.generation, hands: this.maxHands });
+            generation: this.generation, hands: this.maxHands, delegate: this.delegate });
           this.lastReport = performance.now();
           this.lastReportResults = this.summary.results;
           this.lastReportAccepted = this.summary.accepted;
