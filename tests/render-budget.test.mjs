@@ -25,6 +25,8 @@ test('lifting the cap restores display cadence; a stall does not cause catch-up 
   scene.draw(20, true);
   scene.draw(20.008, true);
   assert.equal(draws, 4);
+  assert.equal(scene.drawStats.draws, 4, 'diagnostics count actual submissions, not capped updates');
+  assert.ok(scene.drawStats.submissionMs >= 0);
 });
 
 test('a healthy machine draws every frame with the camera on', () => {

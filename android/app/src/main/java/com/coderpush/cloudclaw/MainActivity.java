@@ -52,6 +52,7 @@ public class MainActivity extends ComponentActivity {
   ExportRequest(long id,long page,String data,JavaScriptReplyProxy reply){this.id=id;this.page=page;this.data=data;this.reply=reply;}
  }
  final ActivityResultLauncher<String> exportPicker=registerForActivityResult(new ActivityResultContracts.CreateDocument("application/json"),this::writeExport);
+ double copyMs=0,rotationMs=0,inferenceMs=0,resultMs=0;
  int samples=0,seen=0,two=0; long reportStart; ArrayList<Double> durations=new ArrayList<>();
  String buildLabel(){return "Cloud Claw "+BuildConfig.VERSION_NAME+" · "+BuildConfig.SOURCE_COMMIT.substring(0,Math.min(7,BuildConfig.SOURCE_COMMIT.length()))+(BuildConfig.SOURCE_DIRTY?" · local changes":"");}
  static double now(){return SystemClock.elapsedRealtimeNanos()/1e6;}
@@ -204,7 +205,7 @@ public class MainActivity extends ComponentActivity {
     ArrayList<CameraInfo> matches=new ArrayList<>();for(CameraInfo info:available)if(cameraId(info).equals(chosenId))matches.add(info);return matches;
    }).build();
    ImageAnalysis a=new ImageAnalysis.Builder().setTargetResolution(new Size(640,480)).setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888).build();
-   samples=seen=two=0;durations.clear();reportStart=SystemClock.elapsedRealtime();active=true;
+   samples=seen=two=0;copyMs=rotationMs=inferenceMs=resultMs=0;durations.clear();reportStart=SystemClock.elapsedRealtime();active=true;
    a.setAnalyzer(executor,frame->analyze(frame,token));if(sessionPreview){Preview p=new Preview.Builder().build();p.setSurfaceProvider(preview.getSurfaceProvider());provider.bindToLifecycle(this,selector,p,a);}
    else provider.bindToLifecycle(this,selector,a);
    send(json("type","cameras","generation",clientGeneration,"cameras",cameraInventory(),"selected",selectedCamera));
@@ -215,9 +216,9 @@ public class MainActivity extends ComponentActivity {
   if(!active||token!=epoch||recognizer==null)return;
   // CameraX sensor timestamps are source-dependent; do not invent a clock conversion.
   double capturedAt=now();int w=frame.getWidth(),h=frame.getHeight();var plane=frame.getPlanes()[0];ByteBuffer buffer=plane.getBuffer();
-  raw=Bitmap.createBitmap(plane.getRowStride()/4,h,Bitmap.Config.ARGB_8888);raw.copyPixelsFromBuffer(buffer);
-  Matrix matrix=new Matrix();matrix.postRotate(frame.getImageInfo().getRotationDegrees());rotated=Bitmap.createBitmap(raw,0,0,w,h,matrix,true);image=new BitmapImageBuilder(rotated).build();
-  lastTimestamp=Math.max(SystemClock.uptimeMillis(),lastTimestamp+1);var result=recognizer.recognizeForVideo(image,lastTimestamp);
+  raw=Bitmap.createBitmap(plane.getRowStride()/4,h,Bitmap.Config.ARGB_8888);raw.copyPixelsFromBuffer(buffer);double copiedAt=now();
+  Matrix matrix=new Matrix();matrix.postRotate(frame.getImageInfo().getRotationDegrees());rotated=Bitmap.createBitmap(raw,0,0,w,h,matrix,true);image=new BitmapImageBuilder(rotated).build();double preparedAt=now();
+  lastTimestamp=Math.max(SystemClock.uptimeMillis(),lastTimestamp+1);var result=recognizer.recognizeForVideo(image,lastTimestamp);double inferredAt=now();
   JSONArray landmarks=new JSONArray(),gestures=new JSONArray(),handedness=new JSONArray();
   for(var hand:result.landmarks()){JSONArray points=new JSONArray();for(var point:hand)points.put(json("x",point.x(),"y",point.y(),"z",point.z()));landmarks.put(points);}
   for(var hand:result.gestures()){JSONArray categories=new JSONArray();for(var c:hand)categories.put(json("categoryName",c.categoryName(),"score",c.score()));gestures.put(categories);}
@@ -225,13 +226,17 @@ public class MainActivity extends ComponentActivity {
   double processing=now()-capturedAt;long id=++frameId;int generation=clientGeneration;
   JSONObject payload=json("type","result","generation",generation,"id",id,"capturedAt",capturedAt,"width",rotated.getWidth(),"height",rotated.getHeight(),"processingMs",processing,"result",json("landmarks",landmarks,"gestures",gestures,"handedness",handedness));
   if(token!=epoch||!active)return;
+  copyMs+=copiedAt-capturedAt;rotationMs+=preparedAt-copiedAt;inferenceMs+=inferredAt-preparedAt;resultMs+=now()-inferredAt;
   samples++;if(landmarks.length()>0)seen++;if(landmarks.length()>1)two++;durations.add(processing);
   if(deliveries.offer(token,id,payload))main.post(()->deliver(token));
   if(SystemClock.elapsedRealtime()-reportStart>=5000){
    ArrayList<Double> sorted=new ArrayList<>(durations);Collections.sort(sorted);
-   String line=String.format(Locale.US,"GPU %.1f/s · processing p50 %.0f p95 %.0f ms · %dx%d",samples*1000.0/(SystemClock.elapsedRealtime()-reportStart),sorted.get(sorted.size()/2),sorted.get((int)((sorted.size()-1)*.95)),w,h);
+   String line=String.format(Locale.US,"GPU %.1f/s · analyzer processing p50 %.0f p95 %.0f ms · %dx%d",samples*1000.0/(SystemClock.elapsedRealtime()-reportStart),sorted.get(sorted.size()/2),sorted.get((int)((sorted.size()-1)*.95)),w,h);
+   // Means cover analyzer copy, rotation/wrapping, synchronous inference and JSON construction.
+   // Sensor/CameraX queue, main-thread stringify and bridge delivery are excluded.
+   Log.i("TomkoGame",String.format(Locale.US,"Analyzer stages mean ms: copy %.2f · rotate/wrap %.2f · inference %.2f · result JSON %.2f",copyMs/samples,rotationMs/samples,inferenceMs/samples,resultMs/samples));
    Log.i("TomkoGame",line);main.post(()->{if(token==epoch){nativeStats=line;updateStatus();}});
-   samples=seen=two=0;durations.clear();reportStart=SystemClock.elapsedRealtime();
+   samples=seen=two=0;copyMs=rotationMs=inferenceMs=resultMs=0;durations.clear();reportStart=SystemClock.elapsedRealtime();
   }
   if(durations.size()>300)durations.remove(0);
  }catch(Exception e){fail(token,e);}finally{if(image!=null)image.close();if(rotated!=null&&rotated!=raw)rotated.recycle();if(raw!=null)raw.recycle();frame.close();}}

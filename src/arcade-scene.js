@@ -441,6 +441,8 @@ export class ArcadeScene {
   }
 
   updateShadowMap() {
+    // Keep snapshots intact so a later re-enable still detects moved casters.
+    if (!this.renderer.shadowMap.enabled) return;
     let moved = false;
     for (const object of this.shadowTracked) {
       const prior = this.shadowSnapshots.get(object);
@@ -697,7 +699,12 @@ export class ArcadeScene {
     const frame = Math.floor((time + .000001) * (nativeAndroid ? tomkoRendering.drawHz : 30));
     if (capped && frame === this.cameraRenderFrame) return;
     this.cameraRenderFrame = capped ? frame : undefined;
+    const started = performance.now();
     if (this.bloom && !this.lowQuality) this.bloom.render(); else this.renderer.render(this.scene, this.camera);
+    const stats = this.drawStats ??= { draws: 0, submissionMs: 0 };
+    stats.draws++;
+    // CPU submission only: this does not wait for GPU completion.
+    stats.submissionMs += performance.now() - started;
   }
 
   inspect(toyId, phase = 'grip') {

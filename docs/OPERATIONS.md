@@ -439,6 +439,12 @@ All game/model assets are bundled; the APK has no INTERNET permission. Scores us
 
 Before use at an event: complete three turns in each mode; check deliberate drops and loss/reacquisition; turn Wi-Fi off; force-stop/reopen and reboot to verify stored scores; perform a same-key upgrade without uninstalling and verify scores again; then measure a sustained session. Keep physical acceptance separate from CI results.
 
+### Local performance diagnostics
+
+The native `TomkoGame` log reports five-second mean stage costs: bitmap allocation/copy, rotation and image wrapping, synchronous MediaPipe inference, and result JSON construction. These are analyzer-thread costs, not GPU-only timings. They exclude sensor/CameraX queue latency, main-thread JSON stringification and bridge delivery. Existing delivered/fresh rates and analyzer-entry age remain the end-to-end checks available without sensor timestamps. Logs contain aggregate timings, not camera frames or landmarks.
+
+`window.__littleCloud.snapshot().render` exposes cumulative `draws` and `cpuSubmissionMs`. Difference two readings over a known interval to measure actual draw rate and average CPU submission cost. The legacy `performance.averageFps` measures animation updates, including updates whose draw was capped; it is not displayed FPS. CPU submission does not wait for GPU completion. The native profile remains 0.5 pixel ratio, 15 Hz capped draws, no antialiasing or dynamic shadows. Disabled shadows skip caster bookkeeping; transforms and contacts still update normally.
+
 ### September 29, 07:00 Tomko acceptance
 
 Use the 0.4.1 candidate’s exact commit/checksum from its distribution JSON. This is a test-package candidate, not physical acceptance or a permanent signed release. Preserve the existing prototype and its data. Do not use a CI test certificate to overwrite an app with a different certificate; never uninstall to resolve a signature mismatch.

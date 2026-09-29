@@ -7,7 +7,7 @@ import { mesh, batch } from '../src/arcade-art.js';
 test('only registered moving casters invalidate the shadow map', () => {
   const scene = Object.create(ArcadeScene.prototype);
   scene.shadowTracked = []; scene.shadowSnapshots = new WeakMap();
-  scene.renderer = { shadowMap: { needsUpdate: false } };
+  scene.renderer = { shadowMap: { enabled: true, needsUpdate: false } };
   const root = new T.Group(), caster = mesh(root, new T.BoxGeometry(1, 1, 1), new T.MeshStandardMaterial());
   const decoration = mesh(new T.Group(), new T.BoxGeometry(1, 1, 1), new T.MeshStandardMaterial());
   scene.trackShadowCaster(root);
@@ -38,7 +38,7 @@ test('static batches keep only explicitly selected structural casters', () => {
 test('close and wide frusta invalidate only when coverage changes', () => {
   const scene = Object.create(ArcadeScene.prototype);
   scene.key = new T.DirectionalLight();
-  scene.renderer = { shadowMap: { needsUpdate: false } };
+  scene.renderer = { shadowMap: { enabled: true, needsUpdate: false } };
   scene.setShadowFrustum(false);
   assert.equal(scene.key.shadow.camera.right - scene.key.shadow.camera.left, 5.8);
   assert.equal(scene.renderer.shadowMap.needsUpdate, true);
@@ -68,4 +68,25 @@ test('simple quality halves the map and refreshes it without disabling shadows',
   try { scene.setQuality(false); } finally { globalThis.devicePixelRatio = previousRatio; }
   assert.equal(scene.key.shadow.mapSize.x, 2048);
   assert.equal(scene.renderer.shadowMap.needsUpdate, true);
+});
+
+// Existing invalidation tests never disabled shadows. A disabled renderer must
+// skip caster reads, but preserve changes for the first re-enabled update.
+test('disabled shadows skip transform reads and catch up when re-enabled', () => {
+  const scene = Object.create(ArcadeScene.prototype);
+  scene.shadowTracked = []; scene.shadowSnapshots = new WeakMap();
+  scene.renderer = { shadowMap: { enabled: false, needsUpdate: false } };
+  const root = new T.Group();
+  mesh(root, new T.BoxGeometry(), new T.MeshStandardMaterial());
+  scene.trackShadowCaster(root);
+  root.position.x = 2;
+  const snapshots = scene.shadowSnapshots;
+  scene.shadowSnapshots = { get() { throw new Error('disabled shadow scan'); } };
+  scene.updateShadowMap();
+  assert.equal(scene.renderer.shadowMap.needsUpdate, false);
+  scene.shadowSnapshots = snapshots;
+  scene.renderer.shadowMap.enabled = true;
+  scene.updateShadowMap();
+  assert.equal(scene.renderer.shadowMap.needsUpdate, true);
+  assert.equal(snapshots.get(root).position.x, 2);
 });
