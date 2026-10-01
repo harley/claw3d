@@ -29,12 +29,14 @@ Open `http://127.0.0.1:4200` and enter the staff code. Ordinary `npm run play` r
 
 Public entry is controlled by `PUBLIC_TRY_ENABLED=true`. Ranking is enabled by default with public entry; `PUBLIC_RANKED_ENABLED=false` is the compatibility switch for memory-only practice. The release probe expects ranking whenever public entry is expected; use the matching reviewed `EXPECTED_PUBLIC_RANKED=false` expectation for a compatibility rollout. `/privacy` is available without authentication. Public rank routes use `/api/play`, a dedicated `cc_player` cookie and `cloud-claw:public:pending:v1:` storage; they cannot access staff boards or controls. To pause new ranked starts, set the ranked switch false; keep the service and existing database so queued turn submissions can drain. This changes routing only after normal release verification, not as an instruction to edit live configuration.
 
-The approved event date is **29 September 2026**, Hanoi time (`Asia/Ho_Chi_Minh`). On the actual booth browser:
+Public players now see one combined leaderboard and one result rank. The API adds `totalPlays`, the count of completed public runs before its 100-row limit; repeat names and zero totals count, unfinished attempts and separate staff/ticket boards do not. The UI shows this as “N plays and counting.”
+
+The following setup is retained for historical recovery. Association did not reliably capture the booth day and must not be used as a complete attendance count. The event date was **29 September 2026**, Hanoi time (`Asia/Ho_Chi_Minh`). The setup procedure was:
 
 1. Open `/staff` and sign in once with `HOST_CODE`. `STAFF_CODE` does not grant host access. This page loads no game or camera.
 2. Select **Use this computer** under **Hanoi · Tuesday, 29 September**.
 3. Check the ready confirmation, then use **Open game**. This signs out of host controls while preserving event enrollment.
-4. Visitors keep or edit the generated name, play three turns, and use **Next player**. The result shows All plays rank and Hanoi rank for qualifying runs; the leaderboard selector can show either board.
+4. Visitors keep or edit the generated name, play three turns, and use **Next player**. The result now shows only the combined public rank; historical Hanoi associations remain in storage and API compatibility responses.
 
 Legacy staff testing and pending staff results remain accessible at `/staff?legacy=1` with the existing staff/host codes; legacy tickets retain `/staff?play=official`. These are recovery paths, not visitor entry points. No historical scores or pending browser data are removed.
 

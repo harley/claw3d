@@ -5,8 +5,8 @@ import { createSessionApi } from './session-api.js';
 import { createScoreSync } from './score-sync.js';
 
 export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, onSyncState, onConnectError, publicPlay = false, prepared = false, verifyAssets, journalFactory, isPlaying = () => false }) {
-  let event = false, station = null;
-  const readyStatus = () => prepared ? 'PREPARED STATION · LOCAL SCORES' : publicPlay ? station?.active ? 'HANOI · 29 SEP · RANKED' : 'ALL PLAYS · RANKED' : 'SHARED STAFF LEADERBOARD';
+  let station = null;
+  const readyStatus = () => prepared ? 'PREPARED STATION · LOCAL SCORES' : publicPlay ? 'ALL PLAYS · RANKED' : 'SHARED STAFF LEADERBOARD';
   let board = null, role = 'staff', status = 'Connecting to shared leaderboard…';
   let sync;
   let refreshing = null, version = 0, rotating = false, renaming = false;
@@ -22,7 +22,7 @@ export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, 
     const current = version;
     refreshing = Promise.resolve().then(async () => {
       try {
-        const next = await api.request(event ? '/board?event=hanoi-2026-09-29' : '/board');
+        const next = await api.request('/board');
         if (current !== version) return;
         board = next;
         const completed = getCompletedRun();
@@ -75,7 +75,6 @@ export function createSharedBoard({ enabled, getCompletedRun, onSaved, onBoard, 
         return saved;
       } finally { renaming = false; }
     },
-    async selectEvent(selected) { event = selected; version++; await refreshing; return refresh(); },
     get station() { return station; },
     start: async (name, key, controlMode) => { if (publicPlay) await initialize(); return api.start(name, key, controlMode); },
     queue: run => api.queue(run), abandon: run => api.abandon(run),
