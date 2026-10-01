@@ -129,12 +129,14 @@ try {
   let createsDuringLogout = 0;
   const watchLogout = request => { if (request.url().endsWith('/api/host/public-events') && request.method() === 'POST') createsDuringLogout++; };
   page.on('request', watchLogout);
+  await page.locator('#event-name').fill('Must not create during logout');
   await page.locator('#sign-out').click(); await pendingLogout;
   assert.equal(await page.locator('#event-create-button').isDisabled(), true);
   assert.equal(await page.locator('#event-select').isDisabled(), true);
   await page.locator('#event-create').dispatchEvent('submit');
-  assert.equal(createsDuringLogout, 0);
   releaseLogout(); await page.locator('#login').waitFor();
+  assert.equal(createsDuringLogout, 0, 'no event request is sent through the pending logout interval');
+  assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM public_events WHERE request_key IS NOT NULL').get().n, 0);
   await page.unroute('**/api/logout'); page.off('request', watchLogout);
   await page.locator('#code').fill('public-host-code'); await page.locator('#login button').click();
   await page.locator('#event-select:not([disabled])').waitFor();
@@ -160,6 +162,7 @@ try {
   await page.locator('#event-create-button').click();
   await page.waitForFunction(() => document.getElementById('event-create-status').textContent.startsWith('Event created'));
   const eventId = await page.locator('#event-select').inputValue();
+  assert.equal(await page.locator('#event-export').getAttribute('download'), 'cloud-claw-event-results.json');
   assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM public_events WHERE request_key IS NOT NULL').get().n, 1);
   assert.equal(createdRequest.startsAt, '2026-09-29T02:00:00.000Z', 'local form uses its disclosed time zone');
   await page.locator('#event-create-button').waitFor({ state: 'visible' });

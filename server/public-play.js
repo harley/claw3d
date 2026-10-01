@@ -116,14 +116,17 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
         FROM public_contacts c JOIN runs r ON r.id=c.run_id
         LEFT JOIN public_run_events e ON e.run_id=r.id ORDER BY c.created_at,c.run_id`).all() };
     },
-    stationStatus(req) {
+    stationStatus(req, { publicView = false } = {}) {
       const current = generation(req);
+      if (!current && publicView) return { enrolled: false, active: false, ended: false, event: null };
       const event = events.forGeneration(current?.generation) ?? events.defaultEvent();
       return { enrolled: Boolean(current), active: Boolean(current && events.active(event)), ended: events.ended(event), event };
     },
     enroll(req, res, input = {}) {
       if (!input || Array.isArray(input) || Object.keys(input).some(key => key !== 'eventId')) throw new ApiError(400, 'Choose an event for this computer.');
-      const event = input.eventId === undefined ? events.defaultEvent() : events.get(input.eventId);
+      // Empty legacy requests can only enroll their original Hanoi event.
+      // A stale host tab must never select a newly created event implicitly.
+      const event = events.get(input.eventId === undefined ? HANOI_EVENT.id : input.eventId);
       const eventEnd = Date.parse(event.endsAt);
       if (events.ended(event)) throw new ApiError(409, 'This event has finished. Public play is still open.');
       const value = secret();
@@ -157,7 +160,7 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
           db.prepare('INSERT INTO public_players VALUES (?,?,?)').run(hash(value), player, now() + age * 1000);
           res.setHeader('Set-Cookie', cookie('cc_player', value, age));
         }
-        return json(res, 200, { role: 'public', board: board(), station: this.stationStatus(req) });
+        return json(res, 200, { role: 'public', board: board(), station: this.stationStatus(req, { publicView: true }) });
       }
       const player = owner(req);
       const poolPath = /^\/api\/play\/permits\/([a-f0-9-]{36})$/.exec(path);

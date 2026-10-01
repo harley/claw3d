@@ -522,6 +522,11 @@ test('public event creation is host-only, origin-checked, validated and idempote
   }
   const created = await (await f.request('/api/host/public-events', { cookie: host, data: input })).json();
   assert.equal(created.name, input.name);
+  const publicSession = await (await f.request('/api/play/session', { data: {} })).json();
+  assert.equal(publicSession.station.event, null, 'unenrolled visitors cannot discover a future host schedule');
+  f.setTime('2026-10-01T00:00:00.000Z');
+  assert.equal((await f.request('/api/host/station', { cookie: host, data: {} })).status, 409, 'stale host tabs cannot implicitly enroll a new event');
+  assert.equal(f.app.database.db.prepare('SELECT COUNT(*) AS n FROM public_stations').get().n, 0);
   assert.equal((await f.request('/api/host/public-events', { cookie: host, data: { ...input, name: 'Conflicting retry' } })).status, 409);
   await f.pause(true);
   assert.deepEqual(await (await f.request('/api/host/public-events', { cookie: host, data: input })).json(), created);
@@ -529,6 +534,8 @@ test('public event creation is host-only, origin-checked, validated and idempote
   assert.equal(list.events.filter(event => event.id === created.id).length, 1);
   assert.equal(list.events.find(event => event.id === created.id).state, 'scheduled');
   assert.equal((await f.request(`/api/host/public-events/${created.id}/export`, { cookie: staff })).status, 403);
+  const unavailable = await f.request(`/api/host/public-events/${randomUUID()}/export`, { cookie: host });
+  assert.equal(unavailable.status, 404); assert.equal(unavailable.headers.get('content-disposition'), null);
 });
 
 test('scheduled enrollment classifies at acceptance, preserves retries after switching and retains global scores', async t => {

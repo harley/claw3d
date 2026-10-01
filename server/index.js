@@ -138,8 +138,9 @@ export async function createPilotServer(options) {
             if (req.method === 'POST') { limit(req, auth); return json(res, 201, publicPlay.events.create(await body(req))); }
           } else if (req.method === 'GET') {
             const id = path.split('/')[4];
+            const report = publicPlay.events.exportEvent(id);
             res.setHeader('Content-Disposition', 'attachment; filename="cloud-claw-event-results.json"');
-            return json(res, 200, publicPlay.events.exportEvent(id));
+            return json(res, 200, report);
           }
           throw new ApiError(405, 'Method not allowed.');
         }
