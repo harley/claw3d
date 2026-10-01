@@ -33,7 +33,7 @@ try {
         navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('Denied for retry test', 'NotAllowedError'); };
       });
       await phone.goto(`${origin}/?setup=manual&hands=manual`);
-      await phone.waitForFunction(() => !document.getElementById('play').disabled);
+      await phone.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true' && !document.getElementById('play').disabled);
       assert.equal(await phone.locator('#home-intro').isVisible(), !native);
       assert.equal(await phone.locator('#phone-setup').isVisible(), false, 'home caption replaces duplicate phone setup copy');
       assert.equal(await phone.locator('#next-player').textContent(), native ? 'Next Play' : 'Play again');
