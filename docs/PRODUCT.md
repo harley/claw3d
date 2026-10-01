@@ -252,11 +252,11 @@ Public and shared staff score recovery uses one page-owned scheduler: completed 
 
 The public leaderboard now combines all saved public plays. The former Hanoi · 29 Sep selector and secondary result rank are removed because event-day association did not reliably capture booth activity. Existing server event associations and compatibility routes remain available for historical recovery; they are not a complete event attendance record. No saved scores are deleted or reassigned.
 
-`/staff` opens a dedicated Host setup page with one `HOST_CODE` sign-in, the confirmed date, this browser's enrollment status, **Use this computer**, and **Open game**. It loads no game, camera or telemetry. Opening the game signs the host out while retaining the station cookie. The public footer calls it **Host setup**. Staff test boards and legacy ticket tools remain at explicit recovery URLs; they are not part of public play or normal event setup.
+`/staff` opens a dedicated Host setup page with one `HOST_CODE` sign-in, reusable event schedules, this browser's enrollment status, **Use this computer**, and **Open game**. Hosts create a named start/end schedule in their browser's disclosed time zone, prepare the selected event browser, and read host-only run counts and exports. Schedules are fixed; acceptance-time event attribution survives retries, later enrollment and finishing after the event. Preparing an event does not enroll a browser or reset scores. Enrollment replaces the previous computer. Event reports count recorded runs, not unique visitors or attendance. It loads no game, camera or telemetry. Opening the game signs the host out while retaining the station cookie. The public footer calls it **Host setup**. Staff test boards and legacy ticket tools remain at explicit recovery URLs; they are not part of public play or normal event setup.
 
 The visible camera notice and `/privacy` link appear before camera or diagnostic collection. The privacy page opens separately so play is not interrupted. Camera video and hand landmarks stay on-device and are not recorded or uploaded. Ranked names, scores and timestamps are public and remain until operator removal; the separate bounded diagnostics expire after 30 days. Public feedback stays category-only and diagnostics exclude names/run IDs. A preview filter is deferred: segmentation would add inference work and needs a hardware performance comparison before adoption.
 
-`PUBLIC_TRY_ENABLED` controls public entry. Ranked play is the default; explicitly setting `PUBLIC_RANKED_ENABLED=false` retains the former memory-only practice behavior for compatibility. Existing public result submissions remain drainable when new ranked starts are paused. The old ticket entry is not promoted in the normal public journey. Deployment and physical first-time-player acceptance remain separate from synthetic test coverage; see [OPERATIONS](OPERATIONS.md#public-play-and-hanoi-event-setup).
+`PUBLIC_TRY_ENABLED` controls public entry. Ranked play is the default; explicitly setting `PUBLIC_RANKED_ENABLED=false` retains the former memory-only practice behavior for compatibility. Existing public result submissions remain drainable when new ranked starts are paused. The old ticket entry is not promoted in the normal public journey. Deployment and physical first-time-player acceptance remain separate from synthetic test coverage; see [OPERATIONS](OPERATIONS.md#public-play-and-event-setup).
 
 ### Legacy ticket admission API
 
@@ -352,6 +352,12 @@ late receipts cannot reopen an older prepared result over the next player. Only
 live server admission can establish Hanoi association; deferred results remain
 All plays. Host readiness/recovery integration and physical outage acceptance are
 still required before enablement. See OPERATIONS for the retained-data contract.
+
+## Reusable event baseline
+
+Laptop/browser is the primary setup, with a TV used as its display. Keep one shared game, three scored turns, one score per turn and the existing one-/two-hand rules. A stronger TV device is an optional target that requires its own browser, camera and responsiveness trial; no streaming-device support is implied.
+
+Shared improvements from the Tomko period already on main include toy appearance, hand guidance, tracking recovery, substantial steel claw fingers and Kiro credit. Android packaging remains a separate offline target. CPU delegate trials, indexed-geometry trials, Tomko camera/delivery tuning, forced one-hand mode and touch-on-miss scoring remain outside the browser baseline. Existing local collection and pushing previews stay opt-in pending their separate physical decisions. Reusable host setup does not change player controls, recognition thresholds, prizes, identity or historical scores.
 
 ## Android offline target
 

@@ -413,7 +413,7 @@ test('permit requests retain public write budgets, retry guidance and one stored
 test('legacy station enrollment migrates additively; re-enrollment never readies an old pool', async t => {
   const f = await fixture(t, { publicPermitPolicy: permitPolicy });
   const player = await f.player(), host = await f.host(), station = await f.enroll();
-  f.app.database.db.exec('DROP TABLE public_station_generations'); // Prior schema had only active enrollment.
+  f.app.database.db.exec('DROP TABLE public_station_events; DROP TABLE public_station_generations'); // Prior schema had only active enrollment.
   await f.pause(true);
   const booth = `${player}; ${station}`, authorized = `${booth}; ${host}`;
   const input = { protocol: 1, requestKey: randomUUID(), count: 1, reconcileBy: f.time + 86400000 };
@@ -504,4 +504,83 @@ test('usage is captured once on the existing start request and remains private',
   assert.equal(publicBoard.runs[0].usage, undefined);
   await f.pause(); // Additive table survives restart; metadata is not recreated.
   assert.equal(f.app.database.db.prepare('SELECT COUNT(*) AS n FROM run_usage').get().n, 1);
+});
+
+// Contract: reusable schedules never reclassify old admissions. The Hanoi-only
+// tests above cannot catch event switching, schedule boundaries or lost creates.
+const futureEvent = (extra = {}) => ({ name: 'Next Cloud Day', startsAt: '2026-10-10T02:00:00.000Z', endsAt: '2026-10-10T11:00:00.000Z', timeZone: 'Asia/Ho_Chi_Minh', requestKey: randomUUID(), ...extra });
+
+test('public event creation is host-only, origin-checked, validated and idempotent across restart', async t => {
+  const f = await fixture(t), host = await f.host(), input = futureEvent();
+  assert.equal((await f.request('/api/host/public-events')).status, 401);
+  const staff = f.cookieOf(await f.request('/api/login', { data: { code: 'public-test-staff-secret' } }));
+  assert.equal((await f.request('/api/host/public-events', { cookie: staff })).status, 403);
+  assert.equal((await f.request('/api/host/public-events', { cookie: staff, data: input })).status, 403);
+  assert.equal((await f.request('/api/host/public-events', { cookie: host, data: input, requestOrigin: 'https://wrong.invalid' })).status, 403);
+  for (const extra of [{ startsAt: '2026-02-30T02:00:00.000Z' }, { endsAt: input.startsAt }, { endsAt: '2027-01-01T00:00:00.000Z' }, { timeZone: 'Invalid/Zone' }, { requestKey: 'bad' }, { scoring: 10 }, { name: 'bad\u0000name' }]) {
+    assert.equal((await f.request('/api/host/public-events', { cookie: host, data: { ...input, ...extra } })).status, 400, JSON.stringify(extra));
+  }
+  const created = await (await f.request('/api/host/public-events', { cookie: host, data: input })).json();
+  assert.equal(created.name, input.name);
+  const publicSession = await (await f.request('/api/play/session', { data: {} })).json();
+  assert.equal(publicSession.station.event, null, 'unenrolled visitors cannot discover a future host schedule');
+  f.setTime('2026-10-01T00:00:00.000Z');
+  assert.equal((await f.request('/api/host/station', { cookie: host, data: {} })).status, 409, 'stale host tabs cannot implicitly enroll a new event');
+  assert.equal(f.app.database.db.prepare('SELECT COUNT(*) AS n FROM public_stations').get().n, 0);
+  assert.equal((await f.request('/api/host/public-events', { cookie: host, data: { ...input, name: 'Conflicting retry' } })).status, 409);
+  await f.pause(true);
+  assert.deepEqual(await (await f.request('/api/host/public-events', { cookie: host, data: input })).json(), created);
+  const list = await (await f.request('/api/host/public-events', { cookie: host })).json();
+  assert.equal(list.events.filter(event => event.id === created.id).length, 1);
+  assert.equal(list.events.find(event => event.id === created.id).state, 'scheduled');
+  assert.equal((await f.request(`/api/host/public-events/${created.id}/export`, { cookie: staff })).status, 403);
+  const unavailable = await f.request(`/api/host/public-events/${randomUUID()}/export`, { cookie: host });
+  assert.equal(unavailable.status, 404); assert.equal(unavailable.headers.get('content-disposition'), null);
+});
+
+test('scheduled enrollment classifies at acceptance, preserves retries after switching and retains global scores', async t => {
+  const f = await fixture(t), host = await f.host(), player = await f.player();
+  const oldStation = await f.enroll(), oldRun = await (await f.start(`${player}; ${oldStation}`)).json();
+  await f.complete(player, oldRun.id);
+  const event = await (await f.request('/api/host/public-events', { cookie: host, data: futureEvent() })).json();
+  const enroll = await f.request('/api/host/station', { cookie: host, data: { eventId: event.id } });
+  const station = f.cookieOf(enroll), booth = `${player}; ${station}`;
+  assert.equal((await (await f.start(`${player}; ${oldStation}`)).json()).event, undefined, 'previous computer is retired');
+  assert.equal((await (await f.start(booth)).json()).event, undefined, 'pre-event play stays global');
+  f.setTime(event.startsAt);
+  const key = randomUUID(), run = await (await f.start(booth, key)).json();
+  assert.equal(run.event.id, event.id);
+  f.setTime(event.endsAt);
+  const saved = await f.complete(player, run.id);
+  assert.equal(saved.event.id, event.id, 'finishing after end keeps admission classification');
+  assert.equal((await (await f.start(booth)).json()).event, undefined, 'end is exclusive');
+  assert.equal((await f.request('/api/host/station', { cookie: host, data: { eventId: event.id } })).status, 409);
+  const later = await (await f.request('/api/host/public-events', { cookie: host, data: futureEvent({ name: 'Another event', startsAt: '2026-10-11T02:00:00.000Z', endsAt: '2026-10-11T11:00:00.000Z' }) })).json();
+  await f.request('/api/host/station', { cookie: host, data: { eventId: later.id } });
+  await f.pause(true);
+  assert.equal((await (await f.start(player, key)).json()).event.id, event.id, 'retry cannot move a previous run');
+  assert.equal((await (await f.request(`/api/play/runs/${oldRun.id}`, { cookie: player })).json()).event.id, 'hanoi-2026-09-29');
+  assert.equal((await (await f.request('/api/play/board')).json()).totalPlays, 2);
+  assert.equal((await f.request(`/api/play/board?event=${event.id}`)).status, 404, 'no new public event selector');
+  const report = await (await f.request(`/api/host/public-events/${event.id}/export`, { cookie: host })).json();
+  assert.equal(report.startedPlays, 1); assert.equal(report.completedPlays, 1);
+  assert.equal(report.runs[0].id, run.id); assert.equal(report.runs[0].turns.length, 3);
+  const text = JSON.stringify(report);
+  for (const privateField of ['owner_id', 'request_key', 'cc_station', 'token', 'contact']) assert.ok(!text.includes(privateField), privateField);
+});
+
+test('custom event attribution survives repeated migrations and prepared live admission; deferred stays global', async t => {
+  const f = await fixture(t, { publicPermitPolicy: permitPolicy }), host = await f.host(), player = await f.player();
+  const event = await (await f.request('/api/host/public-events', { cookie: host, data: futureEvent() })).json();
+  f.setTime(event.startsAt);
+  const station = f.cookieOf(await f.request('/api/host/station', { cookie: host, data: { eventId: event.id } }));
+  await f.pause(true); await f.pause(true);
+  const state = await (await f.request('/api/host/station', { cookie: `${host}; ${station}` })).json();
+  assert.equal(state.event.id, event.id); assert.equal(state.active, true);
+  const pool = await (await f.request('/api/host/station/permits', { cookie: `${host}; ${player}; ${station}`, data: { protocol: 1, requestKey: randomUUID(), count: 2, reconcileBy: f.time + 3600000 } })).json();
+  for (const [index, source] of ['live', 'reconcile'].entries()) {
+    const slot = pool.slots[index];
+    const result = await (await f.request(`/api/play/permits/${source}`, { cookie: `${player}; ${station}`, data: { protocol: 1, slotId: slot.id, runId: slot.runId, requestKey: slot.requestKey, name: source, controlMode: 'one-hand' } })).json();
+    assert.equal(result.event?.id, source === 'live' ? event.id : undefined);
+  }
 });

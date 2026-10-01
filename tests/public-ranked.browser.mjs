@@ -17,7 +17,7 @@ const options = { filename: join(directory, 'scores.sqlite'), origin, staffCode:
 let app = await createPilotServer(options);
 await new Promise(resolve => app.server.listen(4293, '127.0.0.1', resolve));
 const browser = await chromium.launch(browserOptions);
-const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, timezoneId: 'Asia/Ho_Chi_Minh' });
 let page;
 try {
   // Contract: public touch-phone guidance and retry are reachable without a
@@ -119,6 +119,54 @@ try {
   await page.reload();
   await page.locator('#code').fill('public-host-code');
   await page.locator('#login button').click();
+  await page.locator('#event-select:not([disabled])').waitFor();
+  // Locking starts before the logout response: a new event mutation must not
+  // slip into the interval after the pending-action wait has already finished.
+  let releaseLogout, logoutRequested;
+  const logoutGate = new Promise(resolve => { releaseLogout = resolve; });
+  const pendingLogout = new Promise(resolve => { logoutRequested = resolve; });
+  await page.route('**/api/logout', async route => { logoutRequested(); await logoutGate; await route.continue(); });
+  let createsDuringLogout = 0;
+  const watchLogout = request => { if (request.url().endsWith('/api/host/public-events') && request.method() === 'POST') createsDuringLogout++; };
+  page.on('request', watchLogout);
+  await page.locator('#event-name').fill('Must not create during logout');
+  await page.locator('#sign-out').click(); await pendingLogout;
+  assert.equal(await page.locator('#event-create-button').isDisabled(), true);
+  assert.equal(await page.locator('#event-select').isDisabled(), true);
+  await page.locator('#event-create').dispatchEvent('submit');
+  releaseLogout(); await page.locator('#login').waitFor();
+  assert.equal(createsDuringLogout, 0, 'no event request is sent through the pending logout interval');
+  assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM public_events WHERE request_key IS NOT NULL').get().n, 0);
+  await page.unroute('**/api/logout'); page.off('request', watchLogout);
+  await page.locator('#code').fill('public-host-code'); await page.locator('#login button').click();
+  await page.locator('#event-select:not([disabled])').waitFor();
+  // Distinct wiring risk: a lost creation response must survive a reload and
+  // retry the exact event, then enroll it through the ordinary public handoff.
+  let loseCreate = true, createdRequest;
+  await page.route('**/api/host/public-events', async route => {
+    if (route.request().method() === 'POST' && loseCreate) {
+      loseCreate = false; createdRequest = route.request().postDataJSON();
+      await route.fetch(); await route.abort('failed'); return;
+    }
+    if (route.request().method() === 'POST') assert.deepEqual(route.request().postDataJSON(), createdRequest);
+    await route.continue();
+  });
+  await page.locator('#event-name').fill('Reusable Cloud Day <3');
+  await page.locator('#event-start').fill('2026-09-29T09:00');
+  await page.locator('#event-end').fill('2026-09-29T18:00');
+  await page.locator('#event-create-button').click();
+  await page.waitForFunction(() => document.getElementById('event-create-status').textContent.includes('unconfirmed'));
+  await page.reload();
+  await page.locator('#event-create-button').filter({ hasText: 'Retry event creation' }).waitFor();
+  assert.equal(await page.locator('#event-name').isDisabled(), true);
+  await page.locator('#event-create-button').click();
+  await page.waitForFunction(() => document.getElementById('event-create-status').textContent.startsWith('Event created'));
+  const eventId = await page.locator('#event-select').inputValue();
+  assert.equal(await page.locator('#event-export').getAttribute('download'), 'cloud-claw-event-results.json');
+  assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM public_events WHERE request_key IS NOT NULL').get().n, 1);
+  assert.equal(createdRequest.startsAt, '2026-09-29T02:00:00.000Z', 'local form uses its disclosed time zone');
+  await page.locator('#event-create-button').waitFor({ state: 'visible' });
+  await page.waitForFunction(() => !document.getElementById('station-enroll').disabled);
   await page.locator('#station-enroll').click();
   await page.waitForFunction(() => document.getElementById('station-status').textContent.includes('Ready'));
   assert.equal(await page.locator('#station-enroll').isVisible(), false);
@@ -139,6 +187,7 @@ try {
   assert.equal((await context.request.get(`${origin}/api/host/station`)).status(), 401, 'opening the game locks host access');
   const publicSession = await context.request.post(`${origin}/api/play/session`, { headers: { origin }, data: {} });
   assert.equal((await publicSession.json()).station.active, true, 'event enrollment survives host sign-out');
+  assert.equal(app.database.db.prepare('SELECT event_id FROM public_station_events ORDER BY rowid DESC LIMIT 1').get().event_id, eventId);
   assert.equal(await page.locator('#official-entry').isVisible(), false);
   assert.equal(await page.locator('#operator-open').isVisible(), false);
   const privacyTab = context.waitForEvent('page'); await page.locator('#privacy-link').click();
