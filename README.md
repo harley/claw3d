@@ -35,7 +35,7 @@ Use **🔊 / 🔇** to toggle sound. If TAP FOR SOUND appears, click or press a 
 
 ## Local and shared play
 
-Public play at [claw.coderpush.com](https://claw.coderpush.com) needs no login. Keep or edit a generated name, play three turns, and compare your saved rank. **Next player** is the primary result action. See [Hanoi event setup](docs/OPERATIONS.md#public-play-and-hanoi-event-setup) for the 29 September booth browser.
+Public play at [claw.coderpush.com](https://claw.coderpush.com) needs no login. Keep or edit a generated name, play three turns, and compare your saved rank. **Next player** is the primary result action. Use [event setup](docs/OPERATIONS.md#public-play-and-event-setup) to create the next schedule, enroll a laptop browser and export recorded event results. Laptop/browser with a TV display is the primary setup.
 
 | | Local preview | Shared staff pilot |
 | --- | --- | --- |

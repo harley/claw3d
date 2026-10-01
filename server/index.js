@@ -130,6 +130,19 @@ export async function createPilotServer(options) {
         throw new ApiError(401, 'Sign in with the staff code to continue.');
       }
       if (path.startsWith('/api/')) {
+        if (path === '/api/host/public-events' || /^\/api\/host\/public-events\/[^/]+\/export$/.test(path)) {
+          if (!publicPlay) throw new ApiError(404, 'Public ranking is unavailable.');
+          if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');
+          if (path === '/api/host/public-events') {
+            if (req.method === 'GET') return json(res, 200, { events: publicPlay.events.list() });
+            if (req.method === 'POST') { limit(req, auth); return json(res, 201, publicPlay.events.create(await body(req))); }
+          } else if (req.method === 'GET') {
+            const id = path.split('/')[4];
+            res.setHeader('Content-Disposition', 'attachment; filename="cloud-claw-event-results.json"');
+            return json(res, 200, publicPlay.events.exportEvent(id));
+          }
+          throw new ApiError(405, 'Method not allowed.');
+        }
         if (path === '/api/host/station/permits' || path === '/api/host/station/revoke') {
           if (!publicPlay) throw new ApiError(404, 'Public ranking is unavailable.');
           if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');
@@ -141,7 +154,7 @@ export async function createPilotServer(options) {
           if (!publicPlay) throw new ApiError(404, 'Public ranking is unavailable.');
           if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');
           if (req.method === 'GET') return json(res, 200, publicPlay.stationStatus(req));
-          if (req.method === 'POST') { limit(req, auth); await body(req); return json(res, 200, publicPlay.enroll(req, res)); }
+          if (req.method === 'POST') { limit(req, auth); return json(res, 200, publicPlay.enroll(req, res, await body(req))); }
           throw new ApiError(405, 'Method not allowed.');
         }
         if (req.method === 'GET' && path === '/api/session') return json(res, 200, { role: auth.role, board: database.board() });

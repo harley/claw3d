@@ -14,7 +14,7 @@ function fields(input, keys) {
 
 // Server-only policy is deliberately absent by default. Operator-selected
 // capacity/deadline and host UI are prerequisites to later enablement.
-export function createPublicPermits({ database, boardId, policy, now, owner, generation, renewOwner, ownerExpires, eventToday, eventId, startsEnabled }) {
+export function createPublicPermits({ database, boardId, policy, now, owner, generation, renewOwner, ownerExpires, activeEvent, startsEnabled }) {
   const { db, transaction } = database;
   if (policy && (!Number.isInteger(policy.maxSlots) || policy.maxSlots < 1 || policy.maxSlots > 1000
     || !Number.isInteger(policy.maxRetentionMs) || policy.maxRetentionMs < 1000 || policy.maxRetentionMs > 7 * 86400000)) throw Error('Invalid public permit policy.');
@@ -106,7 +106,8 @@ export function createPublicPermits({ database, boardId, policy, now, owner, gen
         .run(slot.run_id, deviceClass(req.headers['user-agent']), new Date(now()).toISOString());
       db.prepare('UPDATE public_permit_slots SET start_name=?,control_mode=?,admission_source=?,registered_at=? WHERE id=?')
         .run(name, input.controlMode, source, now(), slot.id);
-      if (source === 'live' && eventToday(req)) db.prepare('INSERT INTO public_run_events VALUES (?,?)').run(slot.run_id, eventId);
+      const event = source === 'live' && activeEvent(req);
+      if (event) db.prepare('INSERT INTO public_run_events VALUES (?,?)').run(slot.run_id, event.id);
       return database.getRun(slot.run_id, player);
     });
   }
