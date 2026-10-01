@@ -36,7 +36,7 @@ export const turnContext = (turns, prizeId, remainingMs, quality) => ({ prizeId,
 const supportedRules = ({ controlMode, ...rules }) => (controlMode === undefined || ['one-hand', 'two-hand'].includes(controlMode)) &&
   [LEGACY_RULES, CAROUSEL_RULES, SPEED_RULES, RULES, COLLECTION_V1_RULES, COLLECTION_RULES].some(known => JSON.stringify(known) === JSON.stringify(rules));
 export const STORAGE_KEY = 'coderpush:event:v1';
-export function newBoard(name = 'AWS Cloud Day · Session 1', rules = RULES) {
+export function newBoard(name = 'Claw · Session 1', rules = RULES) {
   return { id: crypto.randomUUID(), name, createdAt: new Date().toISOString(), rules: structuredClone(rules), runs: [] };
 }
 export function newStore(rules = RULES) { const board = newBoard(usesGripQuality(rules) ? 'Collection preview' : undefined, rules); return { version: 1, boards: [board], current: board.id, active: null }; }
@@ -67,7 +67,7 @@ export function leaderboard(board) {
 }
 export function rotateBoard(store, name, rules = RULES) {
   if (store.active) throw new Error('Finish or reset the current player first.');
-  const board = newBoard(name.trim() || `AWS Cloud Day · Session ${store.boards.length + 1}`, rules);
+  const board = newBoard(name.trim() || `Claw · Session ${store.boards.length + 1}`, rules);
   store.boards.push(board); store.current = board.id; return board;
 }
 export function loadStore(storage, rules = RULES) {

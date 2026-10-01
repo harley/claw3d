@@ -8,7 +8,7 @@
 
 ## Product and code boundaries
 
-- Read [PRODUCT](docs/PRODUCT.md) before changing player behavior. Keep CoderPush and AWS branding, dark arcade styling, the spacious scene and minimal player text. The milestone is a short camera-only run a first-time visitor can finish without coaching.
+- Read [PRODUCT](docs/PRODUCT.md) before changing player behavior. Keep the Claw identity and quiet CoderPush maker credit, dark arcade styling, the spacious scene and minimal player text. The milestone is a short camera-only run a first-time visitor can finish without coaching.
 - State the observed problem and one acceptance criterion. Make a focused change; avoid unrelated redesign and speculative abstractions.
 - Inspect existing modules and tests first. Extend the active entry, `index.html` → `src/arcade.js`, rather than creating a second scene or input system.
 - Camera adapter owns input; event session owns identity and scoring; mechanics owns phases; scene/contact modules own rendering and contact response.

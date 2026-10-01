@@ -42,7 +42,11 @@ try {
     Storage.prototype.getItem = Storage.prototype.setItem = () => { window.scoreStorageCalls++; throw Error('Storage denied'); };
   });
   await page.goto(origin);
-  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true' && window.mediaCalls === 1);
+  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+  assert.equal(await page.evaluate(() => window.mediaCalls), 0, 'home entry does not request a camera');
+  assert.equal(await page.locator('#home-intro').isVisible(), true);
+  await page.locator('#play').click();
+  await page.waitForFunction(() => window.mediaCalls === 1);
   // The built logo must load through the anonymous static-asset boundary.
   assert.equal(await page.locator('.brand img').evaluate(img => img.complete && img.naturalWidth > 0), true);
   assert.equal(await page.locator('#try-notice').isVisible(), true);
@@ -121,7 +125,7 @@ try {
   await unavailable;
   await page.locator('#play').click();
   await page.waitForFunction(() => window.testCamera?.running);
-  await page.locator('#play').click();
+  await page.locator('#registration').waitFor();
   await page.locator('#register-play').click();
   await page.waitForFunction(() => document.getElementById('turn').textContent === '1 / 3');
   assert.equal(await page.locator('#registration').isVisible(), false);

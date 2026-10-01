@@ -37,7 +37,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, #scene:focus-vi
   top: 24px; left: 28px; right: 28px;
   display: flex; justify-content: space-between; align-items: center; gap: 12px;
 }
-.brand { --logo-width: 180px; --logo-clear: 22px; }
+.brand { --logo-width: 90px; --logo-clear: 8px; }
+.brand > strong { display: block; margin-bottom: var(--logo-clear); font-size: 28px; font-weight: 900; letter-spacing: 3px; }
 .brand img { display: block; width: var(--logo-width); height: auto; }
 .brand small { display: block; font-size: 9px; letter-spacing: 1.8px; color: #b3b3b3; margin-top: var(--logo-clear); }
 .header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
@@ -173,6 +174,9 @@ dialog .play-button { width: 100%; margin-top: 24px; }
 #final .build-credit { margin-top: 20px; padding-top: 16px; border-top: 1px solid #34435b; }
 #final .build-credit p { margin: 0; color: #d9ceff; font-size: 14px; line-height: 1.5; }
 #final .build-credit small { display: block; margin-top: 6px; color: #a6b1c7; font-size: 11px; line-height: 1.5; text-wrap: balance; }
+#share-status { font-size: 12px; color: #b3c9e3; }
+#share-status:empty { display: none; }
+#share-text { width: 100%; padding: 12px; border: 1px solid #354666; border-radius: 5px; background: #080e1c; color: #f3f6ff; font: 14px/1.5 Arial, sans-serif; resize: vertical; }
 #final h1 { font-size: 26px; margin-bottom: 10px; }
 #final-score { font: 900 88px/1.1 ui-monospace, monospace; color: #ffc14d; text-shadow: 0 0 40px #ffb52b44; }
 #final-rank { font-size: 20px; font-weight: 700; color: #fff; }
@@ -406,7 +410,7 @@ dialog .menu-guide-hand { font-size: 52px; }
 @media (min-width: 1600px) {
   #arcade { --hud-height: 144px; --camera-width: 380px; }
   .masthead { top: 32px; left: 34px; }
-  .brand { --logo-width: 245px; --logo-clear: 30px; }
+  .brand { --logo-width: 120px; --logo-clear: 8px; }
   .brand small { font-size: 12px; }
   .hud-numbers > div { min-width: 155px; padding: 0 30px; }
   .hud-numbers small { font-size: 13px; }
@@ -418,7 +422,7 @@ dialog .menu-guide-hand { font-size: 52px; }
 }
 @media (max-width: 1150px) {
   #arcade { --hud-height: 128px; }
-  .brand { --logo-width: 145px; --logo-clear: 18px; }
+  .brand { --logo-width: 90px; --logo-clear: 8px; }
   .brand small { font-size: 8px; letter-spacing: 1px; }
   .player-hud { top: 25px; }
   .hud-numbers > div { min-width: 92px; padding: 0 14px; }
@@ -432,7 +436,8 @@ dialog .menu-guide-hand { font-size: 52px; }
 @media (max-width: 700px) and (orientation: portrait) {
   #arcade { --hud-height: 150px; --camera-bottom: 45px; --camera-width: 210px; min-height: 480px; }
   .masthead { top: 16px; left: 16px; right: 16px; }
-  .brand { --logo-width: 125px; --logo-clear: 15px; }
+  .brand { --logo-width: 72px; --logo-clear: 4px; }
+  .brand > strong { font-size: 24px; }
   .brand small { font-size: 7px; letter-spacing: .7px; }
   .header-actions { gap: 2px; }
   .header-actions button { padding: 6px; min-width: 32px; min-height: 36px; font-size: 13px; }
@@ -476,7 +481,8 @@ dialog .menu-guide-hand { font-size: 52px; }
 @media (max-height: 600px) and (orientation: landscape) {
   #arcade { --hud-height: 78px; --camera-bottom: 28px; --camera-width: 155px; min-height: 320px; }
   .masthead { top: 12px; left: 16px; right: 16px; }
-  .brand { --logo-width: 120px; --logo-clear: 15px; }
+  .brand { --logo-width: 72px; --logo-clear: 4px; }
+  .brand > strong { font-size: 24px; }
   .brand small { font-size: 7px; max-width: 170px; }
   .player-hud { top: 12px; }
   .hud-numbers > div { min-width: 78px; padding: 0 12px; }
@@ -628,3 +634,27 @@ dialog .menu-guide-hand { font-size: 52px; }
 #tracking-health dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; max-width: 118px; }
 #tracking-health p, #tracking-health small { color: #a9b9ce; font-size: 11px; }
 @media (max-width: 600px) { .tracking-health-corner { width: 178px; right: 10px; bottom: 42px; } #tracking-health-panel { right: 10px; top: 90px; width: 210px; } }
+
+/* Home entry shares the arcade scene; it yields the rail as soon as play starts. */
+#home-intro { position: absolute; z-index: 2; left: 34px; top: 30%; width: min(24vw, 300px); pointer-events: none; }
+#home-intro h1 { font-size: clamp(26px, 2.5vw, 38px); line-height: 1.1; letter-spacing: -1px; margin: 16px 0; text-wrap: balance; }
+#home-intro p { color: #c3d1e6; font-size: 15px; line-height: 1.6; }
+#home-intro small { display: block; color: #95a9c5; font-size: 12px; line-height: 1.6; max-width: 230px; }
+.home-play .round-copy, .home-play .hand-toggle, .home-play #phone-setup { display: none; }
+@media (max-width: 1050px) {
+  #home-intro { left: 20px; width: 23vw; }
+  #home-intro .eyebrow { font-size: 9px; letter-spacing: .8px; }
+}
+@media (max-width: 650px) {
+  #home-intro { top: auto; bottom: 180px; left: 16px; right: 16px; width: auto; text-align: center; }
+  #home-intro h1 { margin: 0 0 8px; font-size: 24px; }
+  #home-intro h1 br { display: none; }
+  #home-intro .eyebrow, #home-intro p { display: none; }
+  #home-intro small { max-width: none; font-size: 11px; }
+}
+@media (max-height: 550px) and (min-width: 651px) {
+  #home-intro { top: 140px; }
+  #home-intro h1 { font-size: 22px; margin: 10px 0; }
+  #home-intro p { font-size: 12px; margin: 8px 0; }
+  #home-intro small { font-size: 10px; }
+}

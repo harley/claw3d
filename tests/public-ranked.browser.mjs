@@ -34,12 +34,13 @@ try {
       });
       await phone.goto(`${origin}/?setup=manual&hands=manual`);
       await phone.waitForFunction(() => !document.getElementById('play').disabled);
-      assert.equal(await phone.locator('#phone-setup').isVisible(), !native);
+      assert.equal(await phone.locator('#home-intro').isVisible(), !native);
+      assert.equal(await phone.locator('#phone-setup').isVisible(), false, 'home caption replaces duplicate phone setup copy');
       assert.equal(await phone.locator('#next-player').textContent(), native ? 'Next Play' : 'Play again');
       if (!native) {
         for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }]) {
           await phone.setViewportSize(viewport);
-          const hint = await phone.locator('#phone-setup').boundingBox();
+          const hint = await phone.locator('#home-intro').boundingBox();
           assert.ok(hint.x >= 0 && hint.y >= 0 && hint.x + hint.width <= viewport.width && hint.y + hint.height <= viewport.height);
           for (const id of ['camera-open', 'sound', 'fullscreen', 'how-to-play']) {
             const box = await phone.locator(`#${id}`).boundingBox();
@@ -181,7 +182,18 @@ try {
     return route.continue();
   });
   await page.locator('#open-game').click();
-  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true' && window.testCamera?.running);
+  await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
+  assert.equal(await page.evaluate(() => Boolean(window.testCamera?.running)), false, 'public home waits for Play before starting the camera');
+  assert.equal(await page.locator('#camera-setup').isVisible(), false);
+  assert.equal(await page.locator('#home-intro').isVisible(), true);
+  assert.doesNotMatch(await page.locator('body').textContent(), /AWS|CLOUD DAY|Built on AWS/);
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
+    await page.setViewportSize(viewport);
+    const intro = await page.locator('#home-intro').boundingBox();
+    assert.ok(intro.x >= 0 && intro.y >= 0 && intro.x + intro.width <= viewport.width && intro.y + intro.height <= viewport.height, 'home introduction fits');
+    await page.screenshot({ path: `.screenshots/home-claw-${viewport.width}.png` });
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.waitForResponse(r => r.url().endsWith('/api/play/board') && r.ok());
   assert.ok(sessionAttempts >= 2, 'public initialization retries without a reload');
   assert.equal((await context.request.get(`${origin}/api/host/station`)).status(), 401, 'opening the game locks host access');
@@ -230,6 +242,7 @@ try {
     await page.locator('#final').waitFor();
     if (attempt === 2) {
       assert.match(await page.locator('#final-rank').textContent(), /waiting to sync/);
+      assert.equal(await page.locator('#share-result').isDisabled(), true, 'an unsaved result cannot be shared');
       await page.reload();
       await page.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true');
       await page.unroute('**/api/play/runs/*/turns');
@@ -240,11 +253,41 @@ try {
     assert.equal(await page.evaluate(() => document.activeElement.id), 'next-player');
     assert.equal(await page.locator('#next-player').getAttribute('class'), 'play-button');
     assert.equal(await page.locator('#final-turns .catch-card').count(), 3);
+    // Sharing is a result action, not a gameplay submission. Exercise clipboard
+    // failure too; denied browser APIs must leave a selectable manual fallback.
+    await page.evaluate(() => {
+      navigator.share = data => new Promise((resolve, reject) => { window.pendingShare = data; window.cancelShare = () => reject(new DOMException('Cancelled', 'AbortError')); });
+    });
+    await page.locator('#share-result').click();
+    await page.waitForFunction(() => Boolean(window.pendingShare));
+    assert.equal(await page.locator('#next-player').isDisabled(), true, 'share sheet locks replay');
+    assert.equal(await page.locator('#final-name-input').isDisabled(), true, 'share sheet locks the saved name');
+    await page.locator('#next-player').dispatchEvent('click');
+    assert.equal(await page.locator('#final').isVisible(), true, 'pending sharing cannot hand off the result');
+    await page.evaluate(() => window.cancelShare());
+    await page.waitForFunction(() => !document.getElementById('share-result').disabled);
+    assert.equal(await page.locator('#share-status').textContent(), '', 'share cancellation is quiet');
+    assert.equal(await page.locator('#next-player').isEnabled(), true);
+    await page.evaluate(() => {
+      navigator.share = undefined;
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { window.sharedResultText = text; } } });
+    });
+    await page.locator('#share-result').click();
+    await page.waitForFunction(() => document.getElementById('share-status').textContent.includes('copied'));
+    assert.match(await page.evaluate(() => window.sharedResultText), /Min <3 scored \d+ in Claw!/);
+    assert.ok((await page.evaluate(() => window.sharedResultText)).endsWith(`${origin}/`), 'share URL excludes host and setup flags');
+    await page.evaluate(() => { navigator.clipboard.writeText = async () => { throw new DOMException('Denied', 'NotAllowedError'); }; });
+    await page.locator('#share-result').click();
+    await page.locator('#share-text').waitFor();
+    assert.match(await page.locator('#share-text').inputValue(), /Three turns\. Can you beat it\?/);
+    assert.equal(await page.locator('#share-text').getAttribute('readonly'), '');
+    await page.locator('#share-text').evaluate(el => el.blur());
     await page.screenshot({ path: `.screenshots/public-ranked-result-${attempt}.png` });
     if (attempt === 1) {
       const receipt = app.database.db.prepare("SELECT * FROM runs WHERE status='complete'").get();
       await page.route('**/api/play/runs/*/name', route => route.fulfill({ status: 503, json: { error: 'Temporary outage.' } }));
       await page.locator('#final-name-input').fill('Winner Linh');
+      assert.equal(await page.locator('#share-result').isDisabled(), true, 'a rename draft cannot be shared');
       await page.locator('#final-name-input').press('Enter');
       await page.waitForFunction(() => document.getElementById('final-name-status').textContent.includes('Retry Save'));
       assert.equal(await page.locator('#final-name-input').inputValue(), 'Winner Linh', 'failed save retains draft');
@@ -256,7 +299,7 @@ try {
       assert.deepEqual({ ...app.database.db.prepare('SELECT * FROM runs WHERE id=?').get(receipt.id) }, { ...receipt, name: 'Winner Linh' });
       await page.waitForTimeout(2200);
       assert.equal(await page.locator('#final-name-input').inputValue(), 'Winner Linh', 'background refresh retains saved name');
-      assert.equal(await page.locator('#next-player').textContent(), 'Next Play');
+      assert.equal(await page.locator('#next-player').textContent(), 'Play again');
       assert.equal(await page.locator('#play-again').isVisible(), false);
       await page.setViewportSize({ width: 390, height: 844 });
       await page.locator('#booth-invite summary').click();
@@ -290,7 +333,7 @@ try {
       await page.setViewportSize({ width: 1440, height: 900 });
       await page.locator('#next-player').click();
       await page.locator('#registration').waitFor();
-      assert.notEqual(await page.locator('#name').inputValue(), 'Winner Linh', 'Next Play generates a fresh nickname');
+      assert.notEqual(await page.locator('#name').inputValue(), 'Winner Linh', 'Play again generates a fresh nickname');
       await page.locator('#name').fill('Winner Linh'); // Names remain explicitly editable.
     }
   }

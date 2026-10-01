@@ -20,17 +20,19 @@ import { createArcadeAudio, playCollectionCue } from './arcade-audio.js';
 import { createHud, $, setText, setHidden, finaleHeadline, missCopy, TROPHY_ICONS, clampOverlayPoint } from './arcade-hud.js';
 import { createTurnState, beginTurnState, beginFirstTurnPreparation, requestDrop, stepTurn } from './turn-controller.js';
 import { createMovementMusic } from './movement-music.js';
+import { resultShare } from './result-share.js';
 import { createTrackingHealth, trackingSample } from './tracking-health.js';
 import { PerformanceGovernor, PERFORMANCE_WINDOW_MS } from './performance-governor.js';
 const publicPlay = globalThis.__PUBLIC_PLAY__ === true;
 const publicTry = globalThis.__PUBLIC_TRY__ === true && !publicPlay;
 const publicSurface = publicPlay || publicTry;
+const homePlay = publicSurface && !nativeAndroid && !globalThis.__OFFLINE_SHELL__;
 const publicOfficial = globalThis.__PUBLIC_OFFICIAL__ === true;
 const shared = publicPlay || !publicTry && (publicOfficial || globalThis.__SHARED_PILOT__ === true);
 const official = publicOfficial || !publicPlay && shared && globalThis.__OFFICIAL_EVENTS__ === true && new URLSearchParams(location.search).get('play') === 'official';
 const boothInvite = publicPlay ? createBoothInvite() : null;
 if (publicPlay || !shared && !publicTry) {
-  $('next-player').textContent = 'Next Play';
+  $('next-player').textContent = publicPlay && !nativeAndroid ? 'Play again' : 'Next Play';
   $('play-again').hidden = true;
 }
 let officialBlocked = false;
@@ -89,6 +91,7 @@ $('build-info').textContent = `${globalThis.__OFFLINE_SHELL__ ? 'LOCAL PREPARED 
 let savingTurn = false, pendingTurnOutcome = null, savingTurnPromise = null;
 let game = createGame({ carousel: true, suspendedClaw: mode.suspendedClaw, collection: mode.collection, boothToys: true }), scene, previous = 0, stopped = false, frozen = false;
 let cameraControls, cameraLoading = false;
+let sharingResult = false;
 let healthSample = null, lastHoldCause = '';
 const trackingHealthUI = nativeAndroid ? createTrackingHealth({ root: $('tracking-health'), restart: () => {
   if (cameraLoading || savingTurn || startingRun || stopped || document.hidden || document.querySelector('dialog[open]') || flow.pendingSlam || (run && game.phase !== 'aim' && game.phase !== 'idle')) return;
@@ -225,6 +228,11 @@ const audio = createArcadeAudio({ onChange: syncSoundUI, enabledByDefault: !manu
 const movementMusic = createMovementMusic(audio);
 const hud = createHud({ audio, phaseSound });
 function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ? 'loading' : 'off' }, modal = Boolean(document.querySelector('dialog[open]'))) {
+  const home = homePlay && !run && !completedRun && !modal && !cameraLoading && !cameraControls?.running && !stopped;
+  setHidden($('home-intro'), !home);
+  document.body.classList.toggle('home-play', home);
+  setHidden($('share-result'), !publicPlay || nativeAndroid);
+  $('share-result').disabled = sharingResult || editingResultName || savingResultName || boothInvite?.busy || !Number.isInteger(completedRun?.rank);
   setHidden(handGuideReference, mode.profile !== 'hold-drop' || !run || modal || paused);
   setHidden($('how-to-play'), !canShowHandGuide());
   setHidden($('final-how-to-play'), !canShowHandGuide());
@@ -363,7 +371,13 @@ async function play() {
     if (recovering) resumeRecoveredRun();
     updateUI(); return;
   }
-  if (!run) { if (!cameraControls?.running) return startCamera(); return openRegistration(); }
+  if (!run) {
+    if (!cameraControls?.running) {
+      await startCamera();
+      if (!publicSurface || !cameraControls?.running || run || startingRun || document.querySelector('dialog[open]')) return;
+    }
+    return openRegistration();
+  }
   if (game.phase === 'aim' && !cameraControls?.running) return startCamera();
   updateUI();
 }
@@ -438,6 +452,7 @@ $('name').addEventListener('input', () => $('name').setCustomValidity(''));
 $('register-cancel').addEventListener('click', () => $('registration').close());
 function resetResultName() {
   editingResultName = false;
+  setText('share-status', ''); $('share-text').hidden = true;
   $('final-name-form').hidden = official || publicTry || !completedRun;
   $('final-name').hidden = !official && !publicTry && Boolean(completedRun);
   $('final-name-input').value = completedRun?.name || '';
@@ -452,14 +467,14 @@ $('final-name-input').addEventListener('focus', () => {
   editingResultName = true;
   $('final-name-actions').hidden = false;
   for (const id of ['next-player', 'play-again', 'final-leaderboard', 'final-feedback']) $(id).disabled = true;
-  $('final-name-input').select();
+  $('final-name-input').select(); updateUI();
 });
 $('final-name-input').addEventListener('input', () => {
   $('final-name-input').setCustomValidity(''); setText('final-name-status', '');
 });
 function cancelResultName() {
   if (savingResultName) return;
-  resetResultName(); $('next-player').focus();
+  resetResultName(); $('next-player').focus(); updateUI();
 }
 $('final-name-cancel').addEventListener('click', cancelResultName);
 $('final').addEventListener('cancel', event => {
@@ -494,11 +509,12 @@ $('final-name-form').addEventListener('submit', async event => {
   } finally {
     savingResultName = false;
     for (const id of ['final-name-input', 'final-name-save', 'final-name-cancel']) $(id).disabled = false;
+    updateUI();
   }
 });
 
 async function replay() {
-  if (editingResultName || boothInvite?.busy || startingRun || ((run || cameraLoading) && !(official && officialPlayer.state().canHandoff))) return;
+  if (sharingResult || editingResultName || boothInvite?.busy || startingRun || ((run || cameraLoading) && !(official && officialPlayer.state().canHandoff))) return;
   if (official) {
     try { await officialPlayer.handoff(); location.replace(publicOfficial ? '/official' : '/staff'); }
     catch (error) { setText('final-sync', error.message); }
@@ -513,6 +529,30 @@ async function replay() {
 }
 $('play-again').addEventListener('click', () => { void replay(); });
 $('next-player').addEventListener('click', () => { void replay(); });
+$('share-result').addEventListener('click', async () => {
+  if (!publicPlay || nativeAndroid || sharingResult || editingResultName || savingResultName || boothInvite?.busy) return;
+  const data = resultShare(completedRun, location.origin);
+  if (!data) return;
+  sharingResult = true; $('final-name-input').disabled = true; updateUI();
+  for (const id of ['next-player', 'play-again', 'final-leaderboard', 'final-feedback', 'final-how-to-play']) $(id).disabled = true;
+  $('share-text').hidden = true; setText('share-status', '');
+  try {
+    if (navigator.share) await navigator.share(data);
+    else {
+      await navigator.clipboard.writeText(`${data.text}\n${data.url}`);
+      setText('share-status', 'Result copied. Send it to a friend.');
+    }
+  } catch (error) {
+    if (error.name !== 'AbortError') {
+      $('share-text').value = `${data.text}\n${data.url}`;
+      $('share-text').hidden = false; $('share-text').focus(); $('share-text').select();
+      setText('share-status', 'Copy this result to share it.');
+    }
+  } finally {
+    sharingResult = false; $('final-name-input').disabled = !Number.isInteger(completedRun?.rank); updateUI();
+    for (const id of ['next-player', 'play-again', 'final-leaderboard', 'final-feedback', 'final-how-to-play']) $(id).disabled = false;
+  }
+});
 $('result-open').addEventListener('click', () => {
   if (!completedRun || startingRun || run || cameraLoading) return;
   cancelAnimationFrame(scoreAnimation);
@@ -861,12 +901,12 @@ function updateSavedRank(saved) {
   if (globalThis.__OFFLINE_SHELL__ && (saved.total !== completedRun.total || saved.turns?.length !== 3 || saved.turns.some((turn, i) => turn.score !== completedRun.turns[i]?.score))) {
     setText('final-sync', 'Server score differs. Keep this computer’s result and ask the host.'); return;
   }
-  boothInvite?.show(saved);
+  boothInvite?.show(saved.event ? saved : null);
   completedRun.rank = saved.rank;
   completedRun.name = saved.name;
   setText('final-name', saved.name.toUpperCase());
   if (!editingResultName) $('final-name-input').value = saved.name;
-  $('final-name-input').disabled = false;
+  $('final-name-input').disabled = sharingResult;
   setText('final-sync', '');
   $('final-kicker').textContent = finaleHeadline(completedRun.turns, saved.rank, completedRun.rules.points);
   $('final-rank').textContent = `SAVED · RANK #${saved.rank}`;
@@ -1063,7 +1103,7 @@ try {
       window.addEventListener('pagehide', event => { if (!event.persisted) { recoverySync?.dispose(); recovery.dispose(); } });
     }
   }
-  if ((!manualSetup || autoPlay || selectedStart) && !frozen) {
+  if ((!manualSetup && !homePlay || autoPlay || selectedStart) && !frozen) {
     audio.unlock();
     void startCamera().then(() => { if (autoPlay && cameraControls?.running && !run && !document.querySelector('dialog[open]')) openRegistration(); });
   }
