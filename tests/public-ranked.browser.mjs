@@ -187,7 +187,7 @@ try {
       await page.locator('#final').waitFor();
     }
     await page.waitForFunction(() => document.getElementById('final-rank').textContent.includes('SAVED'));
-    assert.match(await page.locator('#final-rank').textContent(), /RANK #\d+ · HANOI #\d+/);
+    assert.match(await page.locator('#final-rank').textContent(), /^SAVED · RANK #\d+$/);
     assert.equal(await page.evaluate(() => document.activeElement.id), 'next-player');
     assert.equal(await page.locator('#next-player').getAttribute('class'), 'play-button');
     assert.equal(await page.locator('#final-turns .catch-card').count(), 3);
@@ -252,8 +252,8 @@ try {
   assert.equal(await page.locator('#scores-dialog').isVisible(), false, 'Your result replaces the scores dialog');
   await page.locator('#final-leaderboard').click();
   await page.locator('#scores-dialog[open] #leaders').waitFor();
-  await page.locator('#board-scope').selectOption('event');
-  await page.waitForFunction(() => document.getElementById('board-name').textContent.includes('Hanoi'));
+  assert.equal(await page.locator('#board-scope').count(), 0, 'public scores have no event selector');
+  assert.equal(await page.locator('#board-range').textContent(), 'Top 2 of 2 plays');
   assert.equal(await page.locator('#leaders li').count(), 2);
   const rows = app.database.db.prepare("SELECT name,status FROM runs WHERE status='complete'").all();
   assert.equal(rows.length, 2); assert.deepEqual(rows.map(row => row.name).sort(), [name, 'Winner Linh'].sort());
@@ -299,7 +299,33 @@ try {
   assert.ok(recoveryCalls.every(path => path.endsWith('/turns')), 'paused recovery never bootstraps ownership, starts a run or reads the board');
   const pausedStart = await context.request.post(`${origin}/api/play/runs`, { headers: { origin }, data: { name: 'Must not start', requestKey: randomUUID() } });
   assert.equal(pausedStart.status(), 503);
+  await page.goto('about:blank');
+  const stopped = new Promise(resolve => app.server.close(resolve));
+  app.server.closeAllConnections(); await stopped; app.database.close();
+  app = await createPilotServer(options);
+  await new Promise(resolve => app.server.listen(4293, '127.0.0.1', resolve));
+  const db = app.database.db, source = db.prepare("SELECT * FROM runs WHERE status='complete' LIMIT 1").get();
+  const add = db.prepare("INSERT INTO runs (id,owner_id,request_key,board_id,name,rules,status,total,started_at,completed_at) VALUES (?,?,?,?,?,?,'complete',?,?,?)");
+  for (let i = 0; i < 1231; i++) add.run(randomUUID(), source.owner_id, randomUUID(), source.board_id, `Player ${i + 1}`, source.rules, i % 400, source.started_at, source.completed_at);
+  await page.goto(`${origin}/?setup=manual`);
+  await page.waitForFunction(() => document.getElementById('board-count').textContent === '1,234 plays and counting');
+  // Recovery can open the retained result; close it to inspect the idle sidebar.
+  if (await page.locator('#final').isVisible()) await page.locator('#final-leaderboard').click();
+  if (await page.locator('#scores-dialog').isVisible()) await page.locator('#scores-close').click();
+  assert.equal(await page.locator('#leaders li').count(), 10);
+  assert.equal(await page.locator('#board-count').isVisible(), true);
+  assert.equal(await page.locator('#board-name').isVisible(), false);
+  assert.equal(await page.locator('#board-scope').count(), 0);
+  await page.screenshot({ path: '.screenshots/public-score-count-desktop.png' });
+  await page.locator('.leaderboard').screenshot({ path: '.screenshots/public-score-count-sidebar.png' });
+  await page.locator('#scores-more').click();
+  assert.equal(await page.locator('#leaders li').count(), 100);
+  assert.equal(await page.locator('#board-range').textContent(), 'Top 100 of 1,234 plays');
+  assert.equal(await page.locator('#board-count').isVisible(), false);
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.screenshot({ path: '.screenshots/public-score-count-phone.png' });
   assert.deepEqual(errors, []);
-  console.log('Public ranked play: editable names, 2 × 3 turns, independent saved ranks, next-player focus, event enrollment/filter and privacy link passed.');
+  console.log('Public ranked play: editable names, 2 × 3 turns, independent saved ranks, next-player focus, retained event enrollment, unified scores, full completed-play count and privacy link passed.');
 } catch (error) { await page?.screenshot({ path: '.screenshots/public-ranked-failure.png' }).catch(() => {}); throw error; }
 finally { await browser.close(); const closed = new Promise(resolve => app.server.close(resolve)); app.server.closeAllConnections(); await closed; app.database.close(); await rm(directory, { recursive: true, force: true }); }

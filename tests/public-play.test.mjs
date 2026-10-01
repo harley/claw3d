@@ -82,7 +82,7 @@ test('event enrollment plus server Hanoi date, never client claims; retries keep
   assert.equal((await (await f.start(booth, duringKey)).json()).event.id, 'hanoi-2026-09-29');
   const saved = await f.complete(booth, during.id); assert.equal(saved.eventRank, 1);
   assert.equal((await (await f.start(booth)).json()).event, undefined);
-  const eventBoard = await (await f.request('/api/play/board?event=hanoi-2026-09-29')).json(); assert.equal(eventBoard.runs.length, 1);
+  const eventBoard = await (await f.request('/api/play/board?event=hanoi-2026-09-29')).json(); assert.equal(eventBoard.runs.length, 1); assert.equal(eventBoard.totalPlays, 1);
   assert.equal((await f.request('/api/play/board?event=other')).status, 404);
 });
 
@@ -111,8 +111,14 @@ test('bounded board preserves nonzero ties and personal ranks beyond its first 1
   const db = f.app.database.db, source = db.prepare('SELECT * FROM runs WHERE id=?').get(run.id);
   const add = db.prepare("INSERT INTO runs (id,owner_id,request_key,board_id,name,rules,status,total,started_at,completed_at) VALUES (?,?,?,?,?,?,'complete',?,?,?)");
   for (let i = 1; i <= 105; i++) add.run(randomUUID(), source.owner_id, randomUUID(), source.board_id, `Player ${i}`, source.rules, i === 105 ? 104 : i, source.started_at, source.completed_at);
+  add.run(randomUUID(), source.owner_id, randomUUID(), f.app.database.board().id, 'Staff test', source.rules, 500, source.started_at, source.completed_at);
   const board = await (await f.request('/api/play/board')).json();
   assert.equal(board.runs.length, 100);
+  assert.equal(board.totalPlays, 106, 'completed-play count includes rows beyond the top 100 and excludes staff scores');
+  const unfinished = await (await f.start(cookie)).json();
+  assert.equal((await (await f.request('/api/play/board')).json()).totalPlays, 106, 'unfinished starts do not count as completed plays');
+  await f.request(`/api/play/runs/${unfinished.id}/abandon`, { cookie, data: {} });
+  assert.equal((await (await f.request('/api/play/board')).json()).totalPlays, 106, 'abandoned starts do not count');
   assert.deepEqual(board.runs.slice(0, 3).map(row => row.rank), [1, 1, 3]);
   assert.equal((await (await f.request(`/api/play/runs/${run.id}`, { cookie })).json()).rank, 106);
 });

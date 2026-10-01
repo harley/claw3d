@@ -72,7 +72,9 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
     const args = event ? [boardId, HANOI_EVENT.id] : [boardId];
     const runs = db.prepare(`SELECT id,name,total,RANK() OVER (ORDER BY total DESC) AS rank FROM runs r
       WHERE board_id=? AND status='complete' ${scope} ORDER BY total DESC,completed_at,id LIMIT 100`).all(...args);
-    return { id: event ? HANOI_EVENT.id : boardId, name: event ? HANOI_EVENT.name : 'All plays', runs };
+    const { totalPlays } = db.prepare(`SELECT COUNT(*) AS totalPlays FROM runs r
+      WHERE board_id=? AND status='complete' ${scope}`).get(...args);
+    return { id: event ? HANOI_EVENT.id : boardId, name: event ? HANOI_EVENT.name : 'All plays', totalPlays, runs };
   }
   function result(id, player) {
     const run = database.getRun(id, player);

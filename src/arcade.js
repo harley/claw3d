@@ -73,7 +73,7 @@ if (publicSurface) {
   document.querySelector('.leaderboard .eyebrow').textContent = publicPlay ? 'HIGH SCORES' : 'PRACTICE';
   $('final-leaderboard').hidden = !publicPlay;
   $('next-player').hidden = !publicPlay;
-  $('board-scope').hidden = !publicPlay;
+  $('board-name').hidden = publicPlay;
   if (publicPlay) {
     $('registration').querySelector('.playtest-notice').textContent = 'Your name and score appear on the public leaderboard. Use a nickname if you prefer.';
     $('try-notice').querySelector('p').textContent = 'Names and scores are public. Camera video stays on this device and is not recorded or uploaded.';
@@ -205,8 +205,13 @@ function renderBoard() {
   if (official) $('board-empty').textContent = officialPlayer.state().board ? 'No completed event scores yet.' : 'Event board unavailable until admission is confirmed.';
   const leaders = shared ? board.runs : leaderboard(board); $('board-empty').hidden = leaders.length > 0;
   const expanded = $('scores-dialog').open;
+  const totalPlays = publicPlay && Number.isSafeInteger(board.totalPlays) && board.totalPlays >= 0 ? board.totalPlays : null;
+  const playCount = totalPlays === null ? '' : `${totalPlays.toLocaleString('en-US')} ${totalPlays === 1 ? 'play' : 'plays'}`;
   $('scores-more').hidden = expanded || leaders.length <= 10;
-  $('board-range').textContent = expanded && publicPlay ? 'Top 100 plays' : expanded ? 'All available scores' : 'Top 10';
+  $('board-count').hidden = totalPlays === null || expanded || totalPlays === 0;
+  $('board-count').textContent = playCount ? `${playCount} and counting` : '';
+  const expandedRange = publicPlay ? `Top ${leaders.length}${playCount ? ` of ${playCount}` : ' plays'}` : 'All available scores';
+  $('board-range').textContent = expanded ? expandedRange : 'Top 10';
   for (const row of expanded ? leaders : leaders.slice(0, 10)) {
     const li = document.createElement('li'); li.classList.toggle('current', Boolean(row.id && row.id === completedRun?.id));
     for (const [tag, value] of [['span', String(row.rank).padStart(2, '0')], ['strong', row.name], ['b', row.total]]) { const el = document.createElement(tag); el.textContent = value; li.append(el); }
@@ -515,7 +520,6 @@ $('result-open').addEventListener('click', () => {
   $('scores-dialog').close();
   $('final').showModal(); $(publicTry ? 'play-again' : 'next-player').focus();
 });
-$('board-scope').addEventListener('change', () => { void pilot.selectEvent($('board-scope').value === 'event'); });
 const scorePanel = document.querySelector('.leaderboard');
 const scoreHome = document.createComment('Leaderboard home');
 scorePanel.before(scoreHome);
@@ -865,7 +869,7 @@ function updateSavedRank(saved) {
   $('final-name-input').disabled = false;
   setText('final-sync', '');
   $('final-kicker').textContent = finaleHeadline(completedRun.turns, saved.rank, completedRun.rules.points);
-  $('final-rank').textContent = `SAVED · RANK #${saved.rank}${saved.eventRank ? ` · HANOI #${saved.eventRank}` : ''}`;
+  $('final-rank').textContent = `SAVED · RANK #${saved.rank}`;
 }
 function openOfficialTicket() {
   if (startingRun || officialPlayer.state().busy) return;

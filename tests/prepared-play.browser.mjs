@@ -10,6 +10,10 @@ import { waitForAsync } from './browser-poll.mjs';
 import { cameraFixtureModule } from './camera-fixture.mjs';
 import { offlinePack } from '../scripts/offline-pack.mjs';
 import { createPilotServer } from '../server/index.js';
+// Enrollment is event-day only. Keep server and browser Date aligned without
+// freezing animation/timer progress or depending on the machine's calendar.
+const eventTime = Date.parse('2026-09-29T10:00:00+07:00'), clockStartedAt = Date.now();
+const testNow = () => eventTime + Date.now() - clockStartedAt;
 const directory = await mkdtemp(join(tmpdir(), 'prepared-play-'));
 let browser, app;
 const deadline = setTimeout(() => browser?.close(), 600000);
@@ -28,7 +32,7 @@ try {
   const pack = offlinePack(); pack.configResolved({ root: directory, build: { outDir: '.' } }); await pack.closeBundle();
   const origin = 'http://127.0.0.1:4299';
   app = await createPilotServer({ filename: ':memory:', dist: directory, origin, staffCode: 'prepared-browser-staff', hostCode: 'prepared-browser-host', secure: false,
-    publicTryEnabled: true, publicPermitPolicy: { maxSlots: 20, maxRetentionMs: 86400000 } });
+    now: testNow, publicTryEnabled: true, publicPermitPolicy: { maxSlots: 20, maxRetentionMs: 86400000 } });
   let lost = false, liveCalls = 0, dropReceipt = false;
   app.server.prependListener('request', (request, response) => {
     if (request.url === '/api/play/permits/live') liveCalls++;
@@ -44,7 +48,7 @@ try {
   const url = origin;
   browser = await chromium.launch(browserOptions);
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
-  const setup = await context.newPage(); await setup.goto(url + '/privacy');
+  const setup = await context.newPage(); await setup.clock.setSystemTime(testNow()); await setup.goto(url + '/privacy');
   const prepared = await setup.evaluate(async () => {
     const post = async (path, data) => { const r = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) }); if (!r.ok) throw Error(await r.text()); return r.json(); };
     await post('/api/play/session', {}); await post('/api/host/sign-in', { code: 'prepared-browser-host' }); await post('/api/host/station', {});
@@ -57,7 +61,7 @@ try {
   // No host credentials accompany play or reconciliation.
   await context.request.post(url + '/api/logout', { headers: { origin: url }, data: {} });
   assert.equal((await context.request.get(url + '/api/host/station')).status(), 401);
-  const page = await context.newPage(); let liveRequests = 0;
+  const page = await context.newPage(); await page.clock.setSystemTime(testNow()); let liveRequests = 0;
   page.on('request', request => { if (request.url().endsWith('/api/play/permits/live')) liveRequests++; });
   await context.setOffline(true);
   const local = [];
