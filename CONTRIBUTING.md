@@ -1,6 +1,6 @@
 # Contributing
 
-Cloud Claw is a camera-controlled arcade for the CoderPush × AWS booth. Start with the [local setup](README.md#run-locally), [agent safeguards](AGENTS.md) and, for behavior changes, [product contract](docs/PRODUCT.md).
+Claw is a camera-controlled browser arcade by CoderPush, with optional event sessions. Start with the [local setup](README.md#run-locally), [agent safeguards](AGENTS.md) and, for behavior changes, [product contract](docs/PRODUCT.md).
 
 ## Scope and branches
 

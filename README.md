@@ -1,6 +1,6 @@
 # Claw
 
-A camera-controlled CoderPush × AWS arcade. Choose an editable animal-emoji name, steer the claw and play three scored turns. Catch toys for 100 points or the star for 200, with up to 50 speed points per catch. The shared staff pilot adds a protected leaderboard; local play keeps scores in your browser.
+A camera-controlled browser arcade by CoderPush. Open the homepage, choose Play to start the camera, and share your saved result with a friend. Choose an editable animal-emoji name, steer the claw and play three scored turns. Catch toys for 100 points or the star for 200, with up to 50 speed points per catch. The shared staff pilot adds a protected leaderboard; local play keeps scores in your browser.
 
 ## Requirements
 
@@ -62,7 +62,7 @@ Follow [CONTRIBUTING](CONTRIBUTING.md) for branches, pull requests and the testi
 
 ## License and asset credits
 
-Project code is licensed under [MIT](LICENSE). The CoderPush/AWS names and event presentation identify this project's booth context; the code license does not grant trademark rights or imply endorsement of forks. This project retains its existing event presentation. Reusers should use their own branding unless separately authorized by the relevant owner. This repository does not contain an AWS trademark authorization record.
+Project code is licensed under [MIT](LICENSE). The code license does not grant rights to CoderPush or third-party names and trademarks, including those in historical event records, or imply endorsement of forks. Reusers should use their own branding unless separately authorized by the relevant owner.
 
 Third-party hand meshes retain their [MIT license and provenance](public/models/hands/README.md). The [MediaPipe runtime and recognition model notice](public/vision/README.md) records the exact distributed versions, sources and verification limits. [Audio provenance](docs/archive/2026-09-11-arcade-presentation.md) records the original synthesis decision.
 

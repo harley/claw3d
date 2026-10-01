@@ -114,8 +114,6 @@ export class ArcadeScene {
       ball(booth, white, [x, y, .31], [r, r, .035]);
     }
     box(booth, white, [-.015, 2.57, .31], [.52, .11, .06], .045);
-    label(booth, 'BUILT WITH', .72, .10, [0, 2.35, .307], { color: '#a7adbc', font: 'Arial', size: 38, tracking: 5 });
-    label(booth, 'Kiro', .66, .23, [0, 2.17, .307], { color: '#d9ceff', font: 'Arial', size: 120, weight: '600' });
     box(booth, lime, [0, 1.93, .30], [.57, .07, .035], .016);
     // Concealed fixture: a small luminous face, without a hard-edged fake beam.
     box(booth, white, [0, 3.915, .18], [.38, .055, .24], .025);

@@ -27,7 +27,7 @@ Open `http://127.0.0.1:4200` and enter the staff code. Ordinary `npm run play` r
 
 ## Public play and event setup
 
-Laptop/browser is the primary event setup, with the TV as its display. Public entry uses `PUBLIC_TRY_ENABLED=true`; ranking is enabled by default. `PUBLIC_RANKED_ENABLED=false` retains memory-only practice and pauses new ranked starts while saved results can drain. Keep the service and existing database. Configuration changes use the reviewed release path, not manual score or identity edits.
+Laptop/browser is the primary event setup, with the TV as its display. Public browser home waits for PLAY before starting the camera; choosing PLAY opens registration after successful camera setup. Public results retain the overall board and can share their saved result; booth follow-up appears only for event-associated results. Public entry uses `PUBLIC_TRY_ENABLED=true`; ranking is enabled by default. `PUBLIC_RANKED_ENABLED=false` retains memory-only practice and pauses new ranked starts while saved results can drain. Keep the service and existing database. Configuration changes use the reviewed release path, not manual score or identity edits.
 
 Public players see one combined leaderboard and one result rank. `totalPlays` counts all completed public runs before the 100-row display limit, including repeats and zero scores, excluding unfinished attempts and staff/ticket boards. Event reports remain host-only. They count recorded runs, not unique visitors or complete attendance.
 
