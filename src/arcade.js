@@ -211,14 +211,19 @@ function renderBoard() {
   const totalPlays = publicPlay && Number.isSafeInteger(board.totalPlays) && board.totalPlays >= 0 ? board.totalPlays : null;
   const playCount = totalPlays === null ? '' : `${totalPlays.toLocaleString('en-US')} ${totalPlays === 1 ? 'play' : 'plays'}`;
   $('scores-more').hidden = expanded || leaders.length <= 10;
-  $('board-count').hidden = totalPlays === null || expanded || totalPlays === 0;
-  $('board-count').textContent = playCount ? `${playCount} and counting` : '';
+  $('board-count').hidden = !expanded || !publicPlay || !playCount;
+  $('board-count').textContent = expanded && publicPlay ? 'Not counting offline/TV mode.' : '';
   const expandedRange = publicPlay ? `Top ${leaders.length}${playCount ? ` of ${playCount}` : ' plays'}` : 'All available scores';
   $('board-range').textContent = expanded ? expandedRange : 'Top 10';
   for (const row of expanded ? leaders : leaders.slice(0, 10)) {
     const li = document.createElement('li'); li.classList.toggle('current', Boolean(row.id && row.id === completedRun?.id));
     for (const [tag, value] of [['span', String(row.rank).padStart(2, '0')], ['strong', row.name], ['b', row.total]]) { const el = document.createElement(tag); el.textContent = value; li.append(el); }
     $('leaders').append(li);
+  }
+  if (expanded) $('leaders').parentElement.append($('board-count'), $('board-range'));
+  else {
+    $('board-name').after($('board-range'));
+    $('board-range').after($('board-count'));
   }
   const scoredRuns = board.runs.filter(r => !r.practice), turns = scoredRuns.flatMap(r => r.turns || []);
   $('operator-stats').textContent = official ? `${scoredRuns.length} ranked participants · server confirmed` : `${scoredRuns.length} completed · ${turns.length ? Math.round(turns.filter(t => t.score).length / turns.length * 100) : 0}% catch rate${shared ? '' : ` · ${store.boards.length} sessions stored`}`;
