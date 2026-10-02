@@ -186,6 +186,10 @@ try {
   assert.equal(await page.evaluate(() => Boolean(window.testCamera?.running)), false, 'public home waits for Play before starting the camera');
   assert.equal(await page.locator('#camera-setup').isVisible(), false);
   assert.equal(await page.locator('#home-intro').isVisible(), true);
+  assert.equal(await page.locator('.brand').textContent(), 'claw.');
+  assert.equal(await page.locator('#home-intro h1').textContent(), '3D Claw with Hands');
+  assert.equal(await page.locator('#home-intro p').innerText(), 'Move your hand to aim.\nHold a fist to drop.');
+  assert.equal(await page.locator('#home-intro :is(.eyebrow, small)').count(), 0, 'public home has no duplicate subtitle or privacy line');
   assert.doesNotMatch(await page.locator('body').textContent(), /AWS|CLOUD DAY|Built on AWS/);
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
     await page.setViewportSize(viewport);
@@ -400,12 +404,12 @@ try {
   const add = db.prepare("INSERT INTO runs (id,owner_id,request_key,board_id,name,rules,status,total,started_at,completed_at) VALUES (?,?,?,?,?,?,'complete',?,?,?)");
   for (let i = 0; i < 1231; i++) add.run(randomUUID(), source.owner_id, randomUUID(), source.board_id, `Player ${i + 1}`, source.rules, i % 400, source.started_at, source.completed_at);
   await page.goto(`${origin}/?setup=manual`);
-  await page.waitForFunction(() => document.getElementById('board-count').textContent === '1,234 plays and counting');
+  await page.waitForFunction(() => document.querySelectorAll('#leaders li').length === 10);
   // Recovery can open the retained result; close it to inspect the idle sidebar.
   if (await page.locator('#final').isVisible()) await page.locator('#final-leaderboard').click();
   if (await page.locator('#scores-dialog').isVisible()) await page.locator('#scores-close').click();
   assert.equal(await page.locator('#leaders li').count(), 10);
-  assert.equal(await page.locator('#board-count').isVisible(), true);
+  assert.equal(await page.locator('#board-count').isVisible(), false);
   assert.equal(await page.locator('#board-name').isVisible(), false);
   assert.equal(await page.locator('#board-scope').count(), 0);
   await page.screenshot({ path: '.screenshots/public-score-count-desktop.png' });
@@ -413,7 +417,9 @@ try {
   await page.locator('#scores-more').click();
   assert.equal(await page.locator('#leaders li').count(), 100);
   assert.equal(await page.locator('#board-range').textContent(), 'Top 100 of 1,234 plays');
-  assert.equal(await page.locator('#board-count').isVisible(), false);
+  assert.equal(await page.locator('#board-count').textContent(), 'Not counting offline/TV mode.');
+  assert.equal(await page.locator('#board-count').isVisible(), true);
+  assert.equal(await page.locator('#board-range').evaluate(el => el === el.parentElement.lastElementChild), true, 'expanded play total follows the score list and offline note');
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await page.screenshot({ path: '.screenshots/public-score-count-phone.png' });
