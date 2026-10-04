@@ -29,7 +29,8 @@ export function offlinePack() {
         const bytes = await readFile(resolve(directory, '.' + url));
         return { url, bytes: bytes.length, type: types[extname(url)], sha256: digest(bytes) };
       }));
-      const manifest = { version: 1, id: digest(JSON.stringify(entries)), bytes: entries.reduce((sum, entry) => sum + entry.bytes, 0), entries };
+      const build = JSON.parse(await readFile(resolve(directory, 'build-info.json'), 'utf8'));
+      const manifest = { build: { commit: build.commit, sourceCommit: build.sourceCommit }, version: 1, id: digest(JSON.stringify(entries)), bytes: entries.reduce((sum, entry) => sum + entry.bytes, 0), entries };
       const worker = await readFile(new URL('./offline/worker.js', import.meta.url), 'utf8');
       await writeFile(resolve(directory, 'prepared/manifest.json'), JSON.stringify(manifest));
       await writeFile(resolve(directory, 'prepared/worker.js'), `const PACK = ${JSON.stringify(manifest)};\n${worker}`);

@@ -19,7 +19,7 @@ export default defineConfig(() => {
   return {
     // Prebundle the lazy camera dependency before play; discovering it at
     // camera startup otherwise reloads the page and interrupts acquisition.
-    build: { outDir: process.env.CLAW_BUILD_OUT_DIR || 'dist' },
+    build: { outDir: process.env.CLAW_BUILD_OUT_DIR || 'dist', rolldownOptions: { preserveEntrySignatures: 'strict', input: { index: 'index.html', 'host-preparation': 'src/host-preparation.js' }, output: { entryFileNames: chunk => chunk.name === 'host-preparation' ? 'host-preparation.js' : 'assets/[name]-[hash].js' } } },
     // Dedicated camera workers need a URL inside the prepared scope so their
     // own model/WASM requests stay controlled after an offline restart.
     worker: { rolldownOptions: { output: { entryFileNames: chunk => `${chunk.name === 'prepared-vision-worker' ? 'prepared' : 'assets'}/[name]-[hash].js` } } },

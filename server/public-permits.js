@@ -115,5 +115,10 @@ export function createPublicPermits({ database, boardId, policy, now, owner, gen
     return db.prepare('SELECT 1 FROM public_permit_slots s JOIN public_permit_pools p ON p.id=s.pool_id WHERE p.owner_id=? AND s.request_key=?').get(player, typeof requestKey === 'string' ? requestKey : '');
   }
   const preparedOwner = player => Boolean(db.prepare('SELECT 1 FROM public_permit_pools WHERE owner_id=? AND reconcile_by>? LIMIT 1').get(player, now()));
-  return { issue, get, register, reserved, preparedOwner };
+  function status(req) {
+    let player;
+    try { player = owner(req); } catch { return { ownerValid: false, pools: [], policy: policy || null }; }
+    return { ownerValid: true, policy: policy || null, pools: db.prepare('SELECT * FROM public_permit_pools WHERE owner_id=? ORDER BY created_at').all(player).map(pool => receipt(req, pool)) };
+  }
+  return { issue, get, register, reserved, preparedOwner, status };
 }

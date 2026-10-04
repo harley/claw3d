@@ -92,6 +92,8 @@ export async function openPublicRunJournal({ indexedDB = globalThis.indexedDB, l
     }
     return {
       close, all,
+      snapshot: () => transaction(async (store, pools) => ({ entries: (await request(store.getAll())).map(validate), pools: (await request(pools.getAll())).map(validatePool) }), 'readonly'),
+      probe: () => transaction(async (_store, pools) => { pools.put({ id: '__storage_probe__' }); pools.delete('__storage_probe__'); }),
       async installPool(input, packId, time = Date.now()) {
         const pool = validatePool({ ...structuredClone(input), packId, lastSeen: time });
         if (!input.ready || pool.reconcileBy <= time) throw Error('Host preparation is not ready. Keep pending data.');

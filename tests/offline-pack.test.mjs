@@ -14,7 +14,7 @@ test('public pack contains verified public bytes, neutral shell and only the req
     await mkdir(join(dir, 'assets'));
     await writeFile(join(dir, 'index.html'), '<head></head><body>Camera stays on-device.</body>');
     await writeFile(join(dir, 'assets/test.js'), 'export default 42;');
-    await writeFile(join(dir, 'build-info.json'), '{"private":true}');
+    await writeFile(join(dir, 'build-info.json'), '{"private":true,"commit":"abcdef0","sourceCommit":"abcdef0123456789","branch":"private-branch"}');
     await writeFile(join(dir, 'export.json'), '{"private":true}');
     for (const path of requiredModels) {
       await mkdir(dirname(join(dir, path)), { recursive: true });
@@ -24,6 +24,8 @@ test('public pack contains verified public bytes, neutral shell and only the req
     plugin.configResolved({ root: dir, build: { outDir: '.' } });
     await plugin.closeBundle();
     const manifest = JSON.parse(await readFile(join(dir, 'prepared/manifest.json')));
+    assert.deepEqual(manifest.build, {commit:'abcdef0',sourceCommit:'abcdef0123456789'});
+    assert.doesNotMatch(JSON.stringify(manifest),/private-branch|private/);
     assert.deepEqual(manifest.entries.map(entry => entry.url), ['/assets/test.js', '/prepared/client.js', '/prepared/index.html', ...requiredModels].sort());
     for (const entry of manifest.entries) {
       const bytes = await readFile(join(dir, entry.url));
