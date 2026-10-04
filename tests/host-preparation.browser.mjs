@@ -74,6 +74,7 @@ try {
   // Restoring the original test credential demonstrates repair, never importing
   // an export or allocating a replacement owner. Deadline/consumption persist.
   await context.addCookies([original]); await page.reload();
+  await page.waitForFunction(()=>document.getElementById('preparation-storage').textContent.includes('Storage headroom verified'));
   await page.locator('#preparation-repair').click();
   await page.waitForFunction(()=>document.getElementById('preparation-status').textContent.startsWith('Ready for offline'));
   assert.match(await page.locator('#preparation-capacity').textContent(),/2 usable/);
