@@ -53,34 +53,60 @@ export async function recoveryExport({ indexedDB = globalThis.indexedDB, locks =
   });
 }
 
-export function createHostPreparation({ request, storage = localStorage, journalFactory = openPublicRunJournal, serviceWorker = navigator.serviceWorker, time = Date.now } = {}) {
+export function createHostPreparation({ request, storage = localStorage, journalFactory = openPublicRunJournal, serviceWorker = navigator.serviceWorker, storageManager = navigator.storage, time = Date.now } = {}) {
   const draftKey = 'cloud-claw:permit-preparation:v1';
   async function journalWork(work) { const journal = await journalFactory(); try { return await work(journal); } finally { journal.close(); } }
-  async function inspect() {
+  async function storageStatus(expected, assets, snapshot, additionalSlots = 0, requestPersistence = false) {
+    let persistent = null;
+    try {
+      if (requestPersistence) await storageManager?.persist?.();
+      if (storageManager?.persisted) persistent = await storageManager.persisted();
+    } catch { /* Report unknown persistence; never infer success from a request. */ }
+    // Keep room for a full new pack without deleting old caches, plus a
+    // conservative 64 KiB per retained/new slot and 1 MiB journal overhead.
+    const slots = snapshot.pools.reduce((n, pool) => n + pool.slots.length, 0) + additionalSlots;
+    const requiredBytes = (assets.complete && assets.id === expected.id ? 0 : expected.bytes) + 1024 * 1024 + slots * 64 * 1024;
+    let availableBytes = null;
+    try {
+      const estimate = await storageManager?.estimate?.();
+      if (Number.isFinite(estimate?.quota) && Number.isFinite(estimate?.usage) && estimate.quota >= 0 && estimate.usage >= 0) availableBytes = Math.max(0, estimate.quota - estimate.usage);
+    } catch { /* Unavailable quota cannot establish headroom. */ }
+    const ready = Number.isSafeInteger(requiredBytes) && requiredBytes > 0 && availableBytes !== null && availableBytes >= requiredBytes;
+    const persistence = persistent === true ? 'Persistent storage granted.' : persistent === false ? 'Persistent storage not granted; browser eviction can lose results.' : 'Persistent storage status unavailable; browser eviction can lose results.';
+    const headroom = availableBytes === null ? 'Storage headroom unavailable.' : availableBytes < requiredBytes ? 'Insufficient storage headroom.' : 'Storage headroom verified.';
+    return { ready, persistent, availableBytes, requiredBytes, message: persistence + ' ' + headroom + ' Clearing browser data or disk loss can still destroy results. Keep retained data.' };
+  }
+  async function inspect({ requestPersistence = false, additionalSlots = 0 } = {}) {
     const server = await request('/api/host/station/preparation');
-    const manifest = await fetch('/prepared/manifest.json', { cache: 'no-store', credentials: 'omit', signal: AbortSignal.timeout(8000) });
-    if (!manifest.ok) throw Error('Current asset manifest unavailable. Keep prior packs.');
-    const expected = await manifest.json();
-    if (expected.version !== 1 || typeof expected.id !== 'string') throw Error('Unknown asset pack version. Keep prior packs and journal data.');
-    const registration = await serviceWorker.getRegistration('/prepared/');
-    const assets = registration?.active ? await assetStatus(registration.active) : { complete: false };
     return journalWork(async journal => {
-      await journal.probe();
       let snapshot = await journal.snapshot();
+      // Persist known refusals before any fallible asset/storage checks. The
+      // physical journal lock prevents an offline reservation racing this hold.
       if (!server.ownerValid && (snapshot.entries.length || snapshot.pools.length) || snapshot.pools.some(local => !server.pools.some(remote => remote.id === local.id))) {
         await journal.holdPreparation('Original ownership unavailable. Keep browser data and export evidence.'); snapshot = await journal.snapshot();
       } else if (snapshot.pools.some(local => server.pools.some(remote => remote.id === local.id && !remote.ready && remote.unregisteredSlots > 0 && remote.reconcileBy > time()))) {
         await journal.holdPreparation('Station authority is on hold. Ask the host to repair preparation.'); snapshot = await journal.snapshot();
       }
+      await journal.probe();
+      const manifest = await fetch('/prepared/manifest.json', { cache: 'no-store', credentials: 'omit', signal: AbortSignal.timeout(8000) });
+      if (!manifest.ok) throw Error('Current asset manifest unavailable. Keep prior packs.');
+      const expected = await manifest.json();
+      if (expected.version !== 1 || typeof expected.id !== 'string' || !Number.isSafeInteger(expected.bytes) || expected.bytes <= 0) throw Error('Unknown asset pack version or size. Keep prior packs and journal data.');
+      const registration = await serviceWorker.getRegistration('/prepared/');
+      const assets = registration?.active ? await assetStatus(registration.active) : { complete: false };
+      const durability = await storageStatus(expected, assets, snapshot, additionalSlots, requestPersistence);
       const readiness = stationReadiness({ server, snapshot, assets, expectedId: expected.id, time: time() });
-      return { ...readiness, server, assets, currentBuild: expected.build, waiting: Boolean(registration?.waiting), storageReady: true };
+      return { ...readiness, ready: readiness.ready && durability.ready, remaining: durability.ready ? readiness.remaining : 0, reason: durability.ready ? readiness.reason : durability.message,
+        server, assets, currentBuild: expected.build, waiting: Boolean(registration?.waiting), storageReady: durability.ready, durability };
     });
   }
   async function prepare(count, reconcileBy) {
-    const initial = await inspect();
+    const retained = JSON.parse(storage.getItem(draftKey) || 'null');
+    const initial = await inspect({ requestPersistence: true, additionalSlots: retained?.count ?? (Number.isInteger(count) && count > 0 && count <= 1000 ? count : 0) });
     if (!initial.server.policy) throw Error('Prepared starts are disabled. Operator policy must be configured before enablement.');
     if ((!initial.ownershipMatches && initial.hasEvidence) || !initial.server.ownerValid && storage.getItem(draftKey)) throw Error('Original ownership is unavailable. Keep data and export recovery evidence; a new owner cannot recover it.');
     if (!storage.getItem(draftKey) && (!Number.isInteger(count) || count < 1 || count > initial.server.policy.maxSlots || !Number.isSafeInteger(reconcileBy) || reconcileBy <= time() || reconcileBy > time() + initial.server.policy.maxRetentionMs)) throw Error('Choose capacity and a future deadline within the configured station policy.');
+    if (!initial.storageReady) throw Error(initial.durability.message);
     const draft = JSON.parse(storage.getItem(draftKey) || 'null') || { protocol: 1, count, reconcileBy, requestKey: crypto.randomUUID() };
     if (draft.protocol !== 1 || !Number.isInteger(draft.count) || !Number.isSafeInteger(draft.reconcileBy) || typeof draft.requestKey !== 'string') throw Error('Retained preparation is incompatible. Keep its data.');
     storage.setItem(draftKey, JSON.stringify(draft));
@@ -90,6 +116,8 @@ export function createHostPreparation({ request, storage = localStorage, journal
     const registration = await serviceWorker.getRegistration('/prepared/');
     const active = registration?.active ? await assetStatus(registration.active) : { complete: false };
     if (prepared.waiting || !active.complete || active.id !== prepared.prepared.id) throw Error('New assets are waiting. Close every prepared-game tab and retry. Existing packs and results are retained.');
+    const installed = await inspect({ additionalSlots: draft.count });
+    if (!installed.storageReady) throw Error(installed.durability.message);
     await journalWork(async journal => {
       await journal.probe();
       let pool;
@@ -107,13 +135,16 @@ export function createHostPreparation({ request, storage = localStorage, journal
     return inspect();
   }
   async function repair() {
-    const initial = await inspect();
+    const initial = await inspect({ requestPersistence: true });
+    if (!initial.storageReady) throw Error(initial.durability.message);
     if (!initial.ownershipMatches) throw Error('Original ownership unavailable. Export evidence; do not replace ownership.');
     const prepared = await prepareAssets(serviceWorker);
     const registration = await serviceWorker.getRegistration('/prepared/');
     const active = registration?.active ? await assetStatus(registration.active) : { complete: false };
     if (prepared.waiting || !active.complete || active.id !== prepared.prepared.id) throw Error('Close prepared-game tabs before repairing assets. Keep data.');
-    const status = await request('/api/host/station/preparation');
+    const installed = await inspect();
+    if (!installed.storageReady) throw Error(installed.durability.message);
+    const status = installed.server;
     const usable = status.pools.filter(pool => pool.ready && initial.pools.some(local => local.id === pool.id));
     if (!usable.length) throw Error('No existing permit pool has valid unused authority. Keep results for recovery.');
     await journalWork(async journal => { await journal.probe(); for (const pool of usable) await journal.installPool(pool, active.id, time()); });

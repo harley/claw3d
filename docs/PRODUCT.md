@@ -358,7 +358,11 @@ original reconciliation deadline. Readiness combines server and retained local
 consumption, verified current assets, storage, original ownership and compatible
 rules. Recovery can refresh existing authority or download local evidence; it
 cannot replace ownership or extend deadlines. Unknown journal versions refuse
-play while preserving evidence. Old packs and pending outcomes are retained.
+play while preserving evidence. Preparation requests persistent storage and shows
+its grant status, storage headroom and durability limits. Insufficient or unknown
+headroom refuses readiness; denied persistence warns that browser eviction can
+lose results. Clearing data or disk loss remains a risk even with persistence.
+Old packs and pending outcomes are retained.
 Opening a ready prepared game signs out host access; Host setup itself never
 loads camera or gameplay. Preparation remains disabled unless operators configure
 the existing permit policy. Physical outage acceptance remains separate.

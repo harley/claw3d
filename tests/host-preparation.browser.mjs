@@ -16,6 +16,7 @@ try {
   page.on('request',r=>requests.push(new URL(r.url()).pathname)); page.on('pageerror',e=>errors.push(e.message));
   await page.goto(origin+'/staff'); await page.locator('#code').fill('prepared-host-code'); await page.locator('#sign-in').click();
   try { await page.waitForFunction(()=>document.getElementById('setup').hidden===false && !document.getElementById('preparation-prepare').disabled); } catch(error) { console.error(await page.locator('body').innerText(),errors); throw error; }
+  assert.match(await page.locator('#preparation-storage').textContent(), /Persistent storage.*Storage headroom verified.*Clearing browser data or disk loss/);
   const event = await context.request.post(origin+'/api/host/public-events',{headers:{origin},data:{name:'Prepared browser test',requestKey:crypto.randomUUID(),timeZone:'Asia/Ho_Chi_Minh',startsAt:new Date(Date.now()+60000).toISOString(),endsAt:new Date(Date.now()+86400000).toISOString()}});
   assert.equal(event.status(),201); const created=await event.json();
   await page.locator('#event-refresh').click(); await page.locator('#event-select').selectOption(created.id); await page.locator('#station-enroll').click();
@@ -55,6 +56,15 @@ try {
   });
   await page.locator('#preparation-check').click(); await page.waitForFunction(()=>document.getElementById('preparation-capacity').textContent.startsWith('2 usable'));
   assert.match(await page.locator('#preparation-pending').textContent(),/1 retained/);
+  // Quota can shrink after preparation. The host must refuse readiness and
+  // display the storage outcome while keeping the existing journal and caches.
+  await page.evaluate(()=>Object.defineProperty(navigator.storage,'estimate',{configurable:true,value:async()=>({quota:1024,usage:1024})}));
+  await page.locator('#preparation-check').click();
+  await page.waitForFunction(()=>document.getElementById('preparation-storage').textContent.includes('Insufficient storage headroom'));
+  assert.equal(await page.locator('#open-game').getAttribute('href'),'/');
+  await page.evaluate(()=>delete navigator.storage.estimate);
+  await page.locator('#preparation-check').click();await page.waitForFunction(()=>document.getElementById('preparation-status').textContent.startsWith('Ready for offline'));
+  assert.match(await page.locator('#preparation-capacity').textContent(),/2 usable/);
   const original = (await context.cookies()).find(cookie=>cookie.name==='cc_player');
   await context.clearCookies({name:'cc_player'}); await page.reload();
   await page.waitForFunction(()=>document.getElementById('preparation-status').textContent.includes('Original ownership unavailable'));

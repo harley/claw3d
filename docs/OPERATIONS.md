@@ -378,6 +378,16 @@ action requires an operator-selected count and reconciliation deadline, within
 the configured permit policy. The policy stays disabled by default; this UI does
 not configure it. Preparation verifies the complete current public asset pack,
 strict IndexedDB writes and the existing physical lock before installing a pool.
+Explicit preparation and repair request persistent storage and read its actual
+grant status. Readiness checks estimated quota minus usage against a full new
+pack (when not already verified active), 1 MiB journal overhead and 64 KiB per
+retained/new slot, without deleting old packs. It rechecks headroom after asset
+writes and before issuance/repair. These are conservative storage allowances,
+not a guarantee of future writes or a measured per-turn size. Missing quota or
+insufficient headroom refuses readiness and new issuance while preserving data.
+Denied or unavailable persistence is displayed as an eviction risk; it does not
+imply writes failed. Even granted persistence cannot protect against clearing
+site data, disk loss or every power-loss boundary.
 No service worker or camera starts merely by visiting Host setup.
 
 Readiness displays active prepared BUILD versus current BUILD, usable starts and
@@ -389,7 +399,9 @@ prepared game and logs the host out while retaining public/station ownership.
 
 A lost/expired owner, inaccessible storage, unknown journal version, mismatched
 pool identity, clock rollback, held authority or mismatched/incomplete pack
-refuses readiness. Keep site data. **Repair existing preparation** verifies the
+refuses readiness. Known server ownership/authority refusals are held durably
+before manifest or worker verification can fail, blocking later offline starts.
+Keep site data. **Repair existing preparation** verifies the
 current pack and refreshes only existing same-owner pools; it preserves slot
 consumption, frozen rules and the original reconciliation deadline. It does not
 issue replacement ownership, extend a deadline or create another pool. Initial
