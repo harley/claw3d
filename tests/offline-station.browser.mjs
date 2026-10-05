@@ -146,7 +146,7 @@ try {
     await game.goto(origin + '/prepared/index.html?setup=manual');
     await game.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true', null, { timeout: 30000 });
     assert.equal(await game.locator('#try-notice').isVisible(), true);
-    assert.equal(await game.locator('.brand img').evaluate(img => img.complete && img.naturalWidth > 0), true);
+    assert.equal(await game.locator('.brand').textContent(), 'claw.');
     assert.match(await game.locator('#build-info').textContent(), /LOCAL PREPARED BUILD/);
     // The two-hand URL reload must keep the same pack while offline.
     await game.goto(origin + '/prepared/index.html?setup=manual&controls=dual');

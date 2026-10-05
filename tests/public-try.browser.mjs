@@ -47,8 +47,8 @@ try {
   assert.equal(await page.locator('#home-intro').isVisible(), true);
   await page.locator('#play').click();
   await page.waitForFunction(() => window.mediaCalls === 1);
-  // The built logo must load through the anonymous static-asset boundary.
-  assert.equal(await page.locator('.brand img').evaluate(img => img.complete && img.naturalWidth > 0), true);
+  // Anonymous entry retains the text wordmark through camera setup.
+  assert.equal(await page.locator('.brand').textContent(), 'claw.');
   assert.equal(await page.locator('#try-notice').isVisible(), true);
   assert.equal(await page.locator('#registration').isVisible(), false);
   assert.equal(await page.locator('#camera-setup').isVisible(), true);

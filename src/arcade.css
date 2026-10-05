@@ -37,10 +37,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, #scene:focus-vi
   top: 24px; left: 28px; right: 28px;
   display: flex; justify-content: space-between; align-items: center; gap: 12px;
 }
-.brand { --logo-width: 90px; --logo-clear: 8px; }
-.brand > strong { display: block; margin-bottom: var(--logo-clear); font-size: 28px; font-weight: 900; letter-spacing: 3px; }
-.brand img { display: block; width: var(--logo-width); height: auto; }
-.brand small { display: block; font-size: 9px; letter-spacing: 1.8px; color: #b3b3b3; margin-top: var(--logo-clear); }
+.brand { line-height: 1; }
+.brand > strong { display: block; font-size: 34px; font-weight: 900; letter-spacing: -1.5px; }
 .header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .header-actions > .hand-toggle { position: absolute; right: 0; top: 58px; }
 .run-active .header-actions > .hand-toggle { display: none; }
@@ -383,6 +381,8 @@ dialog .menu-guide-hand { font-size: 52px; }
 #scores-dialog .leaderboard li { font-size: 15px; padding: 14px 0; }
 #scores-dialog .leaderboard li strong { white-space: normal; overflow-wrap: anywhere; }
 #board-count { margin: 0; text-align: center; font-size: 12px; color: #9db0ca; }
+#scores-dialog #board-count { margin-top: 20px; }
+#scores-dialog #board-range { margin: 6px 0 0; text-align: center; }
 #scores-dialog #menu-guide { flex-direction: row; }
 #scores-dialog .menu-guide-hand { font-size: 32px; }
 #scores-dialog #menu-guide strong { font-size: 16px; }
@@ -410,8 +410,6 @@ dialog .menu-guide-hand { font-size: 52px; }
 @media (min-width: 1600px) {
   #arcade { --hud-height: 144px; --camera-width: 380px; }
   .masthead { top: 32px; left: 34px; }
-  .brand { --logo-width: 120px; --logo-clear: 8px; }
-  .brand small { font-size: 12px; }
   .hud-numbers > div { min-width: 155px; padding: 0 30px; }
   .hud-numbers small { font-size: 13px; }
   .hud-numbers b { font-size: 40px; }
@@ -422,8 +420,6 @@ dialog .menu-guide-hand { font-size: 52px; }
 }
 @media (max-width: 1150px) {
   #arcade { --hud-height: 128px; }
-  .brand { --logo-width: 90px; --logo-clear: 8px; }
-  .brand small { font-size: 8px; letter-spacing: 1px; }
   .player-hud { top: 25px; }
   .hud-numbers > div { min-width: 92px; padding: 0 14px; }
   #score, #timer { font-size: 40px; }
@@ -436,9 +432,7 @@ dialog .menu-guide-hand { font-size: 52px; }
 @media (max-width: 700px) and (orientation: portrait) {
   #arcade { --hud-height: 150px; --camera-bottom: 45px; --camera-width: 210px; min-height: 480px; }
   .masthead { top: 16px; left: 16px; right: 16px; }
-  .brand { --logo-width: 72px; --logo-clear: 4px; }
-  .brand > strong { font-size: 24px; }
-  .brand small { font-size: 7px; letter-spacing: .7px; }
+  .brand > strong { font-size: 28px; }
   .header-actions { gap: 2px; }
   .header-actions button { padding: 6px; min-width: 32px; min-height: 36px; font-size: 13px; }
   .header-actions .icon-button { font-size: 16px; min-width: 32px; min-height: 36px; padding: 5px; }
@@ -481,9 +475,7 @@ dialog .menu-guide-hand { font-size: 52px; }
 @media (max-height: 600px) and (orientation: landscape) {
   #arcade { --hud-height: 78px; --camera-bottom: 28px; --camera-width: 155px; min-height: 320px; }
   .masthead { top: 12px; left: 16px; right: 16px; }
-  .brand { --logo-width: 72px; --logo-clear: 4px; }
-  .brand > strong { font-size: 24px; }
-  .brand small { font-size: 7px; max-width: 170px; }
+  .brand > strong { font-size: 28px; }
   .player-hud { top: 12px; }
   .hud-numbers > div { min-width: 78px; padding: 0 12px; }
   .hud-numbers small { font-size: 8px; }
@@ -639,7 +631,6 @@ dialog .menu-guide-hand { font-size: 52px; }
 #home-intro { position: absolute; z-index: 2; left: 34px; top: 30%; width: min(24vw, 300px); pointer-events: none; }
 #home-intro h1 { font-size: clamp(26px, 2.5vw, 38px); line-height: 1.1; letter-spacing: -1px; margin: 16px 0; text-wrap: balance; }
 #home-intro p { color: #c3d1e6; font-size: 15px; line-height: 1.6; }
-#home-intro small { display: block; color: #95a9c5; font-size: 12px; line-height: 1.6; max-width: 230px; }
 .home-play .round-copy, .home-play .hand-toggle, .home-play #phone-setup { display: none; }
 @media (max-width: 1050px) {
   #home-intro { left: 20px; width: 23vw; }
@@ -649,12 +640,9 @@ dialog .menu-guide-hand { font-size: 52px; }
   #home-intro { top: auto; bottom: 180px; left: 16px; right: 16px; width: auto; text-align: center; }
   #home-intro h1 { margin: 0 0 8px; font-size: 24px; }
   #home-intro h1 br { display: none; }
-  #home-intro .eyebrow, #home-intro p { display: none; }
-  #home-intro small { max-width: none; font-size: 11px; }
 }
 @media (max-height: 550px) and (min-width: 651px) {
   #home-intro { top: 140px; }
   #home-intro h1 { font-size: 22px; margin: 10px 0; }
   #home-intro p { font-size: 12px; margin: 8px 0; }
-  #home-intro small { font-size: 10px; }
 }
