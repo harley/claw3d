@@ -14,6 +14,7 @@ try {
   await page.goto('http://127.0.0.1:4196/?setup=manual');
   await page.waitForFunction(() => window.__littleCloud);
   await page.waitForFunction(() => [...document.querySelectorAll('.prize-tag')].every(tag => tag.hidden));
+  const three = await page.evaluateHandle(() => import('/node_modules/three/build/three.module.js'));
 
   await page.locator('#play').click();
   await page.waitForFunction(() => window.__littleCloud.snapshot().event.handCamera.running);
@@ -28,9 +29,10 @@ try {
       const state = await page.evaluate(() => window.__littleCloud.snapshot());
       const toy = state.toys.find(item => item.id === id);
       assert.ok(toy, `toy ${id} exists`);
-      if (state.aligned === id) break;
       const dx = toy.position[0] - state.position.x, dz = toy.position[2] - state.position.z;
-      await cameraInput(page, { x: Math.abs(dx) < .025 ? 0 : Math.sign(dx), z: Math.abs(dz) < .025 ? 0 : Math.sign(dz) });
+      // Stop at the toy centre, not the first alignment while the claw swings.
+      if (state.aligned === id && Math.abs(dx) < .025 && Math.abs(dz) < .025) break;
+      await cameraInput(page, { x: Math.max(-1, Math.min(1, dx / .25)), z: Math.max(-1, Math.min(1, dz / .25)) });
       await page.waitForTimeout(100);
     }
     await cameraInput(page, { x: 0, z: 0 });
@@ -40,7 +42,6 @@ try {
   async function inspectTarget(id, expectedSide) {
     // A swinging claw can lose alignment while an import or browser call yields.
     // Read the target, game pose and bounds together after the asynchronous work.
-    const three = await page.evaluateHandle(() => import('/node_modules/three/build/three.module.js'));
     const observation = await page.waitForFunction(({ id, T }) => {
       const state = window.__littleCloud.snapshot(true);
       const toy = state.toys.find(item => item.id === id);
@@ -62,7 +63,6 @@ try {
     }, { id, T: three });
     const target = await observation.jsonValue();
     await observation.dispose();
-    await three.dispose();
     assert.equal(target.visible, true);
     assert.equal(target.count, 1, 'only the active toy gets an emphasized label');
     assert.match(target.text, /^\d{3}$/);
@@ -77,6 +77,8 @@ try {
   }
 
   await aimToy('bonbon');
+  // Regress the delayed observation that previously outlived a transient alignment.
+  await page.waitForTimeout(2000);
   await inspectTarget('bonbon', 'left');
   await page.screenshot({ path: '.screenshots/issue-95-target-label-desktop.png' });
 
@@ -96,6 +98,7 @@ try {
   assert.equal(await page.locator('.prize-tag.targeted').count(), 0, 'no toy label remains emphasized when aiming away');
   assert.equal(await page.locator('.prize-tag:not([hidden])').count(), 0, 'all point labels hide when no toy is targeted');
   assert.deepEqual(errors, []);
+  await three.dispose();
   console.log('PASS active target plaque readability, edge placement, narrow layout, and untargeted state');
 } finally {
   await browser.close();
