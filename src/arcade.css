@@ -345,29 +345,43 @@ dialog .menu-guide-hand { font-size: 52px; }
 
 /* Cabinet tutorials are presentation only. Actual gesture evidence owns input. */
 #dual-hand-guide, #dual-drop-target, #dual-palm-cursor { position: fixed; pointer-events: none; z-index: 12; }
-#dual-hand-guide { transform: translate(-50%, -100%); width: 190px; text-align: center; color: #83eff7; }
-#dual-hand-guide span { display: block; padding: 6px 9px; border-radius: 9px; background: #102432ed; font-size: 13px; font-weight: 700; }
-.dual-demo { height: 65px; position: relative; }
-.dual-demo svg, #dual-palm-cursor svg { width: 56px; height: 56px; fill: #12283999; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
-.dual-demo svg { position: absolute; left: calc(50% - 28px); top: 0; }
-.demo-fist { opacity: 0; }
-#dual-hand-guide[data-stage="grip"] .demo-palm { animation: dual-palm-demo 2.4s infinite; }
-#dual-hand-guide[data-stage="grip"] .demo-fist { animation: dual-fist-demo 2.4s infinite; }
-#dual-hand-guide[data-stage="ready"] .dual-demo { display: none; }
-#dual-hand-guide[data-stage="drop"] { color: #ffd17a; }
-#dual-hand-guide[data-stage="drop"] .dual-demo { position: absolute; top: calc(100% + var(--drop-demo-offset)); width: 100%; }
-#dual-hand-guide[data-stage="drop"] .demo-palm { transform: none; animation: dual-drop-demo 2.4s infinite; }
+#dual-hand-guide {
+  --guide-accent: #35c9ff;
+  width: max-content;
+  min-width: 230px;
+  max-width: min(310px, calc(100vw - 36px));
+  padding: 12px 16px 9px;
+  border: 1px solid #5d7897;
+  border-radius: 3px;
+  background: #060b13f2;
+  box-shadow: 0 0 0 2px #02050aaa, 0 0 24px color-mix(in srgb, var(--guide-accent) 30%, transparent);
+  text-align: center;
+}
+#dual-hand-guide[data-hand="right"] { --guide-accent: #ffc62e; }
+#dual-hand-guide .dual-guide-instruction {
+  display: block;
+  padding-bottom: 8px;
+  border-bottom: 4px solid var(--guide-accent);
+  color: #f5f1e8;
+  font: 900 clamp(18px, 1.55vw, 23px)/1 ui-monospace, "Courier New", monospace;
+  letter-spacing: 0;
+  text-shadow: 1px 0 currentColor, -1px 0 currentColor, 0 2px 0 #000;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+#dual-hand-guide .dual-guide-role {
+  display: block;
+  margin-top: 7px;
+  color: var(--guide-accent);
+  font: 900 12px/1 ui-monospace, "Courier New", monospace;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+#dual-palm-cursor svg { width: 56px; height: 56px; fill: #12283999; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
 #dual-drop-target { border: 2px dashed #ffd17a; background: #ffd17a12; border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 18px #ffd17a45; }
 #dual-palm-cursor { color: #ffd17a; transform: translate(-50%, -50%); }
 #dual-palm-cursor[data-open="false"] { color: #8292a4; opacity: .5; }
-@keyframes dual-palm-demo { 0%, 35%, 90%, 100% { opacity: .85; } 45%, 80% { opacity: 0; } }
-@keyframes dual-fist-demo { 0%, 35%, 90%, 100% { opacity: 0; } 45%, 80% { opacity: .85; } }
-@keyframes dual-drop-demo { 0%, 15% { transform: translate(-25px, 22px); opacity: .35; } 65%, 85% { transform: translate(0, 0); opacity: .85; } 100% { transform: translate(0, 0); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) {
-  #dual-hand-guide .dual-demo svg { animation: none !important; }
-  #dual-hand-guide[data-stage="grip"] .demo-palm { left: calc(50% - 54px); opacity: .85; }
-  #dual-hand-guide[data-stage="grip"] .demo-fist { left: calc(50% + 2px); opacity: .85; }
-}
 
 /* Scores use one live board: a desktop sidebar or an on-demand phone dialog. */
 #scores-open { display: none; }
@@ -394,17 +408,14 @@ dialog .menu-guide-hand { font-size: 52px; }
 #arcade:has(#menu-guide:not([hidden])) #action-copy { opacity: 0; }
 #arcade:has(.camera-guidance) .controls { top: auto; bottom: calc(var(--camera-bottom) + 8px); left: 24px; width: var(--camera-width); transform: none; z-index: 5; }
 #action-copy.camera-guidance #status { font-size: 17px; text-transform: none; background: #091322f2; padding: 10px; border: 1px solid #45648b; border-radius: 6px; }
+@media (min-width: 701px) and (min-height: 601px) {
+  #arcade:has(.camera-guidance) .controls { inset: var(--hud-height) 0 0; width: auto; justify-content: center; }
+}
 #arcade:has(.camera-guidance) #play-options { position: fixed; top: auto; bottom: 28px; left: 50vw; transform: translateX(-50%); }
 #camera-preview.guided .camera-feedback { display: none; }
 #camera-preview.in-play .camera-feedback, #arcade:has(> #menu-guide:not([hidden])) .camera-feedback { display: none; }
-#dual-hand-guide { position: absolute; left: 0 !important; top: 0 !important; transform: translateY(-100%); width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid #45648b; border-radius: 6px 6px 0 0; background: #091322f2; }
-#dual-hand-guide .dual-demo { position: relative; flex: 0 0 40px; height: 45px; width: 40px; margin: 0; }
-#dual-hand-guide .dual-demo svg { width: 40px; height: 45px; left: 0; }
-#dual-hand-guide span { font-size: 15px; padding: 0; text-align: left; background: none; }
-#dual-hand-guide[data-stage="drop"] .dual-demo { position: relative; top: auto; width: 40px; }
-#camera-preview:has(#dual-hand-guide:not([hidden])) { overflow: visible; }
-#camera-preview:has(#dual-hand-guide:not([hidden])) .camera-feedback { display: none; }
 #jackpot-signal { position: fixed; right: 28px; bottom: 80px; margin: 0; padding: 12px; border: 0; background: #080e1ce8; border-radius: 6px; }
+body:has(#dual-hand-guide:not([hidden])) #jackpot-signal { bottom: 188px; }
 #shared-access { bottom: 166px; }
 #try-notice { z-index: 8; }
 @media (min-width: 1600px) {
@@ -416,7 +427,7 @@ dialog .menu-guide-hand { font-size: 52px; }
   #score, #timer { font-size: 64px; }
   #turn-chips { top: 77px; left: 30px; }
   #player-name { top: 99px; font-size: 14px; }
-  #dual-hand-guide span, #action-copy.camera-guidance #status { font-size: 20px; }
+  #action-copy.camera-guidance #status { font-size: 20px; }
 }
 @media (max-width: 1150px) {
   #arcade { --hud-height: 128px; }
@@ -471,6 +482,9 @@ dialog .menu-guide-hand { font-size: 52px; }
   #jackpot-signal { bottom: 190px; right: 12px; padding: 8px; }
   #shared-access { bottom: 303px; max-width: calc(100% - 24px); }
   #try-notice[open] { top: 60px; bottom: auto; }
+  #dual-hand-guide { min-width: 190px; padding: 9px 12px 7px; }
+  #dual-hand-guide .dual-guide-instruction { padding-bottom: 6px; font-size: 15px; }
+  #dual-hand-guide .dual-guide-role { margin-top: 5px; font-size: 10px; }
 }
 @media (max-height: 600px) and (orientation: landscape) {
   #arcade { --hud-height: 78px; --camera-bottom: 28px; --camera-width: 155px; min-height: 320px; }
@@ -487,7 +501,7 @@ dialog .menu-guide-hand { font-size: 52px; }
   .header-actions .hand-toggle button { padding: 5px 8px; font-size: 10px; }
   #camera-preview { left: 12px; }
   #arcade:has(.camera-guidance) .controls { left: 12px; }
-  #action-copy.camera-guidance #status, #dual-hand-guide span { font-size: 12px; }
+  #action-copy.camera-guidance #status { font-size: 12px; }
   .controls { top: 86px; }
   #play-options { top: auto; bottom: 32px; }
   #shared-access { bottom: 130px; }

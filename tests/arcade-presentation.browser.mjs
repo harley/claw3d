@@ -86,11 +86,15 @@ try {
  await page.waitForFunction(() => document.getElementById('status').textContent === 'SHOW ONE HAND');
  assert.equal(await page.locator('#action-copy').evaluate(el => getComputedStyle(el).opacity), '1', 'quiet aiming never hides recovery');
  for (const viewport of [{ width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 1366, height: 768 }, { width: 390, height: 844 }, { width: 844, height: 390 }]) {
-  await page.setViewportSize(viewport);
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  const framing = await page.evaluate(() => ({ sign: window.__littleCloud.snapshot().marquee, scene: document.getElementById('scene').getBoundingClientRect().toJSON() }));
+ await page.setViewportSize(viewport);
+ await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const framing = await page.evaluate(() => ({ sign: window.__littleCloud.snapshot().marquee, scene: document.getElementById('scene').getBoundingClientRect().toJSON(), guidance: document.getElementById('action-copy').getBoundingClientRect().toJSON() }));
   assert.ok(framing.sign.cloudTop.y >= framing.scene.top + Math.max(12, framing.scene.height * .02), `cloud has headroom at ${viewport.width}: ${JSON.stringify(framing)}`);
   assert.ok(framing.sign.top.y >= framing.scene.top && framing.sign.bottom.y <= framing.scene.bottom, 'whole LED panel stays within the scene');
+  if (viewport.width === 1440) {
+   assert.ok(Math.abs(framing.guidance.x + framing.guidance.width / 2 - viewport.width / 2) < 2, 'desktop hand recovery is horizontally centred');
+   assert.ok(Math.abs(framing.guidance.y + framing.guidance.height / 2 - (framing.scene.top + framing.scene.bottom) / 2) < framing.scene.height * .12, 'desktop hand recovery is centred in the play area');
+  }
   await page.screenshot({ path: `.screenshots/marquee-layout-${viewport.width}.png` });
  }
  await page.setViewportSize({ width: 1440, height: 900 });

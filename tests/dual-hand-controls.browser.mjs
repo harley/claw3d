@@ -35,6 +35,11 @@ try {
   assert.ok(await page.locator('#menu-guide svg path').evaluate(path => path.getScreenCTM().a < 0), 'left menu invitation uses the player-view shadow');
   await page.locator('#play').click();await page.locator('#name').fill('Synthetic dual check');await page.locator('#name').press('Enter');
   const frame=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+  const assertHandArtwork = async (selector, role) => {
+    const direction = await page.locator(`${selector} path`).evaluateAll(paths => paths.map(path => Math.sign(path.getScreenCTM().a)));
+    assert.ok(direction.length > 0);
+    assert.ok(direction.every(sign => sign === (role === 'left' ? -1 : 1)), `${role} silhouette matches the player-view shadow`);
+  };
   const aim=async()=>{
     const first=await page.evaluate(()=>window.__littleCloud.snapshot().event.turn===0);
     if(first){
@@ -53,18 +58,6 @@ try {
     }else await page.waitForFunction(()=>window.__littleCloud.snapshot().phase==='aim',{},{timeout:10000});
     await frame();
   };
-  // Contract: role artwork follows the player-view shadow, including CSS animation.
-  // Existing role tests cover input ownership but do not inspect rendered silhouettes.
-  const assertHandArtwork = async (selector, role) => {
-    for (const reducedMotion of ['reduce', 'no-preference']) {
-      await page.emulateMedia({ reducedMotion });
-      const direction = await page.locator(`${selector} path`).evaluateAll(paths =>
-        paths.map(path => Math.sign(path.getScreenCTM().a)));
-      assert.ok(direction.length > 0);
-      assert.ok(direction.every(sign => sign === (role === 'left' ? -1 : 1)), `${role} silhouette matches player-view shadow (${reducedMotion})`);
-    }
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-  };
   await page.waitForFunction(() => controller.getControlProfile() === 'dual');
   await frame(); // Let the menu-to-game boundary reset ownership before sending a camera sample.
   await page.waitForFunction(() => {
@@ -72,7 +65,15 @@ try {
     return document.querySelector('#dual-hand-guide')?.dataset.stage === 'acquire';
   });
   assert.equal(await page.locator('#status').textContent(), 'SHOW LEFT HAND');
-  await assertHandArtwork('#dual-hand-guide .dual-demo', 'left');
+  const leftGuide = await page.evaluate(() => ({
+    guide: document.getElementById('dual-hand-guide').getBoundingClientRect().toJSON(),
+    stick: window.__littleCloud.snapshot().machineControls.stick,
+    hand: document.getElementById('dual-hand-guide').dataset.hand,
+    role: document.querySelector('.dual-guide-role').textContent,
+    instruction: document.querySelector('.dual-guide-instruction').textContent,
+  }));
+  assert.equal(leftGuide.hand, 'left');assert.equal(leftGuide.role, 'left hand');assert.equal(leftGuide.instruction, 'Show your hand');
+  assert.ok(leftGuide.guide.right <= leftGuide.stick.x - leftGuide.stick.radius * 2, 'left-hand HUD floats beyond the joystick side of the cabinet');
   await page.screenshot({ path: '.screenshots/left-hand-guide.png' });
   await aim();
   assert.equal(await page.evaluate(()=>controller.getControlProfile()),'dual');
@@ -220,7 +221,17 @@ try {
     await acquire();await page.evaluate(()=>testAim(.80,.22));
     await burst([left]);await frame();
     assert.equal(await page.locator('#status').textContent(),'OPEN RIGHT PALM TO DROP');
-    await assertHandArtwork('#dual-hand-guide .dual-demo', 'right');
+    const rightGuide = await page.evaluate(() => ({
+      guide: document.getElementById('dual-hand-guide').getBoundingClientRect().toJSON(),
+      drop: window.__littleCloud.snapshot().machineControls.drop,
+      hand: document.getElementById('dual-hand-guide').dataset.hand,
+      role: document.querySelector('.dual-guide-role').textContent,
+      instruction: document.querySelector('.dual-guide-instruction').textContent,
+      fontSize: parseFloat(getComputedStyle(document.querySelector('.dual-guide-instruction')).fontSize),
+    }));
+    assert.equal(rightGuide.hand, 'right');assert.equal(rightGuide.role, 'right hand');assert.equal(rightGuide.instruction, 'Open palm to DROP');
+    assert.ok(rightGuide.guide.left >= rightGuide.drop.x + rightGuide.drop.radius * 2, 'right-hand HUD floats beyond the DROP side of the cabinet');
+    assert.ok(rightGuide.fontSize >= 20, 'desktop instruction retains arcade-headline scale');
     assert.equal(await page.locator('#action-copy').evaluate(el=>el.classList.contains('quiet')),true);
     assert.equal(await page.locator('#camera-overlay').getAttribute('data-right'),'open');
     await page.waitForFunction(()=>document.getElementById('jackpot-signal').hidden);
