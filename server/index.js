@@ -144,6 +144,17 @@ export async function createPilotServer(options) {
           }
           throw new ApiError(405, 'Method not allowed.');
         }
+        if (path === '/api/host/station/preparation' || path === '/api/host/station/owner') {
+          if (!publicPlay) throw new ApiError(404, 'Public ranking is unavailable.');
+          if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');
+          if (path.endsWith('/preparation') && req.method === 'GET') return json(res, 200, publicPlay.preparationStatus(req));
+          if (path.endsWith('/owner') && req.method === 'POST') {
+            limit(req, auth); const input = await body(req);
+            if (!input || Object.keys(input).length) throw new ApiError(400, 'Invalid preparation request.');
+            return json(res, 200, publicPlay.prepareOwner(req, res));
+          }
+          throw new ApiError(405, 'Method not allowed.');
+        }
         if (path === '/api/host/station/permits' || path === '/api/host/station/revoke') {
           if (!publicPlay) throw new ApiError(404, 'Public ranking is unavailable.');
           if (auth.role !== 'host') throw new ApiError(403, 'Host access required.');

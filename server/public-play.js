@@ -99,6 +99,19 @@ export function createPublicPlay({ database, body, json, cookies, cookie, client
   return {
     events,
     issuePermits: permits.issue,
+    preparationStatus: permits.status,
+    prepareOwner(req, res) {
+      // Host-only explicit fresh preparation. Never replace expired ownership.
+      if (cookies(req).cc_player) { owner(req); return { ownerValid: true }; }
+      if (!startsEnabled || !permitPolicy) throw new ApiError(403, 'Prepared starts are disabled.', 'permits_disabled');
+      const value = secret(), player = randomUUID();
+      database.transaction(() => {
+        db.prepare('INSERT INTO owners VALUES (?)').run(player);
+        db.prepare('INSERT INTO public_players VALUES (?,?,?)').run(hash(value), player, now() + age * 1000);
+      });
+      res.setHeader('Set-Cookie', cookie('cc_player', value, age));
+      return { ownerValid: true };
+    },
     revoke(req) {
       const current = generation(req);
       if (current) database.transaction(() => {

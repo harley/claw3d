@@ -584,3 +584,32 @@ test('custom event attribution survives repeated migrations and prepared live ad
     assert.equal(result.event?.id, source === 'live' ? event.id : undefined);
   }
 });
+
+test('host preparation status is owner-scoped; explicit fresh ownership refuses expired replacement and disabled policy', async t => {
+  const f = await fixture(t, { publicPermitPolicy: permitPolicy }), host = await f.host();
+  assert.equal((await f.request('/api/host/station/preparation')).status,401);
+  const empty = await (await f.request('/api/host/station/preparation',{cookie:host})).json(); assert.equal(empty.ownerValid,false); assert.deepEqual(empty.pools,[]);
+  const created = await f.request('/api/host/station/owner',{cookie:host,data:{}}); assert.equal(created.status,200);
+  const player = f.cookieOf(created), cookie = `${host}; ${player}`;
+  assert.equal((await (await f.request('/api/host/station/preparation',{cookie})).json()).ownerValid,true);
+  const before = f.app.database.db.prepare('SELECT COUNT(*) n FROM owners').get().n;
+  assert.equal((await f.request('/api/host/station/owner',{cookie,data:{}})).status,200);
+  assert.equal(f.app.database.db.prepare('SELECT COUNT(*) n FROM owners').get().n,before);
+  f.setTime('2027-01-10T12:00:00+07:00');
+  const expiredCookie = `${await f.host()}; ${player}`;
+  const beforeExpiredRequest = f.app.database.db.prepare('SELECT COUNT(*) n FROM owners').get().n;
+  assert.equal((await f.request('/api/host/station/owner',{cookie:expiredCookie,data:{}})).status,401);
+  assert.equal(f.app.database.db.prepare('SELECT COUNT(*) n FROM owners').get().n,beforeExpiredRequest);
+  const disabled = await fixture(t); assert.equal((await disabled.request('/api/host/station/owner',{cookie:await disabled.host(),data:{}})).status,403);
+});
+
+test('host pool status preserves original capacity and deadline and excludes another public owner', async t => {
+  const f = await prepared(t,{count:4});
+  const status = await (await f.request('/api/host/station/preparation',{cookie:f.authorized})).json();
+  assert.equal(status.pools.length,1); assert.equal(status.pools[0].reconcileBy,f.input.reconcileBy); assert.equal(status.pools[0].unregisteredSlots,4);
+  await f.register('reconcile');
+  const next = await (await f.request('/api/host/station/preparation',{cookie:f.authorized})).json(); assert.equal(next.pools[0].unregisteredSlots,3);
+  const another = await f.request('/api/play/session',{data:{}});
+  const other = `${f.host}; ${f.cookieOf(another)}`;
+  assert.deepEqual((await (await f.request('/api/host/station/preparation',{cookie:other})).json()).pools,[]);
+});

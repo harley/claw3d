@@ -252,7 +252,7 @@ Public and shared staff score recovery uses one page-owned scheduler: completed 
 
 The public leaderboard now combines all saved public plays. The former Hanoi · 29 Sep selector and secondary result rank are removed because event-day association did not reliably capture booth activity. Existing server event associations and compatibility routes remain available for historical recovery; they are not a complete event attendance record. No saved scores are deleted or reassigned.
 
-`/staff` opens a dedicated Host setup page with one `HOST_CODE` sign-in, reusable event schedules, this browser's enrollment status, **Use this computer**, and **Open game**. Hosts create a named start/end schedule in their browser's disclosed time zone, prepare the selected event browser, and read host-only run counts and exports. Schedules are fixed; acceptance-time event attribution survives retries, later enrollment and finishing after the event. Preparing an event does not enroll a browser or reset scores. Enrollment replaces the previous computer. Event reports count recorded runs, not unique visitors or attendance. It loads no game, camera or telemetry. Opening the game signs the host out while retaining the station cookie. The public footer calls it **Host setup**. Staff test boards and legacy ticket tools remain at explicit recovery URLs; they are not part of public play or normal event setup.
+`/staff` opens a dedicated Host setup page with one `HOST_CODE` sign-in, reusable event schedules, this browser's enrollment status, **Enroll this browser for the selected event**, and **Open game**. Hosts create a named start/end schedule in their browser's disclosed time zone, prepare the selected event browser, and read host-only run counts and exports. Schedules are fixed; acceptance-time event attribution survives retries, later enrollment and finishing after the event. Preparing an event does not enroll a browser or reset scores. Enrollment replaces the previous computer. Event reports count recorded runs, not unique visitors or attendance. It loads no game, camera or telemetry. Opening the game signs the host out while retaining the station cookie. The public footer calls it **Host setup**. Staff test boards and legacy ticket tools remain at explicit recovery URLs; they are not part of public play or normal event setup.
 
 The visible camera notice and `/privacy` link appear before camera or diagnostic collection. The privacy page opens separately so play is not interrupted. Camera video and hand landmarks stay on-device and are not recorded or uploaded. Ranked names, scores and timestamps are public and remain until operator removal; the separate bounded diagnostics expire after 30 days. Public feedback stays category-only and diagnostics exclude names/run IDs. A preview filter is deferred: segmentation would add inference work and needs a hardware performance comparison before adoption.
 
@@ -350,8 +350,23 @@ with synchronization status separate and no invented rank. Next player remains
 available offline. Server confirmation enables final-name edits and server ranks;
 late receipts cannot reopen an older prepared result over the next player. Only
 live server admission can establish Hanoi association; deferred results remain
-All plays. Host readiness/recovery integration and physical outage acceptance are
-still required before enablement. See OPERATIONS for the retained-data contract.
+All plays. Physical outage acceptance is still required before enablement.
+See OPERATIONS for the retained-data contract.
+
+Host setup separately prepares bounded offline starts with an explicit count and
+original reconciliation deadline. Readiness combines server and retained local
+consumption, verified current assets, storage, original ownership and compatible
+rules. Recovery can refresh existing authority or download local evidence; it
+cannot replace ownership or extend deadlines. Unknown journal versions refuse
+play while preserving evidence. Preparation requests persistent storage and shows
+its grant status, storage headroom and durability limits. Insufficient or unknown
+headroom refuses readiness; denied persistence warns that browser eviction can
+lose results. Clearing data or disk loss remains a risk even with persistence.
+Old packs and pending outcomes are retained.
+Opening a ready prepared game signs out host access; Host setup itself never
+loads camera or gameplay. Preparation remains disabled unless operators configure
+the existing permit policy. Physical outage acceptance remains separate.
+
 
 ## Reusable event baseline
 

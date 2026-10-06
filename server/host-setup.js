@@ -1,4 +1,4 @@
-// This page deliberately loads no game, camera, telemetry or score client.
+// This page loads host preparation/storage controls only: no game, camera or telemetry.
 export function hostSetupPage(authenticated) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080e1c"><title>Host setup · Claw</title>
@@ -8,8 +8,9 @@ export function hostSetupPage(authenticated) {
 <header>CLAW · MADE BY CODERPUSH</header><h1>Host setup</h1>
 <form id="login"${authenticated ? ' hidden' : ''}><p>Sign in once to set up this computer for the event.</p><label for="code">Host code</label><input id="code" type="password" autocomplete="current-password" maxlength="128" required><button id="sign-in">Sign in</button></form>
 <div id="setup"${authenticated ? '' : ' hidden'}>
-<section><h2>Event browser</h2><label for="event-select">Choose an event</label><select id="event-select" disabled></select><p id="event-schedule"></p><p id="station-status" role="status">Checking this browser…</p><button id="status-retry" hidden>Retry</button><button id="station-enroll" disabled>Use this computer</button><button id="event-refresh">Refresh status and counts</button><p><small>Enrollment replaces the previous event computer. Every completed play stays on the public leaderboard. Event reports include only starts accepted on the enrolled browser during the schedule.</small></p><p id="event-counts"></p><a id="event-export" download="cloud-claw-event-results.json" hidden>Download event results (JSON)</a></section>
+<section><h2>Event browser</h2><label for="event-select">Choose an event</label><select id="event-select" disabled></select><p id="event-schedule"></p><p id="station-status" role="status">Checking this browser…</p><button id="status-retry" hidden>Retry</button><button id="station-enroll" disabled>Enroll this browser for the selected event</button><button id="event-refresh">Refresh status and counts</button><p><small>Enrollment replaces the previous event computer. Every completed play stays on the public leaderboard. Event reports include only starts accepted on the enrolled browser during the schedule.</small></p><p id="event-counts"></p><a id="event-export" download="cloud-claw-event-results.json" hidden>Download event results (JSON)</a></section>
 <section><h2>Prepare the next event</h2><form id="event-create"><label for="event-name">Event name</label><input id="event-name" maxlength="60" required placeholder="Friday arcade · Ho Chi Minh City"><div class="schedule"><label for="event-start">Starts<input id="event-start" type="datetime-local" required></label><label for="event-end">Ends<input id="event-end" type="datetime-local" required></label></div><p id="event-time-zone"><small></small></p><p><small>Schedules are fixed after creation. Preparing an event does not enroll this browser or change existing results.</small></p><button id="event-create-button">Create event</button></form><p id="event-create-status" role="status"></p></section>
+<section><h2>Offline preparation</h2><p id="preparation-status" role="status">Offline readiness has not been checked.</p><p id="preparation-build"></p><p id="preparation-capacity"></p><p id="preparation-pending"></p><p id="preparation-storage"></p><button id="preparation-check">Check offline readiness</button><form id="preparation-form"><label for="permit-count">Starts to reserve (includes online and interrupted plays)</label><input id="permit-count" type="number" min="1" max="1000" required><label for="permit-deadline">Reconciliation deadline (this computer’s local time)</label><input id="permit-deadline" type="datetime-local" required><button id="preparation-prepare" disabled>Prepare offline play</button></form><p><small>Enrollment alone is not offline readiness. Online event admission uses the server schedule; deferred plays synchronize to All plays without a promised event rank. New assets wait until every prepared-game tab closes.</small></p><button id="preparation-repair">Repair existing preparation</button><button id="preparation-export">Download local recovery evidence</button><p><small>Recovery export contains local names and completed turns, without cookies or permit secrets. It does not restore lost ownership. Keep browser data and old packs; automatic cleanup and recovery imports are not available.</small></p></section>
 <section><h2>Station checklist</h2><p>Use a laptop browser with the camera connected and the TV as its display. In the game, check framing, sound and fullscreen, then complete a three-turn trial before admitting players.</p><p><small>A TV streaming device is a candidate only after browser, camera and sustained responsiveness checks. An offline Android package is a separate setup.</small></p></section>
 <section><h2>Booth follow-up</h2><p>Optional contact requests linked to completed scores. Use only for result and booth-invitation follow-up. No email or SMS is sent automatically.</p><a id="contacts-export" href="/api/host/contacts" download>Download contact requests (JSON)</a></section></div>
 <p id="message" role="status" aria-live="polite"></p><a id="open-game" class="primary" href="/">Open game</a><p id="lock-note"${authenticated ? '' : ' hidden'}><small>Opening the game signs you out of host controls. Event setup stays on this browser.</small></p>
@@ -23,8 +24,29 @@ const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const localTime = value => { const date = new Date(value); return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0,16); };
 
 const byId = id => document.getElementById(id);
+let preparation, preparationReady = false, preparationEnabled = false;
+async function preparationClient() {
+  preparation ||= import('/host-preparation.js').then(module => module.createHostPreparation({ request }));
+  return preparation;
+}
+function renderPreparation(state) {
+  preparationReady = state.ready; preparationEnabled = Boolean(state.server.policy);
+  byId('open-game').href = state.ready ? '/prepared/index.html' : '/';
+  byId('preparation-status').textContent = state.ready ? 'Ready for offline play · assets, storage and remaining starts verified.' : !state.server.policy ? 'Prepared starts are disabled. Enrollment is separate.' : !state.ownershipMatches && state.hasEvidence ? 'Original ownership unavailable. Keep data and download recovery evidence.' : state.waiting ? 'New build waiting. Close all prepared-game tabs and check again.' : state.reason;
+  byId('preparation-build').textContent = 'Active prepared BUILD ' + (state.assets.build?.commit || 'none') + ' · current BUILD ' + (state.currentBuild?.commit || 'unknown');
+  byId('preparation-capacity').textContent = state.remaining + ' usable starts · ' + state.pools.map(pool => pool.remaining + ' unused through ' + new Date(pool.reconcileBy).toLocaleString()).join('; ');
+  byId('preparation-pending').textContent = state.pending + ' retained attempts awaiting reconciliation';
+  byId('preparation-storage').textContent = state.durability.message + (state.durability.availableBytes === null ? '' : ' ' + Math.floor(state.durability.availableBytes / 1024) + ' KiB available / ' + Math.ceil(state.durability.requiredBytes / 1024) + ' KiB required.');
+  byId('preparation-prepare').disabled = !state.server.policy || Boolean(action || opening);
+}
+async function checkPreparation() {
+  preparationReady = false; byId('open-game').href = '/';
+  try { const state = await (await preparationClient()).inspect(); renderPreparation(state); return state; }
+  catch(error) { byId('preparation-status').textContent = 'Offline readiness failed: ' + error.message; byId('preparation-prepare').disabled = true; throw error; }
+}
 function showAccess(value) {
   signedIn = value;
+  if (!value) { preparationReady = false; byId('open-game').href = '/'; }
   byId('login').hidden = value;
   byId('build-details').hidden = true;
   for (const id of ['setup','lock-note','sign-out']) byId(id).hidden = !value;
@@ -33,7 +55,7 @@ async function request(path, data) {
   const response = await fetch(path, { cache:'no-store', signal:AbortSignal.timeout(8000), ...(data === undefined ? {} : { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) }) });
   if (response.status === 401) showAccess(false);
   const result = await response.json();
-  if (!response.ok) { const error = Error(response.status === 401 && path !== '/api/host/sign-in' ? 'Host access expired. Sign in again.' : result.error || 'Could not complete that action. Try again.'); error.status = response.status; throw error; }
+  if (!response.ok) { const error = Error(response.status === 401 && path !== '/api/host/sign-in' ? 'Host access expired. Sign in again.' : result.error || 'Could not complete that action. Try again.'); error.status = response.status; error.code = result.code; throw error; }
   return result;
 }
 function report(error) { byId('message').textContent = error.name === 'TimeoutError' || error.name === 'TypeError' ? 'Could not connect. Check your connection and try again.' : error.message; }
@@ -53,6 +75,7 @@ function renderEvents() {
   byId('event-counts').textContent = event ? event.completedPlays + ' completed plays · ' + event.startedPlays + ' recorded starts' : '';
   const link = byId('event-export'); link.hidden = !event;
   if (event) link.href = '/api/host/public-events/' + encodeURIComponent(event.id) + '/export';
+  byId('preparation-prepare').disabled = !preparationEnabled || Boolean(action || opening);
   for (const id of ['event-name','event-start','event-end']) byId(id).disabled = !storageReady || Boolean(pending || action || opening);
   byId('event-create-button').disabled = !storageReady || Boolean(action || opening);
   byId('event-create-button').textContent = pending ? 'Retry event creation' : 'Create event';
@@ -62,6 +85,7 @@ async function refresh() {
   const state = await request('/api/host/station');
   const list = await request('/api/host/public-events');
   station = state; events = list.events; renderEvents();
+  try { await checkPreparation(); } catch { /* Recovery export stays available after storage/asset failures. */ }
   try {
     const build = await request('/build-info.json');
     byId('build-info').textContent = 'BUILD ' + build.commit + (build.dirty ? ' · uncommitted changes' : '') + ' · ' + build.branch;
@@ -96,6 +120,20 @@ byId('login').addEventListener('submit', async event => {
   try { await signingIn; }
   finally { signingIn = null; byId('sign-in').disabled = opening; }
 });
+byId('preparation-check').addEventListener('click', () => perform(checkPreparation));
+byId('preparation-form').addEventListener('submit', event => {
+  event.preventDefault(); void perform(async () => {
+    const count = Number(byId('permit-count').value), deadline = new Date(byId('permit-deadline').value).getTime();
+    if (!Number.isInteger(count) || count < 1 || !Number.isSafeInteger(deadline)) throw Error('Choose capacity and a reconciliation deadline.');
+    const state = await (await preparationClient()).prepare(count, deadline); renderPreparation(state);
+  });
+});
+byId('preparation-repair').addEventListener('click', () => perform(async () => renderPreparation(await (await preparationClient()).repair())));
+byId('preparation-export').addEventListener('click', () => perform(async () => {
+  const report = await (await preparationClient()).export();
+  const url = URL.createObjectURL(new Blob([JSON.stringify(report,null,2)], { type:'application/json' }));
+  const link = document.createElement('a'); link.href = url; link.download = 'cloud-claw-local-recovery.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url),1000);
+}));
 byId('event-select').addEventListener('change', () => { selectedId = byId('event-select').value; renderEvents(); });
 byId('station-enroll').addEventListener('click', () => perform(async () => {
   byId('message').textContent = '';
@@ -121,7 +159,7 @@ byId('event-create').addEventListener('submit', event => {
       throw error;
     }
     sessionStorage.removeItem(draftKey); pending = null; selectedId = created.id; byId('event-name').value = '';
-    byId('event-create-status').textContent = 'Event created. Select Use this computer when this is the event station.';
+    byId('event-create-status').textContent = 'Event created. Enroll this browser when this is the event station.';
     await loadSetup();
   });
 });
@@ -133,7 +171,7 @@ byId('sign-out').addEventListener('click', async () => {
 });
 byId('open-game').addEventListener('click', async event => {
   event.preventDefault(); if (opening) return; opening = true; byId('sign-in').disabled = true; renderEvents();
-  try { if (signingIn) await signingIn; if (action) await action.catch(() => {}); await lockHost(); location.assign('/'); }
+  try { if (signingIn) await signingIn; if (action) await action.catch(() => {}); const target = preparationReady ? '/prepared/index.html' : '/'; if (preparationReady && !(await checkPreparation()).ready) throw Error('Offline readiness changed. Check preparation before opening.'); await lockHost(); location.assign(target); }
   catch(error) { report(error); }
   finally { opening = false; byId('sign-in').disabled = false; renderEvents(); }
 });

@@ -248,14 +248,13 @@ abort after request success, stale acknowledgements and incompatible data.
 These tests do not establish physical camera/display or sudden-power-loss
 acceptance; the rendered public-ranked journey remains a required shared gate.
 
-### Staged public station permits
+### Bounded public station permits
 
-The backend supports protocol 1 permits; no client preparation, offline starts
-or host UI is enabled by this slice. `createPilotServer` accepts an explicit
+The backend supports protocol 1 permits for explicit host preparation. `createPilotServer` accepts an explicit
 server-only `publicPermitPolicy: { maxSlots, maxRetentionMs }`; its default is
 `null`, so new issuance is refused. There is no environment/image default or
 production configuration change. Operator capacity and reconciliation-window
-choices are required before later enablement. Hard validation ceilings are
+choices are required before enablement. Hard validation ceilings are
 1,000 slots and seven days, not recommended booth settings or a capacity
 estimate. Capacity must include online starts, abandoned/interrupted attempts
 and reserve until replenishment; twenty completed test runs is not that choice.
@@ -326,7 +325,7 @@ policy is added. Disposable HTTP/SQLite tests cover races, expiry, revocation,
 rollback, migration and score parity; full prepared-booth and physical outage
 acceptance remains separate.
 
-### Prepared public asset pack (staged; offline admission is not enabled)
+### Prepared public asset pack
 
 Each production build emits `prepared/manifest.json`: exact SHA-256, MIME type
 and byte count for the neutral public shell, all emitted gameplay/camera chunks
@@ -354,12 +353,12 @@ do not grant offline starts or durable turn recording.
 Updates install separately and wait until **all** prepared-game tabs close.
 There is no force activation, client claiming, score replay or Background Sync.
 This conservative host boundary also prevents updates during an active game.
-The later journal/admission integration must check protocol compatibility
-before offering play; the asset worker cannot attest to journal compatibility.
+Host readiness checks journal and permit compatibility before offering prepared
+play; the asset worker only attests the asset pack.
 The prepared camera entry has its own worker URL within that scope; ordinary
 online camera workers remain outside it and keep network model loading.
 Old public caches are retained, including partial downloads, to avoid deleting
-assets needed by live clients. Host cleanup/retention UI is still pending;
+assets needed by live clients. Host setup explicitly retains these packs;
 do not clear browser site data to recover preparation when it could contain
 pending scores. Durable score storage is separate from these caches.
 
@@ -371,12 +370,71 @@ asset/runtime checks when the scene cannot render; this explicitly omits rendere
 the full suite without that override. Hosted macOS results remain
 required; synthetic inference and asset availability do not replace physical outage rehearsal.
 
+### Host preparation, readiness and recovery
+
+Sign in at `/staff` and enroll this browser for the selected event. Enrollment
+alone does not make it ready offline. The separate **Prepare offline starts**
+action requires an operator-selected count and reconciliation deadline, within
+the configured permit policy. The policy stays disabled by default; this UI does
+not configure it. Preparation verifies the complete current public asset pack,
+strict IndexedDB writes and the existing physical lock before installing a pool.
+Explicit preparation and repair request persistent storage and read its actual
+grant status. Readiness checks estimated quota minus usage against a full new
+pack (when not already verified active), 1 MiB journal overhead and 64 KiB per
+retained/new slot, without deleting old packs. It rechecks headroom after asset
+writes and before issuance/repair. These are conservative storage allowances,
+not a guarantee of future writes or a measured per-turn size. Missing quota or
+insufficient headroom refuses readiness and new issuance while preserving data.
+Denied or unavailable persistence is displayed as an eviction risk; it does not
+imply writes failed. Even granted persistence cannot protect against clearing
+site data, disk loss or every power-loss boundary.
+No service worker or camera starts merely by visiting Host setup.
+
+Readiness displays active prepared BUILD versus current BUILD, usable starts and
+original deadlines, and retained attempts awaiting reconciliation. Usable starts
+subtract the union of server registration, local consumption and journal entries;
+locally consumed but unsynced slots cannot be offered again. Deferred starts do
+not acquire event eligibility. Host setup rechecks readiness before opening the
+prepared game and logs the host out while retaining public/station ownership.
+
+A lost/expired owner, inaccessible storage, unknown journal version, mismatched
+pool identity, clock rollback, held authority or mismatched/incomplete pack
+refuses readiness. Known server ownership/authority refusals are held durably
+before manifest or worker verification can fail, blocking later offline starts.
+Keep site data. **Repair existing preparation** verifies the
+current pack and refreshes only existing same-owner pools; it preserves slot
+consumption, frozen rules and the original reconciliation deadline. It does not
+issue replacement ownership, extend a deadline or create another pool. Initial
+preparation alone can explicitly establish fresh public ownership when no old
+journal or pending preparation exists. An unconfirmed issuance keeps its original
+request key/count/deadline for retry. Close all prepared-game tabs before updates
+or recovery; waiting workers are never force activated.
+
+**Download recovery evidence** is authenticated, local and read-only. It can read
+an unknown database version without migration and exports retained names, run
+IDs, turn outcomes, acknowledgement and pool/pack summaries. It excludes cookies,
+slot credentials, request keys, camera frames and arbitrary fields; no automatic
+upload or credential import exists. The file cannot restore ownership or permit
+authority. Old journals, results and complete/partial asset packs remain intact.
+No automatic purge is provided: clearing site data can destroy pending outcomes.
+Keep the downloaded personal result evidence under the host's control.
+
+The authenticated endpoints are `GET /api/host/station/preparation` (only this
+public owner's pools) and `POST /api/host/station/owner` (empty body, explicit fresh
+owner only); existing issuance remains `POST /api/host/station/permits`. They
+require host access and do not expose another owner's slots. Host module code is
+public static code, while authenticated Host HTML/API responses and exports are
+excluded from the prepared cache. `tests/host-preparation.browser.mjs` verifies
+this workflow against the production bundle, real service worker, IndexedDB and
+HTTP service without starting gameplay. Full rendered workload and physical
+outage rehearsal remain distinct acceptance gates.
+
 ### Prepared arcade admission and retained outcomes
 
 The prepared shell now uses the ordinary arcade with the verified asset pack and
 an explicitly installed permit pool. The backend policy remains disabled by
-default. Host preparation/readiness UI and recovery export are the next integration
-slice; loading `/prepared/` alone does not provision ownership, issue capacity, or
+default. Host setup provides explicit preparation/readiness and recovery export;
+loading `/prepared/` alone does not provision ownership, issue capacity, or
 make a station ready. No production enablement is implied by this implementation.
 
 The public IndexedDB journal upgrades non-destructively to schema 2 (the database

@@ -47,8 +47,8 @@ self.addEventListener('message', event => {
   event.waitUntil((async () => {
     try {
       if (event.data.type === 'PREPARE_PACK') await prepareOnce();
-      event.ports[0].postMessage({ id: PACK.id, bytes: PACK.bytes, complete: await complete() });
-    } catch { event.ports[0].postMessage({ id: PACK.id, bytes: PACK.bytes, complete: false }); }
+      event.ports[0].postMessage({ id: PACK.id, bytes: PACK.bytes, build: PACK.build, complete: await complete() });
+    } catch { event.ports[0].postMessage({ id: PACK.id, bytes: PACK.bytes, build: PACK.build, complete: false }); }
   })());
 });
 
