@@ -63,6 +63,65 @@ test('jitter across the DROP edge is not an arrival', () => {
   for(let i=0;i<10;i++) fired+=Number(f.step([f.left,i%2?jitter:edge]).fired);
   assert.equal(fired,0);
 });
+// Contract: a right hand rising past the frame edge cannot cancel the left.
+// A recorded session labelled it left for one or two frames below the right
+// workspace (y > .88); both roles were cancelled and the held fist was stranded.
+for (const held of ['gripped', 'acquired']) test(`a right hand rising mislabelled at the frame edge keeps the ${held} left hand`, () => {
+  const f=fixture(), left=hand('left',held==='gripped'?'closed':'open',.21,.73);
+  f.repeat([hand('left','open',.21,.73)]); if(held==='gripped') f.repeat([left],5);
+  const rising=[hand('right','closed',.74,1.02),{...hand('right','closed',.73,1.01),physicalHand:'left'},{...hand('right','open',.83,.96),physicalHand:'left',handednessScore:.86}];
+  for (const right of rising) {
+    const s=f.step([left,right]);
+    assert.notEqual(s.message,'SEPARATE YOUR HANDS'); assert.equal(s.hands.left.ready,true);
+    if(held==='gripped') { assert.equal(s.hands.left.grab.stage,'gripped'); assert.equal(s.dropEnabled,true); }
+  }
+  if(held==='gripped') assert.equal(f.step([hand('left','closed',.15,.73),hand('right','closed',.74,1.02)]).hands.left.ready,true,'steering continues');
+});
+test('a held grip survives a missed left sample while the right rises past the frame edge', () => {
+  const f=fixture(); f.grip();
+  assert.equal(f.step([hand('right','open',.74,1.02)]).hands.left.grab.stage,'gripped');
+  assert.equal(f.step([f.left,hand('right','open',.74,1.0)]).dropEnabled,true);
+});
+// Contract: re-clenching an owned left hand grips again. The same session
+// released on a brief open sample, then held a fist for 5 s without gripping.
+test('a quick release and re-clench grips again without a long open hand', () => {
+  const f=fixture(); f.grip();
+  assert.equal(f.step([hand('left')]).hands.left.grab.stage,'seeking');
+  let s; for(let i=0;i<4;i++) s=f.step([f.left]);
+  assert.equal(s.hands.left.grab.stage,'gripped'); assert.equal(s.dropEnabled,true);
+});
+test('a visible left hand outside the start area is told which way to move', () => {
+  const f=fixture();
+  assert.equal(f.step([hand('left','closed',.25,.87)]).message,'RAISE LEFT HAND');
+  assert.equal(f.step([hand('left','open',.12,.50)]).message,'MOVE LEFT HAND IN');
+  assert.equal(f.step([hand('left','open',.30,.15)]).message,'LOWER LEFT HAND');
+  assert.equal(f.step([hand('left','open',.30,.50)]).message,'HOLD LEFT HAND STILL');
+  const g=fixture();
+  assert.equal(g.step([hand('left','open',.70,.95)]).message,'SHOW LEFT HAND','a mislabelled right hand rising is not told to raise the left');
+});
+// Contract: the wider grip zone cannot weaken DROP arrival or identity.
+test('a left hand steered past the centre does not let a resting palm press after one missed frame', () => {
+  const f=fixture(), resting=hand('right','open',.72,.44);
+  f.repeat([hand('left','open',.40,.6),resting]); f.repeat([hand('left','closed',.40,.6),resting],5);
+  for(const x of [.45,.50,.55]) f.step([hand('left','closed',x,.6),resting]);
+  f.step([hand('left','closed',.55,.6)]);
+  let fired=0;
+  for(let i=0;i<20;i++) fired+=Number(f.step([hand('left','closed',.55,.6),resting]).fired);
+  assert.equal(fired,0);
+});
+// The right hand is untracked in the centre gap, so only the previous-frame memory knows it was there.
+test('a left label landing where the right hand just was cancels instead of inheriting the grip', () => {
+  const f=fixture(); f.repeat([hand('left','open',.40,.6)]); f.repeat([hand('left','closed',.40,.6),hand('right','open',.51,.6)],5);
+  const s=f.step([hand('left','closed',.51,.6)]);
+  assert.equal(s.hands.left.ready,false); assert.deepEqual(s.input,{x:0,z:0}); assert.equal(f.controls.left.owner,null);
+});
+test('a right hand discarded as mislabelled noise cannot take over the grip on the next frame', () => {
+  const f=fixture(); f.repeat([hand('left','open',.40,.6)]); f.repeat([hand('left','closed',.40,.6)],5);
+  f.step([hand('left','closed',.45,.72)]); f.step([hand('left','closed',.50,.85)]);
+  assert.equal(f.step([hand('left','closed',.50,.85),{...hand('right','closed',.64,1.0),physicalHand:'left'}]).hands.left.grab.stage,'gripped');
+  const s=f.step([{...hand('right','closed',.57,.98),physicalHand:'left'}]);
+  assert.equal(s.hands.left.ready,false); assert.deepEqual(s.input,{x:0,z:0}); assert.equal(f.controls.left.owner,null);
+});
 for (const glitch of ['missing', 'label-flip']) test(`a resting palm cannot press DROP by reacquiring after a ${glitch} right sample`, () => {
   const f=fixture(), resting=hand('right','open',.72,.44); f.repeat([hand('left'),resting]); f.repeat([f.left,resting],5);
   f.step(glitch==='missing'?[f.left]:[f.left,{...resting,physicalHand:'left'}]);
@@ -226,7 +285,8 @@ test('acquisition seeds each local workspace at a comfortable separated position
 });
 for(const role of ['left','right'])test(`${role} workspace exit cancels its action and cannot resume clenched`,()=>{
   const f=fixture();f.arm();const normal=[f.left,hand('right','closed')];f.step(normal);
-  const outside=role==='left'?[hand('left','closed',.49),hand('right')]:[f.left,hand('right','closed',.51)];
+  if(role==='left') f.step([hand('left','closed',.50)]); // a held overshoot past the gap, then beyond the grip zone
+  const outside=role==='left'?[hand('left','closed',.62)]:[f.left,hand('right','closed',.51)];
   const s=f.step(outside);assert.equal(s.fired,false);assert.equal(s.hands[role].outside,true);
   assert.equal(f.repeat(normal).fired,false);
   assert.equal(f.controls[role].owner,null);
@@ -248,9 +308,15 @@ test('gripped joystick stays attached beyond its soft movement range and clamps 
   assert.deepEqual(release.input,{x:0,z:0});assert.equal(release.fired,false);
   assert.equal(f.repeat([hand('left','closed',.47,.90),hand('right','closed')]).dropEnabled,false);
 });
-test('sticky left grip still releases when crossing into the right half',()=>{
-  const f=fixture();f.arm();f.step([hand('left','closed',.48)]);
-  const s=f.step([hand('left','closed',.55)]);
+// Contract: full steering plus overshoot keeps the stick. A recorded player
+// gripping at x .31 lost it at x .50 steering right and at y 1.0 steering down.
+for (const [axis, path, beyond] of [['right', [[.40,.6],[.48,.6],[.53,.6],[.57,.6]], [.62,.6]], ['down', [[.33,.70],[.31,.80],[.31,.92],[.31,1.01],[.31,1.04]], [.31,1.12]]]) test(`sticky left grip overshoots ${axis} past full steering and releases only beyond its grip zone`,()=>{
+  const f=fixture();f.arm();
+  for(const [x,y] of path){
+    const s=f.step([hand('left','closed',x,y)]);
+    assert.equal(s.hands.left.grab.stage,'gripped');assert.equal(s.dropEnabled,true);assert.ok(axis==='right'?s.input.x>0:s.input.z>0);
+  }
+  const s=f.step([hand('left','closed',...beyond)]);
   assert.equal(s.hands.left.outside,true);assert.deepEqual(s.input,{x:0,z:0});assert.equal(s.dropEnabled,false);
 });
 test('right entry into the visible DROP target fires only once',()=>{
