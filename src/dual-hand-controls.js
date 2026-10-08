@@ -67,18 +67,22 @@ export class DualHandControls {
     // immediately become the player. This is continuity, not person identity.
     if (hand && name === 'left' && state.reservation && now - state.reservation.at <= 650 &&
       distance(hand.center, state.reservation.center) > MAX_STEP) hand = null;
+    // A visible hand outside the start area learns which way to move.
+    let edge = '';
     if (hand && name === 'left' && !state.owner && (!state.reservation || now - state.reservation.at > 650) &&
-      (hand.center.x < .18 || hand.center.y < .20 || hand.center.y > .80)) hand = null;
+      (hand.center.x < .18 || hand.center.y < .20 || hand.center.y > .80)) {
+      edge = hand.center.y > .80 ? 'low' : hand.center.y < .20 ? 'high' : 'side'; hand = null;
+    }
     if (!hand && name === 'left' && state.owner && state.gesture.stage === 'gripped' &&
       now - state.lastSeen <= LEFT_GRIP_GRACE_MS &&
       (hands.length === 0 || (roleHands.length <= 1 && hands.filter(hand => hand.physicalHand === 'right').length <= 1 && hands.every(hand =>
-        hand.physicalHand === 'right' ? handInZone(hand.center, 'right') :
+        hand.physicalHand === 'right' ? hand.center.x > .5 :
           hand.physicalHand === 'left' && distance(hand.center, state.owner) <= MAX_STEP && inLeftGripZone(hand.center))))) {
       state.interrupted = true;
       return { hand: null, ready: false, recovering: true };
     }
     if (!hand || (state.owner && distance(hand.center, state.owner) > MAX_STEP)) {
-      clear(state); return { hand: null, ready: false };
+      clear(state); return { hand: null, ready: false, edge };
     }
     const offset = handOffset(hand.center, state.origin);
     // Once held, the stick is mechanically attached. The local range controls
@@ -121,14 +125,16 @@ export class DualHandControls {
         return own && distance(hand.center, other) + .025 < distance(hand.center, own);
       }));
     if (ambiguous) {
-      // Right-side noise must not erase a left grip we can still independently
+      // Right-side noise must not erase a left owner we can still independently
       // identify. Never relabel that noise: discard it and reacquire the right.
-      const heldLeft = this.left.owner && this.left.gesture.stage === 'gripped'
-        ? hands.filter(hand => hand.physicalHand === 'left' && hand.handednessScore >= .75 &&
-          hand.fist.closed && !hand.fist.open && inLeftGripZone(hand.center) &&
-          distance(hand.center, this.left.owner) <= MAX_STEP) : [];
+      // A right hand rising past the frame edge is often briefly labelled left
+      // before it reaches its workspace, so any separated right-half detection counts.
+      const gripped = this.left.gesture.stage === 'gripped';
+      const heldLeft = this.left.owner ? hands.filter(hand => hand.physicalHand === 'left' && hand.handednessScore >= .75 &&
+        distance(hand.center, this.left.owner) <= MAX_STEP && (gripped
+          ? hand.fist.closed && !hand.fist.open && inLeftGripZone(hand.center) : handInZone(hand.center, 'left'))) : [];
       const keepLeft = hands.length === 2 && heldLeft.length === 1 && hands.every(hand =>
-        hand === heldLeft[0] || (handInZone(hand.center, 'right') && distance(hand.center, heldLeft[0].center) >= SEPARATION));
+        hand === heldLeft[0] || (hand.center.x > .5 && distance(hand.center, heldLeft[0].center) >= SEPARATION));
       if (!keepLeft) {
         clear(this.left); clear(this.right);
         return { kind: 'lost', message: 'SEPARATE YOUR HANDS', input: { x: 0, z: 0 }, hands: {}, fired: false };
@@ -141,7 +147,10 @@ export class DualHandControls {
     const right = this.track(this.right, 'right', hands, now);
     const leftRecovered = leftWasInterrupted && left.ready;
     if (left.recovering && !right.ready) this.right.candidate = null;
-    if (left.acquired) this.left.gesture.armed = true; // stable open acquisition already supplies arming evidence
+    // Stable open acquisition already supplies arming evidence. Keep it while the
+    // hand stays owned, so a quick release and re-clench (or one false open
+    // sample mid-grip) grips again instead of waiting for a long open hand.
+    if (this.left.owner) this.left.gesture.armed = true;
     const leftTarget = left.ready ? getTarget(left.hand.center, 'left', this.left.origin) : {};
     const grip = left.recovering ? this.left.gesture.read() : this.left.gesture.update({ ...(left.hand?.fist || {}), visible: left.ready, overTarget: left.ready }, now);
     const leftClear = left.ready && left.hand.fist.open !== left.hand.fist.closed;
@@ -161,7 +170,7 @@ export class DualHandControls {
     else this.left.steer.release();
     const view = (observation, gesture, target, state) => ({
       workspace: observation.hand ? handOffset(observation.hand.center, state.origin) : null,
-      outside: Boolean(observation.outside),
+      outside: Boolean(observation.outside), edge: observation.edge || '',
       kind: observation.ready ? gesture.stage === 'grabbing' ? 'clenching' : 'tracking' : 'calibrating',
       pointer: observation.hand ? { ...observation.hand.center } : null,
       ready: observation.ready, open: Boolean(observation.hand?.fist.open), closed: Boolean(observation.hand?.fist.closed),
@@ -173,7 +182,7 @@ export class DualHandControls {
       grip.stage === 'grabbing' ? 'clenching' : 'tracking';
     // Name what the visible hand needs; a pose changing mid-clench keeps its step.
     const leftMessage = left.recovering ? 'HOLD LEFT HAND STEADY' : left.outside ? 'RETURN LEFT HAND TO ITS AREA' :
-      !left.hand ? 'SHOW LEFT HAND' : !left.ready ? left.hand.fist.open && !left.hand.fist.closed ? 'HOLD LEFT HAND STILL' : 'OPEN LEFT HAND' :
+      !left.hand ? { low: 'RAISE LEFT HAND', high: 'LOWER LEFT HAND', side: 'MOVE LEFT HAND IN' }[left.edge] || 'SHOW LEFT HAND' : !left.ready ? left.hand.fist.open && !left.hand.fist.closed ? 'HOLD LEFT HAND STILL' : 'OPEN LEFT HAND' :
       grip.stage !== 'gripped' ? 'LEFT HAND · GRAB JOYSTICK' : '';
     return { kind, input, hands: { left: leftView, right: rightView }, fired: press.fired, dropEnabled,
       // Aggregate fields preserve the existing HUD/scene feedback contract.
