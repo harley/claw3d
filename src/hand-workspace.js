@@ -2,6 +2,10 @@
 // then map each hand relative to its own deliberately acquired open position.
 export const HAND_ZONES = { left: { minX: .08, maxX: .48 }, right: { minX: .52, maxX: .92 } };
 export const HAND_RANGE = { x: .18, y: .20 };
+// A gripped left hand stays attached through full steering (.17 from where it
+// clenched) plus overshoot: past the centre gap and partly out of frame.
+// Identity still rests on its label, frame-to-frame continuity and separation.
+export const LEFT_GRIP_ZONE = { minX: .02, maxX: .58, minY: -.05, maxY: 1.05 };
 export function handInZone(point, role) {
   const zone = HAND_ZONES[role];
   return point.y >= .12 && point.y <= .88 && point.x >= zone.minX && point.x <= zone.maxX;

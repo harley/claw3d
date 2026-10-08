@@ -1,4 +1,4 @@
-import { HAND_ZONES, handInZone, handOffset, inHandRange, dropOffset } from './hand-workspace.js';
+import { HAND_ZONES, LEFT_GRIP_ZONE, handInZone, handOffset, inHandRange, dropOffset } from './hand-workspace.js';
 import { GrabRelease } from './grab-release.js';
 import { Steering } from './steering.js';
 
@@ -32,7 +32,8 @@ const ARRIVAL_MARGIN = 1.25;
 class DropArrival {
   constructor() { this.seen = null; this.away = false; this.arrived = false; }
   observe(hands, now) {
-    const right = hands.filter(hand => hand.center.x > .5);
+    // Beyond the held left hand's reach; DROP itself starts further right.
+    const right = hands.filter(hand => hand.center.x > LEFT_GRIP_ZONE.maxX);
     if (right.length || this.seen === null) this.seen = now; // unknown history counts from now
     const near = hand => { const offset = dropOffset(hand.center); return Math.hypot(offset.x, offset.y) < ARRIVAL_MARGIN; };
     this.away = !right.some(near) && (right.length > 0 || now - this.seen >= HAND_ACQUIRE_MS);
@@ -42,7 +43,7 @@ class DropArrival {
 
 const MAX_STEP = .18, SEPARATION = .065;
 const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-const inLeftGripZone = point => point.x >= .02 && point.x <= HAND_ZONES.left.maxX && point.y >= .02 && point.y <= .98;
+const inLeftGripZone = ({ x, y }) => x >= LEFT_GRIP_ZONE.minX && x <= LEFT_GRIP_ZONE.maxX && y >= LEFT_GRIP_ZONE.minY && y <= LEFT_GRIP_ZONE.maxY;
 const role = () => ({ owner: null, origin: null, observed: null, candidate: null, lastSeen: null, reservation: null, interrupted: false, gesture: new GrabRelease(), steer: new Steering() });
 const clear = state => { state.owner = state.origin = state.observed = state.candidate = state.lastSeen = null; state.interrupted = false; state.gesture.reset(); state.steer.release(); };
 
@@ -51,7 +52,7 @@ const clear = state => { state.owner = state.origin = state.observed = state.can
 // the other role's closed hand or confirmation time.
 export class DualHandControls {
   constructor() { this.reset(); }
-  reset() { this.left = role(); this.right = role(); this.right.gesture = new RightPalmDrop(); this.arrival = new DropArrival(); this.last = null; }
+  reset() { this.left = role(); this.right = role(); this.right.gesture = new RightPalmDrop(); this.arrival = new DropArrival(); this.others = []; this.last = null; }
   // A START or turn boundary keeps both roles and the grip, but no steering
   // baseline or DROP evidence carries into the new aiming window.
   neutralize() { this.left.steer.release(); this.right.gesture.reset(); this.arrival.update(false); }
@@ -63,6 +64,10 @@ export class DualHandControls {
     const roleHands = hands.filter(hand => hand.physicalHand === name);
     const candidates = roleHands.filter(hand => hand.handednessScore >= .75);
     let hand = roleHands.length === 1 && candidates.length === 1 ? candidates[0] : null;
+    // A left label landing where another hand just was is that hand, not a
+    // continuation: cancel without grace so it can never inherit the grip.
+    if (hand && name === 'left' && state.owner && this.others.some(other =>
+      distance(hand.center, other) + .025 < distance(hand.center, state.owner))) { clear(state); return { hand: null, ready: false }; }
     // Keep a spatial reservation after a dropout; a distant bystander cannot
     // immediately become the player. This is continuity, not person identity.
     if (hand && name === 'left' && state.reservation && now - state.reservation.at <= 650 &&
@@ -71,7 +76,8 @@ export class DualHandControls {
     let edge = '';
     if (hand && name === 'left' && !state.owner && (!state.reservation || now - state.reservation.at > 650) &&
       (hand.center.x < .18 || hand.center.y < .20 || hand.center.y > .80)) {
-      edge = hand.center.y > .80 ? 'low' : hand.center.y < .20 ? 'high' : 'side'; hand = null;
+      if (hand.center.x <= HAND_ZONES.left.maxX) edge = hand.center.y > .80 ? 'low' : hand.center.y < .20 ? 'high' : 'side';
+      hand = null;
     }
     if (!hand && name === 'left' && state.owner && state.gesture.stage === 'gripped' &&
       now - state.lastSeen <= LEFT_GRIP_GRACE_MS &&
@@ -115,6 +121,7 @@ export class DualHandControls {
     if (this.last !== null && (now - this.last > 300 || now < this.last)) this.reset();
     this.last = now;
     this.arrival.observe(hands, now);
+    const raw = hands, leftOwner = this.left.owner;
     const duplicateRole = ['left', 'right'].some(name => hands.filter(hand => hand.physicalHand === name).length > 1);
     const ambiguous = hands.length > 2 || duplicateRole || (hands.length === 2 && distance(hands[0].center, hands[1].center) < SEPARATION) ||
       // A detection closer to the other owner's previous position is an
@@ -136,7 +143,7 @@ export class DualHandControls {
       const keepLeft = hands.length === 2 && heldLeft.length === 1 && hands.every(hand =>
         hand === heldLeft[0] || (hand.center.x > .5 && distance(hand.center, heldLeft[0].center) >= SEPARATION));
       if (!keepLeft) {
-        clear(this.left); clear(this.right);
+        clear(this.left); clear(this.right); this.others = [];
         return { kind: 'lost', message: 'SEPARATE YOUR HANDS', input: { x: 0, z: 0 }, hands: {}, fired: false };
       }
       clear(this.right);
@@ -145,6 +152,10 @@ export class DualHandControls {
     const leftWasInterrupted = this.left.interrupted;
     const left = this.track(this.left, 'left', hands, now);
     const right = this.track(this.right, 'right', hands, now);
+    // Remember every other detection, including a mislabelled one discarded
+    // above, but not the left hand itself when it was only briefly unaccepted.
+    this.others = raw.filter(hand => hand !== left.hand && !(!left.hand && leftOwner && hand.physicalHand === 'left' &&
+      distance(hand.center, leftOwner) <= MAX_STEP)).map(hand => ({ ...hand.center }));
     const leftRecovered = leftWasInterrupted && left.ready;
     if (left.recovering && !right.ready) this.right.candidate = null;
     // Stable open acquisition already supplies arming evidence. Keep it while the

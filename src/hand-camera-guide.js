@@ -1,4 +1,4 @@
-import { HAND_ZONES, HAND_RANGE, DROP_AREA } from './hand-workspace.js';
+import { HAND_ZONES, HAND_RANGE, DROP_AREA, LEFT_GRIP_ZONE } from './hand-workspace.js';
 
 // Presentation only: use accepted role evidence, never a raw detection, to
 // claim that a control is ready. Windows follow the actual control workspace.
@@ -9,7 +9,7 @@ export function handCameraGuide(role, feedback, origin) {
   const held = role === 'left' && stage === 'gripped';
   const zone = { ...HAND_ZONES[role], minY: .12, maxY: .88 };
   if (role === 'left' && !origin) { zone.minX = .18; zone.minY = .20; zone.maxY = .80; }
-  if (held) { zone.minX = .02; zone.minY = .02; zone.maxY = .98; }
+  if (held) Object.assign(zone, LEFT_GRIP_ZONE, { minY: Math.max(.02, LEFT_GRIP_ZONE.minY), maxY: Math.min(.98, LEFT_GRIP_ZONE.maxY) });
   else if (origin && role === 'left') {
     zone.minX = Math.max(zone.minX, origin.x - HAND_RANGE.x);
     zone.maxX = Math.min(zone.maxX, origin.x + HAND_RANGE.x);
