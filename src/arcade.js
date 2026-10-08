@@ -812,6 +812,8 @@ function frame(time) {
     }
   } else input.x = input.z = 0;
   try {
+    // The cue promises a catch only when a still drop would reach the toy.
+    if (game.phase === 'aim' && aligned && !scene.contacts.clearDrop(game, aligned)) aligned = null;
     const feedback = flow.pendingSlam ? { ...flow.pendingSlam.feedback, profile: 'dual', kind: 'slamming', slamProgress: flow.pendingSlam.elapsed / (RIGHT_SLAM_MS / 1000), progress: 1, controlEnabled: false } : dualEnabled && flow.contactFeedback && game.phase === 'anticipate' ? { ...flow.contactFeedback, profile: 'dual', kind: 'slamming', slamProgress: 1, progress: 1, controlEnabled: false } : cameraControls?.feedback || { kind: 'off', progress: 0, controlEnabled: false };
     cueLead = cueLeadSeconds(mode, feedback);
     updateUI(feedback, modal);

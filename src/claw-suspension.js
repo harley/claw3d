@@ -3,6 +3,9 @@
 export const SUSPENSION_Y = 4.21;
 export const CABLE_ATTACH_Y = .09;
 export const STEEL_FINGER_DEPTH = .98;
+// Hub collar underside and finger hinge pins, shared by the art and plush contacts.
+export const STEEL_HUB_BOTTOM = -.4925;
+export const STEEL_HINGE = Object.freeze({ x: .11, y: -.34 });
 export const CLAW_FINGER_ANGLES = [Math.PI / 6, Math.PI * 5 / 6, Math.PI * 3 / 2];
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 

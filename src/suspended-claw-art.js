@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { FINGER_ANGLES } from './arcade-mechanics.js';
-import { SUSPENSION_Y, CABLE_ATTACH_Y, steelFingerPoint, steelFingerWidth } from './claw-suspension.js';
+import { SUSPENSION_Y, CABLE_ATTACH_Y, STEEL_HUB_BOTTOM, STEEL_HINGE, steelFingerPoint, steelFingerWidth } from './claw-suspension.js';
 
 const steps = 32, sides = 8;
 function stripGeometry() {
@@ -38,12 +38,12 @@ export function buildSteelClaw(parent, materials) {
     mesh.position.y = y; mesh.castShadow = true; claw.add(mesh); return mesh;
   };
   tube(.041, .12, .04); tube(.096, .026, .085); tube(.077, .30, -.12);
-  tube(.088, .035, -.285, steel); tube(.047, .19, -.38); tube(.083, .025, -.48);
+  tube(.088, .035, -.285, steel); tube(.047, .19, -.38); tube(.083, .025, STEEL_HUB_BOTTOM + .0125);
   const fingers = FINGER_ANGLES.map(angle => {
     const root = new T.Group(); root.rotation.y = -angle; claw.add(root);
     const blade = new T.Mesh(stripGeometry(), polished); blade.castShadow = true; root.add(blade);
     const pin = new T.Mesh(new T.CylinderGeometry(.030, .030, .088, 16), steel);
-    pin.position.set(.11, -.34, 0); pin.rotation.x = Math.PI / 2; root.add(pin);
+    pin.position.set(STEEL_HINGE.x, STEEL_HINGE.y, 0); pin.rotation.x = Math.PI / 2; root.add(pin);
     const bracket = new T.Mesh(new T.BoxGeometry(.028, .18, .044), polished);
     bracket.position.set(.09, -.24, 0); bracket.rotation.z = -.17; root.add(bracket);
     const finger = { root, blade, radius: null }; shapeFinger(finger, .41); return finger;

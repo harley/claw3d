@@ -1,13 +1,34 @@
 import * as T from 'three';
 import { supportHull, gravityStep, hangingStep, MASS_CENTRE_Y } from './arcade-gravity.js';
 import { MeshBVH, acceleratedRaycast } from 'three-mesh-bvh';
-import { BED, HIGH, BODY, FIELD, CAROUSEL, FINGER_DEPTH, OPEN_RADIUS, FINGER_ANGLES, mix, ease, PHASES, planGrab, clawPose, resolveSuspendedGrab } from './arcade-mechanics.js';
-import { steelFingerSamples, steelFingerWidth, clawWorldPoint } from './claw-suspension.js';
+import { BED, HIGH, BODY, FIELD, CAROUSEL, FINGER_DEPTH, OPEN_RADIUS, FINGER_ANGLES, mix, ease, PHASES, planGrab, carriagePose, clawPose, resolveSuspendedGrab } from './arcade-mechanics.js';
+import { STEEL_HUB_BOTTOM, STEEL_HINGE, steelFingerSamples, steelFingerWidth, clawWorldPoint, rotateClaw, suspendedPose } from './claw-suspension.js';
 
 // Swept finger samples test visible geometry. The grasp support model still
 // decides catches; these contacts can reject one, never manufacture a win.
 const radius = .027;
 const vector = (x, y, z) => new T.Vector3(x, y, z);
+// Steel claw hardware a plush toy can press against, in claw-local units.
+const HUB = { radius: .08, bottom: STEEL_HUB_BOTTOM };
+const HUB_SAMPLES = [[0, 0], ...Array.from({ length: 6 }, (_, i) => [Math.cos(i * Math.PI / 3) * HUB.radius, Math.sin(i * Math.PI / 3) * HUB.radius])];
+const MAX_SQUASH = .2, MAX_EAR_FOLD = 1.4;
+const earA = new T.Vector3(), earB = new T.Vector3();
+// Spheres an ear must clear: the hub column, the hinge pins (with their
+// length) and each finger sample at its blade half-width.
+function clawParts(radii) {
+  const parts = Array.from({ length: 13 }, (_, i) => ({ x: 0, y: HUB.bottom * i / 12, z: 0, r: .085 }));
+  FINGER_ANGLES.forEach((angle, i) => {
+    const c = Math.cos(angle), s = Math.sin(angle);
+    parts.push({ x: c * STEEL_HINGE.x, y: STEEL_HINGE.y, z: s * STEEL_HINGE.x, r: .05 });
+    steelFingerSamples(radii[i]).forEach((p, j) => parts.push({ x: c * p.x, y: p.y, z: s * p.x, r: steelFingerWidth(j / 16) }));
+  });
+  return parts;
+}
+function segmentDistance(p, a, b) {
+  const x = b.x - a.x, y = b.y - a.y, z = b.z - a.z, length = x * x + y * y + z * z;
+  const t = length ? Math.max(0, Math.min(1, ((p.x - a.x) * x + (p.y - a.y) * y + (p.z - a.z) * z) / length)) : 0;
+  return Math.hypot(p.x - a.x - x * t, p.y - a.y - y * t, p.z - a.z - z * t);
+}
 function fingerSamples(r) {
   const elbow = mix(.29, .365, (r - .075) / .335);
   return [[.11, -.145], [(.11 + elbow) / 2, -.3325], [elbow, -.52],
@@ -16,17 +37,19 @@ function fingerSamples(r) {
 export class ToyContacts {
   constructor(toys) {
     this.toys = toys; this.meshes = new Map(); this.ray = new T.Raycaster(); this.ray.firstHitOnly = true;
-    this.obstacleBounds = new Map(); this.gravityVertices = new Map(); this.gravityProfiles = new Map();
+    this.obstacleBounds = new Map(); this.gravityVertices = new Map(); this.gravityProfiles = new Map(); this.solids = new Map();
     for (const [id, root] of toys) {
-      const meshes = [];
+      const meshes = [], soft = new Set();
+      // Plush ears bend aside; they never hold up the steel claw.
+      for (const ear of root.userData.articulation || []) if (ear.kind !== 'paw') ear.object.traverse(mesh => { if (mesh.isMesh) soft.add(mesh); });
       root.traverse(mesh => { if (!mesh.isMesh) return; if (!mesh.geometry.boundsTree) mesh.geometry.boundsTree = new MeshBVH(mesh.geometry, { maxLeafSize: 8 }); mesh.raycast = acceleratedRaycast; meshes.push(mesh); });
-      this.meshes.set(id, meshes);
+      this.meshes.set(id, meshes); this.solids.set(id, meshes.filter(mesh => !soft.has(mesh)));
     }
   }
-  hit(start, end, available, clearance = radius) {
+  hit(start, end, available, clearance = radius, solid = false) {
     const direction = end.clone().sub(start), length = direction.length(); if (length < .00001) return null;
     this.ray.set(start, direction.divideScalar(length)); this.ray.near = 0; this.ray.far = length + clearance;
-    const meshes = available.flatMap(toy => this.meshes.get(toy.id));
+    const meshes = available.flatMap(toy => (solid ? this.solids : this.meshes).get(toy.id));
     const hit = this.ray.intersectObjects(meshes, false)[0];
     if (!hit) return null;
     const toy = available.find(toy => this.meshes.get(toy.id).includes(hit.object));
@@ -258,6 +281,28 @@ export class ToyContacts {
       game.plan.resolvedRadii = [...pose.radii];
     }
   }
+  // Whether a drop from the current, held-still pose reaches its planned depth.
+  // The aim cue sweeps the same fingers as the descent, so it never promises a
+  // catch that a finger landing on a toy will refuse. The moving rider keeps its
+  // timing prediction.
+  clearDrop(game, target) {
+    if (!game.suspendedClaw || target.id === game.rider) return true;
+    const start = clawPose(game), available = game.toys.filter(toy => !toy.claimed && toy.id !== game.rider && !toy.transit);
+    // A hovering claw settles to the millimetre; skip the sweep while nothing moves.
+    const key = [start.x, start.y, start.z, start.rotation.x, start.rotation.z, game.position.x, game.position.z].map(v => Math.round(v * 1000)).join() + target.id + available.map(toy => toy.id).join();
+    if (this.dropCheck?.key === key && !available.some(toy => toy.impact)) return this.dropCheck.clear;
+    const end = suspendedPose({ ...carriagePose(game), y: planGrab(game.position, game.toys).low }, game.suspension);
+    for (const toy of available) this.toys.get(toy.id).updateWorldMatrix(true, true);
+    const samples = steelFingerSamples(OPEN_RADIUS);
+    let clear = true;
+    sweep: for (const angle of FINGER_ANGLES) for (const [index, sample] of samples.entries()) {
+      const local = { x: Math.cos(angle) * sample.x, y: sample.y, z: Math.sin(angle) * sample.x };
+      const a = clawWorldPoint(start, local), b = clawWorldPoint(end, local);
+      if (this.hit(vector(a.x, a.y, a.z), vector(b.x, b.y, b.z), available, steelFingerWidth(index / (samples.length - 1)), true)) { clear = false; break sweep; }
+    }
+    this.dropCheck = { key, clear };
+    return clear;
+  }
   resolveSuspended(game, pose) {
     const plan = game.plan;
     const remember = () => { plan.previousClawPose = { ...pose, rotation: { ...pose.rotation }, radii: [...pose.radii] }; };
@@ -276,7 +321,7 @@ export class ToyContacts {
       const samples = steelFingerSamples(OPEN_RADIUS);
       for (const angle of FINGER_ANGLES) for (const [index, sample] of samples.entries()) {
         const start = point(previous, angle, sample), end = point(pose, angle, sample);
-        const hit = this.hit(start, end, available, steelFingerWidth(index / (samples.length - 1)));
+        const hit = this.hit(start, end, available, steelFingerWidth(index / (samples.length - 1)), true);
         if (hit && hit.fraction < fraction) { fraction = hit.fraction; contact = hit; }
         if (end.y < BED + .012 && start.y > end.y) fraction = Math.min(fraction, Math.max(0, (start.y - BED - .012) / (start.y - end.y)));
       }
@@ -297,7 +342,7 @@ export class ToyContacts {
         const opened = steelFingerSamples(OPEN_RADIUS), closed = steelFingerSamples(goal);
         let fraction = 1, contact = null;
         for (let j = 0; j < opened.length; j++) {
-          const hit = this.hit(point(pose, angle, opened[j]), point(pose, angle, closed[j]), available, steelFingerWidth(j / (opened.length - 1)));
+          const hit = this.hit(point(pose, angle, opened[j]), point(pose, angle, closed[j]), available, steelFingerWidth(j / (opened.length - 1)), true);
           if (hit && hit.fraction < fraction) { fraction = hit.fraction; contact = hit; }
         }
         if (contact) {
@@ -309,6 +354,63 @@ export class ToyContacts {
       plan.resolvedRadii = [...pose.radii];
     }
     remember();
+  }
+  // Plush yields to the steel hub instead of letting it pass through: the
+  // fraction the body must squash so its crown stays under the hub collar.
+  // Call with the body unsquashed; the measure is in the toy's own frame.
+  press(toy, object, pose) {
+    const body = object.userData.body, top = object.position.y + object.userData.height * toy.scale;
+    if (clawWorldPoint(pose, { x: 0, y: HUB.bottom, z: 0 }).y > top + .05) return 0;
+    object.updateWorldMatrix(true, true);
+    let squash = 0;
+    for (const [x, z] of HUB_SAMPLES) {
+      const at = y => { const p = clawWorldPoint(pose, { x, y, z }); return vector(p.x, p.y, p.z); };
+      const hit = this.hit(at(HUB.bottom + .35), at(HUB.bottom - .35), [toy], 0, true);
+      if (!hit) continue;
+      const crown = body.worldToLocal(hit.point.clone()).y, hub = body.worldToLocal(at(HUB.bottom)).y;
+      if (hub > 0 && crown > hub) squash = Math.max(squash, 1 - hub / crown);
+    }
+    return Math.min(squash, MAX_SQUASH);
+  }
+  // Extra outward angle per articulation: the smallest fold that takes each
+  // ear, as a capsule, clear of the steel. Paws keep their rest pose; they are
+  // grip surfaces.
+  foldEars(object, pose) {
+    const key = pose.radii.join();
+    if (this.partsKey !== key) { this.parts = clawParts(pose.radii); this.partsKey = key; }
+    const parts = this.parts, scale = object.scale.x;
+    const toClaw = p => rotateClaw({ x: p.x - pose.x, y: p.y - pose.y, z: p.z - pose.z }, pose.rotation, true);
+    return object.userData.articulation.map(ear => {
+      if (ear.kind === 'paw') return 0;
+      if (!ear.capsule) {
+        const box = new T.Box3();
+        ear.object.traverse(mesh => { if (mesh.isMesh) { mesh.geometry.computeBoundingBox(); box.union(mesh.geometry.boundingBox); } });
+        const r = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2, x = (box.min.x + box.max.x) / 2, z = (box.min.z + box.max.z) / 2;
+        ear.capsule = { a: vector(x, Math.min(box.min.y + r, box.max.y - r), z), b: vector(x, Math.max(box.min.y + r, box.max.y - r), z), r };
+      }
+      const clearance = fold => {
+        ear.object.rotation.copy(ear.rest); ear.object.rotation.z -= ear.side * fold; ear.object.updateWorldMatrix(true, false);
+        const a = toClaw(ear.object.localToWorld(earA.copy(ear.capsule.a))), b = toClaw(ear.object.localToWorld(earB.copy(ear.capsule.b)));
+        let nearest = Infinity;
+        for (const part of parts) nearest = Math.min(nearest, segmentDistance(part, a, b) - part.r);
+        return nearest - ear.capsule.r * scale;
+      };
+      const rest = clearance(0);
+      if (rest >= 0) return 0;
+      // Without a clear fold, take the smallest one that clearly helps, so a
+      // settling claw cannot flip the ear between distant near-equal folds.
+      let best = 0, widest = rest;
+      for (let fold = .1; fold <= MAX_EAR_FOLD + 1e-9; fold += .1) {
+        const gap = clearance(fold);
+        if (gap >= 0) {
+          let low = fold - .1, high = fold;
+          for (let i = 0; i < 4; i++) { const mid = (low + high) / 2; if (clearance(mid) >= 0) high = mid; else low = mid; }
+          return high;
+        }
+        if (gap > widest + .005) { widest = gap; best = fold; }
+      }
+      return best;
+    });
   }
   // A full setFromObject traversal per obstacle per frame is the rock() hot
   // cost. The box is a pure function of the toy's mesh world matrices, so the
@@ -344,5 +446,7 @@ export class ToyContacts {
     }
     if (!accepted) { angle = 0; apply(0); }
     impact.angle = angle;
+    // A settled reaction ends, so the next bump tips away from its own contact.
+    if (!pressed && Math.abs(angle) < 1e-4 && Math.abs(impact.velocity) < 1e-3) delete toy.impact;
   }
 }
