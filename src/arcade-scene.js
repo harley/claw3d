@@ -44,7 +44,12 @@ export class ArcadeScene {
     this.mats = createArtMaterials(); this.toys = new Map(); this.buildWorld(); this.buildCabinet(); this.buildClaw();
     for (const toy of assortment) { const object = createToy(toy, this.mats); object.position.set(toy.x, BED, toy.z); this.scene.add(object); this.toys.set(toy.id, object); }
     this.contacts = new ToyContacts(this.toys);
-    if (anatomicalHands) this.cabinetHands = new CabinetHands(this.scene, undefined, { singleHand });
+    if (anatomicalHands) {
+      this.cabinetHands = new CabinetHands(this.scene, undefined, { singleHand });
+      // The hands first draw on the GO!-to-aim frame. Compile their shaders
+      // while menus are up so a weak GPU does not stall as control begins.
+      this.cabinetHands.ready.then(() => this.cabinetHands.state === 'ready' && this.renderer.compileAsync(this.cabinetHands.root, this.camera, this.scene)).catch(() => {});
+    }
     this.buildCarousel();
     this.createTarget();
     this.buildEffects();
