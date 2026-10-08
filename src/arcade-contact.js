@@ -2,23 +2,24 @@ import * as T from 'three';
 import { supportHull, gravityStep, hangingStep, MASS_CENTRE_Y } from './arcade-gravity.js';
 import { MeshBVH, acceleratedRaycast } from 'three-mesh-bvh';
 import { BED, HIGH, BODY, FIELD, CAROUSEL, FINGER_DEPTH, OPEN_RADIUS, FINGER_ANGLES, mix, ease, PHASES, planGrab, carriagePose, clawPose, resolveSuspendedGrab } from './arcade-mechanics.js';
-import { steelFingerSamples, steelFingerWidth, clawWorldPoint, rotateClaw, suspendedPose } from './claw-suspension.js';
+import { STEEL_HUB_BOTTOM, STEEL_HINGE, steelFingerSamples, steelFingerWidth, clawWorldPoint, rotateClaw, suspendedPose } from './claw-suspension.js';
 
 // Swept finger samples test visible geometry. The grasp support model still
 // decides catches; these contacts can reject one, never manufacture a win.
 const radius = .027;
 const vector = (x, y, z) => new T.Vector3(x, y, z);
 // Steel claw hardware a plush toy can press against, in claw-local units.
-const HUB = { radius: .08, bottom: -.4925 };
+const HUB = { radius: .08, bottom: STEEL_HUB_BOTTOM };
 const HUB_SAMPLES = [[0, 0], ...Array.from({ length: 6 }, (_, i) => [Math.cos(i * Math.PI / 3) * HUB.radius, Math.sin(i * Math.PI / 3) * HUB.radius])];
 const MAX_SQUASH = .2, MAX_EAR_FOLD = 1.4;
-// Spheres an ear must clear: the hub column, the hinge pins and each finger
-// sample at its blade half-width.
+const earA = new T.Vector3(), earB = new T.Vector3();
+// Spheres an ear must clear: the hub column, the hinge pins (with their
+// length) and each finger sample at its blade half-width.
 function clawParts(radii) {
   const parts = Array.from({ length: 13 }, (_, i) => ({ x: 0, y: HUB.bottom * i / 12, z: 0, r: .085 }));
   FINGER_ANGLES.forEach((angle, i) => {
     const c = Math.cos(angle), s = Math.sin(angle);
-    parts.push({ x: c * .11, y: -.34, z: s * .11, r: .05 });
+    parts.push({ x: c * STEEL_HINGE.x, y: STEEL_HINGE.y, z: s * STEEL_HINGE.x, r: .05 });
     steelFingerSamples(radii[i]).forEach((p, j) => parts.push({ x: c * p.x, y: p.y, z: s * p.x, r: steelFingerWidth(j / 16) }));
   });
   return parts;
@@ -288,7 +289,7 @@ export class ToyContacts {
     if (!game.suspendedClaw || target.id === game.rider) return true;
     const start = clawPose(game), available = game.toys.filter(toy => !toy.claimed && toy.id !== game.rider && !toy.transit);
     // A hovering claw settles to the millimetre; skip the sweep while nothing moves.
-    const key = [start.x, start.z, start.rotation.x, start.rotation.z, game.position.x, game.position.z].map(v => Math.round(v * 1000)).join() + target.id + available.map(toy => toy.id).join();
+    const key = [start.x, start.y, start.z, start.rotation.x, start.rotation.z, game.position.x, game.position.z].map(v => Math.round(v * 1000)).join() + target.id + available.map(toy => toy.id).join();
     if (this.dropCheck?.key === key && !available.some(toy => toy.impact)) return this.dropCheck.clear;
     const end = suspendedPose({ ...carriagePose(game), y: planGrab(game.position, game.toys).low }, game.suspension);
     for (const toy of available) this.toys.get(toy.id).updateWorldMatrix(true, true);
@@ -375,7 +376,9 @@ export class ToyContacts {
   // ear, as a capsule, clear of the steel. Paws keep their rest pose; they are
   // grip surfaces.
   foldEars(object, pose) {
-    const parts = clawParts(pose.radii), scale = object.scale.x;
+    const key = pose.radii.join();
+    if (this.partsKey !== key) { this.parts = clawParts(pose.radii); this.partsKey = key; }
+    const parts = this.parts, scale = object.scale.x;
     const toClaw = p => rotateClaw({ x: p.x - pose.x, y: p.y - pose.y, z: p.z - pose.z }, pose.rotation, true);
     return object.userData.articulation.map(ear => {
       if (ear.kind === 'paw') return 0;
@@ -387,13 +390,16 @@ export class ToyContacts {
       }
       const clearance = fold => {
         ear.object.rotation.copy(ear.rest); ear.object.rotation.z -= ear.side * fold; ear.object.updateWorldMatrix(true, false);
-        const a = toClaw(ear.object.localToWorld(ear.capsule.a.clone())), b = toClaw(ear.object.localToWorld(ear.capsule.b.clone()));
+        const a = toClaw(ear.object.localToWorld(earA.copy(ear.capsule.a))), b = toClaw(ear.object.localToWorld(earB.copy(ear.capsule.b)));
         let nearest = Infinity;
         for (const part of parts) nearest = Math.min(nearest, segmentDistance(part, a, b) - part.r);
         return nearest - ear.capsule.r * scale;
       };
-      if (clearance(0) >= 0) return 0;
-      let best = 0, widest = -Infinity;
+      const rest = clearance(0);
+      if (rest >= 0) return 0;
+      // Without a clear fold, take the smallest one that clearly helps, so a
+      // settling claw cannot flip the ear between distant near-equal folds.
+      let best = 0, widest = rest;
       for (let fold = .1; fold <= MAX_EAR_FOLD + 1e-9; fold += .1) {
         const gap = clearance(fold);
         if (gap >= 0) {
@@ -401,7 +407,7 @@ export class ToyContacts {
           for (let i = 0; i < 4; i++) { const mid = (low + high) / 2; if (clearance(mid) >= 0) high = mid; else low = mid; }
           return high;
         }
-        if (gap > widest) { widest = gap; best = fold; }
+        if (gap > widest + .005) { widest = gap; best = fold; }
       }
       return best;
     });

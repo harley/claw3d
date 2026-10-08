@@ -801,7 +801,7 @@ function frame(time) {
   if (!frozen && !blocked && !document.hidden) {
     const effects = stepTurn(game, flow, input, dt, { preparing: Boolean(run && !recovering && !modal), controlReady: isFirstTurnControlReady(mode, cameraControls?.feedback || {}), reducedMotion: Boolean(scene.reducedMotion), slamSeconds: RIGHT_SLAM_MS / 1000 });
     for (const effect of effects) {
-      if (effect.type === 'aim') aligned = effect.toy && scene.contacts.clearDrop(game, effect.toy) ? effect.toy : null;
+      if (effect.type === 'aim') aligned = effect.toy;
       // Actual movement, not hand presence: stay quiet at rest and at the travel limit.
       else if (effect.type === 'moved') { if (time - lastMovementSound >= 140) { lastMovementSound = time; audio.note(130, .065, 0, 'triangle', 95, .008); } }
       else if (effect.type === 'tick') audio.note(effect.remaining < 1 ? 220 : 440, .08);
@@ -812,6 +812,8 @@ function frame(time) {
     }
   } else input.x = input.z = 0;
   try {
+    // The cue promises a catch only when a still drop would reach the toy.
+    if (game.phase === 'aim' && aligned && !scene.contacts.clearDrop(game, aligned)) aligned = null;
     const feedback = flow.pendingSlam ? { ...flow.pendingSlam.feedback, profile: 'dual', kind: 'slamming', slamProgress: flow.pendingSlam.elapsed / (RIGHT_SLAM_MS / 1000), progress: 1, controlEnabled: false } : dualEnabled && flow.contactFeedback && game.phase === 'anticipate' ? { ...flow.contactFeedback, profile: 'dual', kind: 'slamming', slamProgress: 1, progress: 1, controlEnabled: false } : cameraControls?.feedback || { kind: 'off', progress: 0, controlEnabled: false };
     cueLead = cueLeadSeconds(mode, feedback);
     updateUI(feedback, modal);

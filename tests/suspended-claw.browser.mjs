@@ -141,7 +141,7 @@ try {
     const at = `${row.id} ${row.dx},${row.dz}`;
     if (row.cue) assert.notEqual(row.reason, 'bumped', `${at}: the points cue promised a drop that bumped`);
     if (row.dx === 0 && row.dz === 0) { assert.equal(row.cue, row.id, `${at}: centred cue`); assert.equal(row.caught, row.id, `${at}: centred catch`); }
-    if (row.caught) assert.ok(row.crownGap <= .01, `${at}: hub pierced the crown by ${row.crownGap}`);
+    if (row.caught) assert.ok(Number.isFinite(row.crownGap) && row.crownGap <= .01, `${at}: hub pierced the crown by ${row.crownGap}`);
   }
   for (const [id, dx, dz] of [['bonbon', 0, -.08], ['butter', 0, -.08], ['butter', -.08, 0]]) {
     const row = plush.grid.find(r => r.id === id && r.dx === dx && r.dz === dz);
@@ -150,6 +150,7 @@ try {
   }
   assert.deepEqual(plush.bumps.map(b => b.reason), ['bumped', 'bumped']);
   assert.ok(plush.bumps.every(b => b.cleared), 'a settled bump reaction ends');
+  assert.ok(plush.bumps.every(b => b.direction), 'each bump tips the toy');
   assert.equal(plush.bumps[0].direction, -plush.bumps[1].direction, 'mirrored bumps tip opposite ways');
   assert.ok(plush.still, 'the aim cue leaves the toy where it stands');
   // Contract: the active entry retains the selected claw across a real run,

@@ -592,11 +592,12 @@ export class ArcadeScene {
       if (game.pushContact && held && ['lift', 'transfer', 'release', 'deliver', 'reveal'].includes(phase)) this.contacts.hang(toy, object, plan, phase, dt, elapsed);
       // Plush gives way to the steel claw: the crown squashes and ears fold aside.
       // The hub squash is vertical only: a bulge must not reach a descending finger.
-      const pressed = game.suspendedClaw && !toy.claimed && ['descend', 'grip', 'lift', 'transfer', 'release'].includes(phase)
+      const pressed = game.suspendedClaw && !toy.claimed && ['descend', 'grip', 'lift', 'transfer', 'release', 'deliver'].includes(phase)
         && Math.hypot(object.position.x - pose.x, object.position.z - pose.z) < .9;
       const squash = pressed ? this.contacts.press(toy, object, pose) : 0;
       body.scale.set(1 + compression * .65, 1 - Math.max(compression, squash), 1 + compression * .45); body.rotation.z = wobble;
-      const folds = pressed ? this.contacts.foldEars(object, pose) : null;
+      // Grip folds clear the fingers where the mesh stopped them, not their closing targets.
+      const folds = pressed ? this.contacts.foldEars(object, phase === 'grip' && plan.resolvedRadii ? { ...pose, radii: plan.resolvedRadii } : pose) : null;
       const catalogIndex = ASSORTMENT.findIndex(t => t.id === toy.id);
       const seed = catalogIndex < 0 ? ASSORTMENT.length + game.toys.indexOf(toy) : catalogIndex;
       // Attract mode: on the empty machine each toy takes an occasional turn to
