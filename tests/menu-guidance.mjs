@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 // journey below owns camera wiring and real recognition; this checks cues,
 // target eligibility and layout independently of GPU throughput.
 export async function assertMenuGuidance(browser) {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, hasTouch: true });
   try {
     const html = (await readFile(new URL('../index.html', import.meta.url), 'utf8'))
       .replace('</head>', '<link rel="stylesheet" href="/src/arcade.css"></head>');
@@ -38,7 +38,7 @@ export async function assertMenuGuidance(browser) {
     }, id);
     for (const [mode, ids] of Object.entries({ idle: ['play', 'mode-one', 'mode-two', 'result-open'], resume: ['play'], registration: ['register-play', 'register-cancel'], final: ['play-again', 'next-player', 'final-leaderboard'] })) {
       await show(mode);
-      assert.equal(await page.locator('#menu-guide').isVisible(), true, `${mode}: one central prompt`);
+      assert.equal(await page.locator('#menu-guide').isVisible(), true, `${mode}: one bottom prompt`);
       assert.equal(await page.locator('#menu-guide').count(), 1);
       assert.equal(await page.locator('#hand-cursor').isVisible(), false);
       for (const id of ids) {
@@ -145,11 +145,32 @@ export async function assertMenuGuidance(browser) {
       }
     });
     const resultBox = await page.locator('#final').boundingBox();
-    for (const id of ['menu-guide', 'play-again', 'next-player', 'final-leaderboard']) {
+    for (const id of ['play-again', 'next-player', 'final-leaderboard']) {
       const box = await page.locator(`#${id}`).boundingBox();
       assert.ok(box.y >= resultBox.y && box.y + box.height <= resultBox.y + resultBox.height, `${id} is reachable without scrolling the result dialog`);
     }
     await page.screenshot({ path: '.screenshots/clp81-results-narrow.png' });
+    // Camera status changes must never resize/recentre a popup or move its
+    // touch targets. The old in-flow guide shifted them on ready -> delayed.
+    for (const viewport of [{ width: 1920, height: 1080 }, { width: 375, height: 812 }, { width: 844, height: 390 }]) {
+      await page.setViewportSize(viewport);
+      for (const [mode, action] of [['registration', 'register-cancel'], ['final', 'next-player']]) {
+        await show(mode);
+        const baseline = await page.locator(`#${action}`).boundingBox();
+        const dialog = await page.locator(`#${mode}`).boundingBox();
+        const hint = await page.locator('#menu-guide').boundingBox();
+        assert.ok(hint.y >= dialog.y + dialog.height, 'hint stays below the popup');
+        assert.ok(hint.y + hint.height <= viewport.height, 'hint stays on screen');
+        for (const kind of ['tracking', 'lost', 'delayed', 'ready', 'off', 'ready']) {
+          await page.evaluate(kind => updateMenu(kind, { pointer: { x: .18, y: .15 } }), kind);
+          assert.deepEqual(await page.locator(`#${action}`).boundingBox(), baseline, `${mode}/${kind}: touch target stays fixed`);
+        }
+        const count = await page.evaluate(() => clicks.length);
+        await page.locator(`#${action}`).tap();
+        assert.equal(await page.evaluate(() => clicks.length), count + 1, 'touch selection works with the guide visible');
+      }
+    }
+
     console.log('PASS menu teaching, eligible targets, cancellation, static reduced motion and narrow layout');
   } finally { await page.close(); }
 }
