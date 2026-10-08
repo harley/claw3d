@@ -36,11 +36,69 @@ test('a palm first acquired in the centre of DROP fires once without leaving', (
   for (let i = 0; i < 60; i++) fired += Number(f.step([f.left, hand('right', 'open', .72, .44)]).fired);
   assert.equal(fired, 1);
 });
-test('an acquired palm over DROP fires when left grip becomes ready', () => {
-  const f=fixture(); f.repeat([hand('left'),hand('right','open',.72,.44)]);
-  let fired=0;
-  for(let i=0;i<10;i++) fired+=Number(f.step([f.left,hand('right','open',.72,.44)]).fired);
+// Contract: DROP needs the palm to arrive. Recorded two-hand play rests the
+// open right hand inside DROP, so firing when the grip completed dropped at once.
+test('a palm already resting on DROP when the grip becomes ready must leave before it presses', () => {
+  const f=fixture(), resting=hand('right','open',.72,.44); f.repeat([hand('left'),resting]);
+  let fired=0, s;
+  for(let i=0;i<10;i++) { s=f.step([f.left,resting]); fired+=Number(s.fired); }
+  assert.equal(fired,0); assert.equal(s.dropEnabled,true); assert.equal(s.hands.right.grab.stage,'resting');
+  assert.equal(s.message,'MOVE RIGHT PALM OFF DROP');
+  f.step([f.left,hand('right','open',.72,.60)]);
+  for(let i=0;i<10;i++) fired+=Number(f.step([f.left,resting]).fired);
   assert.equal(fired,1);
+});
+// Contract: arrival belongs to the held grip, not to each pose sample. The grip
+// tolerates a brief uncertain fist; that frame must not strand a returning palm.
+test('an uncertain left frame while returning to DROP does not cancel the press', () => {
+  const f=fixture(), resting=hand('right','open',.72,.44), away=hand('right','open',.72,.60); f.repeat([hand('left'),away]); f.repeat([f.left,away],5);
+  assert.equal(f.step([hand('left','uncertain'),resting]).fired,false);
+  let fired=0;
+  for(let i=0;i<5;i++) fired+=Number(f.step([f.left,resting]).fired);
+  assert.equal(fired,1);
+});
+test('jitter across the DROP edge is not an arrival', () => {
+  const f=fixture(), edge=hand('right','open',.72,.555), jitter=hand('right','open',.72,.565); f.repeat([hand('left'),edge]); f.repeat([f.left,edge],5);
+  let fired=0;
+  for(let i=0;i<10;i++) fired+=Number(f.step([f.left,i%2?jitter:edge]).fired);
+  assert.equal(fired,0);
+});
+for (const glitch of ['missing', 'label-flip']) test(`a resting palm cannot press DROP by reacquiring after a ${glitch} right sample`, () => {
+  const f=fixture(), resting=hand('right','open',.72,.44); f.repeat([hand('left'),resting]); f.repeat([f.left,resting],5);
+  f.step(glitch==='missing'?[f.left]:[f.left,{...resting,physicalHand:'left'}]);
+  assert.equal(f.controls.right.owner,null,'the glitch discards right ownership');
+  let fired=0;
+  for(let i=0;i<20;i++) fired+=Number(f.step([f.left,resting]).fired);
+  assert.equal(fired,0);
+});
+test('a palm raised from out of view straight onto DROP presses after acquisition', () => {
+  const f=fixture(), resting=hand('right','open',.72,.44); f.repeat([hand('left'),resting]); f.repeat([f.left,resting],5);
+  f.repeat([f.left],5);
+  let fired=0;
+  for(let i=0;i<10;i++) fired+=Number(f.step([f.left,resting]).fired);
+  assert.equal(fired,1);
+});
+for (const phase of ['recognizing', 'observing']) test(`a palm resting on DROP through the ${phase} count-in cannot drop at GO`, () => {
+  const f=cameraFixture(); f.phase(phase);
+  const resting=hand('right','open',.72,.44);
+  f.repeat([hand('left'),resting]); f.repeat([hand('left','closed'),resting],8);
+  assert.equal(f.c.state.hands.left.grab.stage,'gripped');
+  f.c.neutralizeInput(); f.phase('aim');
+  const go=f.repeat([hand('left','closed'),resting],20);
+  assert.equal(f.drops(),0); assert.equal(go.hands.left.grab.stage,'gripped','the grip carries into aiming');
+  assert.equal(go.dropEnabled,true); assert.equal(go.message,'MOVE RIGHT PALM OFF DROP');
+  f.sample([hand('left','closed'),hand('right','open',.72,.60)]);
+  f.sample([hand('left','closed'),resting]);
+  assert.equal(f.drops(),1);
+});
+test('a visible left hand is told how to become ready instead of to show itself', () => {
+  const f=fixture();
+  assert.equal(f.step([]).message,'SHOW LEFT HAND');
+  assert.equal(f.step([hand('left','closed')]).message,'OPEN LEFT HAND');
+  assert.equal(f.step([hand('left')]).message,'HOLD LEFT HAND STILL');
+  const clenching=f.repeat([hand('left')]);
+  assert.equal(clenching.hands.left.ready,true);
+  assert.equal(f.step([hand('left','uncertain')]).message,'LEFT HAND · GRAB JOYSTICK','a transitional pose keeps the grip step');
 });
 test('lowering an acquired right hand establishes the next upward stroke without a hold', () => {
   const f=fixture();f.arm();assert.equal(f.step([f.left,hand('right','open',.65,.72)]).fired,false);

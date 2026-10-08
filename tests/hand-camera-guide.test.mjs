@@ -18,6 +18,8 @@ test('right readiness requires both acquired right and held left evidence', () =
   assert.equal(handCameraGuide('right', { ...feedback, dropEnabled: false }).state, 'inactive');
   assert.equal(handCameraGuide('right', { ...feedback, hands: {} }).state, 'open');
   assert.equal(handCameraGuide('right', { ...feedback, hands: { right: { ready: true, grab: { armed: false } } } }).icon, 'palm');
+  const resting = handCameraGuide('right', { ...feedback, hands: { right: { ready: true, grab: { stage: 'resting', armed: false } } } });
+  assert.deepEqual([resting.state, resting.label], ['open', 'MOVE OFF'], 'a palm resting on DROP is told to leave, not that it is ready');
 });
 test('stale, blocked and reset evidence cannot leave ready windows lit', () => {
   for (const state of [null, { ...feedback, controlEnabled: false }, ...['delayed', 'blocked', 'off', 'error'].map(kind => ({ ...feedback, kind }))]) {

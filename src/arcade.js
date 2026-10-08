@@ -276,7 +276,10 @@ function restoreTrophies() {
 }
 function beginTurn({ prepared = false } = {}) {
   if (run.turns.length && !recovering && game.phase === 'result') {
-    cameraControls?.reset(); aligned = null; hud.invalidate();
+    // Two-hand roles and the grip held through the count-in carry into GO;
+    // one-hand play must reopen so the previous drop's fist cannot hold again.
+    if (dualEnabled) cameraControls?.neutralizeInput(); else cameraControls?.reset();
+    aligned = null; hud.invalidate();
   } else {
     if (prepared) { cameraControls?.neutralizeInput(); aligned = null; hud.invalidate(); }
     else freshGame();

@@ -25,11 +25,12 @@ export function handCameraGuide(role, feedback, origin) {
       state = hand.ready ? 'active' : 'open'; label = hand.ready ? 'READY' : 'HOLD';
     }
   }
-  else if (!hand?.ready) { if (hand?.pointer && !hand.closed) label = role === 'right' ? 'PALM' : 'HOLD'; }
+  else if (!hand?.ready) { if (hand?.pointer && hand.open && !hand.closed) label = role === 'right' ? 'PALM' : 'HOLD'; }
   else if (role === 'left') {
     if (feedback.dropEnabled) { state = 'active'; label = 'MOVE'; icon = 'move'; }
     else if (stage === 'grabbing' || hand.grab?.armed) { state = 'grip'; label = 'GRIP'; icon = 'fist'; }
   } else if (!feedback.dropEnabled) { state = 'inactive'; label = 'WAIT'; icon = ''; }
+  else if (stage === 'resting') label = 'MOVE OFF';
   else if (hand.grab?.armed) {
     state = 'active'; label = stage === 'fired' ? 'DROP' : 'TO DROP'; icon = 'palm';
   }
