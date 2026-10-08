@@ -38,8 +38,10 @@ export function createDualHandGuide() {
       const instruction = single ? oneHand.instruction : stage === 'drop'
         ? right?.pointer && (!right.open || right.closed) ? 'Open your palm'
         : right?.pointer && !right.ready ? 'Hold palm still'
+        : right?.grab?.stage === 'resting' ? 'Move palm off DROP'
         : 'Open palm to DROP'
-        : stage === 'ready' ? 'Hand ready' : stage === 'grip' ? 'Clench to grip' : 'Show your hand';
+        : stage === 'ready' ? 'Hand ready' : stage === 'grip' ? 'Clench to grip'
+        : left?.pointer && !left.outside ? left.open && !left.closed ? 'Hold hand still' : 'Open your hand' : 'Show your hand';
       guide.querySelector('.dual-guide-instruction').textContent = instruction;
       guide.querySelector('.dual-guide-role').textContent = single ? '' : `${role} hand`;
 

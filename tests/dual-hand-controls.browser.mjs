@@ -217,6 +217,22 @@ try {
   await page.waitForFunction(()=>window.__littleCloud.snapshot().phase==='result',{},{timeout:30000});
   assert.equal((await page.evaluate(()=>window.__littleCloud.snapshot())).event.run.turns[0].prizeId,'sprout');
   for(let turn=2;turn<=3;turn++){
+    if(turn===2){
+      // Contract: a grip held through the count-in survives GO, and the palm that
+      // just pressed and still rests on DROP cannot drop the new turn by itself.
+      const countLeft={role:'left',x:.30,y:.50},resting={role:'right',x:.72,y:.44},held=[{...countLeft,kind:'closed'},resting];
+      await burst([countLeft,resting]);await burst(held,5);
+      await page.evaluate(hands=>{window.countInSamples=setInterval(()=>sample(hands),65);},held);
+      await page.waitForFunction(()=>window.__littleCloud.snapshot().phase==='aim',{},{timeout:10000});
+      await page.waitForTimeout(400);
+      const go=await page.evaluate(()=>({feedback:controller.dualFeedback,slam:window.__littleCloud.snapshot().event.pendingSlam,
+        status:document.getElementById('status').textContent,instruction:document.querySelector('.dual-guide-instruction').textContent}));
+      await page.screenshot({path:'.screenshots/dual-resting-palm-go.png'});
+      await page.evaluate(()=>clearInterval(window.countInSamples));
+      assert.equal(go.feedback.hands.left.grab.stage,'gripped','the count-in grip carries into GO');
+      assert.equal(go.feedback.dropEnabled,true);assert.equal(go.slam,null,'a palm resting on DROP cannot drop at GO');
+      assert.equal(go.status,'MOVE RIGHT PALM OFF DROP');assert.equal(go.instruction,'Move palm off DROP');
+    }
     await aim();assert.ok((await page.evaluate(()=>window.__littleCloud.snapshot())).toys.find(t=>t.id==='sprout').claimed);
     await acquire();await page.evaluate(()=>testAim(.80,.22));
     await burst([left]);await frame();

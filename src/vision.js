@@ -52,8 +52,7 @@ export class HandController {
     this.input = { x: 0, z: 0 };
     this.onInput(this.input);
     this.steer.release();
-    this.dual.left.steer.release();
-    this.dual.right.gesture.reset();
+    this.dual.neutralize();
   }
 
   async listCameras(selected) {
