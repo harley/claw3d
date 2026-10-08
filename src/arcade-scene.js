@@ -590,7 +590,13 @@ export class ArcadeScene {
         if (phase === 'reveal') { const t = elapsed / PHASES.reveal, slot = collectionSlot(toy.id); this.deliveryTray.visible = t < .97; this.deliveryTray.position.set(mix(slot.x, -1.08, ease((t - .45) / .55)), mix(slot.y, .50, ease((t - .22) / .60)), mix(slot.z, 1.69, ease(t / .30))); }
       }
       if (game.pushContact && held && ['lift', 'transfer', 'release', 'deliver', 'reveal'].includes(phase)) this.contacts.hang(toy, object, plan, phase, dt, elapsed);
-      body.scale.set(1 + compression * .65, 1 - compression, 1 + compression * .45); body.rotation.z = wobble;
+      // Plush gives way to the steel claw: the crown squashes and ears fold aside.
+      // The hub squash is vertical only: a bulge must not reach a descending finger.
+      const pressed = game.suspendedClaw && !toy.claimed && ['descend', 'grip', 'lift', 'transfer', 'release'].includes(phase)
+        && Math.hypot(object.position.x - pose.x, object.position.z - pose.z) < .9;
+      const squash = pressed ? this.contacts.press(toy, object, pose) : 0;
+      body.scale.set(1 + compression * .65, 1 - Math.max(compression, squash), 1 + compression * .45); body.rotation.z = wobble;
+      const folds = pressed ? this.contacts.foldEars(object, pose) : null;
       const catalogIndex = ASSORTMENT.findIndex(t => t.id === toy.id);
       const seed = catalogIndex < 0 ? ASSORTMENT.length + game.toys.indexOf(toy) : catalogIndex;
       // Attract mode: on the empty machine each toy takes an occasional turn to
@@ -599,14 +605,14 @@ export class ArcadeScene {
       if (motion && phase === 'idle' && index < 0) { const beat = (time + seed * 2.83) % 11; if (beat < 1.1) attract = Math.sin(beat / 1.1 * Math.PI); }
       if (blink) { const tick = (time + seed * 1.317) % (4.1 + seed * .23); blink.scale.y = motion && tick < .13 ? .15 + Math.abs(tick - .065) / .065 * .85 : 1; }
       if (motion && blink && held && phase === 'reveal' && elapsed > .32 && elapsed < .52) blink.scale.y = .13;
-      for (const ear of articulation) {
+      for (const [i, ear] of articulation.entries()) {
         ear.object.rotation.copy(ear.rest);
+        if (folds?.[i]) ear.object.rotation.z -= ear.side * folds[i];
         if (ear.kind === 'paw') {
           if (motion && held && phase === 'reveal') ear.object.rotation.z += ear.side * Math.sin(Math.min(1, elapsed / PHASES.reveal) * Math.PI) * .6;
           continue;
         } const lag = motion * (held && ['lift', 'transfer'].includes(phase) ? Math.sin(elapsed * 6 + ear.side) * .14 * Math.exp(-elapsed * 1.2) : wobble * 2) + attract * Math.sin(time * 9 + ear.side) * .15; ear.object.rotation.x += lag; ear.object.rotation.z += wobble; }
       if (motion && plan && !affected && phase === 'lift' && Math.hypot(toy.x - plan.position.x, toy.z - plan.position.z) < .85 && !toy.claimed) body.rotation.z = Math.sin(elapsed * 4) * .026 * Math.exp(-elapsed * 1.7);
-      if (motion && aligned?.id === toy.id && phase === 'aim') body.rotation.x = -.035;
       if (wave) { wave.value = motion * (Math.abs(wobble) * .32 + compression * .18 + attract * .09); waveTime.value = time; const drift = Math.sin(.4 * 11 - time * 13) * wave.value * .7; face.position.x = drift; blink.position.x = drift; }
     }
     if (game.pushContact) for (const toy of game.toys) if (toy.restPose && !toy.claimed && game.plan?.prize?.id !== toy.id) {

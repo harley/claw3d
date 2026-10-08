@@ -65,7 +65,9 @@ try {
   await page.screenshot({ path: '.screenshots/suspended-claw-pickup.png' });
   console.log(JSON.stringify(report, null, 2));
   for (const row of report) {
-    const expected = ['swing', 'side', 'empty', 'displaced'].includes(row.id) ? null : row.id === 'settled-swing' ? 'butter' : row.id;
+    // A small residual swing still lands inside Butter's support; plush ears
+    // no longer stop it. The larger grip displacement remains a miss.
+    const expected = ['side', 'empty', 'displaced'].includes(row.id) ? null : ['swing', 'settled-swing'].includes(row.id) ? 'butter' : row.id;
     assert.equal(row.caught, expected, `${row.fps} FPS ${row.id}: ${row.reason}`);
     assert.equal(row.phase, 'result'); assert.equal(row.rounds, 1);
     assert.deepEqual(row.collection, expected ? [expected] : [], 'one delivery or no prize');
@@ -78,6 +80,78 @@ try {
     }
     if (row.id === 'swing') assert.ok(row.peakSwing > .005, 'pickup replay actually exercises residual inertia');
   }
+  // Contract: plush yields to steel and the aim cue is honest. Near-centre
+  // rabbit drops once stopped on rigid ear tips while the hub pierced the head;
+  // the points cue promised catches that a finger then bumped. Drops above
+  // only test dead centre, so they caught neither.
+  const plush = await page.evaluate(async () => {
+    const { ArcadeScene } = await import('/src/arcade-scene.js');
+    const M = await import('/src/arcade-mechanics.js');
+    const { clawWorldPoint } = await import('/src/claw-suspension.js');
+    const canvas = document.createElement('canvas'); document.body.append(canvas);
+    const toys = M.createGame({ carousel: true, suspendedClaw: true, boothToys: true }).toys;
+    const scene = new ArcadeScene(canvas, { suspendedClaw: true, assortment: toys }); scene.renderer.render = () => {};
+    const settle = (game, id, dx, dz) => {
+      const toy = game.toys.find(t => t.id === id); game.position = { x: toy.x + dx, z: toy.z + dz };
+      for (let i = 0; i < 120; i++) M.advanceSuspension(game, 1 / 60);
+      scene.update(game, 1 / 60, 0, { x: 0, z: 0 }, null);
+      const aimed = M.aimTarget(game);
+      return aimed && scene.contacts.clearDrop(game, aimed) ? aimed.id : null;
+    };
+    const grid = [];
+    for (const id of ['bonbon', 'miso', 'blue-hour', 'peach', 'butter']) for (const dx of [-.16, -.08, 0, .08, .16]) for (const dz of [-.16, -.08, 0, .08, .16]) {
+      const game = M.createGame({ carousel: true, suspendedClaw: true, boothToys: true }); scene.groundToys(game); M.begin(game);
+      const cue = settle(game, id, dx, dz); M.drop(game);
+      let crownGap = -Infinity, folded = 0;
+      for (let frame = 0; frame < 300 && !['lift', 'result'].includes(game.phase); frame++) {
+        M.advance(game, 1 / 60); scene.update(game, 1 / 60, frame / 60, { x: 0, z: 0 }, null);
+        if (game.phase !== 'grip' || !game.plan.prize) continue;
+        // The squashed crown under the hub centre must not rise into the collar.
+        const pose = M.clawPose(game);
+        const object = scene.toys.get(game.plan.prize.id); object.updateWorldMatrix(true, true);
+        const top = clawWorldPoint(pose, { x: 0, y: -.15, z: 0 }), bottom = clawWorldPoint(pose, { x: 0, y: -.85, z: 0 });
+        const hit = scene.contacts.hit(object.position.clone().set(top.x, top.y, top.z), object.position.clone().set(bottom.x, bottom.y, bottom.z), [game.plan.prize], 0, true);
+        if (hit) crownGap = Math.max(crownGap, hit.point.y - clawWorldPoint(pose, { x: 0, y: -.4925, z: 0 }).y);
+        for (const ear of object.userData.articulation) if (ear.kind !== 'paw') folded = Math.max(folded, Math.abs(ear.object.rotation.z - ear.rest.z));
+      }
+      grid.push({ id, dx, dz, cue, caught: game.plan.prize?.id || null, reason: game.plan.reason, crownGap, folded });
+    }
+    // A later bump tips away from its own contact, not the first one's.
+    const game = M.createGame({ carousel: true, suspendedClaw: true, boothToys: true }); scene.groundToys(game);
+    const miso = game.toys.find(t => t.id === 'miso'), bumps = [];
+    for (const dx of [.16, -.16]) {
+      M.begin(game); settle(game, 'miso', dx, -.04); M.drop(game);
+      let direction = null;
+      for (let frame = 0; frame < 900 && (game.phase !== 'result' || miso.impact); frame++) {
+        if (game.phase !== 'result') M.advance(game, 1 / 60);
+        scene.update(game, 1 / 60, frame / 60, { x: 0, z: 0 }, null);
+        direction ??= miso.impact ? Math.sign(miso.impact.x) : null;
+      }
+      bumps.push({ reason: game.plan.reason, direction, cleared: !miso.impact });
+    }
+    // Aiming at a toy lights the cue; the toy itself does not move.
+    const aim = M.createGame({ carousel: true, suspendedClaw: true, boothToys: true }); scene.groundToys(aim); M.begin(aim);
+    aim.position = { x: aim.toys.find(t => t.id === 'butter').x, z: aim.toys.find(t => t.id === 'butter').z };
+    const body = scene.toys.get('butter').userData.body, matrix = () => (body.updateWorldMatrix(true, false), body.matrixWorld.elements.join());
+    scene.update(aim, 1 / 60, 0, { x: 0, z: 0 }, null); const plain = matrix();
+    scene.update(aim, 1 / 60, 0, { x: 0, z: 0 }, aim.toys.find(t => t.id === 'butter')); const cued = matrix();
+    return { grid, bumps, still: plain === cued };
+  });
+  for (const row of plush.grid) {
+    const at = `${row.id} ${row.dx},${row.dz}`;
+    if (row.cue) assert.notEqual(row.reason, 'bumped', `${at}: the points cue promised a drop that bumped`);
+    if (row.dx === 0 && row.dz === 0) { assert.equal(row.cue, row.id, `${at}: centred cue`); assert.equal(row.caught, row.id, `${at}: centred catch`); }
+    if (row.caught) assert.ok(row.crownGap <= .01, `${at}: hub pierced the crown by ${row.crownGap}`);
+  }
+  for (const [id, dx, dz] of [['bonbon', 0, -.08], ['butter', 0, -.08], ['butter', -.08, 0]]) {
+    const row = plush.grid.find(r => r.id === id && r.dx === dx && r.dz === dz);
+    assert.equal(row.caught, id, `${id} ${dx},${dz} near-centre rabbit catch: ${row.reason}`);
+    assert.ok(row.folded > .2, `${id} ${dx},${dz} ears fold aside under the claw`);
+  }
+  assert.deepEqual(plush.bumps.map(b => b.reason), ['bumped', 'bumped']);
+  assert.ok(plush.bumps.every(b => b.cleared), 'a settled bump reaction ends');
+  assert.equal(plush.bumps[0].direction, -plush.bumps[1].direction, 'mirrored bumps tip opposite ways');
+  assert.ok(plush.still, 'the aim cue leaves the toy where it stands');
   // Contract: the active entry retains the selected claw across a real run,
   // scores exactly three accepted drops, and finishes despite hand loss.
   await installCameraFixture(page);

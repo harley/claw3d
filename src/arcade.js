@@ -801,7 +801,7 @@ function frame(time) {
   if (!frozen && !blocked && !document.hidden) {
     const effects = stepTurn(game, flow, input, dt, { preparing: Boolean(run && !recovering && !modal), controlReady: isFirstTurnControlReady(mode, cameraControls?.feedback || {}), reducedMotion: Boolean(scene.reducedMotion), slamSeconds: RIGHT_SLAM_MS / 1000 });
     for (const effect of effects) {
-      if (effect.type === 'aim') aligned = effect.toy;
+      if (effect.type === 'aim') aligned = effect.toy && scene.contacts.clearDrop(game, effect.toy) ? effect.toy : null;
       // Actual movement, not hand presence: stay quiet at rest and at the travel limit.
       else if (effect.type === 'moved') { if (time - lastMovementSound >= 140) { lastMovementSound = time; audio.note(130, .065, 0, 'triangle', 95, .008); } }
       else if (effect.type === 'tick') audio.note(effect.remaining < 1 ? 220 : 440, .08);
