@@ -31,7 +31,7 @@ export function createMarqueeDisplay() {
     ink.restore();
     const pixels = ink.getImageData(0, 0, mask.width, mask.height).data;
     ctx.fillStyle = '#080e14'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-    const color = cue ? text === 'START!' ? '#b4ef52' : '#32d4f5' : '#467681';
+    const color = cue ? text === 'GO!' ? '#b4ef52' : '#32d4f5' : '#467681';
     for (let y = 4; y < canvas.height; y += 8) {
       for (let x = 4; x < canvas.width; x += 8) {
         const lit = pixels[(y * canvas.width + x) * 4 + 3] > 100;

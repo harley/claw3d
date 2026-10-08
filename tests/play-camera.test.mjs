@@ -34,11 +34,11 @@ test('pullback starts only after lift, and next-turn preparation completes befor
     assert.deepEqual(scene.camera.position, scene.home);
   }
   const caught = { phase: 'result', plan: { prize: {} } };
-  scene.updateCamera(caught, {preparing:true,nextTurnElapsed:1.9});
+  scene.updateCamera(caught, {preparing:true,nextTurnElapsed:1.8});
   assert.ok(scene.camera.position.distanceTo(scene.playCamera) > 0);
   assert.ok(scene.camera.position.distanceTo(scene.home) > 0);
-  scene.updateCamera(caught, {preparing:true,nextTurnElapsed:2.2});
-  assert.deepEqual(scene.camera.position, scene.playCamera, 'close view is back before START! at 2.2 s');
+  scene.updateCamera(caught, {preparing:true,nextTurnElapsed:2.1});
+  assert.deepEqual(scene.camera.position, scene.playCamera, 'close view is back before GO! at 2.1 s');
   scene.updateCamera({phase:'aim',elapsed:0});
   assert.deepEqual(scene.camera.position, scene.playCamera);
 });
@@ -60,9 +60,9 @@ test('reduced motion uses stable cuts with no zoom interpolation', () => {
   scene.updateCamera({phase:'transfer',elapsed:0});
   assert.deepEqual(scene.camera.position, scene.home);
   const caught = { phase: 'result', plan: { prize: {} } };
-  scene.updateCamera(caught, {preparing:true,nextTurnElapsed:2.1});
+  scene.updateCamera(caught, {preparing:true,nextTurnElapsed:2.0});
   assert.deepEqual(scene.camera.position, scene.home);
-  scene.updateCamera(caught, {preparing:true,nextTurnElapsed:2.2});
+  scene.updateCamera(caught, {preparing:true,nextTurnElapsed:2.1});
   assert.deepEqual(scene.camera.position, scene.playCamera);
 });
 

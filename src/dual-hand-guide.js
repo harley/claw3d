@@ -13,31 +13,35 @@ export function createDualHandGuide() {
   const cursor = document.createElement('div'); cursor.id = 'dual-palm-cursor'; cursor.hidden = true; cursor.setAttribute('aria-hidden', 'true'); cursor.innerHTML = icon(palm, '', 'right');
   document.body.append(guide, target, cursor);
   return {
-    update(feedback, targets, visible) {
+    // One-hand play passes its HUD instruction and hold progress; the card sits
+    // beside the joystick that hand drives, with no role line.
+    update(feedback, targets, visible, oneHand = null) {
       const fresh = !['off', 'loading', 'error', 'delayed', 'blocked', 'accepted', 'slamming'].includes(feedback.kind);
-      const enabled = visible && targets && feedback.profile === 'dual' && fresh;
+      const single = Boolean(oneHand) && feedback.profile !== 'dual';
+      const enabled = visible && targets && (feedback.profile === 'dual' || single) && fresh;
       if (!enabled) {
         for (const element of [guide, target, cursor]) if (!element.hidden) element.hidden = true;
         return;
       }
       target.hidden = cursor.hidden = true;
       const left = feedback.hands?.left, right = feedback.hands?.right;
-      const gripping = left?.ready && ['grabbing', 'gripped'].includes(left.grab?.stage);
-      const dropping = feedback.controlEnabled && feedback.dropEnabled;
-      const stage = dropping ? 'drop' : gripping ? 'ready' : left?.ready ? 'grip' : 'acquire';
+      const gripping = !single && left?.ready && ['grabbing', 'gripped'].includes(left.grab?.stage);
+      const dropping = !single && feedback.controlEnabled && feedback.dropEnabled;
+      const stage = single ? (oneHand.progress === null ? 'one-hand' : 'hold') : dropping ? 'drop' : gripping ? 'ready' : left?.ready ? 'grip' : 'acquire';
       guide.dataset.stage = stage;
       if (guide.hidden !== (stage === 'ready')) guide.hidden = stage === 'ready';
       const role = dropping ? 'right' : 'left';
-      guide.dataset.hand = role;
+      guide.dataset.hand = single ? 'one' : role;
+      guide.style.setProperty('--hold', single && oneHand.progress !== null ? oneHand.progress : 1);
       const anchor = dropping ? targets.drop : targets.stick;
       const cursorPoint = dropping && right?.pointer && !right.outside ? projectDropHand(right.pointer, targets) : null;
-      const instruction = stage === 'drop'
+      const instruction = single ? oneHand.instruction : stage === 'drop'
         ? right?.pointer && (!right.open || right.closed) ? 'Open your palm'
         : right?.pointer && !right.ready ? 'Hold palm still'
         : 'Open palm to DROP'
         : stage === 'ready' ? 'Hand ready' : stage === 'grip' ? 'Clench to grip' : 'Show your hand';
       guide.querySelector('.dual-guide-instruction').textContent = instruction;
-      guide.querySelector('.dual-guide-role').textContent = `${role} hand`;
+      guide.querySelector('.dual-guide-role').textContent = single ? '' : `${role} hand`;
 
       if (!guide.hidden) {
         const guideWidth = guide.getBoundingClientRect().width;

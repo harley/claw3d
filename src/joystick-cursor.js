@@ -56,10 +56,10 @@ export function createJoystickCursor(getTargets = () => null, onDrop = () => {})
       const aboveDrop = Math.abs(p.x - drop.x) < drop.radius && p.y < drop.y - drop.radius && p.y > drop.y - drop.radius - innerHeight * .20;
       return { overTarget, overDrop, aboveDrop };
     },
-    update(feedback, visible, dt, { guide = false } = {}) {
+    update(feedback, visible, dt, { guide = false, oneHand = null } = {}) {
       const targets = getTargets();
       button.hidden = !visible || !targets;
-      guidance.update(feedback, targets, guide);
+      guidance.update(feedback, targets, guide, oneHand);
       if (targets) {
         const d = targets.drop;
         button.dataset.ready = String(Boolean(d.ready));

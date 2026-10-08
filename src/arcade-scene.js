@@ -12,7 +12,8 @@ import { createMarqueeDisplay } from './marquee-display.js';
 import { clawWorldPoint } from './claw-suspension.js';
 
 const v = (x, y, z) => new T.Vector3(x, y, z);
-const wideToClose = (elapsed, reducedMotion) => reducedMotion ? Number(elapsed < 2.2) : 1 - ease((elapsed - 1.6) / .6);
+// The view returns close during the count-in's 1 and is settled for GO! at 2.1 s.
+const wideToClose = (elapsed, reducedMotion) => reducedMotion ? Number(elapsed < 2.1) : 1 - ease((elapsed - 1.5) / .6);
 const SHADOW_FRUSTUM = {
   close: { left: -2.9, right: 2.9, top: 5.6, bottom: -2.2 },
   wide: { left: -5, right: 3.2, top: 5.7, bottom: -3.5 },
@@ -43,7 +44,12 @@ export class ArcadeScene {
     this.mats = createArtMaterials(); this.toys = new Map(); this.buildWorld(); this.buildCabinet(); this.buildClaw();
     for (const toy of assortment) { const object = createToy(toy, this.mats); object.position.set(toy.x, BED, toy.z); this.scene.add(object); this.toys.set(toy.id, object); }
     this.contacts = new ToyContacts(this.toys);
-    if (anatomicalHands) this.cabinetHands = new CabinetHands(this.scene, undefined, { singleHand });
+    if (anatomicalHands) {
+      this.cabinetHands = new CabinetHands(this.scene, undefined, { singleHand });
+      // The hands first draw on the GO!-to-aim frame. Compile their shaders
+      // while menus are up so a weak GPU does not stall as control begins.
+      this.cabinetHands.ready.then(() => this.cabinetHands.state === 'ready' && this.renderer.compileAsync(this.cabinetHands.root, this.camera, this.scene)).catch(() => {});
+    }
     this.buildCarousel();
     this.createTarget();
     this.buildEffects();

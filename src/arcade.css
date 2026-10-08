@@ -357,7 +357,10 @@ dialog .menu-guide-hand { font-size: 52px; }
   box-shadow: 0 0 0 2px #02050aaa, 0 0 24px color-mix(in srgb, var(--guide-accent) 30%, transparent);
   text-align: center;
 }
-#dual-hand-guide[data-hand="right"] { --guide-accent: #ffc62e; }
+#dual-hand-guide[data-hand="right"], #dual-hand-guide[data-stage="hold"] { --guide-accent: #ffc62e; }
+/* A one-hand hold fills the accent bar with its confirmation progress. */
+#dual-hand-guide[data-stage="hold"] .dual-guide-instruction { border-image: linear-gradient(90deg, var(--guide-accent) calc(var(--hold) * 100%), #2b3c55 0) 1; }
+#dual-hand-guide .dual-guide-role:empty { display: none; }
 #dual-hand-guide .dual-guide-instruction {
   display: block;
   padding-bottom: 8px;

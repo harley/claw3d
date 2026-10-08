@@ -6,8 +6,10 @@ import { ABSOLUTE_SPEED } from './steering.js';
 // module owns run/score state and applies the effects this returns (sounds,
 // telemetry, persistence, announcements); nothing here reads or writes the page.
 export const HIT_STOP_SECONDS = .08;
-export const nextTurnSeconds = caught => caught ? 2.5 : 1.2;
-export const FIRST_TURN_PREPARATION_SECONDS = 4;
+// ROUND n, 3-2-1 and GO! share one rhythm on every turn (see countInCue).
+export const COUNT_IN_SECONDS = 2.5;
+export const nextTurnSeconds = caught => caught ? COUNT_IN_SECONDS : 1.2;
+export const FIRST_TURN_PREPARATION_SECONDS = COUNT_IN_SECONDS;
 export const FIRST_TURN_CONTROL_LOSS_GRACE_SECONDS = .7;
 
 export function createTurnState(seconds) {

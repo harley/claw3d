@@ -12,7 +12,8 @@ files named `left-source.glb` and `right-source.glb`. Four joint influences per
 vertex are exported and normalized for standard glTF skinning.
 
 At runtime `src/cabinet-hands.js` normalizes the wrist, reconstructs articulated
-finger chains, adds navy sleeve geometry, and applies the grip/strike poses.
+finger chains, adds a first-person forearm (bare wrist and folded navy fabric sleeve),
+and applies the grip/strike poses.
 It does not use WebXR input or change webcam recognition. Assets are served locally;
 there are no runtime third-party model requests. A model load failure removes only
 that model's 3D visual. Camera recognition and game controls remain available;
@@ -20,7 +21,8 @@ dual-mode camera setup reports the failed model load, and the console records th
 error.
 
 Design reference: generated three-direction board (human skin, leather gloves,
-robot hands), selected human skin with navy sleeves. Prompt: premium first-person
+robot hands), selected human skin with navy sleeves. On October 8 the original long
+tube sleeve was replaced by the shorter-reading first-person forearm. Prompt: premium first-person
 arcade controls; anatomical left grip around cyan balltop, open right palm beside
 amber dome; real material response, shared lighting and contact. Generated images
 are concept references only. No generated bitmap is used as game geometry.
