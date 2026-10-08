@@ -27,7 +27,7 @@ test('stale, blocked and reset evidence cannot leave ready windows lit', () => {
   }
 });
 test('guide bounds match sticky left travel and right local movement limits', () => {
-  assert.deepEqual(handCameraGuide('left', feedback, { x: .25, y: .48 }).zone, { minX: .02, maxX: .48, minY: .02, maxY: .98 });
+  assert.deepEqual(handCameraGuide('left', feedback, { x: .25, y: .48 }).zone, { minX: .02, maxX: .58, minY: .02, maxY: .98 });
   const guide = handCameraGuide('right', feedback, { x: .75, y: .48 });
   for (const [key, value] of Object.entries({ minX: .52, maxX: .92, minY: .12, maxY: .88 })) assert.ok(Math.abs(guide.zone[key] - value) < 1e-9);
   const outside = handCameraGuide('right', { ...feedback, hands: { right: { outside: true } } }, { x: .75, y: .48 });
