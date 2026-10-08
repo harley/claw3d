@@ -63,6 +63,40 @@ test('jitter across the DROP edge is not an arrival', () => {
   for(let i=0;i<10;i++) fired+=Number(f.step([f.left,i%2?jitter:edge]).fired);
   assert.equal(fired,0);
 });
+// Contract: a right hand rising past the frame edge cannot cancel the left.
+// A recorded session labelled it left for one or two frames below the right
+// workspace (y > .88); both roles were cancelled and the held fist was stranded.
+for (const held of ['gripped', 'acquired']) test(`a right hand rising mislabelled at the frame edge keeps the ${held} left hand`, () => {
+  const f=fixture(), left=hand('left',held==='gripped'?'closed':'open',.21,.73);
+  f.repeat([hand('left','open',.21,.73)]); if(held==='gripped') f.repeat([left],5);
+  const rising=[hand('right','closed',.74,1.02),{...hand('right','closed',.73,1.01),physicalHand:'left'},{...hand('right','open',.83,.96),physicalHand:'left',handednessScore:.86}];
+  for (const right of rising) {
+    const s=f.step([left,right]);
+    assert.notEqual(s.message,'SEPARATE YOUR HANDS'); assert.equal(s.hands.left.ready,true);
+    if(held==='gripped') { assert.equal(s.hands.left.grab.stage,'gripped'); assert.equal(s.dropEnabled,true); }
+  }
+  if(held==='gripped') assert.equal(f.step([hand('left','closed',.15,.73),hand('right','closed',.74,1.02)]).hands.left.ready,true,'steering continues');
+});
+test('a held grip survives a missed left sample while the right rises past the frame edge', () => {
+  const f=fixture(); f.grip();
+  assert.equal(f.step([hand('right','open',.74,1.02)]).hands.left.grab.stage,'gripped');
+  assert.equal(f.step([f.left,hand('right','open',.74,1.0)]).dropEnabled,true);
+});
+// Contract: re-clenching an owned left hand grips again. The same session
+// released on a brief open sample, then held a fist for 5 s without gripping.
+test('a quick release and re-clench grips again without a long open hand', () => {
+  const f=fixture(); f.grip();
+  assert.equal(f.step([hand('left')]).hands.left.grab.stage,'seeking');
+  let s; for(let i=0;i<4;i++) s=f.step([f.left]);
+  assert.equal(s.hands.left.grab.stage,'gripped'); assert.equal(s.dropEnabled,true);
+});
+test('a visible left hand outside the start area is told which way to move', () => {
+  const f=fixture();
+  assert.equal(f.step([hand('left','closed',.25,.87)]).message,'RAISE LEFT HAND');
+  assert.equal(f.step([hand('left','open',.12,.50)]).message,'MOVE LEFT HAND IN');
+  assert.equal(f.step([hand('left','open',.30,.15)]).message,'LOWER LEFT HAND');
+  assert.equal(f.step([hand('left','open',.30,.50)]).message,'HOLD LEFT HAND STILL');
+});
 for (const glitch of ['missing', 'label-flip']) test(`a resting palm cannot press DROP by reacquiring after a ${glitch} right sample`, () => {
   const f=fixture(), resting=hand('right','open',.72,.44); f.repeat([hand('left'),resting]); f.repeat([f.left,resting],5);
   f.step(glitch==='missing'?[f.left]:[f.left,{...resting,physicalHand:'left'}]);
