@@ -55,26 +55,31 @@ export class CabinetHands {
       const oldMaterials = new Set();
       model.traverse(o => { if (o.isMesh) { for (const m of [].concat(o.material)) oldMaterials.add(m); o.material = skin; o.castShadow = o.receiveShadow = true; o.frustumCulled = false; } });
       disposeMaterials(oldMaterials);
-      // A continuous tapered forearm, curved toward the player, with cuff ribs.
-      const sleeve = new T.MeshStandardMaterial({ color: '#162e43', roughness: .94 });
-      const points = [new T.Vector3(0,0,.005),new T.Vector3(role==='left'?-.012:.012,-.01,.09),new T.Vector3(role==='left'?-.055:.055,-.06,.23),new T.Vector3(role==='left'?-.11:.11,-.14,.42)];
-      const curve = new T.CatmullRomCurve3(points);
-      const geometry = new T.TubeGeometry(curve, 32, .027, 16, false);
+      // A first-person forearm: a bare wrist, then a folded fabric sleeve that
+      // widens toward the player and leaves the frame at its lower edge.
+      const sign = role === 'left' ? -1 : 1;
+      const path = new T.CatmullRomCurve3([new T.Vector3(0,0,.005), new T.Vector3(sign*.008,-.012,.07), new T.Vector3(sign*.035,-.06,.19), new T.Vector3(sign*.07,-.14,.32), new T.Vector3(sign*.10,-.23,.44)]);
+      const segments = 48, sides = 20, length = path.getLength(), cuffAt = .055;
+      const geometry = new T.TubeGeometry(path, segments, .026, sides, false);
       const positions = geometry.attributes.position;
-      for (let ring=0; ring<=32; ring++) {
-        const t=ring/32, centre=curve.getPointAt(t);
-        const width=1 + .30*t + .025*Math.sin(t*75)*Math.exp(-t*7);
-        for(let j=0;j<=16;j++) {
-          const index=ring*17+j, point=new T.Vector3().fromBufferAttribute(positions,index);
-          point.sub(centre).multiplyScalar(width).add(centre); positions.setXYZ(index,point.x,point.y,point.z);
+      for (let ring=0; ring<=segments; ring++) {
+        const t=ring/segments, centre=path.getPointAt(t), along=t*length, sleeved=along > cuffAt ? 1 : 0;
+        const forearm = 1 + .55*T.MathUtils.smoothstep(along, .01, .16);
+        const folds = sleeved * (.10 + (.06 + .05*Math.sin(along*52)) * Math.exp(-(along-cuffAt)*3));
+        for (let j=0;j<=sides;j++) {
+          const index=ring*(sides+1)+j, point=new T.Vector3().fromBufferAttribute(positions,index);
+          const creases = 1 + .025*sleeved*Math.sin(j/sides*Math.PI*6 + along*30);
+          point.sub(centre).multiplyScalar(forearm*(1+folds)*creases).add(centre); positions.setXYZ(index,point.x,point.y,point.z);
         }
       }
       geometry.computeVertexNormals();
-      const arm = new T.Mesh(geometry, sleeve); arm.castShadow = arm.receiveShadow = true; pivot.add(arm);
-      for (let i=0;i<6;i++) {
-        const cuff = new T.Mesh(new T.TorusGeometry(.0275, .0014, 6, 32), sleeve);
-        cuff.position.z = .008 + i*.003; cuff.castShadow = true; pivot.add(cuff);
-      }
+      const wristIndices = Math.round(segments*cuffAt/length)*sides*6;
+      geometry.addGroup(0, wristIndices, 0); geometry.addGroup(wristIndices, Infinity, 1);
+      const sleeve = new T.MeshPhysicalMaterial({ color: '#1d3d5c', roughness: .82, sheen: .8, sheenRoughness: .6, sheenColor: new T.Color('#5f8fbf') });
+      const arm = new T.Mesh(geometry, [skin, sleeve]); arm.castShadow = arm.receiveShadow = true; pivot.add(arm);
+      const hem = new T.Mesh(new T.TorusGeometry(.0335, .0042, 10, 40), sleeve);
+      hem.position.copy(path.getPointAt(cuffAt/length)); hem.quaternion.setFromUnitVectors(new T.Vector3(0,0,1), path.getTangentAt(cuffAt/length));
+      hem.castShadow = true; pivot.add(hem);
       this.hands[role] = { pivot, bends, thumb, thumbAxis, thumbRest, thumbLiftAxis, thumbProx, thumbProxRest, thumbProxAxis, curl: 0 };
     })).then(() => { this.state = 'ready'; }).catch(error => {
       this.state = 'error'; this.error = error.message;
