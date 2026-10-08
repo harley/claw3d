@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { recordStartCue, assertStartCueDuration, assertPreparationTiming } from './start-cue-observation.mjs';
 
-test('valid START survives intervening RPC delay that failed the old measurement', () => {
+test('valid GO survives intervening RPC delay that failed the old measurement', () => {
   const { record, legacyDuration, drops } = countIn({ start: 300 });
   assert.equal(legacyDuration, 140);
   assert.throws(() => assertStartCueDuration({ start: { at: 0 }, aim: { at: legacyDuration } }), /short cue/);
@@ -17,15 +17,15 @@ test('valid START survives intervening RPC delay that failed the old measurement
   assert.equal(drops, 1);
 });
 
-for (const duration of [100, 900]) {
-  test(`rejects an observable ${duration} ms START despite delayed reads`, () => {
+for (const duration of [100, 1000]) {
+  test(`rejects an observable ${duration} ms GO despite delayed reads`, () => {
     assert.throws(() => assertStartCueDuration(countIn({ start: duration }).record), /short cue/);
   });
 }
 
 // Drive the actual page recorder through a complete count-in. Browser journeys
 // cover wiring; this fixture isolates delayed reads and diagnostic work.
-function countIn({ digits = [1000, 1000, 1000], round = 700, start = 300, omit = null, snapshotDelay = 0 } = {}) {
+function countIn({ digits = [500, 500, 500], round = 600, start = 400, omit = null, snapshotDelay = 0 } = {}) {
   let now = 1000, cue = 'ROUND 1', phase = 'idle', nextFrame, snapshots = 0, drops = 0;
   const record = runInNewContext(`(${recordStartCue.toString()})()`, {
     performance: { now: () => now },
@@ -49,12 +49,12 @@ function countIn({ digits = [1000, 1000, 1000], round = 700, start = 300, omit =
   const delayedThreeAt = now;
   nextFrame(); // No new cue: do not build another scene snapshot.
   let transitionAt = threeAt;
-  for (const [index, nextCue] of ['2', '1', 'START!'].entries()) {
+  for (const [index, nextCue] of ['2', '1', 'GO!'].entries()) {
     transitionAt += digits[index]; now = transitionAt; cue = nextCue;
     if (cue !== omit) nextFrame();
   }
   const actualStart = now;
-  // The old START measurement took its origin after awaited browser calls.
+  // The old GO measurement took its origin after awaited browser calls.
   now += Math.min(160, start - 1);
   const delayedStartAt = now;
   now = actualStart + start; cue = 'AIM'; phase = 'aim'; nextFrame();
@@ -66,7 +66,7 @@ test('snapshot work cannot shift a captured cue boundary or run on unchanged fra
   const { record, snapshots } = countIn({ snapshotDelay: 400 });
   assertPreparationTiming(record);
   assertStartCueDuration(record);
-  assert.equal(record.cues[2].at - record.cues[1].at, 1000);
+  assert.equal(record.cues[2].at - record.cues[1].at, 500);
   assert.equal(record.diagnostics.maxSnapshotMs, 400);
   assert.equal(snapshots, 6, 'five cue boundaries plus the first aim state');
   assert.equal(record.diagnostics.snapshots, snapshots);
@@ -80,8 +80,8 @@ test('every count-in boundary survives a delayed digit RPC and late result read'
   assertStartCueDuration(record);
   const lateOrigin = structuredClone(record);
   lateOrigin.cues[1].at = delayedThreeAt;
-  assert.equal(lateOrigin.cues[2].at - delayedThreeAt, 750);
-  assert.throws(() => assertPreparationTiming(lateOrigin), /2 follows.*750 ms/);
+  assert.equal(lateOrigin.cues[2].at - delayedThreeAt, 250);
+  assert.throws(() => assertPreparationTiming(lateOrigin), /2 follows.*250 ms/);
   for (const { state } of record.cues) {
     assert.equal(state.phase, 'idle');
     assert.equal(state.event.turn, 0);
@@ -90,13 +90,13 @@ test('every count-in boundary survives a delayed digit RPC and late result read'
   assert.equal(record.aim.state.event.remaining, 14.99);
 });
 
-for (const index of [0, 1, 2]) for (const duration of [700, 1400]) {
+for (const index of [0, 1, 2]) for (const duration of [250, 1000]) {
   test(`rejects digit ${3 - index} lasting ${duration} ms`, () => {
-    const digits = [1000, 1000, 1000]; digits[index] = duration;
+    const digits = [500, 500, 500]; digits[index] = duration;
     assert.throws(() => assertPreparationTiming(countIn({ digits }).record), /follows its prior digit/);
   });
 }
-for (const round of [400, 1300]) {
+for (const round of [300, 1300]) {
   test(`retains the ROUND 1 bound at ${round} ms`, () => {
     assert.throws(() => assertPreparationTiming(countIn({ round }).record), /ROUND 1 precedes/);
   });

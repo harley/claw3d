@@ -12,7 +12,8 @@ import { createMarqueeDisplay } from './marquee-display.js';
 import { clawWorldPoint } from './claw-suspension.js';
 
 const v = (x, y, z) => new T.Vector3(x, y, z);
-const wideToClose = (elapsed, reducedMotion) => reducedMotion ? Number(elapsed < 2.2) : 1 - ease((elapsed - 1.6) / .6);
+// The view returns close during the count-in's 1 and is settled for GO! at 2.1 s.
+const wideToClose = (elapsed, reducedMotion) => reducedMotion ? Number(elapsed < 2.1) : 1 - ease((elapsed - 1.5) / .6);
 const SHADOW_FRUSTUM = {
   close: { left: -2.9, right: 2.9, top: 5.6, bottom: -2.2 },
   wide: { left: -5, right: 3.2, top: 5.7, bottom: -3.5 },

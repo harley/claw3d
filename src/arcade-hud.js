@@ -28,22 +28,21 @@ const deliveryPhases = new Set(['anticipate', 'descend', 'grip', 'lift', 'transf
 // full count-in. After a miss the view never left the claw: name it, then go.
 export { nextTurnSeconds } from './turn-controller.js';
 
-export function nextTurnCue(elapsed, round, caught = true) {
-  if (!caught) return elapsed < .6 ? 'MISSED' : 'START!';
-  if (elapsed < .7) return `ROUND ${round}`;
-  if (elapsed < 1.2) return '3';
-  if (elapsed < 1.7) return '2';
-  if (elapsed < 2.2) return '1';
-  return 'START!';
+// Every count-in, first turn included, shares one 2.5 s arcade rhythm.
+export function countInCue(elapsed, round) {
+  if (elapsed < .6) return `ROUND ${round}`;
+  if (elapsed < 1.1) return '3';
+  if (elapsed < 1.6) return '2';
+  if (elapsed < 2.1) return '1';
+  return 'GO!';
 }
 
-export function firstTurnCue(elapsed) {
-  if (elapsed < .7) return 'ROUND 1';
-  if (elapsed < 1.7) return '3';
-  if (elapsed < 2.7) return '2';
-  if (elapsed < 3.7) return '1';
-  return 'START!';
+export function nextTurnCue(elapsed, round, caught = true) {
+  if (!caught) return elapsed < .6 ? 'MISSED' : 'GO!';
+  return countInCue(elapsed, round);
 }
+
+export const firstTurnCue = elapsed => countInCue(elapsed, 1);
 
 export function playFirstTurnCueTone(audio, cue, allowed = true) {
   if (!allowed) return false;
@@ -51,7 +50,7 @@ export function playFirstTurnCueTone(audio, cue, allowed = true) {
     '3': [[659, .12, 0]],
     '2': [[784, .12, 0]],
     '1': [[988, .14, 0]],
-    'START!': [[880, .12, 0], [1175, .18, .08]],
+    'GO!': [[880, .12, 0], [1175, .18, .08]],
   }[cue];
   if (!notes) return false;
   for (const [frequency, duration, delay] of notes) audio.note(frequency, duration, delay, 'sine', frequency, .022);
@@ -71,7 +70,7 @@ export function firstTurnWaitingMessage(feedback = {}, dualEnabled = false) {
   if (feedback.kind === 'error') return 'CAMERA ERROR';
   if (feedback.kind === 'loading') return 'STARTING CAMERA';
   if (feedback.kind === 'clenching' || (feedback.kind === 'ready' && feedback.closed === true) ||
-    (feedback.kind === 'tracking' && feedback.handCount === 1 && feedback.open !== true)) return 'OPEN HAND TO READY';
+    (feedback.kind === 'tracking' && feedback.handCount === 1 && feedback.open !== true)) return 'OPEN YOUR HAND';
   return 'SHOW ONE HAND';
 }
 
@@ -114,7 +113,7 @@ function presentMessage(title, hint, key, duration = 0) {
 }
 
 export function createHud({ audio, phaseSound }) {
-  let lastCue = '', lastStatus = '', lastFirstTurnCue = null, marqueeCue = null;
+  let lastCue = '', lastStatus = '', lastFirstTurnCue = null, marqueeCue = null, oneHandGuide = null;
   function update(view, feedback, modal) {
     const { game, run, completedRun, pendingPlayer, turnNumber, remaining, nextTurnElapsed, firstTurnPreparationElapsed, firstTurnControlReady, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, publicTry, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus, storageError, aligned, marqueeAvailable } = view;
   const phase = game.phase, total = run?.turns.reduce((sum, t) => sum + t.score, 0) || completedRun?.total || 0;
@@ -129,7 +128,7 @@ export function createHud({ audio, phaseSound }) {
     title = firstTurnControlReady ? firstTurnCue(firstTurnPreparationElapsed) : firstTurnWaitingMessage(feedback, dualEnabled);
     button = '';
   }
-  else if (phase === 'aim') { kicker = turnNumber === turns ? 'LAST CLAW!' : `TURN ${turnNumber} OF ${turns}`; title = 'Clench & hold to drop'; hint = ''; button = '';  }
+  else if (phase === 'aim') { kicker = turnNumber === turns ? 'LAST CLAW!' : `TURN ${turnNumber} OF ${turns}`; title = 'HOLD A FIST TO DROP'; hint = ''; button = '';  }
   else if (phase === 'result' && run) { kicker = `ROUND ${turnNumber + 1} OF ${turns}`; title = nextTurnCue(nextTurnElapsed, turnNumber + 1, Boolean(game.plan?.prize)); hint = title === 'MISSED' ? missCopy(game.plan, game.toys) : ''; button = ''; }
   else if (phase in phaseCopy) {
     title = phase === 'lift' && !game.plan?.prize ? 'MISSED' : game.collectionPreview && phase === 'lift' && catchQuality(game.plan) === 'perfect' ? 'PERFECT GRAB!' : phaseCopy[phase];
@@ -171,10 +170,10 @@ export function createHud({ audio, phaseSound }) {
     else if (['ready', 'lost'].includes(feedback.kind)) { title = feedback.profile === 'menu-left' ? 'SHOW LEFT HAND' : feedback.handCount > 1 ? 'ONE HAND ONLY' : 'SHOW ONE HAND'; hint = ''; }
     else if (feedback.kind === 'delayed') { title = 'TRACKING DELAYED'; hint = ''; }
     else if (feedback.kind === 'calibrating') { title = 'HOLD STILL'; hint = ''; }
-    else if (feedback.kind === 'clenching' && feedback.controlEnabled) { title = feedback.progress > 0 ? (phase === 'aim' ? 'Hold to drop' : 'HOLD TO SELECT') : 'OPEN HAND'; hint = ''; }
+    else if (feedback.kind === 'clenching' && feedback.controlEnabled) { title = feedback.progress > 0 ? (phase === 'aim' ? 'KEEP HOLDING' : 'HOLD TO SELECT') : 'OPEN YOUR HAND'; hint = ''; }
     else if (feedback.kind === 'tracking') {
       if (phase === 'idle') { title = feedback.profile === 'menu-left' ? 'LEFT HAND · AIM AT PLAY · CLENCH' : 'AIM AT PLAY · CLENCH'; hint = ''; }
-      else if (!nearPickup) { title = 'Clench & hold to drop'; hint = ''; }
+      else if (!nearPickup) { title = 'HOLD A FIST TO DROP'; hint = ''; }
     } else if (feedback.kind === 'error') { title = 'CAMERA ERROR'; hint = ''; }
     else if (feedback.kind === 'loading') { title = 'STARTING CAMERA'; hint = ''; }
   }
@@ -238,7 +237,13 @@ export function createHud({ audio, phaseSound }) {
   // instruction for assistive tech; camera failures and pause stay visible.
   const dualGuide = dualEnabled && cameraControls?.running && !modal && !recovering && !startingRun &&
     (phase === 'aim' || preparingFirstTurn && !firstTurnControlReady) && !['off', 'loading', 'error', 'delayed', 'blocked'].includes(feedback.kind);
-  const quiet = Boolean(!paused && (dualGuide || cameraGuide || (steering && rightReady && (run.turns.length > 0 || cueVisible))));
+  const machineLeads = steering && rightReady && (run.turns.length > 0 || cueVisible);
+  // One-hand guidance shares the two-hand floating card beside the joystick;
+  // camera faults keep the compact central message.
+  const handCard = !dualEnabled && !grabEnabled && Boolean(run) && cameraControls?.running && !paused && !modal && !recovering && !startingRun && !machineLeads &&
+    (phase === 'aim' || preparingFirstTurn && !firstTurnControlReady) && ['ready', 'lost', 'calibrating', 'clenching', 'tracking'].includes(feedback.kind);
+  oneHandGuide = handCard ? { instruction: title, progress: holding ? progress / 100 : null } : null;
+  const quiet = Boolean(!paused && (dualGuide || cameraGuide || machineLeads || handCard));
   $('action-copy').classList.toggle('quiet', quiet);
   const cameraGuidance = Boolean(run && !paused && !modal && !quiet && !timed &&
     (phase === 'aim' || preparingFirstTurn && !firstTurnControlReady));
@@ -248,9 +253,9 @@ export function createHud({ audio, phaseSound }) {
   $('action-copy').classList.toggle('gesture-guide', Boolean(steering && !nearPickup));
   const countdown = Boolean(run && !paused && !modal && !document.hidden && !recovering && !startingRun &&
     ((phase === 'idle' && preparingFirstTurn && firstTurnControlReady) || phase === 'result') &&
-    /^(ROUND [1-3]|[1-3]|START!)$/.test(title));
+    /^(ROUND [1-3]|[1-3]|GO!)$/.test(title));
   $('action-copy').classList.toggle('countdown', countdown);
-  $('action-copy').dataset.countdown = countdown ? title === 'START!' ? 'play' : title.startsWith('ROUND') ? 'round' : 'digit' : '';
+  $('action-copy').dataset.countdown = countdown ? title === 'GO!' ? 'play' : title.startsWith('ROUND') ? 'round' : 'digit' : '';
   // A miss keeps one message surface from the empty lift through the next-turn cue.
   presentMessage(title, hint, `${title === 'MISSED' ? 'missed' : ['anticipate', 'descend'].includes(phase) ? 'drop' : phase}:${turnNumber}:${title}:${hint}`, timed ? 1600 : 0);
   const shortAnnouncement = /^(READY|CONNECTING|DROP!|GOT IT!|MISSED)$/.test(title);
@@ -283,7 +288,7 @@ export function createHud({ audio, phaseSound }) {
     $('turn-chips').append(chip);
   }
   }
-  return { update, get marqueeCue() { return marqueeCue; }, invalidate: () => { lastStatus = ''; } };
+  return { update, get marqueeCue() { return marqueeCue; }, get oneHandGuide() { return oneHandGuide; }, invalidate: () => { lastStatus = ''; } };
 }
 
 export { $, setText, setHidden };

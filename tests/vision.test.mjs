@@ -102,7 +102,7 @@ test('a closed fist before acquisition reports actionable readiness guidance', (
   assert.equal(feedback.open, false);
   assert.equal(feedback.closed, true);
   assert.equal(firstTurnControlReady(resolvePlayMode('', false), feedback), false);
-  assert.equal(firstTurnWaitingMessage(feedback), 'OPEN HAND TO READY');
+  assert.equal(firstTurnWaitingMessage(feedback), 'OPEN YOUR HAND');
 });
 
 test('an ambiguous tracked pose does not count as open-hand readiness', () => {

@@ -27,7 +27,7 @@ try {
   await page.locator('#name').press('Enter');
   await page.waitForFunction(() => window.__littleCloud.snapshot().joystick.mode === 'tracking');
   await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
-  assert.equal(await page.locator('#status').textContent(), 'Clench & hold to drop');
+  assert.equal(await page.locator('#status').textContent(), 'HOLD A FIST TO DROP');
   // Actual scene wiring: the shared rig replaces the old glove in both
   // acquired orientations, while existing checks cover the same drop journey.
   await page.waitForFunction(() => window.testGrip().ready === 'ready');
@@ -43,7 +43,7 @@ try {
 
   // A closed hand must first open to arm a new drop.
   await feedback({ kind: 'clenching', progress: 0, message: 'Open your hand first, then clench to drop.' });
-  await page.waitForFunction(() => document.getElementById('status').textContent === 'OPEN HAND');
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'OPEN YOUR HAND');
   assert.equal(await page.locator('#hint').isVisible(), false);
   assert.equal((await snap()).phase, 'aim');
   await feedback({ kind: 'clenching', progress: .5, message: 'Hold your fist to drop. Open to cancel.' });
@@ -54,7 +54,7 @@ try {
   assert.deepEqual(held.effects.clawLean, [0, 0, 0]);
   const meterBox = await page.locator('#gesture-meter').boundingBox();
   assert.equal(meterBox.width, 1, 'remote progress remains accessible without a competing visible meter');
-  assert.equal(await page.locator('#status').textContent(), 'Hold to drop');
+  assert.equal(await page.locator('#status').textContent(), 'KEEP HOLDING');
   // The cabinet DROP ring owns progress, including reduced motion.
   assert.equal(await page.locator('#machine-drop').evaluate(el => el.style.getPropertyValue('--hold')), '0.5');
   assert.equal(await page.locator('#control-deck').isVisible(),false);
@@ -119,8 +119,8 @@ try {
   assert.equal((await snap()).phase, 'result', 'host pause holds the announcement');
   assert.equal(await cameraDrop(page), false);
   await page.locator('#operator-open').click(); await page.locator('#pause').click();
-  await page.waitForFunction(() => document.getElementById('status').textContent === 'START!');
-  assert.equal(await cameraDrop(page), false, 'START! cue rejects drops');
+  await page.waitForFunction(() => document.getElementById('status').textContent === 'GO!');
+  assert.equal(await cameraDrop(page), false, 'GO! cue rejects drops');
   assert.deepEqual((await snap()).camera, aimingCamera, 'close view is ready before aiming resumes');
   await page.waitForFunction(() => window.__littleCloud.snapshot().phase === 'aim');
   assert.equal((await snap()).event.turn, 2);

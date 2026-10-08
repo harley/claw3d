@@ -66,7 +66,7 @@ test('the next turn is announced only while preparing, after the outcome-depende
 test('first-turn preparation waits for control and resets after sustained loss', () => {
   const game = createGame({ carousel: true }), state = createTurnState(9);
   beginFirstTurnPreparation(state, 15);
-  assert.equal(FIRST_TURN_PREPARATION_SECONDS, 4);
+  assert.equal(FIRST_TURN_PREPARATION_SECONDS, 2.5);
   assert.equal(FIRST_TURN_CONTROL_LOSS_GRACE_SECONDS, .7);
   assert.equal(game.phase, 'idle');
   assert.equal(requestDrop(game, state), false, 'idle preparation cannot accept a drop');

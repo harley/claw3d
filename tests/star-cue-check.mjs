@@ -80,7 +80,7 @@ export async function checkStarCue(browser) {
         if (target === 3.9) { assert.equal(state.go, true); assert.equal(state.text, 'CLENCH FIST & HOLD'); }
         if (target === 4.35 || target === 4.54) {
           assert.equal(state.visible, true);
-          assert.equal(state.title, 'Hold to drop');
+          assert.equal(state.title, 'KEEP HOLDING');
           assert.equal(state.text, 'KEEP HOLDING', 'the expired start cue must not tell an active hold to wait');
           assert.equal(state.tagVisible, true); assert.ok(state.tagOffset < 1);
         }

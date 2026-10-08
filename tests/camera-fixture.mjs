@@ -43,7 +43,7 @@ export const cameraDrop = page => page.evaluate(() => window.testCamera.clench()
 export async function assertScoredStart(page, { captureScreenshots = false, exerciseClosedReadiness = false } = {}) {
   if (exerciseClosedReadiness) {
     await page.evaluate(() => window.testCamera.setFeedback({ kind: 'clenching', closed: true }));
-    await page.waitForFunction(() => document.getElementById('status').textContent === 'OPEN HAND TO READY' &&
+    await page.waitForFunction(() => document.getElementById('status').textContent === 'OPEN YOUR HAND' &&
       window.__littleCloud.snapshot().event.firstTurnControlReady === false &&
       window.__littleCloud.snapshot().event.firstTurnPreparationElapsed === 0);
     await page.waitForTimeout(250);
