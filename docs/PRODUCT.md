@@ -100,9 +100,9 @@ Choosing another mode uses the existing page-reload boundary, carrying the submi
 
 The scene fills the available width beneath the compact top HUD. The cabinet, claw, toys, joystick and DROP button lead the composition; raw camera video is hidden by default while capture continues. Inside the camera-icon popup, Show camera opens a mirrored, uncropped view of the existing stream with its active camera label. Hide camera or closing the popup hides the image without stopping capture. The existing settings-dialog gameplay rules still apply. No additional camera or recognition pipeline is started. The view fits desktop and portrait screens and reports camera-off, starting and error states. Landmarks remain hidden. Video stays on-device; this framing aid does not fix recognition latency. Physical Tomko framing acceptance remains unverified. The animated hand cursor and cabinet hands remain the player feedback. The leaderboard appears between runs on large displays. Phones keep it behind a Scores button beside PLAY; the same live board opens in a dialog with Back to game and Your result actions, available to touch, keyboard and the hand cursor. Idle screens hide the inactive turn, score and timer HUD. During play, one- and two-hand instructions float beside the cabinet control they concern; camera faults keep one compact central message, and countdowns and brief drop/catch/miss announcements use the central live region. Two-hand target rings and tracked palms stay on the cabinet. Three small turn markers replace the empty result cards; the result dialog retains the full turn breakdown.
 
-Portrait phones group the compact hand invitation and PLAY/Scores actions beneath the machine, above the privacy notice and footer; landscape phones use a corner guidance area. Both orientations keep raw camera video hidden unless Show camera is selected. A coarse-pointer viewport with a short edge of at most 600 CSS pixels selects one-hand play in portrait and two-hand play in landscape before an ordinary run. Resizing during a run, registration, recovery, pause or a settings dialog does not switch modes. Replay applies the new orientation before starting another run. A saved local attempt retains its mode across reload; a manual mode selection overrides orientation via `hands=manual`. Official tickets retain their existing one-hand rules, and the local grab experiment retains its explicit profile. Scoring, gesture thresholds and accepted-drop delivery are unchanged.
+Public browser phones use the setup and action layout described in Phone onboarding. Native and local booth phones group the compact hand invitation and PLAY/Scores actions beneath the machine, above the privacy notice and footer; landscape uses a corner guidance area. Both orientations keep raw camera video hidden unless Show camera is selected. On native and local booth phones, a coarse-pointer viewport with a short edge of at most 600 CSS pixels selects one-hand play in portrait and two-hand play in landscape before an ordinary run. Public browser phones default to one hand and keep the player’s explicit setup choice across rotation. Resizing during a run, registration, recovery, pause or a settings dialog does not switch modes. Native and local booth replay applies the new orientation before starting another run; public browser replay returns to setup with the selected mode. A saved local attempt retains its mode across reload; a manual mode selection overrides orientation via `hands=manual`. Official tickets retain their existing one-hand rules, and the local grab experiment retains its explicit profile. Scoring, gesture thresholds and accepted-drop delivery are unchanged.
 
-Synthetic browser checks cover desktop layout, a single acquisition cue, both phone orientations and active-run/reload mode preservation. Physical phone camera framing and first-time-player acceptance remain unverified; desktop is the primary experience.
+Synthetic browser checks cover desktop layout, a single acquisition cue, both phone orientations and active-run/reload mode preservation. Physical phone camera framing and first-time-player acceptance remain unverified.
 
 ## Close gameplay and hand feedback
 
@@ -413,18 +413,24 @@ Contact details are separate from the public nickname and score, never placed in
 
 ## Phone web onboarding
 
-The public web entry shows a short phone-positioning cue on touch phones, with
-one- or two-hand wording matching the selected mode. The existing one-hand How
-to play guide repeats the phone setup cue. Camera recovery offers Try camera
-again and permission/framing guidance. Header actions have at least 44px touch
-targets. These are presentation changes; camera acquisition, scoring and the
-three-turn run are unchanged.
+The public phone entry keeps hand-controlled play, with a cabinet hero and one
+Play action. Play opens setup before requesting the camera: choose one or two
+hands, prop up the phone, then Start camera. Selected gesture illustrations
+reuse the game's hand artwork. One hand says “Move your open hand to aim” and
+“Hold a fist to drop”. Menu, setup and results use ordinary taps; the game still
+uses the camera. Camera startup can be cancelled, and denied access exposes a
+retry with browser permission guidance. Header actions and primary controls
+have at least 48px touch targets, with safe-area spacing and scrollable dialogs.
+The header menu keeps camera settings, help, scores, sound and privacy reachable.
 
 Public browser results use Play again on both desktop and phone.
-It keeps the existing fresh generated nickname and editable registration flow;
-it does not identify a returning person or reuse a previous player's identity.
-Native Tomko presentation is unchanged. Phone help adds no
-frame-loop, inference, analytics request or timer. Installed offline APKs are
+Phones start with a generated nickname and offer optional editing on results;
+desktop keeps the editable registration flow.
+Replay does not identify a returning person or reuse a previous player's identity.
+Native Tomko presentation is unchanged. The existing three-turn scoring,
+accepted-drop delivery and replay rhythm are unchanged. Phone play disables the
+optional public diagnostic client rather than replacing removed notices with
+new collection. Installed offline APKs are
 not updated by website deployment. Physical phone usability and recognition
 accuracy still require a device playtest.
 

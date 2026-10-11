@@ -20,8 +20,42 @@ const SHADOW_FRUSTUM = {
 };
 
 export class ArcadeScene {
-  constructor(canvas, { wideControls = false, anatomicalHands = false, singleHand = false, suspendedClaw = false, assortment = ASSORTMENT } = {}) {
+  prizePortrait(id) {
+    this.prizePortraits ??= new Map();
+    if (this.prizePortraits.has(id)) return this.prizePortraits.get(id);
+    const source = this.toys.get(id);
+    if (!source) return '';
+    // Render existing game geometry, never a camera frame. Reuse the renderer
+    // and shared materials; only the temporary render target is owned here.
+    const portrait = new T.Scene(); portrait.environment = this.scene.environment;
+    portrait.environmentIntensity = this.scene.environmentIntensity;
+    const toy = source.clone(); toy.visible = true; toy.position.set(0, 0, 0); toy.rotation.set(0, 0, 0); toy.scale.setScalar(1);
+    toy.traverse(object => { object.castShadow = object.receiveShadow = false; });
+    portrait.add(toy, new T.HemisphereLight('#fff5e2', '#93a895', 1.15));
+    const light = new T.DirectionalLight('#fff0d7', 2.35); light.position.set(-3, 6, 5); portrait.add(light);
+    const bounds = new T.Box3().setFromObject(toy), centre = bounds.getCenter(new T.Vector3());
+    const size = bounds.getSize(new T.Vector3()), half = Math.max(size.x, size.y) * .65;
+    const camera = new T.OrthographicCamera(-half, half, half, -half, .1, 20);
+    camera.position.copy(centre).add(v(.15, .15, 5)); camera.lookAt(centre);
+    const target = new T.WebGLRenderTarget(128, 128); target.texture.colorSpace = T.SRGBColorSpace;
+    const previous = this.renderer.getRenderTarget(), alpha = this.renderer.getClearAlpha();
+    const colour = this.renderer.getClearColor(new T.Color());
+    const pixels = new Uint8Array(128 * 128 * 4);
+    try {
+      this.renderer.setRenderTarget(target); this.renderer.setClearColor('#080e1c', 0);
+      this.renderer.render(portrait, camera); this.renderer.readRenderTargetPixels(target, 0, 0, 128, 128, pixels);
+    } finally {
+      this.renderer.setRenderTarget(previous); this.renderer.setClearColor(colour, alpha); target.dispose();
+    }
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 128;
+    const context = canvas.getContext('2d'), data = context.createImageData(128, 128);
+    for (let row = 0; row < 128; row++) data.data.set(pixels.subarray(row * 512, (row + 1) * 512), (127 - row) * 512);
+    context.putImageData(data, 0, 0);
+    const image = canvas.toDataURL(); this.prizePortraits.set(id, image); return image;
+  }
+  constructor(canvas, { wideControls = false, anatomicalHands = false, singleHand = false, mobileView = false, suspendedClaw = false, assortment = ASSORTMENT } = {}) {
     this.wideControls = wideControls;
+    this.mobileView = mobileView;
     this.suspendedClaw = suspendedClaw;
     this.canvas = canvas;
     this.renderer = new T.WebGLRenderer({ canvas, antialias: nativeAndroid ? tomkoRendering.antialias : true, powerPreference: 'high-performance' });
@@ -415,9 +449,17 @@ export class ArcadeScene {
     const extra = Math.max(1, .95 / this.camera.aspect);
     this.home.set(3.6 * extra, 2.65 + 2.9 * extra, 9.4 * extra);
     this.look.set(-.25, 2.65, 0);
+    if (this.mobileView) {
+      const distance = Math.max(11.3, 5.4 / this.camera.aspect);
+      this.home.set(.25, 4.8, distance); this.look.set(0, 2.65, 0);
+    }
     const playScale = Math.max(1, .9 / this.camera.aspect);
     this.playCamera.set((this.angledView ? 1.8 : .45) * playScale, 3.05 + 1.65 * playScale, 8.0 * playScale);
     this.playLook.set(0, 3.35, 0);
+    if (this.mobileView) {
+      this.playCamera.set(.2, 4.5, Math.max(8.3, 4.2 / this.camera.aspect));
+      this.playLook.set(0, 3.2, 0);
+    }
   }
 
   // Simple quality lowers pixel ratio and halves the shadow map. Shadows stay
@@ -664,7 +706,7 @@ export class ArcadeScene {
     look.copy(this.playLook); look.y -= .15;
   }
   updateCamera(game, { preparing = false, nextTurnElapsed = 0, firstTurnPreparationElapsed = null, machineControls = false, attract = false, dt = 0 } = {}, time = 0) {
-    this.updateAttract(attract, dt, game.phase);
+    this.updateAttract(attract && !this.mobileView, dt, game.phase);
     // Stay on the contact through the entire lift. A held prize pulls the view
     // back for its shelf run; after a miss the claw stays put and so does the view.
     let wide = ['idle', 'release', 'deliver', 'reveal', 'result'].includes(game.phase) ? 1 : 0;
@@ -673,7 +715,7 @@ export class ArcadeScene {
     if (game.phase === 'result' && preparing) {
       wide = !game.plan?.prize ? 0 : wideToClose(nextTurnElapsed, this.reducedMotion);
     }
-    this.surroundings.visible = wide > 0;
+    this.surroundings.visible = wide > 0 && !(this.mobileView && game.phase === 'idle');
     for (const id of game.collection || []) {
       const object = this.toys.get(id);
       if (object) object.visible = wide > 0 && game.toys.some(toy => toy.id === id);
