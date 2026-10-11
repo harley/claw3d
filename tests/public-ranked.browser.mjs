@@ -20,9 +20,7 @@ const browser = await chromium.launch(browserOptions);
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, timezoneId: 'Asia/Ho_Chi_Minh' });
 let page;
 try {
-  // Contract: public touch-phone guidance and retry are reachable without a
-  // scored start; native/desktop entries never adopt the phone presentation.
-  // Existing desktop/replay journeys do not exercise coarse-pointer layouts.
+  // Phone setup precedes permission; native keeps the booth presentation.
   for (const native of [false, true]) {
     const phoneContext = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
     try {
@@ -30,44 +28,64 @@ try {
       const phone = await phoneContext.newPage();
       await installCameraFixture(phone, { built: true, cameraRequest: true });
       await phone.addInitScript(() => {
-        navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('Denied for retry test', 'NotAllowedError'); };
+        window.cameraRequests = 0;
+        navigator.mediaDevices.getUserMedia = async () => { window.cameraRequests++; throw new DOMException('Denied for retry test', 'NotAllowedError'); };
       });
       await phone.goto(`${origin}/?setup=manual&hands=manual`);
       await phone.waitForFunction(() => document.documentElement.dataset.arcadeReady === 'true' && !document.getElementById('play').disabled);
-      assert.equal(await phone.locator('#home-intro').isVisible(), !native);
-      assert.equal(await phone.locator('#phone-setup').isVisible(), false, 'home caption replaces duplicate phone setup copy');
+      assert.equal(await phone.locator('#phone-setup').isVisible(), false);
       assert.equal(await phone.locator('#next-player').textContent(), native ? 'Next Play' : 'Play again');
+      assert.equal(await phone.locator('#mobile-menu-open').isVisible(), !native);
       if (!native) {
-        for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }]) {
+        for (const viewport of [{ width: 390, height: 844 }, { width: 320, height: 568 }, { width: 844, height: 390 }]) {
           await phone.setViewportSize(viewport);
-          const hint = await phone.locator('#home-intro').boundingBox();
-          assert.ok(hint.x >= 0 && hint.y >= 0 && hint.x + hint.width <= viewport.width && hint.y + hint.height <= viewport.height);
-          for (const id of ['camera-open', 'sound', 'fullscreen', 'how-to-play']) {
+          for (const id of ['mobile-menu-open', 'sound', 'play', 'scores-open']) {
             const box = await phone.locator(`#${id}`).boundingBox();
-            assert.ok(box.width >= 44 && box.height >= 44, `${id} remains finger-sized`);
+            assert.ok(box.width >= 48 && box.height >= 48, `${id} remains finger-sized`);
+            assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width + 1 && box.y + box.height <= viewport.height + 1, `${id} stays inside viewport`);
           }
-          await phone.screenshot({ path: `.screenshots/mobile-202-${viewport.width}.png` });
+          await phone.locator('#play').click();
+          await phone.locator('#registration[open]').waitFor();
+          assert.equal(await phone.locator('#name').isVisible(), false, 'no nickname gate');
+          assert.equal(await phone.locator('#register-other').isVisible(), false, 'one start action');
+          assert.equal(await phone.locator('#register-play').textContent(), 'Start camera');
+          assert.equal(await phone.evaluate(() => window.cameraRequests), 0, 'setup does not request camera');
+          assert.ok(await phone.locator('#registration').evaluate(el => el.scrollWidth <= el.clientWidth), 'setup has no horizontal overflow');
+          await phone.screenshot({ path: `.screenshots/mobile-hand-setup-${viewport.width}.png` });
+          await phone.locator('#register-cancel').click();
         }
         await phone.setViewportSize({ width: 390, height: 844 });
-        await phone.locator('#how-to-play').click();
+        await phone.locator('#mobile-menu-open').click();
+        await phone.locator('#mobile-help').click();
         await phone.locator('#hand-guide[open]').waitFor();
-        assert.match(await phone.locator('.phone-guide-setup').textContent(), /Prop up your phone/);
-        await phone.evaluate(async () => {
-          const demo = document.querySelector('.guide-demo');
-          await Promise.all(['--guide-art', '--guide-overhead'].map(async property => {
-            const image = new Image(); image.src = getComputedStyle(demo).getPropertyValue(property).match(/url\(['"]?(.*?)['"]?\)/)[1];
-            await image.decode();
-          }));
-        });
-        await phone.screenshot({ path: '.screenshots/mobile-202-guide.png' });
         await phone.locator('#hand-guide-close').click();
         await phone.locator('#play').click();
+        await phone.locator('#input-two').click();
+        assert.equal(await phone.locator('#mobile-aim-hint').textContent(), 'Left fist aims');
+        assert.equal(await phone.locator('#mobile-drop-hint').textContent(), 'Right palm drops');
+        await phone.locator('#input-one').click();
+        assert.equal(await phone.locator('#mobile-aim-hint').textContent(), 'Move your open hand to aim');
+        assert.equal(await phone.locator('#mobile-drop-hint').textContent(), 'Hold a fist to drop');
+        await phone.locator('#register-play').click();
         await phone.locator('#camera-setup[open]').waitFor();
-        assert.equal(await phone.locator('#camera-toggle').textContent(), 'TRY CAMERA AGAIN');
+        assert.equal(await phone.locator('#camera-toggle').textContent(), 'Try camera again');
         assert.equal(await phone.locator('#camera-toggle').isEnabled(), true);
-        assert.equal(await phone.locator('#phone-camera-help').isVisible(), true);
-        await phone.screenshot({ path: '.screenshots/mobile-202-retry.png' });
-        assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM runs').get().n, 0, 'help and camera failure do not start a scored game');
+        assert.match(await phone.locator('#camera-status').textContent(), /blocked.*browser settings/);
+        await phone.locator('#camera-toggle').click();
+        await phone.waitForFunction(() => window.cameraRequests === 2 && !document.getElementById('camera-toggle').disabled);
+        assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM runs').get().n, 0, 'camera failure never starts a scored game');
+        await phone.screenshot({ path: '.screenshots/mobile-hand-camera-retry.png' });
+        await phone.getByRole('button', { name: 'Close camera setup' }).click();
+        await phone.evaluate(() => {
+          navigator.mediaDevices.getUserMedia = () => new Promise((resolve, reject) => { window.rejectPermission = reject; });
+        });
+        await phone.locator('#play').click(); await phone.locator('#register-play').click();
+        await phone.waitForFunction(() => typeof window.rejectPermission === 'function');
+        await phone.locator('#phone-camera-cancel').click();
+        await phone.evaluate(() => window.rejectPermission(new DOMException('Cancelled request', 'NotAllowedError')));
+        await phone.waitForFunction(() => !document.getElementById('play').disabled && !document.getElementById('phone-camera-cancel').getClientRects().length);
+        assert.equal(await phone.locator('#camera-setup').isVisible(), false, 'late permission response cannot reopen cancelled setup');
+        assert.equal(app.database.db.prepare('SELECT COUNT(*) AS n FROM runs').get().n, 0, 'cancelled startup cannot register a run');
       }
     } finally { await phoneContext.close(); }
   }

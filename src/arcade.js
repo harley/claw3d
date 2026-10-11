@@ -48,7 +48,7 @@ if (!shared && !publicTry) {
   try { savedModeLocked = Boolean(loadStore({ getItem: () => localStorage.getItem(resolvePlayMode(location.search).storageKey) }, resolvePlayMode(location.search).collection ? COLLECTION_RULES : RULES).active); }
   catch { savedModeLocked = true; }
 }
-const initialSearch = phonePlaySearch(location.search, { ...phoneViewport(), locked: savedModeLocked, official });
+const initialSearch = phonePlaySearch(location.search, { ...phoneViewport(), phone: phoneViewport().phone && (nativeAndroid || !publicSurface), locked: savedModeLocked, official });
 if (initialSearch !== location.search) history.replaceState(null, '', `${location.pathname}${initialSearch}${location.hash}`);
 // One resolution of the play mode: input profile, storage namespace, experiment flags.
 const mode = resolvePlayMode(official ? '' : location.search, shared || publicTry);
@@ -59,8 +59,23 @@ const { dual: dualEnabled, grab: grabEnabled, cabinet: cabinetEnabled, holdMs, s
 const phoneWeb = !nativeAndroid && publicSurface && phoneViewport().phone;
 if (phoneWeb) {
   document.body.classList.add('phone-web');
-  $('phone-setup').hidden = false;
+  $('phone-setup').hidden = true;
   $('phone-camera-help').hidden = false;
+  $('phone-camera-help').textContent = 'Prop up your phone. Keep your hand in view.';
+  $('mobile-menu-open').hidden = false;
+  $('mobile-hand-setup').hidden = false;
+  $('mobile-hand-setup').style.setProperty('--guide-art', `url('${new URL('./assets/hand-guide.png', import.meta.url).href}')`);
+  $('registration').querySelector('.eyebrow').hidden = true;
+  $('registration').querySelector('.playtest-notice').hidden = true;
+  $('name').hidden = $('name-label').hidden = true;
+  $('registration').querySelector('h1').textContent = 'Play with your hand';
+  $('register-other').hidden = true;
+  $('play-again').classList.add('play-button');
+  $('play-again').classList.remove('text-button');
+  const more = document.createElement('details'); more.id = 'final-more';
+  const summary = document.createElement('summary'); summary.textContent = 'More'; more.append(summary);
+  $('final').append(more); more.append($('final-how-to-play'), $('final-feedback'));
+
   if (dualEnabled) $('phone-setup').innerHTML = 'Prop up your phone, face the camera and free both hands.<br><strong>Left fist aims · right palm drops.</strong>';
   if (publicPlay) $('next-player').textContent = 'Play again';
 }
@@ -70,7 +85,7 @@ import { createGame, begin, drop, advance, move, moveToward, homeClaw, planGrab,
 import { RULES, COLLECTION_RULES, STORAGE_KEY, newStore, loadStore, currentBoard, startRun, recordTurn, leaderboard, rotateBoard, scoreTurn, turnContext, handBonus, renameCompletedRun } from './event-session.js';
 
 if (publicSurface) {
-  $('try-notice').hidden = false;
+  $('try-notice').hidden = phoneWeb;
   if (globalThis.__PUBLIC_DIAGNOSTICS__ !== true) $('try-diagnostics-notice').textContent = 'Play data collection is off.';
   document.querySelector('.leaderboard .eyebrow').textContent = publicPlay ? 'HIGH SCORES' : 'PRACTICE';
   $('final-leaderboard').hidden = !publicPlay;
@@ -90,7 +105,7 @@ if (publicSurface) {
 $('build-info').textContent = `${globalThis.__OFFLINE_SHELL__ ? 'LOCAL PREPARED BUILD' : 'BUILD'} ${__BUILD_INFO__.commit}${__BUILD_INFO__.dirty ? ' · uncommitted changes' : ''} · ${__BUILD_INFO__.branch}`;
 let savingTurn = false, pendingTurnOutcome = null, savingTurnPromise = null;
 let game = createGame({ carousel: true, suspendedClaw: mode.suspendedClaw, collection: mode.collection, boothToys: true }), scene, previous = 0, stopped = false, frozen = false;
-let cameraControls, cameraLoading = false;
+let cameraControls, cameraLoading = false, cameraStartVersion = 0;
 let sharingResult = false;
 let healthSample = null, lastHoldCause = '';
 const trackingHealthUI = nativeAndroid ? createTrackingHealth({ root: $('tracking-health'), restart: () => {
@@ -122,7 +137,7 @@ if (dualEnabled) $('camera-menu-help').textContent = 'Use your left hand and hol
 const glove = createJoystickCursor(() => cabinetEnabled ? scene?.controlTargets() : null, () => { if (cabinetEnabled) gestureDrop(); });
 let previousMenuMode = '', editingResultName = false, savingResultName = false;
 function menuMode() {
-  if (savingTurn || startingRun || frozen || stopped || document.hidden || editingResultName || boothInvite?.editing || boothInvite?.busy) return '';
+  if (phoneWeb || savingTurn || startingRun || frozen || stopped || document.hidden || editingResultName || boothInvite?.editing || boothInvite?.busy) return '';
   if ((recovering || paused) && shared) return '';
   const dialogs = [...document.querySelectorAll('dialog[open]')];
   if (dialogs.length) return dialogs.length === 1 && ['registration', 'final', 'scores-dialog', 'hand-guide'].includes(dialogs[0].id) ? dialogs[0].id : '';
@@ -155,6 +170,22 @@ for (const [id, dual] of [['register-play', dualEnabled], ['register-other', !du
     : `<strong><span aria-hidden="true">✋</span> Play</strong><small id="${id}-help">Move open hand to aim. Hold fist to drop.</small>`;
 }
 if (mode.profile === 'grab-release') $('register-play').querySelector('small').textContent = controlInstructions.scene;
+let selectedHands = mode.controlMode;
+function renderMobileSetup() {
+  if (!phoneWeb) return;
+  $('input-one').setAttribute('aria-pressed', String(selectedHands === 'one-hand'));
+  $('input-two').setAttribute('aria-pressed', String(selectedHands === 'two-hand'));
+  $('registration').querySelector('h1').textContent = selectedHands === 'two-hand' ? 'Play with your hands' : 'Play with your hand';
+  $('mobile-aim-hint').textContent = selectedHands === 'two-hand' ? 'Left fist aims' : 'Move your open hand to aim';
+  $('mobile-drop-hint').textContent = selectedHands === 'two-hand' ? 'Right palm drops' : 'Hold a fist to drop';
+  $('mobile-hand-setup').querySelector('.setup-gestures > div:first-child i').className = `guide-sprite ${selectedHands === 'two-hand' ? 'fist' : 'palm'}`;
+  $('mobile-hand-setup').querySelector('.setup-gestures > div:last-child i').className = `guide-sprite ${selectedHands === 'two-hand' ? 'palm' : 'fist'}`;
+  $('register-play').textContent = cameraControls?.running ? 'Play' : 'Start camera';
+  $('register-play').setAttribute('aria-label', cameraControls?.running ? 'Play' : 'Start camera');
+  $('register-play').removeAttribute('aria-describedby');
+}
+for (const [id, hands] of [['input-one', 'one-hand'], ['input-two', 'two-hand']]) $(id).addEventListener('click', () => { selectedHands = hands; renderMobileSetup(); });
+renderMobileSetup();
 let pendingPlayer = null, startingRun = false;
 let scoreAnimation;
 let lastSoundPhase = '', lastMovementSound = -Infinity;
@@ -233,7 +264,7 @@ const audio = createArcadeAudio({ onChange: syncSoundUI, enabledByDefault: !manu
 const movementMusic = createMovementMusic(audio);
 const hud = createHud({ audio, phaseSound });
 function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ? 'loading' : 'off' }, modal = Boolean(document.querySelector('dialog[open]'))) {
-  const home = homePlay && !run && !completedRun && !modal && !cameraLoading && !cameraControls?.running && !stopped;
+  const home = !phoneWeb && homePlay && !run && !completedRun && !modal && !cameraLoading && !cameraControls?.running && !stopped;
   setHidden($('home-intro'), !home);
   document.body.classList.toggle('home-play', home);
   setHidden($('share-result'), !publicPlay || nativeAndroid);
@@ -241,7 +272,16 @@ function updateUI(feedback = cameraControls?.feedback || { kind: cameraLoading ?
   setHidden(handGuideReference, mode.profile !== 'hold-drop' || !run || modal || paused);
   setHidden($('how-to-play'), !canShowHandGuide());
   setHidden($('final-how-to-play'), !canShowHandGuide());
+  if (phoneWeb) {
+    $('mobile-pause').hidden = !run;
+    $('mobile-pause').textContent = paused ? 'Resume' : 'Pause';
+    $('mobile-scores').disabled = Boolean(run || startingRun);
+    $('mobile-help').disabled = !canShowHandGuide();
+  }
   hud.update({ game, run, completedRun, pendingPlayer, turnNumber, remaining: flow.remaining, nextTurnElapsed: flow.nextTurnElapsed, firstTurnPreparationElapsed: flow.firstTurnPreparationElapsed, firstTurnControlReady: flow.firstTurnControlReady, paused, frozen, recovering, startingRun, cameraLoading, cameraControls, shared, publicTry, grabEnabled, dualEnabled, cabinetEnabled, holdMs, sharedStatus: pilot.status, storageError, aligned, marqueeAvailable: scene?.marqueeAvailable }, feedback, modal);
+  if (phoneWeb && !run && !recovering && !paused) setText('button-text', cameraLoading ? 'Starting…' : 'Play');
+  if (phoneWeb && (recovering || paused)) setText('button-text', 'Resume');
+  setHidden($('phone-camera-cancel'), !phoneWeb || !cameraLoading);
 }
 function syncSoundUI() {
   const label = !audio.enabled ? 'Sound off' : !audio.volume ? 'Muted' : audio.ready ? 'Sound on' : 'Tap for sound';
@@ -302,11 +342,13 @@ function openRegistration(name = $('name').value) {
   if (official) {
     if (!officialPlayer.state().canActivate) return openOfficialTicket();
     $('name').value = officialPlayer.state().intent.receipt.name;
+    if (phoneWeb) renderMobileSetup();
     $('registration').showModal(); $('register-play').focus(); return;
   }
   if (publicTry) { name = 'Try'; $('name').value = name; $('name').closest('form').querySelector('h1').textContent = 'CHOOSE YOUR CONTROLS'; $('name').hidden = $('name-label').hidden = true; }
   $('mode-start-message').textContent = '';
-  $('name').setCustomValidity(''); $('name').value = name.trim() || generatedName();
+  $('name').setCustomValidity(''); $('name').value = phoneWeb && !publicTry ? generatedName(completedRun?.name || name) : name.trim() || generatedName();
+  if (phoneWeb) renderMobileSetup();
   $('registration').showModal(); $('register-play').focus();
 }
 function finishTurn() {
@@ -347,6 +389,7 @@ function presentTurn(outcome) {
     completedRun = outcome.run; run = null; renderBoard();
     resetResultName();
     $('final-name').textContent = completedRun.name.toUpperCase(); $('final-score').textContent = official ? '—' : String(completedRun.total).padStart(3, '0');
+    if (phoneWeb && publicTry) { setText('final-name', 'Your score'); setHidden($('final-rank'), true); }
     const rank = shared ? undefined : leaderboard(currentBoard(store)).find(r => r.id === completedRun.id)?.rank;
     $('final-kicker').textContent = official ? 'AWAITING SERVER RESULT' : finaleHeadline(completedRun.turns, rank, completedRun.rules.points);
     $('final-rank').textContent = shared ? globalThis.__OFFLINE_SHELL__ ? 'Saved on this computer · sync pending' : 'Score waiting to sync' : publicTry ? 'PRACTICE · NO EVENT RANKING' : `${nativeAndroid ? '' : 'LOCAL PREVIEW · '}${dualEnabled ? '2 HANDS' : '1 HAND'}${rank ? ` · RANK #${rank}` : ''}`;
@@ -360,6 +403,11 @@ function presentTurn(outcome) {
         ? [['catch-icon', TROPHY_ICONS[toy.family]], ['catch-name', toy.name.toUpperCase()], ['catch-points', `+${turn.score}`], ['catch-detail', `${completedRun.rules.points[toy.id]}${handBonus(completedRun.rules) ? ` + ${handBonus(completedRun.rules)} TWO HANDS` : ''}${completedRun.rules.imperfectDeduction ? (turn.quality === 'perfect' ? ' · PERFECT' : ` − ${completedRun.rules.points[toy.id] - turn.score} OFF-CENTRE`) : ` + ${turn.score - completedRun.rules.points[toy.id] - handBonus(completedRun.rules)} ${completedRun.rules.precisionBonus ? 'PRECISION' : 'SPEED'}`}`]]
         : [['catch-icon', '—'], ['catch-name', 'MISS'], ['catch-points', '+0'], ['catch-detail', turnReasons[i] ? missCopy(turnReasons[i], game.toys) : `TURN ${i + 1}`]];
       for (const [className, text] of parts) { const part = document.createElement('span'); part.className = className; part.textContent = text; chip.append(part); }
+      if (phoneWeb && toy) {
+        const icon = chip.querySelector('.catch-icon'), image = document.createElement('img');
+        image.src = scene.prizePortrait(toy.id); image.alt = ''; image.width = image.height = 64;
+        icon.replaceChildren(image);
+      }
       $('final-turns').append(chip);
     });
     setText('final-sync', shared ? pilot.state().error : storageError);
@@ -371,7 +419,7 @@ async function play() {
   if (!scene || stopped || frozen || cameraLoading || document.querySelector('dialog[open]')) return;
   if (!run && !recovering && syncPhoneMode(true)) return;
   if (recovering || paused) {
-    if (shared) return openOperator();
+    if (shared && !phoneWeb) return openOperator();
     const currentRun = run;
     if (recovering && !cameraControls?.running) await startCamera();
     if ((recovering && !cameraControls?.running) || run !== currentRun || stopped || document.querySelector('dialog[open]')) return;
@@ -380,6 +428,7 @@ async function play() {
     updateUI(); return;
   }
   if (!run) {
+    if (phoneWeb) return openRegistration();
     if (!cameraControls?.running) {
       await startCamera();
       if (!publicSurface || !cameraControls?.running || run || startingRun || document.querySelector('dialog[open]')) return;
@@ -428,11 +477,11 @@ function gestureDrop() {
 function fail(message, error) { track('client_error', { reason: 'renderer' }); stopped = true; cameraControls?.stop(); clearTimeout(window.__arcadeBootTimer); errors.push(String(error || message)); $('loading').hidden = true; $('error').hidden = false; $('error-message').textContent = message; console.error('Cloud Claw:', error || message); }
 function openOperator() { if (publicSurface || publicOfficial) return; if (shared && pilot.role !== 'host') { $('host-access').showModal(); return; } renderBoard(); $('operator').showModal(); void hostEvents?.open(); $('pause').textContent = recovering ? 'RESUME INTERRUPTED TURN' : paused ? 'RESUME GAME' : 'PAUSE GAME'; }
 document.addEventListener('visibilitychange', () => { previous = 0; if (document.hidden) { audio.silence(); handMenu.clear(); cameraControls?.reset(); } });
-$('player-form').addEventListener('submit', event => { event.preventDefault(); if (!scene || stopped || !cameraControls?.running) return;
+$('player-form').addEventListener('submit', event => { event.preventDefault(); if (!scene || stopped || (!phoneWeb && !cameraControls?.running)) return;
   if (startingRun || run) return;
   const name = $('name').value.trim() || generatedName();
   if (name.length > 24) { $('name').setCustomValidity('Use at most 24 characters.'); $('name').reportValidity(); return; }
-  const chosenMode = official ? 'one-hand' : event.submitter?.dataset.controlMode || mode.controlMode;
+  const chosenMode = official ? 'one-hand' : phoneWeb ? selectedHands : event.submitter?.dataset.controlMode || mode.controlMode;
   if (chosenMode !== mode.controlMode) {
     const url = new URL(location.href);
     url.searchParams.set('hands', 'manual');
@@ -450,6 +499,9 @@ $('player-form').addEventListener('submit', event => { event.preventDefault(); i
   if (!official) {
     const url = new URL(location.href); url.searchParams.set('hands', 'manual');
     history.replaceState(null, '', url);
+  }
+  if (phoneWeb && !cameraControls?.running) {
+    selectedStart = { name }; $('registration').close(); void startCamera(); return;
   }
   pendingPlayer = { name };
   $('registration').close(); $('scene').focus();
@@ -531,6 +583,7 @@ async function replay() {
   const name = generatedName(completedRun?.name);
   $('name').value = name;
   track('replay'); $('final').close(); freshGame(); updateUI();
+  if (phoneWeb) return openRegistration(name);
   if (syncPhoneMode(true)) return;
   if (!cameraControls?.running) await startCamera();
   if (cameraControls?.running) openRegistration(name);
@@ -584,6 +637,16 @@ $('scores-open').addEventListener('click', openScores);
 $('scores-more').addEventListener('click', openScores);
 $('final-leaderboard').addEventListener('click', openScores);
 $('scores-close').addEventListener('click', () => $('scores-dialog').close());
+if (phoneWeb) {
+  $('mobile-menu-open').addEventListener('click', () => { $('mobile-menu').showModal(); $('mobile-menu-close').focus(); });
+  $('mobile-menu-close').addEventListener('click', () => $('mobile-menu').close());
+  $('mobile-menu').addEventListener('close', () => $('mobile-menu-open').focus());
+  $('mobile-scores').addEventListener('click', () => { $('mobile-menu').close(); openScores(); });
+  $('mobile-camera').addEventListener('click', () => { $('mobile-menu').close(); $('camera-open').click(); });
+  $('mobile-help').addEventListener('click', () => { $('mobile-menu').close(); $('how-to-play').click(); });
+  $('mobile-feedback').addEventListener('click', () => { $('mobile-menu').close(); openFeedback(); });
+  $('mobile-pause').addEventListener('click', () => { if (!run || savingTurn || startingRun) return; paused = !paused; $('mobile-menu').close(); updateUI(); });
+}
 $('scores-dialog').addEventListener('close', () => {
   scoreHome.after(scorePanel);
   renderBoard();
@@ -600,6 +663,7 @@ for (const [id, dual] of [['mode-one', false], ['mode-two', true]]) $(id).addEve
   url.searchParams.delete('start'); location.assign(url);
 });
 function syncPhoneMode(start = false) {
+  if (phoneWeb) return false;
   const locked = Boolean(run || recovering || pendingPlayer || startingRun || paused || frozen || stopped || cameraLoading || document.querySelector('dialog[open]'));
   const search = phonePlaySearch(location.search, { ...phoneViewport(), locked, official });
   if (search === location.search) return false;
@@ -703,7 +767,7 @@ function updateCameraView(message = 'Camera is off') {
   setText('camera-view-status', live ? `Active camera: ${track.label || 'Default camera'}` : message);
 }
 $('camera-view-toggle').addEventListener('click', () => showCameraView($('camera-view').hidden));
-$('camera-setup').addEventListener('close', () => showCameraView(false));
+$('camera-setup').addEventListener('close', () => { showCameraView(false); if (phoneWeb && !cameraControls?.running && !cameraLoading) selectedStart = null; });
 $('camera-video').addEventListener('loadedmetadata', () => updateCameraView());
 
 function reportCameraFailure(code) {
@@ -713,6 +777,7 @@ function reportCameraFailure(code) {
 }
 async function startCamera() {
   if (cameraLoading || !noticeReady) return;
+  const startVersion = ++cameraStartVersion;
   cameraFailureReported = false;
   healthSample = null; lastHoldCause = '';
   track('camera_start');
@@ -722,7 +787,7 @@ async function startCamera() {
   try {
     if (!cameraControls) {
       const { createCameraControls } = await import('./camera-controls.js');
-      cameraControls = await createCameraControls({ video: $('camera-video'), overlay: $('camera-overlay'), select: $('camera-select'), maxHands: dualEnabled ? 2 : 1, holdMs, steering,
+      const created = await createCameraControls({ video: $('camera-video'), overlay: $('camera-overlay'), select: $('camera-select'), maxHands: dualEnabled ? 2 : 1, holdMs, steering,
         getControlProfile: () => dualEnabled ? menuMode() ? 'menu-left' : 'dual' : grabEnabled && !menuMode() ? 'grab-release' : 'hold-drop',
         canConfigureCamera: () => !run && !recovering && !pendingPlayer && !startingRun,
         getControlTarget: (pointer, role, origin) => glove.targetAt(pointer, role, origin),
@@ -741,7 +806,7 @@ async function startCamera() {
         onChange: state => {
           if (state.kind === 'loading') cameraFailureReported = false;
           if (state.kind === 'error') reportCameraFailure(state.code || 'unknown');
-          $('camera-status').textContent = state.message;
+          $('camera-status').textContent = phoneWeb && state.code === 'permission_denied' ? 'Camera access is blocked. Allow it in your browser settings, then retry.' : state.message;
           updateCameraView(state.message);
           const active = cameraControls?.running || state.kind === 'tracking';
           $('camera-preview').hidden = !active;
@@ -750,9 +815,12 @@ async function startCamera() {
           $('camera-toggle').textContent = active ? 'STOP CAMERA' : 'START CAMERA';
         },
       });
+      if (startVersion !== cameraStartVersion) { created.stop(); return; }
+      cameraControls = created;
     }
     cameraControls.setPerformanceMode(performanceGovernor.mode);
     await cameraControls.start();
+    if (startVersion !== cameraStartVersion) return;
     if (cameraControls.running) {
       cameraControls.adaptationStats();
       // Camera start rebuilds its capture driver, so reapply the current mode
@@ -768,13 +836,20 @@ async function startCamera() {
       adaptationFrames = []; adaptationVisibleMs = 0;
     }
     else { reportCameraFailure('camera_unavailable'); $('camera-setup').showModal(); }
-  } catch (error) { updateCameraView('Camera unavailable. Open Camera settings to retry.'); reportCameraFailure('camera_unavailable'); $('camera-status').textContent = `Camera unavailable: ${error.message}`; $('camera-setup').showModal(); }
+  } catch (error) { if (startVersion !== cameraStartVersion) return; updateCameraView('Camera unavailable. Open Camera settings to retry.'); reportCameraFailure('camera_unavailable'); $('camera-status').textContent = `Camera unavailable: ${error.message}`; $('camera-setup').showModal(); }
   finally {
-    cameraLoading = false; $('camera-toggle').disabled = false;
-    if (phoneWeb && !cameraControls?.running) $('camera-toggle').textContent = 'TRY CAMERA AGAIN';
-    updateUI();
+    if (startVersion === cameraStartVersion) {
+      cameraLoading = false; $('camera-toggle').disabled = false;
+      if (phoneWeb && !cameraControls?.running) $('camera-toggle').textContent = 'Try camera again';
+      updateUI();
+    }
   }
 }
+$('phone-camera-cancel').addEventListener('click', () => {
+  if (!phoneWeb || !cameraLoading) return;
+  cameraStartVersion++; selectedStart = null; cameraControls?.stop(); cameraLoading = false;
+  $('camera-toggle').disabled = false; setText('camera-status', 'Camera is off'); updateUI();
+});
 $('camera-toggle').addEventListener('click', () => {
   if (cameraControls?.running || cameraControls?.starting) cameraControls.stop();
   else startCamera();
@@ -866,7 +941,7 @@ function frame(time) {
     // Attract: idle machine, nobody registered, no dialog, and no hand in view.
     const attract = game.phase === 'idle' && !run && !recovering && !paused && !modal && !startingRun && !document.hidden && !['calibrating', 'tracking', 'clenching', 'accepted'].includes(feedback.kind);
     if (attract !== document.body.classList.contains('attract')) document.body.classList.toggle('attract', attract);
-    scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, sceneFeedback, Boolean(cameraControls?.running || cameraControls?.starting) && performanceGovernor.mode === 'simple', { marqueeCue: hud.marqueeCue, preparing: Boolean(run && !recovering), nextTurnElapsed: flow.nextTurnElapsed, firstTurnPreparationElapsed: flow.firstTurnPreparationElapsed, machineControls: cabinetEnabled, cueLead, attract, dt }); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
+    scene.update(game, blocked ? 0 : dt, time / 1000, input, aligned, sceneFeedback, Boolean(cameraControls?.running || cameraControls?.starting) && performanceGovernor.mode === 'simple', { marqueeCue: phoneWeb && !run ? cameraLoading ? 'STARTING' : 'CLAW' : hud.marqueeCue, preparing: Boolean(run && !recovering), nextTurnElapsed: flow.nextTurnElapsed, firstTurnPreparationElapsed: flow.firstTurnPreparationElapsed, machineControls: cabinetEnabled, cueLead, attract, dt }); if (frozen) scene.inspect(new URLSearchParams(location.search).get('inspect'));
     glove.update(grabEnabled ? feedback : { ...feedback, pointer: null }, cabinetEnabled && (game.phase === 'aim' || (dualEnabled && flow.contactFeedback && game.phase === 'anticipate')) && !paused && !modal && !frozen && !document.hidden, dt, { guide: (dualEnabled || Boolean(hud.oneHandGuide)) && !nextMenuMode && !paused && !modal && !frozen && !document.hidden && (game.phase === 'aim' || flow.firstTurnPreparationElapsed !== null), oneHand: hud.oneHandGuide });
     const tagged = game.phase === 'aim' && aligned ? game.toys.find(toy => toy.id === aligned.id) : null;
     const toyHeight = tagged ? scene.toys.get(tagged.id).userData.height * tagged.scale : 0;
@@ -1060,7 +1135,7 @@ $('shared-start').addEventListener('cancel', event => event.preventDefault());
 const loadingTimeout = setTimeout(() => fail('The arcade took too long to open. Reload the page to try again.'), 15000);
 try {
   await new Promise(resolve => requestAnimationFrame(resolve));
-  scene = new ArcadeScene($('scene'), { wideControls: cabinetEnabled && new URLSearchParams(location.search).get('controls') !== 'grab', anatomicalHands: !grabEnabled || dualEnabled, singleHand: !dualEnabled, suspendedClaw: mode.suspendedClaw, assortment: game.toys });
+  scene = new ArcadeScene($('scene'), { wideControls: cabinetEnabled && new URLSearchParams(location.search).get('controls') !== 'grab', anatomicalHands: !grabEnabled || dualEnabled, singleHand: !dualEnabled, mobileView: phoneWeb, suspendedClaw: mode.suspendedClaw, assortment: game.toys });
   if (scene.cabinetHands) {
     const status = $('hand-art-status');
     status.textContent = '3D hands are loading. Camera tracking and game controls remain available.';
@@ -1093,7 +1168,7 @@ try {
     await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     noticeReady = true;
     playtest.dispose();
-    playtest = createPublicPlaytestClient({ build: __BUILD_INFO__.commit, enabled: globalThis.__PUBLIC_DIAGNOSTICS__ === true, noticeAcknowledged: true });
+    playtest = createPublicPlaytestClient({ build: __BUILD_INFO__.commit, enabled: !phoneWeb && globalThis.__PUBLIC_DIAGNOSTICS__ === true, noticeAcknowledged: true });
     track('page_open');
     if (publicPlay) pilot.connect();
     else {
@@ -1113,7 +1188,7 @@ try {
       window.addEventListener('pagehide', event => { if (!event.persisted) { recoverySync?.dispose(); recovery.dispose(); } });
     }
   }
-  if ((!manualSetup && !homePlay || autoPlay || selectedStart) && !frozen) {
+  if ((!manualSetup && !homePlay && !phoneWeb || autoPlay || selectedStart) && !frozen) {
     audio.unlock();
     void startCamera().then(() => { if (autoPlay && cameraControls?.running && !run && !document.querySelector('dialog[open]')) openRegistration(); });
   }
