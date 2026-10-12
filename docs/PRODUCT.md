@@ -208,7 +208,7 @@ Standalone development is labeled Local preview and keeps scores in that browser
 
 ## Camera control and recovery
 
-One-hand hold-to-drop menus offer a top-right HOW TO PLAY guide, also reachable from results. The movement steps pair an animated hand with an overhead claw position marker on a top-down bed; only the drop step switches to a side view and lowers the claw: hand up moves the claw farther away, hand down brings it closer, sideways movement follows left/right, and a held fist drops. Closing returns to the same menu/result without starting a run or changing scores. Illustrations load only on first open; tutorial animations exist only while open, pause on hidden pages, and become static under reduced motion. The guide is unavailable during an active/recovered run and in the other control profiles. Acceptance: a new visitor can explain and perform up/back and down/front after watching; this still needs physical booth testing.
+One-hand hold-to-drop menus offer a top-right HOW TO PLAY guide, also reachable from results. The movement steps pair an animated hand with an overhead claw position marker on a top-down bed; only the drop step switches to a side view and lowers the claw: hand up moves the claw farther away, hand down brings it closer, sideways movement follows left/right, and a held fist drops. Closing returns to the same menu/result without starting a run or changing scores. Illustrations load only on first open; tutorial animations exist only while open, pause on hidden pages, and become static under reduced motion. Two-hand help uses its own three steps: acquire a still open left hand, close the left fist to grip and aim, then bring the open right palm onto DROP while keeping the left grip. A palm already resting on DROP must move off and return. The guide is unavailable during an active/recovered run and in experimental control profiles. Acceptance: a new visitor can explain and perform up/back and down/front after watching; this still needs physical booth testing.
 
 Reloading an unfinished local run shows its turn and CONTINUE. Continue starts the camera if needed, preserves the player and completed turns, restores caught-toy removal, and restarts only the unscored turn. It never asks the player to find host settings. Explicit local pause shows PAUSED and RESUME, which preserves the current phase and remaining time. Both buttons accept click or hand-menu selection; selection evidence is cleared before gameplay. Shared host pauses still require host access.
 
@@ -417,11 +417,19 @@ The public phone entry keeps hand-controlled play, with a cabinet hero and one
 Play action. Play opens setup before requesting the camera: choose one or two
 hands, prop up the phone, then Start camera. Selected gesture illustrations
 reuse the game's hand artwork. One hand says “Move your open hand to aim” and
-“Hold a fist to drop”. Menu, setup and results use ordinary taps; the game still
-uses the camera. Camera startup can be cancelled, and denied access exposes a
+“Hold a fist to drop”. Two hands first says “Open left hand to start”, then
+“Then left fist aims · right palm drops”. Menu, setup and results support taps
+and, once the camera runs, the existing held-fist selection. Two-hand menus use
+the anatomical left hand. A compact pointer ring and button highlight replace
+the large hand/caption overlay on phones; no hand-found banner covers Play. Camera startup can be cancelled, and denied access exposes a
 retry with browser permission guidance. Header actions and primary controls
 have at least 48px touch targets, with safe-area spacing and scrollable dialogs.
 The header menu keeps camera settings, help, scores, sound and privacy reachable.
+Results offer adjacent How to play and More buttons above the quiet maker credit.
+More opens the game menu. Help returns to its originating menu/result and visible
+opener; changing tutorial steps clears gesture evidence. Public ranked phone
+pause/resume also accepts gestures without exposing host controls; desktop host
+pause behavior is unchanged.
 
 Public browser results use Play again on both desktop and phone.
 Phones start with a generated nickname and offer optional editing on results;

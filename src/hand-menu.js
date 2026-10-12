@@ -2,12 +2,13 @@ import { setHidden } from './arcade-hud.js';
 import { menuScreenPoint } from './steering.js';
 // Only player-facing actions participate. Operator controls never accept gestures.
 const actions = {
-  idle: ['how-to-play', 'play', 'mode-one', 'mode-two', 'result-open', 'scores-open', 'scores-more'],
+  idle: ['how-to-play', 'play', 'mode-one', 'mode-two', 'result-open', 'scores-open', 'scores-more', 'mobile-menu-open'],
   resume: ['play'],
   'scores-dialog': ['scores-close', 'result-open'],
-  registration: ['register-play', 'register-other', 'register-cancel'],
+  registration: ['register-play', 'register-other', 'register-cancel', 'input-one', 'input-two'],
+  'mobile-menu': ['mobile-menu-close', 'mobile-help', 'mobile-scores', 'mobile-camera', 'mobile-feedback', 'mobile-pause'],
   'hand-guide': ['hand-guide-close', 'hand-guide-next', 'hand-guide-step-0', 'hand-guide-step-1', 'hand-guide-step-2'],
-  final: ['final-how-to-play', 'play-again', 'next-player', 'final-leaderboard', 'final-name-input'],
+  final: ['final-how-to-play', 'play-again', 'next-player', 'final-leaderboard', 'final-name-input', 'final-more'],
 };
 export function createHandMenu({ leftHand = false } = {}) {
   const cursor = document.createElement('div');

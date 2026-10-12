@@ -743,9 +743,16 @@ body:has(#dual-hand-guide:not([hidden])) #jackpot-signal { bottom: 188px; }
 .phone-web #final-turns .catch-detail { font-size: 12px; line-height: 1.4; }
 .phone-web #final :is(#next-player, #play-again) { width: 100%; margin-top: 8px; }
 .phone-web #final :is(#final-leaderboard, #share-result) { display: inline-block; font-size: 16px; margin: 8px 0 0; }
-.phone-web #final-more { margin-top: 8px; color: #b9cbe5; }
-.phone-web #final-more summary { display: flex; align-items: center; justify-content: center; font-size: 14px; cursor: pointer; }
-.phone-web #final-more button { font-size: 14px; }
+.phone-web #final-tools { display: flex; gap: 12px; margin-top: 8px; }
+.phone-web #final-tools button { flex: 1; margin: 0; font-size: 14px; }
+.phone-web #final .build-credit { margin-top: 12px; padding-top: 12px; }
+.phone-web #hand-cursor { width: 32px; height: 32px; filter: none; }
+.phone-web #hand-cursor :is(.cursor-artwork, .cursor-cue) { display: none; }
+.phone-web #menu-guide { display: none; }
+.phone-web #arcade:not(.run-active) #action-copy { visibility: hidden; }
+.phone-web #arcade:not(.run-active) .camera-feedback { display: none; }
+.phone-web .play-button.hand-hover { transform: none; box-shadow: none; }
+.phone-web .setup-gestures .left-hand { transform: scaleX(-1); }
 .phone-web #final-name-input { font-size: 20px; }
 .phone-web #scores-dialog .leaderboard { padding-top: 0; }
 .phone-web #scores-dialog #leaders { max-height: none; }
@@ -790,4 +797,24 @@ body:has(#dual-hand-guide:not([hidden])) #jackpot-signal { bottom: 188px; }
   .phone-web #registration #register-play { margin-top: 12px; }
   .phone-web #registration #register-cancel { position: absolute; top: 8px; left: 8px; width: 64px; margin: 0; }
   .phone-web #arcade:has(.camera-guidance) .controls { left: max(16px, env(safe-area-inset-left)); transform: none; width: 18%; bottom: calc(20px + env(safe-area-inset-bottom)); }
+}
+
+.phone-web #hand-guide .guide-footer { flex-direction: column; gap: 8px; position: sticky; bottom: 0; background: #081526; z-index: 2; }
+.phone-web #hand-guide .guide-footer nav { width: 100%; }
+.phone-web #hand-guide #hand-guide-next { width: 100%; min-width: 0; }
+.phone-web #hand-guide .dual-tutorial { padding: 12px 0; }
+.phone-web #hand-guide .dual-tutorial-hand { width: 80px; }
+.phone-web #hand-guide .dual-tutorial-hand .guide-sprite { height: 80px; }
+@media (max-height: 480px) and (orientation: landscape) {
+  .phone-web #hand-guide:has(.dual-tutorial) { display: grid; grid-template-columns: 150px 1fr; gap: 8px 16px; padding: 16px; }
+  .phone-web #hand-guide:has(.dual-tutorial) .guide-count { grid-column: 1; width: 80px; font-size: 14px; padding: 2px; }
+  .phone-web #hand-guide:has(.dual-tutorial) h1 { grid-column: 2; margin: 0; padding-right: 40px; font-size: 22px; text-align: left; }
+  .phone-web #hand-guide .dual-tutorial { grid-column: 1; grid-row: 2 / span 2; padding: 0; gap: 8px; align-self: center; }
+  .phone-web #hand-guide .dual-tutorial-hand { width: 64px; }
+  .phone-web #hand-guide .dual-tutorial-hand .guide-sprite { height: 64px; }
+  .phone-web #hand-guide .dual-tutorial-hand strong { font-size: 12px; }
+  .phone-web #hand-guide:has(.dual-tutorial) .guide-caption { grid-column: 2; margin: 0; font-size: 20px; text-align: left; }
+  .phone-web #hand-guide:has(.dual-tutorial) #hand-guide-hint { grid-column: 2; margin: 0; font-size: 14px; text-align: left; }
+  .phone-web #hand-guide:has(.dual-tutorial) .guide-footer { grid-column: 1 / -1; flex-direction: row; position: static; padding: 8px 0 0; }
+  .phone-web #hand-guide:has(.dual-tutorial) #hand-guide-next { width: 160px; min-height: 48px; font-size: 18px; }
 }

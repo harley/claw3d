@@ -118,3 +118,10 @@
   #hand-guide-reference .fist { position: static; opacity: 1; }
   #hand-guide-reference .reference-art span { position: absolute; bottom: 0; width: 100%; text-align: center; color: #35c9ff; font-size: 25px; line-height: 1; }
 }
+
+.dual-tutorial { display: flex; justify-content: center; gap: 32px; padding: 28px 0; }
+.dual-tutorial-hand { width: 100px; text-align: center; }
+.dual-tutorial-hand .guide-sprite { height: 100px; position: static; opacity: 1; }
+.dual-tutorial-hand.left .guide-sprite { transform: scaleX(-1); }
+.dual-tutorial-hand.waiting { opacity: .3; }
+.dual-tutorial-hand strong { display: block; font-size: 16px; margin-top: 8px; }

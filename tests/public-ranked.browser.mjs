@@ -59,10 +59,13 @@ try {
         await phone.locator('#mobile-help').click();
         await phone.locator('#hand-guide[open]').waitFor();
         await phone.locator('#hand-guide-close').click();
+        await phone.locator('#mobile-menu[open]').waitFor();
+        assert.equal(await phone.evaluate(() => document.activeElement.id), 'mobile-help');
+        await phone.locator('#mobile-menu-close').click();
         await phone.locator('#play').click();
         await phone.locator('#input-two').click();
-        assert.equal(await phone.locator('#mobile-aim-hint').textContent(), 'Left fist aims');
-        assert.equal(await phone.locator('#mobile-drop-hint').textContent(), 'Right palm drops');
+        assert.equal(await phone.locator('#mobile-aim-hint').textContent(), 'Open left hand to start');
+        assert.equal(await phone.locator('#mobile-drop-hint').textContent(), 'Then left fist aims · right palm drops');
         await phone.locator('#input-one').click();
         assert.equal(await phone.locator('#mobile-aim-hint').textContent(), 'Move your open hand to aim');
         assert.equal(await phone.locator('#mobile-drop-hint').textContent(), 'Hold a fist to drop');

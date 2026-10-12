@@ -22,7 +22,13 @@ export function createHandGuideReference() {
   return reference;
 }
 
-export function createHandGuide({ phone = false, canOpen, onTransition = () => {} }) {
+const dualSteps = [
+  { title: 'SHOW <em>LEFT HAND</em>', caption: 'OPEN LEFT HAND TO <em>START</em>', hint: 'Hold your open left hand still until it is found.', axis: 'acquire' },
+  { title: 'FIST TO <em>AIM</em>', caption: 'LEFT FIST <em>MOVES THE CLAW</em>', hint: 'Close your left hand, then move it to aim. Keep the fist closed.', axis: 'grip' },
+  { title: 'PALM TO <em>DROP</em>', caption: 'RIGHT PALM <em>DROPS THE CLAW</em>', hint: 'Keep your left fist closed. Move your right palm into DROP; if it is already there, move off and back.', axis: 'palm' },
+];
+export function createHandGuide({ phone = false, dual = false, canOpen, onTransition = () => {} }) {
+  const tutorialSteps = dual ? dualSteps : steps;
   const dialog = document.createElement('dialog');
   dialog.id = 'hand-guide';
   dialog.setAttribute('aria-labelledby', 'hand-guide-title');
@@ -30,14 +36,14 @@ export function createHandGuide({ phone = false, canOpen, onTransition = () => {
   document.getElementById('arcade').append(dialog);
   let step = 0, previousDialog = null, opener = null;
   function render() {
-    const content = steps[step];
+    const content = tutorialSteps[step];
     dialog.dataset.step = content.axis;
     dialog.innerHTML = `
       <button id="hand-guide-close" class="guide-close" aria-label="Close how to play">×</button>
       <div class="guide-count" aria-live="polite">${step + 1} / 3</div>
       <h1 id="hand-guide-title">${content.title}</h1>
       ${phone ? '<p class="phone-guide-setup">Prop up your phone and face the camera. Keep one open hand in view.</p>' : ''}
-      <div class="guide-demo" aria-hidden="true" style="--guide-art: url('${artwork}'); --guide-overhead: url('${overheadClaw}')">
+      ${dual ? `<div class="dual-tutorial" aria-hidden="true" style="--guide-art: url('${artwork}')"><div class="dual-tutorial-hand left"><i class="guide-sprite ${step === 0 ? 'palm' : 'fist'}"></i><strong>Left · ${step === 0 ? 'open' : 'fist'}</strong></div><div class="dual-tutorial-hand ${step < 2 ? 'waiting' : ''}"><i class="guide-sprite palm"></i><strong>Right · palm</strong></div></div>` : `<div class="guide-demo" aria-hidden="true" style="--guide-art: url('${artwork}'); --guide-overhead: url('${overheadClaw}')">
         <div class="guide-hand-panel">
           <div class="guide-hand ghost"><i class="guide-sprite palm"></i></div>
           <div class="guide-hand moving"><i class="guide-sprite palm"></i><i class="guide-sprite fist"></i></div>
@@ -50,13 +56,13 @@ export function createHandGuide({ phone = false, canOpen, onTransition = () => {
           <div class="guide-claw moving"><i class="guide-sprite claw"></i></div>
           <span class="guide-bed-track"></span>
         </div><span class="guide-bed-label">${step === 2 ? 'CLAW LOWERS' : 'FRONT · YOU'}</span></div>
-      </div>
+      </div>`}
       <h2 class="guide-caption">${content.caption}</h2>
       <p id="hand-guide-hint">${content.hint}</p>
-      <footer class="guide-footer"><nav aria-label="Tutorial steps">${['UP / DOWN', 'LEFT / RIGHT', 'HOLD FIST'].map((label, index) => `<button id="hand-guide-step-${index}" ${index === step ? 'aria-current="step"' : ''}><b>${index + 1}</b><span>${label}</span></button>`).join('')}</nav><button id="hand-guide-next">${step === 2 ? 'GOT IT' : 'NEXT'} <span aria-hidden="true">›</span></button></footer>`;
+      <footer class="guide-footer"><nav aria-label="Tutorial steps">${(dual ? ['OPEN LEFT', 'LEFT FIST', 'RIGHT PALM'] : ['UP / DOWN', 'LEFT / RIGHT', 'HOLD FIST']).map((label, index) => `<button id="hand-guide-step-${index}" ${index === step ? 'aria-current="step"' : ''}><b>${index + 1}</b><span>${label}</span></button>`).join('')}</nav><button id="hand-guide-next">${step === 2 ? 'GOT IT' : 'NEXT'} <span aria-hidden="true">›</span></button></footer>`;
     dialog.querySelector('#hand-guide-close').onclick = () => dialog.close();
     dialog.querySelector('#hand-guide-next').onclick = () => step === 2 ? dialog.close() : select(step + 1);
-    steps.forEach((_, index) => { dialog.querySelector(`#hand-guide-step-${index}`).onclick = () => select(index); });
+    tutorialSteps.forEach((_, index) => { dialog.querySelector(`#hand-guide-step-${index}`).onclick = () => select(index); });
   }
   function select(index) {
     step = index;
@@ -67,7 +73,7 @@ export function createHandGuide({ phone = false, canOpen, onTransition = () => {
   function open(event) {
     if (dialog.open || !canOpen()) return;
     previousDialog = document.querySelector('dialog[open]');
-    if (previousDialog && previousDialog.id !== 'final') return;
+    if (previousDialog && !['final', 'mobile-menu'].includes(previousDialog.id)) return;
     opener = event.currentTarget;
     previousDialog?.close();
     step = 0;
@@ -87,6 +93,7 @@ export function createHandGuide({ phone = false, canOpen, onTransition = () => {
   });
   document.getElementById('how-to-play').addEventListener('click', open);
   document.getElementById('final-how-to-play').addEventListener('click', open);
+  if (phone) document.getElementById('mobile-help').addEventListener('click', open);
   document.addEventListener('visibilitychange', () => { dialog.classList.toggle('guide-suspended', document.hidden); });
   return dialog;
 }

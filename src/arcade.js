@@ -72,9 +72,11 @@ if (phoneWeb) {
   $('register-other').hidden = true;
   $('play-again').classList.add('play-button');
   $('play-again').classList.remove('text-button');
-  const more = document.createElement('details'); more.id = 'final-more';
-  const summary = document.createElement('summary'); summary.textContent = 'More'; more.append(summary);
-  $('final').append(more); more.append($('final-how-to-play'), $('final-feedback'));
+  const tools = document.createElement('div'); tools.id = 'final-tools';
+  const more = document.createElement('button'); more.id = 'final-more'; more.type = 'button'; more.className = 'text-button'; more.textContent = 'More';
+  more.setAttribute('aria-haspopup', 'dialog'); more.setAttribute('aria-controls', 'mobile-menu');
+  tools.append($('final-how-to-play'), more); $('final').querySelector('footer').before(tools);
+  $('final-feedback').hidden = true;
 
   if (dualEnabled) $('phone-setup').innerHTML = 'Prop up your phone, face the camera and free both hands.<br><strong>Left fist aims · right palm drops.</strong>';
   if (publicPlay) $('next-player').textContent = 'Play again';
@@ -137,10 +139,10 @@ if (dualEnabled) $('camera-menu-help').textContent = 'Use your left hand and hol
 const glove = createJoystickCursor(() => cabinetEnabled ? scene?.controlTargets() : null, () => { if (cabinetEnabled) gestureDrop(); });
 let previousMenuMode = '', editingResultName = false, savingResultName = false;
 function menuMode() {
-  if (phoneWeb || savingTurn || startingRun || frozen || stopped || document.hidden || editingResultName || boothInvite?.editing || boothInvite?.busy) return '';
-  if ((recovering || paused) && shared) return '';
+  if (savingTurn || startingRun || frozen || stopped || document.hidden || editingResultName || boothInvite?.editing || boothInvite?.busy) return '';
+  if ((recovering || paused) && shared && !phoneWeb) return '';
   const dialogs = [...document.querySelectorAll('dialog[open]')];
-  if (dialogs.length) return dialogs.length === 1 && ['registration', 'final', 'scores-dialog', 'hand-guide'].includes(dialogs[0].id) ? dialogs[0].id : '';
+  if (dialogs.length) return dialogs.length === 1 && ['registration', 'final', 'scores-dialog', 'hand-guide', 'mobile-menu'].includes(dialogs[0].id) ? dialogs[0].id : '';
   if ((recovering || paused) && cameraControls?.running) return 'resume';
   return !run && cameraControls?.running ? 'idle' : '';
 }
@@ -176,9 +178,9 @@ function renderMobileSetup() {
   $('input-one').setAttribute('aria-pressed', String(selectedHands === 'one-hand'));
   $('input-two').setAttribute('aria-pressed', String(selectedHands === 'two-hand'));
   $('registration').querySelector('h1').textContent = selectedHands === 'two-hand' ? 'Play with your hands' : 'Play with your hand';
-  $('mobile-aim-hint').textContent = selectedHands === 'two-hand' ? 'Left fist aims' : 'Move your open hand to aim';
-  $('mobile-drop-hint').textContent = selectedHands === 'two-hand' ? 'Right palm drops' : 'Hold a fist to drop';
-  $('mobile-hand-setup').querySelector('.setup-gestures > div:first-child i').className = `guide-sprite ${selectedHands === 'two-hand' ? 'fist' : 'palm'}`;
+  $('mobile-aim-hint').textContent = selectedHands === 'two-hand' ? 'Open left hand to start' : 'Move your open hand to aim';
+  $('mobile-drop-hint').textContent = selectedHands === 'two-hand' ? 'Then left fist aims · right palm drops' : 'Hold a fist to drop';
+  $('mobile-hand-setup').querySelector('.setup-gestures > div:first-child i').className = `guide-sprite palm${selectedHands === 'two-hand' ? ' left-hand' : ''}`;
   $('mobile-hand-setup').querySelector('.setup-gestures > div:last-child i').className = `guide-sprite ${selectedHands === 'two-hand' ? 'palm' : 'fist'}`;
   $('register-play').textContent = cameraControls?.running ? 'Play' : 'Start camera';
   $('register-play').setAttribute('aria-label', cameraControls?.running ? 'Play' : 'Start camera');
@@ -194,9 +196,9 @@ let store, storageError = '', storageBlocked = false;
 try { store = shared || publicTry ? newStore() : loadStore({ getItem: () => localStorage.getItem(scoreKey) }, localRules); } catch (error) { store = newStore(localRules); storageError = error.message; storageBlocked = true; }
 let run = store.active, completedRun = null, turnNumber = run ? run.turns.length + 1 : 0;
 let recovering = Boolean(run);
-const canShowHandGuide = () => mode.profile === 'hold-drop' && !run && !pendingPlayer && !startingRun && !recovering && !frozen && !stopped;
+const canShowHandGuide = () => ['hold-drop', 'dual'].includes(mode.profile) && !run && !pendingPlayer && !startingRun && !recovering && !frozen && !stopped;
 const handGuideReference = createHandGuideReference();
-createHandGuide({ phone: phoneWeb, canOpen: canShowHandGuide, onTransition: () => { cameraControls?.reset(); handMenu.clear(); } });
+createHandGuide({ phone: phoneWeb, dual: dualEnabled, canOpen: canShowHandGuide, onTransition: () => { cameraControls?.reset(); handMenu.clear(); } });
 if (run) selectedStart = null;
 const frames = [], errors = [];
 let playtest = createPlaytestClient({ build: __BUILD_INFO__.commit, enabled: shared && !official && !publicPlay });
@@ -638,14 +640,19 @@ $('scores-more').addEventListener('click', openScores);
 $('final-leaderboard').addEventListener('click', openScores);
 $('scores-close').addEventListener('click', () => $('scores-dialog').close());
 if (phoneWeb) {
-  $('mobile-menu-open').addEventListener('click', () => { $('mobile-menu').showModal(); $('mobile-menu-close').focus(); });
-  $('mobile-menu-close').addEventListener('click', () => $('mobile-menu').close());
-  $('mobile-menu').addEventListener('close', () => $('mobile-menu-open').focus());
-  $('mobile-scores').addEventListener('click', () => { $('mobile-menu').close(); openScores(); });
-  $('mobile-camera').addEventListener('click', () => { $('mobile-menu').close(); $('camera-open').click(); });
-  $('mobile-help').addEventListener('click', () => { $('mobile-menu').close(); $('how-to-play').click(); });
-  $('mobile-feedback').addEventListener('click', () => { $('mobile-menu').close(); openFeedback(); });
-  $('mobile-pause').addEventListener('click', () => { if (!run || savingTurn || startingRun) return; paused = !paused; $('mobile-menu').close(); updateUI(); });
+  let menuReturn = null, menuOpener = $('mobile-menu-open');
+  const openMenu = event => { menuReturn = document.querySelector('dialog[open]'); menuOpener = event.currentTarget; menuReturn?.close(); $('mobile-menu').showModal(); $('mobile-menu-close').focus(); };
+  const returnFromMenu = () => { const previous = menuReturn; menuReturn = null; if (previous?.isConnected) previous.showModal(); menuOpener.focus(); };
+  const closeMenu = () => { $('mobile-menu').close(); returnFromMenu(); };
+  $('mobile-menu-open').addEventListener('click', openMenu);
+  $('final-more').addEventListener('click', openMenu);
+  $('mobile-menu-close').addEventListener('click', closeMenu);
+  // Help temporarily owns the modal and restores this menu when it closes.
+  $('mobile-menu').addEventListener('close', () => { if (!document.querySelector('dialog[open]')) returnFromMenu(); });
+  $('mobile-scores').addEventListener('click', () => { closeMenu(); openScores(); });
+  $('mobile-camera').addEventListener('click', () => { closeMenu(); $('camera-open').click(); });
+  $('mobile-feedback').addEventListener('click', () => { closeMenu(); openFeedback(); });
+  $('mobile-pause').addEventListener('click', () => { if (!run || savingTurn || startingRun) return; paused = !paused; closeMenu(); updateUI(); });
 }
 $('scores-dialog').addEventListener('close', () => {
   scoreHome.after(scorePanel);
