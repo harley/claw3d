@@ -26,10 +26,20 @@ test('camera rejects trigger adaptation and recovery requires a stable healthy p
   assert.deepEqual(changes, ['simple', 'full']);
 });
 
-test('small camera samples do not cause a mode change', () => {
+test('sparse slow camera windows adapt even while the renderer stays at 60 FPS', () => {
   const governor = new PerformanceGovernor();
-  for (let i = 0; i < 4; i++) governor.observe({ averageFps: 30, resultHz: 1, results: 1, rejected: 1 });
-  assert.equal(governor.mode, 'full');
+  const sparse = { averageFps: 60, resultHz: 0, results: 0, rejected: 8 };
+  assert.equal(governor.observe(sparse), 'full', 'one bad window is insufficient');
+  for (let i = 0; i < 11; i++) assert.equal(governor.observe(sparse), 'simple');
+});
+
+test('a compact capture session cannot repeatedly promote rendering and reintroduce contention', () => {
+  const governor = new PerformanceGovernor();
+  governor.setMode('simple');
+  for (let i = 0; i < 12; i++) governor.observe({ ...healthy, captureLimited: true });
+  assert.equal(governor.mode, 'simple');
+  for (let i = 0; i < 6; i++) governor.observe(healthy);
+  assert.equal(governor.mode, 'full', 'a restarted healthy camera can recover the full budget');
 });
 
 test('an operator selection stays pinned and reports its source', () => {

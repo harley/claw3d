@@ -10,6 +10,7 @@ export const browserSuites = Object.freeze([
   'audio',
   'movement-music',
   'camera',
+  'camera-sustained',
   'gesture-feedback',
   'arcade',
   'carousel',
@@ -24,7 +25,7 @@ export const browserSuites = Object.freeze([
 // Each runner stays sequential; the default local order above is unchanged.
 export const browserShards = Object.freeze({
   'shard-1': Object.freeze(['play-modes', 'dual-hand-controls', 'phone-hands', 'audio']),
-  'shard-2': Object.freeze(['grab-release', 'camera', 'gesture-feedback', 'target-label']),
+  'shard-2': Object.freeze(['grab-release', 'camera', 'camera-sustained', 'gesture-feedback', 'target-label']),
   'shard-3': Object.freeze(['arcade-presentation', 'arcade-layout', 'arcade']),
   'shard-4': Object.freeze(['movement-music', 'carousel', 'contact', 'suspended-claw', 'collection', 'booth-toys', 'delivery-clearance', 'hand-menu']),
 });

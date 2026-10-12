@@ -52,14 +52,21 @@ try {
     await burst([right(),left('open',point.x,point.y)],32); // Reacquire after a large move between separated targets.
     await page.waitForFunction(id => document.getElementById(id).classList.contains('hand-hover'),id);
     assert.ok(await page.locator('#hand-cursor').isVisible());
-    assert.ok((await page.locator('#hand-cursor').boundingBox()).width<=32);
+    assert.equal((await page.locator('#hand-cursor').boundingBox()).width,48);
+    assert.equal(await page.locator('.cursor-artwork').evaluate(el=>getComputedStyle(el).display==='none'),false,'phone hand artwork remains visible');
+    assert.ok(await page.locator('.cursor-hand').isVisible(),'open hand is shown before selection');
+    assert.equal(await page.locator('.cursor-fist').isVisible(),false,'phone shows one current pose instead of a teaching animation');
     if(id==='mobile-menu-open') {
       assert.equal(await page.locator('.camera-feedback').isVisible(),false,'idle hand-found banner cannot overlap Play');
       await page.screenshot({path:'.screenshots/repair-menu-target-390.png'});
     }
-    await burst([right(),left('closed',point.x,point.y)],12);
+    await burst([right(),left('closed',point.x,point.y)],3);
+    assert.ok(await page.locator('.cursor-fist').isVisible(),'closed hand is shown during selection');
+    if(id==='mobile-menu-open') await page.screenshot({path:'.screenshots/tracking-hand-fist-390.png'});
+    await burst([right(),left('closed',point.x,point.y)],9);
   };
   await page.goto('http://127.0.0.1:4196/?setup=manual');
+  assert.equal(await page.locator('#camera-debug').count(),0,'default phone flow has no diagnostic panel');
   await page.locator('#play:not([disabled])').waitFor();
   await page.locator('#play').click(); await page.locator('#input-two').click();
   assert.equal(await page.locator('#mobile-aim-hint').textContent(),'Open left hand to start');

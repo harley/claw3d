@@ -80,3 +80,37 @@ test('the main-thread runtime shares the recognizer options and hand count', asy
   const two = await createMainThreadVision('/base', 2); two.terminate();
   assert.equal(lastOptions.numHands, 2);
 });
+
+// Contract: simple capture really reduces WebKit inference input, preserves
+// the camera aspect, and reuses/releases one canvas during a sustained session.
+test('main-thread capture respects640/320 budgets for sustained portrait video without resource growth', async t => {
+  const originalDocument = globalThis.document;
+  t.after(() => { if (originalDocument) globalThis.document = originalDocument; else delete globalThis.document; });
+  let created = 0, draws = 0, lastSize;
+  const canvas = { width: 0, height: 0, getContext: () => ({ drawImage: (_video, _x, _y, width, height) => { draws++; lastSize = [width, height]; } }) };
+  globalThis.document = { createElement: () => { created++; return canvas; } };
+  plan = {}; made = [];
+  const runtime = await createMainThreadVision('/base', 2), messages = [];
+  runtime.onmessage = ({ data }) => messages.push(data);
+  const video = { videoWidth: 540, videoHeight: 960 };
+  runtime.postMessage({ type: 'frame', video, captureWidth: 640, now: 1 }); await settle();
+  assert.deepEqual(lastSize, [540, 960], 'full capture never upscales');
+  for (let i = 0; i < 360; i++) {
+    runtime.postMessage({ type: 'frame', video, captureWidth: 320, now: i + 2 }); await settle();
+    assert.equal(messages.at(-1).result.video, canvas);
+  }
+  assert.equal(created, 1); assert.equal(draws, 361);
+  assert.deepEqual(lastSize, [320, 569]);
+  assert.equal(lastOptions.numHands, 2);
+  runtime.terminate();
+  assert.deepEqual([canvas.width, canvas.height], [0, 0]);
+  runtime.postMessage({ type: 'frame', video, captureWidth: 320, now: 999 }); await settle();
+  assert.equal(draws, 361);
+});
+
+test('a requested main-thread CPU replacement never retries GPU', async () => {
+  plan = {}; made = [];
+  const runtime = await createMainThreadVision('/base', 1, 'CPU');
+  assert.deepEqual(made, ['CPU']); assert.equal(runtime.delegate, 'CPU');
+  runtime.terminate();
+});

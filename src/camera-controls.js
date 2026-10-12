@@ -1,9 +1,10 @@
 import { nativeAndroid } from './runtime-platform.js';
 // Lazy camera adapter: the event state machine owns registration and turns.
-export async function createCameraControls({ video, overlay, select, onChange, canControl, canConfigureCamera = () => false, canPrepare = () => false, canObserve = () => false, onDrop, onGesture, getControlProfile, getControlTarget, maxHands = 1, holdMs, steering = 'relative' }) {
+export async function createCameraControls({ video, overlay, select, onChange, canControl, canConfigureCamera = () => false, canPrepare = () => false, canObserve = () => false, onPerformancePressure = () => {}, onDrop, onGesture, getControlProfile, getControlTarget, maxHands = 1, holdMs, steering = 'relative' }) {
   const { HandController } = await (nativeAndroid ? import('./native-vision.js') : import('./vision.js'));
   let input = { x: 0, z: 0 }, state = { kind: 'off', message: 'Start the camera to play' }, at = 0;
   let diagnostic = {};
+  const localDebug = typeof location !== 'undefined' && new URLSearchParams(location.search).get('cameraDebug') === '1';
   // Keep the accepted-only capture-to-handler metric separate from the new
   // capture-to-receipt metric, which also includes live over-age replies.
   const emptyStats = () => ({ latencies: [], receiptDelays: [], results: 0, rejected: {} });
@@ -18,8 +19,9 @@ export async function createCameraControls({ video, overlay, select, onChange, c
   const controller = new HandController({ video, overlay, select, maxHands, holdMs, steering,
     getPhase: () => canControl() ? 'aim' : canPrepare() ? 'recognizing' : canObserve() ? 'observing' : 'blocked',
     onDiagnostic: next => {
-      if (import.meta.env?.DEV) diagnostic = { ...diagnostic, ...next };
+      if (import.meta.env?.DEV || localDebug) diagnostic = { ...diagnostic, ...next };
       record(stats, next); record(adaptation, next);
+      if (next.latencyRecovery === 'compact_capture') onPerformancePressure();
     },
     onGesture, getControlProfile, getControlTarget, canConfigureCamera,
     onStart: () => {}, // A gesture must never register a player or advance a turn.
@@ -47,6 +49,7 @@ export async function createCameraControls({ video, overlay, select, onChange, c
         progress: fresh ? state.progress || 0 : 0, controlEnabled: controller.running && fresh && canControl() };
     },
     get running() { return controller.running; }, get starting() { return controller.starting; },
+    get captureLimited() { return controller.latencyLimited === true; },
     get input() { return canControl() && controller.running && performance.now() - at < 700 ? input : { x: 0, z: 0 }; },
     get waiting() { return controller.running && (!['tracking', 'clenching'].includes(state.kind) || performance.now() - at >= 700); },
     neutralizeInput: () => controller.neutralizeInput(),
