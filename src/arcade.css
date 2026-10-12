@@ -746,8 +746,10 @@ body:has(#dual-hand-guide:not([hidden])) #jackpot-signal { bottom: 188px; }
 .phone-web #final-tools { display: flex; gap: 12px; margin-top: 8px; }
 .phone-web #final-tools button { flex: 1; margin: 0; font-size: 14px; }
 .phone-web #final .build-credit { margin-top: 12px; padding-top: 12px; }
-.phone-web #hand-cursor { width: 32px; height: 32px; filter: none; }
-.phone-web #hand-cursor :is(.cursor-artwork, .cursor-cue) { display: none; }
+.phone-web #hand-cursor { width: 48px; height: 48px; }
+.phone-web #hand-cursor .cursor-cue { display: none; }
+.phone-web #hand-cursor.demonstrating .cursor-hand { animation: none; transform: translate(-3px,-1px) scale(.92); }
+.phone-web #hand-cursor.demonstrating .cursor-fist { display: none; }
 .phone-web #menu-guide { display: none; }
 .phone-web #arcade:not(.run-active) #action-copy { visibility: hidden; }
 .phone-web #arcade:not(.run-active) .camera-feedback { display: none; }

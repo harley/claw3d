@@ -9,12 +9,12 @@ export class PerformanceGovernor {
     this.good = 0;
   }
 
-  observe({ averageFps, resultHz, results = 0, rejected = 0 }) {
+  observe({ averageFps, resultHz, results = 0, rejected = 0, captureLimited = false }) {
     if (this.source === 'operator') return this.mode;
     const cameraSamples = results + rejected;
     const rejectRate = cameraSamples ? rejected / cameraSamples : 0;
-    const slow = averageFps < 24 || (cameraSamples >= 10 && (resultHz < 8 || rejectRate >= .15));
-    const healthy = averageFps >= 27 && (!cameraSamples || (resultHz >= 12 && rejectRate < .05));
+    const slow = averageFps < 24 || (cameraSamples > 0 && (resultHz < 8 || rejectRate >= .15));
+    const healthy = !captureLimited && averageFps >= 27 && (!cameraSamples || (resultHz >= 12 && rejectRate < .05));
 
     if (slow) { this.bad++; this.good = 0; }
     else if (healthy) { this.good++; this.bad = 0; }

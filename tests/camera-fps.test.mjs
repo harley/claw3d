@@ -52,7 +52,7 @@ for (const [mode, fps] of [['full', 60], ['simple', 30]]) {
       frameRate: { ideal: fps, max: fps }, deviceId: { exact: 'chosen' } });
     assert.equal(f.c.running, true);
     assert.deepEqual(f.diagnostic(), { requestedFps: fps, cameraFps: 30, cameraWidth: 960, cameraHeight: 540,
-      fpsConstraintStatus: 'initial', delegate: 'CPU', driver: 'timer', captureWidth: mode === 'simple' ? 320 : 640 });
+      fpsConstraintStatus: 'initial', delegate: 'CPU', runtime: 'worker', driver: 'timer', captureWidth: mode === 'simple' ? 320 : 640 });
     assert.equal(f.changes.length, 0, 'no redundant applyConstraints during ordinary startup');
   });
 }

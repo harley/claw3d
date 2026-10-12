@@ -8,6 +8,8 @@ import { Steering } from './steering.js';
 
 export const CAPTURE_MAX_AGE = 300;
 export const OWNER_LOSS_GRACE = 650;
+export const SLOW_CAPTURE_WINDOW = 1500;
+export const SLOW_CAPTURE_SAMPLES = 4;
 
 const LINKS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
 
@@ -24,6 +26,7 @@ export class HandController {
     this.deviceChange = () => this.listCameras().catch(() => {});
     document.addEventListener('visibilitychange', () => {
       this.visibilityCutoff = performance.now(); this.lastActivity = this.visibilityCutoff;
+      this.lateSamples = 0; this.lateSince = undefined;
       this.resetOwner();
       this.onInput({ x: 0, z: 0 });
     });
@@ -73,6 +76,7 @@ export class HandController {
     this.stop(false);
     const generation = ++this.generation;
     this.starting = true;
+    this.latencyLimited = false; this.lateSamples = 0; this.lateSince = undefined;
     this.onState({ kind: 'loading', message: 'Starting your camera…' });
     let stream, failureCode = 'camera_unavailable';
     try {
@@ -181,6 +185,7 @@ export class HandController {
 
   async recoverWorker() {
     const generation = this.generation;
+    const local = this.worker.local;
     this.workerRecoveryUsed = true; this.recovering = true;
     this.resetOwner();
     // GPU inference is synchronous: a wedged call cannot process a fallback
@@ -191,29 +196,46 @@ export class HandController {
     this.worker.terminate(); this.worker = null;
     this.onDiagnostic?.({ recovery: this.receivedResult ? 'worker_cpu' : 'startup_cpu' });
     try {
-      await this.initializeWorker('CPU');
+      if (local) {
+        if (!await this.useMainThreadVision(generation, location.origin, 'CPU')) return;
+      } else await this.initializeWorker('CPU');
       if (generation !== this.generation) return;
       this.bindWorker(generation);
       this.recovering = false; this.busy = false; this.lastSent = undefined;
       this.lastActivity = performance.now(); this.lastSupervise = undefined; this.lastFrame = -1;
+      this.lateSamples = 0; this.lateSince = undefined;
       this.configureCapture(generation);
     } catch (error) {
       if (generation === this.generation) this.fail(error, 'worker_timeout');
     }
   }
 
-  async useMainThreadVision(generation, base) {
-    const create = this.createMainThreadVision || (async origin => {
+  async useMainThreadVision(generation, base, preferredDelegate = 'GPU') {
+    const create = this.createMainThreadVision || (async (origin, delegate) => {
       const runtime = await import('./vision-main-thread.js');
-      return runtime.createMainThreadVision(origin, this.maxHands);
+      return runtime.createMainThreadVision(origin, this.maxHands, delegate);
     });
-    const runtime = await create(base);
-    // Camera stop/switch can win while WebKit is loading the model. Do not
-    // attach or leak the late runtime into the newer camera generation.
-    if (generation !== this.generation) { runtime.terminate(); return false; }
-    this.worker = runtime;
-    this.delegate = runtime.delegate;
-    return true;
+    return new Promise((resolve, reject) => {
+      let finished = false;
+      const finish = (value, error) => {
+        if (finished) return;
+        finished = true; clearTimeout(timeout);
+        if (this.initReject === cancel) this.initReject = null;
+        if (error) reject(error); else resolve(value);
+      };
+      const cancel = error => finish(false, error);
+      this.initReject = cancel;
+      const timeout = setTimeout(() => cancel(new Error('Hand tracking took too long to load. Try again.')), 25000);
+      let pending;
+      try { pending = create(base, preferredDelegate); } catch (error) { finish(false, error); return; }
+      Promise.resolve(pending).then(runtime => {
+        // Stop, switch or the finite initialization deadline can win while
+        // WebKit loads. Dispose the late runtime instead of attaching it.
+        if (finished || generation !== this.generation) { runtime.terminate(); finish(false); return; }
+        this.worker = runtime; this.delegate = runtime.delegate;
+        finish(true);
+      }, error => finish(false, error));
+    });
   }
 
   fail(error, code = 'camera_unavailable') {
@@ -281,7 +303,7 @@ export class HandController {
     const worker = this.worker;
     this.lastSent = now;
     if (this.worker.local) {
-      this.worker.postMessage({ type: 'frame', video: this.video, now });
+      this.worker.postMessage({ type: 'frame', video: this.video, captureWidth: this.captureWidth || 640, now });
       return;
     }
     const width = this.captureWidth || 640;
@@ -307,22 +329,23 @@ export class HandController {
     this.paceToken = {};
     this.captureDriver = 'timer';
     if (!this.worker || this.worker.local) {
-      this.onDiagnostic?.({ delegate: this.delegate, driver: this.captureDriver, captureWidth: this.captureWidth || 640 });
+      this.onDiagnostic?.({ delegate: this.delegate, runtime: this.worker?.local ? 'main-thread' : 'worker', driver: this.captureDriver, captureWidth: this.captureWidth || 640 });
       return;
     }
     const track = this.stream?.getVideoTracks()[0];
-    // Zero-copy frames stay on in simple mode; the capture width only sizes bitmap fallbacks.
-    if (!this.captureLocked && this.delegate !== 'CPU' && typeof MediaStreamTrackProcessor === 'function' && track) {
+    // Ordinary simple quality keeps zero-copy frames. Measured sustained
+    // latency also bounds inference resolution by switching to resized input.
+    if (!this.captureLocked && !this.latencyLimited && this.delegate !== 'CPU' && typeof MediaStreamTrackProcessor === 'function' && track) {
       try { this.frameReader = new MediaStreamTrackProcessor({ track }).readable.getReader(); this.captureDriver = 'stream'; }
       catch { this.frameReader = null; }
     }
     if (this.captureDriver !== 'stream' && typeof this.video.requestVideoFrameCallback === 'function') this.captureDriver = 'rvfc';
-    this.onDiagnostic?.({ delegate: this.delegate, driver: this.captureDriver, captureWidth: this.captureWidth || (this.captureDriver === 'stream' ? 0 : 640) });
+    this.onDiagnostic?.({ delegate: this.delegate, runtime: 'worker', driver: this.captureDriver, captureWidth: this.captureWidth || (this.captureDriver === 'stream' ? 0 : 640) });
     if (this.captureDriver === 'stream') this.readFrames(generation);
     if (this.captureDriver === 'rvfc') this.paceVideoFrames(generation);
   }
 
-  get requestedFps() { return this.performanceMode === 'simple' ? 30 : 60; }
+  get requestedFps() { return this.performanceMode === 'simple' || this.latencyLimited ? 30 : 60; }
 
   reportCameraSettings(fpsConstraintStatus) {
     let settings = {};
@@ -366,11 +389,11 @@ export class HandController {
     this.performanceMode = mode === 'simple' ? 'simple' : 'full';
     const fpsChanged = fps !== this.requestedFps;
     if (fpsChanged) this.updateCameraFps();
-    const width = mode === 'simple' ? 320 : 0;
+    const width = mode === 'simple' || this.latencyLimited ? 320 : 0;
     if (this.captureLocked || width === this.captureWidth) return fpsChanged;
     this.captureWidth = width;
-    // A streaming capture is unaffected by bitmap width; do not interrupt it.
-    if (this.captureDriver !== 'stream') this.configureCapture();
+    // Preserve healthy zero-copy streaming during ordinary quality changes.
+    if (this.captureDriver !== 'stream' || this.latencyLimited) this.configureCapture();
     else this.onDiagnostic?.({ delegate: this.delegate, driver: this.captureDriver, captureWidth: 0 });
     return true;
   }
@@ -418,9 +441,10 @@ export class HandController {
       this.fist.reset('stale'); this.grab.reset(); this.dual.reset(); this.onInput({ x: 0, z: 0 });
       this.dualFeedback = null;
       if (this.controlProfile === 'dual') this.draw([], null);
-      if (reason === 'over age') this.delayTracking();
+      if (reason === 'over age') { this.delayTracking(); this.adaptLateTracking(receivedAt); }
       return false;
     }
+    this.lateSamples = 0; this.lateSince = undefined;
     if (capturedAt - (this.lastCapture ?? capturedAt) > OWNER_LOSS_GRACE) this.resetOwner();
     this.lastCapture = capturedAt; this.lastResult = capturedAt; this.lastFreshReceipt = receivedAt;
     this.handle(result, capturedAt);
@@ -436,6 +460,29 @@ export class HandController {
     this.dualFeedback = null;
     if (this.controlProfile === 'dual') this.draw([], null);
     this.onState({ kind: 'delayed', message: 'Tracking is slow. Keep your hand steady while it catches up.', progress: 0 });
+  }
+
+  adaptLateTracking(receivedAt) {
+    // Only ordered, actually received over-age frames reach this path. Keep
+    // rejecting their input; an alive-but-slow recognizer needs a smaller
+    // workload, not the unanswered-frame watchdog or a looser freshness gate.
+    if (!this.worker || this.recovering) return;
+    this.lateSince ??= receivedAt;
+    this.lateSamples = (this.lateSamples || 0) + 1;
+    if (this.lateSamples < SLOW_CAPTURE_SAMPLES || receivedAt - this.lateSince < SLOW_CAPTURE_WINDOW) return;
+    this.lateSamples = 0; this.lateSince = undefined;
+    if (!this.latencyLimited) {
+      const fps = this.requestedFps;
+      this.latencyLimited = true;
+      this.setPerformanceMode('simple');
+      if (fps !== this.requestedFps) this.updateCameraFps();
+      // Simple mode normally keeps zero-copy GPU capture. Sustained late
+      // results specifically require resized frames, even if already simple.
+      if (this.captureDriver === 'stream') this.configureCapture();
+      this.onDiagnostic?.({ latencyRecovery: 'compact_capture', captureLimited: true });
+    } else if (this.delegate === 'GPU' && !this.workerRecoveryUsed) {
+      void this.recoverWorker();
+    } else this.fail(new Error('Tracking is too slow. Restart the camera to try again.'), 'tracking_too_slow');
   }
 
   // Menus retain hold-to-select. Gameplay may opt into the local grab profile.

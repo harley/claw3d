@@ -4,13 +4,25 @@ import { recognizerOptions } from './recognizer-options.js';
 // Compatibility runtime for WebKit browsers that cannot give MediaPipe an
 // OffscreenCanvas inside a worker. It mirrors the worker message surface so the
 // camera controller keeps one result/failure path. Detection is paced by the
-// controller's existing 65 ms timer and reads the video element directly.
-export async function createMainThreadVision(base, maxHands = 1) {
+// controller's existing 65 ms timer and uses a bounded canvas from its video.
+export async function createMainThreadVision(base, maxHands = 1, preferredDelegate = 'GPU') {
   const files = await FilesetResolver.forVisionTasks(base + '/vision/wasm');
   const create = which => GestureRecognizer.createFromOptions(files, recognizerOptions(base, which, maxHands));
-  let recognizer, delegate, proven = false, stopped = false, rebuildTimer = null;
-  try { recognizer = await create('GPU'); delegate = 'GPU'; }
-  catch { recognizer = await create('CPU'); delegate = 'CPU'; }
+  let recognizer, delegate, proven = false, stopped = false, rebuildTimer = null, canvas, context;
+  if (preferredDelegate === 'CPU') { recognizer = await create('CPU'); delegate = 'CPU'; }
+  else {
+    try { recognizer = await create('GPU'); delegate = 'GPU'; }
+    catch { recognizer = await create('CPU'); delegate = 'CPU'; }
+  }
+  const capture = data => {
+    if (!data.captureWidth) return data.video;
+    const width = Math.min(data.video.videoWidth, data.captureWidth);
+    const height = Math.round(width * data.video.videoHeight / data.video.videoWidth);
+    if (!canvas) { canvas = document.createElement('canvas'); context = canvas.getContext('2d', { alpha: false }); }
+    if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+    context.drawImage(data.video, 0, 0, width, height);
+    return canvas;
+  };
 
   const runtime = {
     local: true,
@@ -22,9 +34,10 @@ export async function createMainThreadVision(base, maxHands = 1) {
       queueMicrotask(async () => {
         if (stopped) return;
         try {
+          const image = capture(data);
           let result;
           try {
-            result = recognizer.recognizeForVideo(data.video, data.now);
+            result = recognizer.recognizeForVideo(image, data.now);
             proven = true;
           } catch (error) {
             if (delegate !== 'GPU' || proven) throw error;
@@ -38,7 +51,7 @@ export async function createMainThreadVision(base, maxHands = 1) {
             if (stopped) { try { cpu.close(); } catch {} return; }
             recognizer = cpu; delegate = runtime.delegate = 'CPU';
             runtime.onmessage?.({ data: { type: 'delegate', delegate } });
-            result = recognizer.recognizeForVideo(data.video, data.now);
+            result = recognizer.recognizeForVideo(image, data.now);
             proven = true;
             clearInterval(rebuildTimer); rebuildTimer = null;
           }
@@ -54,6 +67,7 @@ export async function createMainThreadVision(base, maxHands = 1) {
       stopped = true;
       clearInterval(rebuildTimer); rebuildTimer = null;
       try { recognizer.close(); } catch {}
+      if (canvas) { canvas.width = canvas.height = 0; canvas = context = null; }
     },
   };
   return runtime;

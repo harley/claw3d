@@ -795,6 +795,7 @@ async function startCamera() {
     if (!cameraControls) {
       const { createCameraControls } = await import('./camera-controls.js');
       const created = await createCameraControls({ video: $('camera-video'), overlay: $('camera-overlay'), select: $('camera-select'), maxHands: dualEnabled ? 2 : 1, holdMs, steering,
+        onPerformancePressure: () => { if (performanceGovernor.source !== 'operator') performanceGovernor.setMode('simple'); },
         getControlProfile: () => dualEnabled ? menuMode() ? 'menu-left' : 'dual' : grabEnabled && !menuMode() ? 'grab-release' : 'hold-drop',
         canConfigureCamera: () => !run && !recovering && !pendingPlayer && !startingRun,
         getControlTarget: (pointer, role, origin) => glove.targetAt(pointer, role, origin),
@@ -863,11 +864,23 @@ $('camera-toggle').addEventListener('click', () => {
 });
 $('camera-recenter').addEventListener('click', () => { cameraControls?.reset(); $('camera-setup').close(); });
 window.addEventListener('pagehide', () => { cameraControls?.stop(); void playtest.flush(); });
+const cameraDebug = !nativeAndroid && new URLSearchParams(location.search).get('cameraDebug') === '1';
+let cameraDebugAt = -Infinity;
+const cameraDebugOutput = cameraDebug ? document.createElement('output') : null;
+if (cameraDebugOutput) {
+  cameraDebugOutput.id = 'camera-debug'; cameraDebugOutput.style.cssText = 'display:block;white-space:pre-wrap;font:12px monospace';
+  $('camera-status').after(cameraDebugOutput);
+}
 window.addEventListener('error', () => track('client_error', { reason: 'runtime' }));
 window.addEventListener('unhandledrejection', () => track('client_error', { reason: 'unhandled' }));
 $('scene').addEventListener('webglcontextlost', event => { event.preventDefault(); fail('The renderer stopped. Reload to continue.'); });
 function frame(time) {
   if (stopped) return;
+  if (cameraDebugOutput && $('camera-setup').open && time - cameraDebugAt >= 500) {
+    cameraDebugAt = time;
+    const d = cameraControls?.diagnostic || {};
+    cameraDebugOutput.textContent = `${d.runtime || '—'} · ${d.delegate || '—'} · ${d.driver || '—'}\nCapture budget: ${d.captureWidth ?? '—'} px · Camera: ${d.cameraFps ?? '—'} FPS\n${cameraControls?.feedback.kind || 'off'} · Last result age: ${Number.isFinite(d.captureAge) ? Math.round(d.captureAge) : '—'} ms\n${$('build-info').textContent}`;
+  }
   const raw = previous ? (time - previous) / 1000 : 1 / 60, dt = Math.min(raw, MAX_FRAME_DELTA); previous = time;
   if ((import.meta.env.DEV || nativeAndroid) && !document.hidden) { frames.push(raw * 1000); if (frames.length > 1800) frames.shift(); }
   // One dialog query per frame; every consumer below shares it.
@@ -924,7 +937,7 @@ function frame(time) {
         const averageFps = 1000 / (sorted.reduce((a, b) => a + b, 0) / sorted.length);
         healthSample = trackingSample(vision, adaptationVisibleMs);
         // The governor sees every visible window, camera or not, so attract mode adapts too.
-        performanceGovernor.observe({ averageFps, resultHz: vision ? vision.results / (adaptationVisibleMs / 1000) : 0, results: vision?.results || 0, rejected });
+        performanceGovernor.observe({ averageFps, resultHz: vision ? vision.results / (adaptationVisibleMs / 1000) : 0, results: vision?.results || 0, rejected, captureLimited: cameraControls?.running && cameraControls.captureLimited });
         adaptationFrames = []; adaptationVisibleMs = 0;
       }
       if (performanceVisibleMs >= 30000) {

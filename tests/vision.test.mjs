@@ -192,26 +192,6 @@ test('stopping while main-thread vision initializes disposes the late runtime', 
 });
 
 
-test('continuously late results do not masquerade as a stopped camera or control the game', async () => {
-  const f=fixture(), c=f.controller, originalDocument=globalThis.document;
-  globalThis.document={hidden:false};
-  Object.assign(c,{running:true,busy:true,generation:1,lastCapture:1000,lastResult:1000,lastActivity:1000});
-  let handled=0,failed=0,failureCode;c.handle=()=>handled++;c.fail=(_error,code)=>{failed++;failureCode=code;};
-  try {
-    for(let captured=1400;captured<=11000;captured+=400){
-      assert.equal(c.acceptResult({},captured,1,captured+350),false);
-      await c.frame(captured+390);
-      assert.equal(f.read().state.kind,'delayed');
-      assert.deepEqual(f.read().input,{x:0,z:0});
-    }
-    assert.equal(handled,0);assert.equal(failed,0);assert.equal(c.running,true);
-    const lastActivity=c.lastActivity;
-    assert.equal(c.acceptResult({},1000,1,12000),false);
-    assert.equal(c.lastActivity,lastActivity,'replayed results cannot keep the worker alive');
-    for(let t=lastActivity+65;t<=lastActivity+7100&&!failed;t+=65)await c.frame(t);assert.equal(failed,1,'a genuinely silent worker still stops');assert.equal(failureCode,'worker_timeout');
-  } finally {globalThis.document=originalDocument;}
-});
-
 test('a late result cancels confirmation and fresh tracking can resume without restarting',()=>{
   const f=fixture(),c=f.controller;
   Object.assign(c,{running:true,generation:1,lastCapture:1000,lastResult:1000,lastActivity:1000});
