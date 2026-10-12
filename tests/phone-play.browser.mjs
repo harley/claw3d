@@ -66,7 +66,7 @@ try {
   await page.locator('#final[open]').waitFor();
   assert.equal((await snapshot()).event.complete.turns.length, 3);
   assert.equal(await page.locator('#final-turns .catch-card').count(), 3);
-  assert.equal(await page.locator('#menu-guide').isVisible(), false, 'hand targeting does not cover phone results');
+  assert.equal(await page.locator('#final-tools #final-how-to-play').isVisible(), true, 'help stays directly reachable; real gesture activation is covered by phone-hands');
   // A portrait must contain the caught model, including when its source mesh is hidden after delivery.
   const portrait = await page.locator('#final-turns img').evaluate(async image => {
     await image.decode(); const canvas = document.createElement('canvas'); canvas.width = canvas.height = 128;

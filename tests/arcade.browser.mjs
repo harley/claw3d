@@ -133,7 +133,11 @@ try {
  await page.locator('#mode-two').click();
  await page.waitForFunction(() => location.search.includes('controls=dual') && document.documentElement.dataset.arcadeReady === 'true');
  await assertInstructions(instructions.dual);
- assert.equal(await page.locator('#how-to-play').isVisible(), false);
+ assert.equal(await page.locator('#how-to-play').isVisible(), true);
+ await page.locator('#how-to-play').click();
+ assert.equal(await page.locator('#hand-guide').getAttribute('data-step'), 'acquire');
+ assert.match(await page.locator('#hand-guide-hint').textContent(), /open left hand still/);
+ await page.locator('#hand-guide-close').click();
  await page.waitForFunction(() => document.body.classList.contains('attract'));
  await page.screenshot({path:'.screenshots/control-help-dual.png'});
  await page.locator('#mode-one').click();
