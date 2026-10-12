@@ -8,7 +8,8 @@ import { createPilotServer } from '../server/index.js';
 import { chromium } from 'playwright';
 import { browserOptions } from '../scripts/browser-options.mjs';
 const directory = await mkdtemp(join(tmpdir(),'claw-phone-hands-'));
-const app = await createPilotServer({filename:join(directory,'scores.sqlite'),origin:'http://127.0.0.1:4196',staffCode:'phone-hands-fixture-staff',hostCode:'phone-hands-fixture-host',secure:false,publicTryEnabled:true});
+// This server handles API requests only; Vite serves every game asset in this shard.
+const app = await createPilotServer({filename:join(directory,'scores.sqlite'),dist:directory,origin:'http://127.0.0.1:4196',staffCode:'phone-hands-fixture-staff',hostCode:'phone-hands-fixture-host',secure:false,publicTryEnabled:true});
 await new Promise(resolve=>app.server.listen(4292,'127.0.0.1',resolve));
 const browser = await chromium.launch(browserOptions);
 try {
