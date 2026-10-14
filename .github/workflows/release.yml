@@ -51,7 +51,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install chromium
       - run: node scripts/check-browser.mjs --shard "${{ matrix.shard }}"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: synthetic-browser-failure-${{ github.run_id }}-${{ matrix.shard }}
@@ -75,7 +75,7 @@ jobs:
       - run: npm run build
       - run: npx playwright install chromium
       - run: npm run test:shared
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
           name: synthetic-shared-browser-failure-${{ github.run_id }}
