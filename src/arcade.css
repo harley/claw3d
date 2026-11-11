@@ -287,14 +287,15 @@ button.hand-hover { outline:4px solid #ffca45; outline-offset:6px; box-shadow:0 
 
 
 /* Menu teaching is presentation only; the real hold ring never animates itself. */
-#menu-guide { position: absolute; z-index: 3; left: 50%; top: 42%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 10px; width: max-content; max-width: calc(100% - 32px); padding: 14px 22px; border: 1px solid #45648b; border-radius: 16px; background: #080e1ce8; color: #fff; text-align: center; pointer-events: none; }
-#menu-guide strong { font-size: clamp(20px, 2.5vw, 32px); }
-.menu-guide-hand { font-size: 72px; line-height: 1; }
+#menu-guide { position: absolute; z-index: 3; left: 50%; top: auto; bottom: 112px; transform: translateX(-50%); display: flex; flex-direction: row; align-items: center; gap: 10px; width: max-content; max-width: calc(100% - 32px); padding: 8px 14px; border: 1px solid #45648b; border-radius: 16px; background: #080e1ce8; color: #fff; text-align: center; pointer-events: none; }
+#menu-guide strong { font-size: 20px; }
+.menu-guide-hand { font-size: 32px; line-height: 1; }
 .menu-guide-hand svg { display: block; width: 1em; height: 1em; fill: #fff; stroke: #0b1526; stroke-width: 2; }
 #menu-guide.tracked { visibility: hidden; }
-dialog #menu-guide { position: static; transform: none; width: 100%; max-width: none; margin: 0 0 16px; padding: 8px; border: 0; background: transparent; }
-dialog #menu-guide strong { font-size: 20px; }
-dialog .menu-guide-hand { font-size: 52px; }
+/* Stay in the modal top layer, but never participate in its layout. */
+dialog #menu-guide { position: fixed; bottom: max(12px, env(safe-area-inset-bottom)); margin: 0; }
+dialog #menu-guide .menu-guide-hand { font-size: 32px; }
+#registration, #final, #scores-dialog { max-height: min(85svh, calc(100svh - 128px)); }
 .cursor-fist, .cursor-cue { display: none; }
 #hand-cursor.clenching .cursor-hand { display: none; }
 #hand-cursor.clenching .cursor-fist { display: block; }
@@ -311,12 +312,11 @@ dialog .menu-guide-hand { font-size: 52px; }
   #hand-cursor.demonstrating .cursor-hand { transform: translate(-10px, -1px) scale(.65); }
   #hand-cursor.demonstrating .cursor-fist { transform: translate(16px, 4px) scale(.65); }
 }
-/* Keep all result choices reachable when the invitation shares a phone dialog. */
-#final #menu-guide { flex-direction: row; justify-content: center; padding: 0; margin-bottom: 8px; }
-#final:has(#menu-guide:not([hidden])) h1 { margin-top: 10px; }
-#final:has(#menu-guide:not([hidden])) #final-score { font-size: 64px; }
-#final:has(#menu-guide:not([hidden])) #final-rank { font-size: 16px; margin: 8px 0; }
-#final:has(#menu-guide:not([hidden])) .text-button { margin-top: 6px; }
+/* Keep result choices compact regardless of camera guidance state. */
+#final h1 { margin-top: 10px; }
+#final #final-score { font-size: 64px; }
+#final #final-rank { font-size: 16px; margin: 8px 0; }
+#final .text-button { margin-top: 6px; }
 
 /* Visible through loading; collapses when a public practice run begins. */
 #try-notice { position: absolute; z-index: 6; left: 20px; bottom: 46px; width: fit-content; max-width: calc(100% - 40px); box-sizing: border-box; padding: 5px 0; border: 0; border-radius: 5px; background: #080e1ce6; color: #b6c5d8; font: 11px/1.5 Arial, sans-serif; }
@@ -568,7 +568,7 @@ body:has(#dual-hand-guide:not([hidden])) #jackpot-signal { bottom: 188px; }
 .start-modes small { grid-column: 1 / -1; font: 14px/1.4 Arial, sans-serif; letter-spacing: 0; text-transform: none; }
 @media (max-width: 480px), (max-height: 760px) {
   #registration { padding: 16px; }
-  #registration #menu-guide { flex-direction: row; gap: 8px; margin-bottom: 8px; padding: 0; }
+  #registration #menu-guide { gap: 8px; }
   #registration .menu-guide-hand { font-size: 32px; }
   #registration #menu-guide strong { font-size: 18px; }
   #registration h1 { font-size: 26px; margin: 8px 0; }
